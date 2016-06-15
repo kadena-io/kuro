@@ -1,3 +1,5 @@
+{-# LANGUAGE BangPatterns #-}
+
 module Main (main) where
 
 import Control.Arrow
@@ -8,6 +10,7 @@ import Text.Read
 import Data.Thyme.Clock
 import System.IO
 import System.FilePath
+import System.Environment
 import qualified Data.Yaml as Y
 
 import qualified Data.Set as Set
@@ -28,8 +31,39 @@ makeKeys n g = case generateKeyPair g of
 keyMaps :: [(PrivateKey,PublicKey)] -> (Map NodeID PrivateKey, Map NodeID PublicKey)
 keyMaps ls = (Map.fromList $ zip nodes (fst <$> ls), Map.fromList $ zip nodes (snd <$> ls))
 
+awsNodes :: [String] -> [NodeID]
+awsNodes = fmap (\h -> (NodeID h 10000 ("tcp://" ++ h ++ ":10000")))
+
+awsKeyMaps :: [NodeID] -> [(PrivateKey, PublicKey)] -> (Map NodeID PrivateKey, Map NodeID PublicKey)
+awsKeyMaps nodes' ls = (Map.fromList $ zip nodes' (fst <$> ls), Map.fromList $ zip nodes' (snd <$> ls))
+
 main :: IO ()
 main = do
+  runAws <- getArgs
+  case runAws of
+    [] -> mainLocal
+    [v,clustersFile,clientsFile] | v == "--aws" -> mainAws clustersFile clientsFile
+    err -> putStrLn $ "Invalid args, wanted `` or `--aws path-to-cluster-ip-file path-to-client-ip-file` but got: " ++ show err
+
+mainAws :: FilePath -> FilePath -> IO ()
+mainAws clustersFile clientsFile = do
+  !clusters <- readFile clustersFile >>= return . lines
+  !clients <- readFile clientsFile >>= return . lines
+  g <- newGenIO :: IO SystemRandom
+  clusterIds <- return $ awsNodes clusters
+  clusterKeys <- return $ makeKeys (length clusters) g
+  clusterKeyMaps <- return $ awsKeyMaps clusterIds clusterKeys
+  g' <- newGenIO :: IO SystemRandom
+  clientIds <- return $ awsNodes clients
+  clientKeys <- return $ makeKeys (length clients) g'
+  clientKeyMaps <- return $ awsKeyMaps clientIds clientKeys
+  clusterConfs <- return (createClusterConfig True clusterKeyMaps (snd clientKeyMaps) <$> clusterIds)
+  clientConfs <- return (createClientConfig True (snd clusterKeyMaps) clientKeyMaps <$> clientIds)
+  mapM_ (\c' -> Y.encodeFile ("conf" </> show (_host $ _nodeId c') ++ "-cluster.yaml") c') clusterConfs
+  mapM_ (\c' -> Y.encodeFile ("conf" </> show (_host $ _nodeId c') ++ "-client.yaml") c') clientConfs
+
+mainLocal :: IO ()
+mainLocal = do
   putStrLn "Number of cluster nodes?"
   hFlush stdout
   mn <- fmap readMaybe getLine

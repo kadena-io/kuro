@@ -31,11 +31,11 @@ sendProcess :: OutChan (OutBoundMsg String ByteString)
             -> Rolodex String (Socket z Push)
             -> ZMQ z ()
 sendProcess outboxRead !r = do
-  liftIO $ moreLogging "Entered sendProcess"
+  -- liftIO $ moreLogging "Entered sendProcess"
   rMvar <- liftIO $ newMVar r
   forever $ do
     (OutBoundMsg !addrs !msg) <- liftIO $! readChan outboxRead
-    liftIO $ moreLogging $ "Sending message to " ++ (show addrs) ++ " ## MSG ## " ++ show msg
+    -- liftIO $ moreLogging $ "Sending message to " ++ (show addrs) ++ " ## MSG ## " ++ show msg
     r' <- liftIO $ takeMVar rMvar
     !newRol <- updateRolodex r' addrs
     !toPoll <- recipList newRol addrs
@@ -91,9 +91,9 @@ runMsgServer :: NoBlock.InChan (ReceivedAt, SignedRPC)
              -> IO ()
 runMsgServer inboxWrite cmdInboxWrite aerInboxWrite rvAndRvrWrite outboxRead me addrList = void $ forkIO $ forever $ do
   zmqThread <- Async.async $ runZMQ $ do
-    liftIO $ moreLogging "Launching ZMQ_THREAD"
+    -- liftIO $ moreLogging "Launching ZMQ_THREAD"
     zmqReceiver <- async $ do
-      liftIO $ moreLogging "Launching ZMQ_RECEIVER"
+      -- liftIO $ moreLogging "Launching ZMQ_RECEIVER"
       sock <- socket Pull
       _ <- bind sock $ _unAddr me
       forever $ do
@@ -106,20 +106,20 @@ runMsgServer inboxWrite cmdInboxWrite aerInboxWrite rvAndRvrWrite outboxRead me 
             liftIO yield
           Right s@(SignedRPC dig _)
             | _digType dig == RV || _digType dig == RVR ->
-              liftIO $ writeChan rvAndRvrWrite (ReceivedAt ts, s) >>  moreLogging ("got " ++ show dig) >> yield
+              liftIO $ writeChan rvAndRvrWrite (ReceivedAt ts, s) >> yield
             | _digType dig == CMD || _digType dig == CMDB ->
-              liftIO $ NoBlock.writeChan cmdInboxWrite (ReceivedAt ts, s) >>  moreLogging ("got " ++ show dig) >> yield
+              liftIO $ NoBlock.writeChan cmdInboxWrite (ReceivedAt ts, s) >> yield
             | _digType dig == AER ->
-              liftIO $ NoBlock.writeChan aerInboxWrite (ReceivedAt ts, s) >>  moreLogging ("got " ++ show dig) >> yield
+              liftIO $ NoBlock.writeChan aerInboxWrite (ReceivedAt ts, s) >> yield
             | otherwise           ->
-              liftIO $ NoBlock.writeChan inboxWrite (ReceivedAt ts, s) >>  moreLogging ("got " ++ show dig) >> yield
+              liftIO $ NoBlock.writeChan inboxWrite (ReceivedAt ts, s) >> yield
     liftIO $ threadDelay 100000 -- to be sure that the receive side is up first
 
-    liftIO $ moreLogging "Launching ZMQ_SENDER"
+    -- liftIO $ moreLogging "Launching ZMQ_SENDER"
     zmqSender <- async $ do
       rolodex <- addNewAddrs (Rolodex Map.empty) addrList
       void $ sendProcess outboxRead rolodex
-      liftIO $ moreLogging "Exiting ZMQ_SENDER"
+      -- liftIO $ moreLogging "Exiting ZMQ_SENDER"
     liftIO $ (Async.waitEitherCancel zmqReceiver zmqSender) >>= \res' -> case res' of
       Left () -> liftIO $ moreLogging "ZMQ_RECEIVER returned with ()"
       Right v -> liftIO $ moreLogging $ "ZMQ_SENDER returned with " ++ show v

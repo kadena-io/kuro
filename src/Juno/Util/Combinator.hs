@@ -7,13 +7,12 @@ module Juno.Util.Combinator
   , foreverRetry
   ) where
 
-import System.IO (hFlush, stderr, stdout)
-import Control.Concurrent (threadDelay, forkFinally, MVar(..), putMVar, takeMVar, newEmptyMVar, forkIO)
-import Control.Concurrent.Async
+--import System.IO (hFlush, stderr, stdout)
+import Control.Concurrent (forkFinally, putMVar, takeMVar, newEmptyMVar, forkIO)
 import Control.Lens
 import Control.Monad.RWS.Strict
-import Data.Thyme.Calendar (showGregorian)
-import Data.Thyme.LocalTime
+--import Data.Thyme.Calendar (showGregorian)
+--import Data.Thyme.LocalTime
 
 -- like $, but the function is a lens from the reader environment with a
 -- pure function as its target
@@ -29,10 +28,11 @@ infixr 0 ^=<<.
 lf ^=<<. la = view lf >>= (use la >>=)
 
 prettyThreadDetails :: String -> IO ()
-prettyThreadDetails msg = do
-  (ZonedTime (LocalTime d' t') _) <- getZonedTime
-  putStrLn $ (showGregorian d') ++ "T" ++ (take 15 $ show t') ++ " [THREAD]: " ++ msg
-  hFlush stdout >> hFlush stderr
+prettyThreadDetails _msg = return ()
+--prettyThreadDetails _msg = do
+--  (ZonedTime (LocalTime d' t') _) <- getZonedTime
+--  putStrLn $ (showGregorian d') ++ "T" ++ (take 15 $ show t') ++ " [THREAD]: " ++ msg
+--  hFlush stdout >> hFlush stderr
 
 foreverRetry :: String -> IO () -> IO ()
 foreverRetry threadName action = void $ forkIO $ forever $ do

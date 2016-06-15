@@ -59,8 +59,8 @@ mainAws clustersFile clientsFile = do
   clientKeyMaps <- return $ awsKeyMaps clientIds clientKeys
   clusterConfs <- return (createClusterConfig True clusterKeyMaps (snd clientKeyMaps) <$> clusterIds)
   clientConfs <- return (createClientConfig True (snd clusterKeyMaps) clientKeyMaps <$> clientIds)
-  mapM_ (\c' -> Y.encodeFile ("conf" </> show (_host $ _nodeId c') ++ "-cluster.yaml") c') clusterConfs
-  mapM_ (\c' -> Y.encodeFile ("conf" </> show (_host $ _nodeId c') ++ "-client.yaml") c') clientConfs
+  mapM_ (\c' -> Y.encodeFile ("aws-conf" </> (_host $ _nodeId c') ++ "-cluster-aws.yaml") c') clusterConfs
+  mapM_ (\c' -> Y.encodeFile ("aws-conf" </> (_host $ _nodeId c') ++ "-client-aws.yaml") c') clientConfs
 
 mainLocal :: IO ()
 mainLocal = do

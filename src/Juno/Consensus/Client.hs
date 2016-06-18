@@ -26,7 +26,7 @@ import qualified Control.Concurrent.Lifted as CL
 -- getEntry (readChan) useResult (writeChan) replace by
 -- CommandMVarMap (MVar shared with App client)
 runRaftClient :: ReceiverEnv
-              -> IO (RequestId, [CommandEntry])
+              -> IO (RequestId, [(Maybe Alias,CommandEntry)])
               -> CommandMVarMap
               -> Config
               -> RaftSpec (Raft IO)
@@ -46,7 +46,7 @@ runRaftClient renv getEntries cmdStatusMap' rconf spec@RaftSpec{..} = do
 -- TODO: don't run in raft, own monad stack
 -- StateT ClientState (ReaderT ClientEnv IO)
 -- THREAD: CLIENT MAIN
-raftClient :: Raft IO (RequestId, [CommandEntry]) -> CommandMVarMap -> Raft IO ()
+raftClient :: Raft IO (RequestId, [(Maybe Alias, CommandEntry)]) -> CommandMVarMap -> Raft IO ()
 raftClient getEntries cmdStatusMap' = do
   nodes <- view (cfg.otherNodes)
   when (Set.null nodes) $ error "The client has no nodes to send requests to."
@@ -57,14 +57,14 @@ raftClient getEntries cmdStatusMap' = do
 
 -- get commands with getEntry and put them on the event queue to be sent
 -- THREAD: CLIENT COMMAND
-commandGetter :: MonadIO m => Raft m (RequestId, [CommandEntry]) -> CommandMVarMap -> Raft m ()
+commandGetter :: MonadIO m => Raft m (RequestId, [(Maybe Alias, CommandEntry)]) -> CommandMVarMap -> Raft m ()
 commandGetter getEntries cmdStatusMap' = do
   nid <- view (cfg.nodeId)
   forever $ do
     (rid@(RequestId _), cmdEntries) <- getEntries
     -- support for special REPL command "> batch test:5000", runs hardcoded batch job
     cmds' <- case cmdEntries of
-               (CommandEntry cmd):[] | SB8.take 11 cmd == "batch test:" -> do
+               (_,CommandEntry cmd):[] | SB8.take 11 cmd == "batch test:" -> do
                                           let missiles = take (batchSize cmd) $ repeat $ hardcodedTransfers nid
                                           liftIO $ sequence $ missiles
                _ -> liftIO $ sequence $ fmap (nextRid nid) cmdEntries
@@ -73,20 +73,20 @@ commandGetter getEntries cmdStatusMap' = do
     liftIO (modifyMVar_ cmdStatusMap' (\(CommandMap n m) -> return $ CommandMap n (Map.insert rid CmdAccepted m)))
     -- hack set the head to the org rid
     let cmds'' = case cmds' of
-                   ((Command entry nid' _ NewMsg):rest) -> (Command entry nid' rid' NewMsg):rest
+                   ((Command entry nid' _ alias' NewMsg):rest) -> (Command entry nid' rid' alias' NewMsg):rest
                    _ -> [] -- TODO: fix this
     enqueueEvent $ ERPC $ CMDB' $ CommandBatch cmds'' NewMsg
   where
     batchSize :: (Num c, Read c) => SB8.ByteString -> c
     batchSize cmd = maybe 500 id . readMaybe $ drop 11 $ SB8.unpack cmd
 
-    nextRid :: NodeID -> CommandEntry -> IO Command
-    nextRid nid entry = do
+    nextRid :: NodeID -> (Maybe Alias,CommandEntry) -> IO Command
+    nextRid nid (alias',entry) = do
       rid <- (setNextCmdRequestId cmdStatusMap')
-      return (Command entry nid rid NewMsg)
+      return (Command entry nid rid alias' NewMsg)
 
     hardcodedTransfers :: NodeID -> IO Command
-    hardcodedTransfers nid = nextRid nid transferCmdEntry
+    hardcodedTransfers nid = nextRid nid (Nothing, transferCmdEntry)
 
     transferCmdEntry :: CommandEntry
     transferCmdEntry = (CommandEntry "transfer(Acct1->Acct2, 1 % 1)")

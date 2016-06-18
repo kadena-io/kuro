@@ -54,7 +54,7 @@ showResult cmdStatusMap' rId pgm@(Just cnt) =
         showResult cmdStatusMap' rId pgm
 
 --  -> OutChan CommandResult
-runREPL :: InChan (RequestId, [CommandEntry]) -> CommandMVarMap -> IO ()
+runREPL :: InChan (RequestId, [(Maybe Alias, CommandEntry)]) -> CommandMVarMap -> IO ()
 runREPL toCommands' cmdStatusMap' = do
   cmd <- readPrompt
   case cmd of
@@ -65,7 +65,7 @@ runREPL toCommands' cmdStatusMap' = do
       then case readMaybe $ drop 11 cmd of
         Just n -> do
           rId <- liftIO $ setNextCmdRequestId cmdStatusMap'
-          writeChan toCommands' (rId, [CommandEntry cmd'])
+          writeChan toCommands' (rId, [(Nothing, CommandEntry cmd')])
           --- this is the tracer round for timing purposes
           putStrLn $ "Sending " ++ show n ++ " 'transfer(Acct1->Acct2, 1%1)' transactions batched"
           showResult cmdStatusMap' (rId + RequestId n) (Just n)
@@ -76,7 +76,7 @@ runREPL toCommands' cmdStatusMap' = do
         case readMaybe $ drop 10 cmd of
           Just n -> do
             cmds <- replicateM n
-                      (do rid <- setNextCmdRequestId cmdStatusMap'; return (rid, [CommandEntry "transfer(Acct1->Acct2, 1%1)"]))
+                      (do rid <- setNextCmdRequestId cmdStatusMap'; return (rid, [(Nothing, CommandEntry "transfer(Acct1->Acct2, 1%1)")]))
             writeList2Chan toCommands' cmds
             --- this is the tracer round for timing purposes
             putStrLn $ "Sending " ++ show n ++ " 'transfer(Acct1->Acct2, 1%1)' transactions individually"
@@ -88,7 +88,7 @@ runREPL toCommands' cmdStatusMap' = do
           Left err -> putStrLn cmd >> putStrLn err >> runREPL toCommands' cmdStatusMap'
           Right _ -> do
             rId <- liftIO $ setNextCmdRequestId cmdStatusMap'
-            writeChan toCommands' (rId, [CommandEntry cmd'])
+            writeChan toCommands' (rId, [(Nothing, CommandEntry cmd')])
             showResult cmdStatusMap' rId Nothing
             runREPL toCommands' cmdStatusMap'
 
@@ -107,7 +107,7 @@ main = do
   -- Either we need to kill this channel full stop or `toResult` needs to be used.
   cmdStatusMap' <- initCommandMap
   let -- getEntry :: (IO et)
-      getEntries :: IO (RequestId, [CommandEntry])
+      getEntries :: IO (RequestId, [(Maybe Alias, CommandEntry)])
       getEntries = readChan fromCommands
       -- applyFn :: et -> IO rt
       applyFn :: Command -> IO CommandResult

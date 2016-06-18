@@ -1,5 +1,6 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Juno.Consensus.Api
   ( apiReceiver
@@ -31,7 +32,7 @@ apiReceiver = do
     (rid@(RequestId _), cmdEntries) <- dequeueCommand
     -- support for special REPL command "> batch test:5000", runs hardcoded batch job
     cmds' <- case cmdEntries of
-               (CommandEntry cmd):[] | SB8.take 11 cmd == "batch test:" -> do
+               (_, CommandEntry cmd):[] | SB8.take 11 cmd == "batch test:" -> do
                                           let missiles = replicate (batchSize cmd) $ hardcodedTransfers nid cmdMap
                                           liftIO $ sequence missiles
                _ -> liftIO $ sequence $ fmap ((nextRid nid) cmdMap) cmdEntries
@@ -40,7 +41,7 @@ apiReceiver = do
     liftIO (modifyMVar_ cmdMap (\(CommandMap n m) -> return $ CommandMap n (Map.insert rid CmdAccepted m)))
     -- hack set the head to the org rid
     let cmds'' = case cmds' of
-                   ((Command entry nid' _ NewMsg):rest) -> (Command entry nid' rid' NewMsg):rest
+                   ((Command entry nid' _ alias' NewMsg):rest) -> (Command entry nid' rid' alias' NewMsg):rest
                    _ -> []
     -- TODO: have the client really sign this and map the client digest to this.
     --       for now, node 1003 has keys registered as client and protocol node.
@@ -49,13 +50,13 @@ apiReceiver = do
     batchSize :: (Num c, Read c) => SB8.ByteString -> c
     batchSize cmd = maybe 500 id . readMaybe $ drop 11 $ SB8.unpack cmd
 
-    nextRid :: NodeID -> CommandMVarMap -> CommandEntry -> IO Command
-    nextRid nid cmdMap entry = do
+    nextRid :: NodeID -> CommandMVarMap -> (Maybe Alias, CommandEntry) -> IO Command
+    nextRid nid cmdMap (alias,entry) = do
       rid <- (setNextCmdRequestId' cmdMap)
-      return (Command entry nid rid NewMsg)
+      return (Command entry nid rid alias NewMsg)
 
     hardcodedTransfers :: NodeID -> CommandMVarMap-> IO Command
-    hardcodedTransfers nid cmdMap = nextRid nid cmdMap transferCmdEntry
+    hardcodedTransfers nid cmdMap = nextRid nid cmdMap (Nothing, transferCmdEntry)
 
     transferCmdEntry :: CommandEntry
     transferCmdEntry = (CommandEntry "transfer(Acct1->Acct2, 1 % 1)")

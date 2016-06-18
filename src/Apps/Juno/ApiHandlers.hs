@@ -39,7 +39,7 @@ import Schwifty.Swift.M105.Parser
 import Apps.Juno.ApiDemoHandler (transferDemoReqHandler)
 
 data ApiEnv = ApiEnv {
-      _aiToCommands :: InChan (RequestId, [CommandEntry]),
+      _aiToCommands :: InChan (RequestId, [(Maybe Alias, CommandEntry)]),
       _aiCmdStatusMap :: CommandMVarMap
 }
 
@@ -79,7 +79,7 @@ apiWrapper requestHandler = do
      Right cmdEntries -> do
          env <- ask
          reqestId@(RequestId rId) <- liftIO $ setNextCmdRequestId (_aiCmdStatusMap env)
-         liftIO $ writeChan (_aiToCommands env) (reqestId, cmdEntries)
+         liftIO $ writeChan (_aiToCommands env) (reqestId, (\c -> (Nothing, c)) <$> cmdEntries)
          (writeBS . BLC.toStrict . JSON.encode) $ commandResponseSuccess ((T.pack . show) rId) ""
      Left err -> writeBS $ BLC.toStrict err
 
@@ -204,7 +204,7 @@ swiftSubmission = do
       -- TODO: maybe the swift blob should be serialized vs json-ified
       let blob = SwiftBlob unparsedSwift $ swiftToHopper v
       rId <- liftIO $ setNextCmdRequestId aiCmdStatusMap
-      liftIO $ writeChan aiToCommands (rId, [CommandEntry $ BLC.toStrict $ encode blob])
+      liftIO $ writeChan aiToCommands (rId, [(Nothing, CommandEntry $ BLC.toStrict $ encode blob)])
       resp <- liftIO $ waitForCommand aiCmdStatusMap rId
       logError $ "swiftSubmission: " <> resp
       modifyResponse $ setHeader "Content-Type" "application/json"
@@ -226,7 +226,7 @@ ledgerQuery = do
   let query = And $ catMaybes [mBySwift, mBySender, mByReceiver, mByBoth]
   -- TODO: if you are querying the ledger should we wait for the command to be applied here?
   rId <- liftIO $ setNextCmdRequestId aiCmdStatusMap
-  liftIO $ writeChan aiToCommands (rId, [CommandEntry $ BLC.toStrict $ encode query])
+  liftIO $ writeChan aiToCommands (rId, [(Nothing, CommandEntry $ BLC.toStrict $ encode query)])
   resp <- liftIO $ waitForCommand aiCmdStatusMap rId
   modifyResponse $ setHeader "Content-Type" "application/json"
   writeBS resp
@@ -243,7 +243,7 @@ swiftHandler = do
                 object ["status" .= ("Failure" :: T.Text), "reason" .= err]
     Right v -> do
         rId <- liftIO $ setNextCmdRequestId aiCmdStatusMap
-        liftIO $ writeChan aiToCommands (rId, [CommandEntry $ BSC.pack (swiftToHopper v)])
+        liftIO $ writeChan aiToCommands (rId, [(Nothing, CommandEntry $ BSC.pack (swiftToHopper v))])
         resp <- liftIO $ waitForCommand aiCmdStatusMap rId
         modifyResponse $ setHeader "Content-Type" "application/json"
         logError $ "swiftHandler: SUCCESS: " <> resp
@@ -280,7 +280,7 @@ hopperHandler = do
     Left err -> writeBS $ BSC.pack err
     Right _ -> do
       rId <- liftIO $ setNextCmdRequestId aiCmdStatusMap
-      liftIO $ writeChan aiToCommands (rId, [CommandEntry cmd])
+      liftIO $ writeChan aiToCommands (rId, [(Nothing, CommandEntry cmd)])
       resp <- liftIO $ waitForCommand aiCmdStatusMap rId
       writeBS resp
 

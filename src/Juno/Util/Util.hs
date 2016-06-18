@@ -71,7 +71,7 @@ dequeueEvent :: Monad m => Raft m Event
 dequeueEvent = join $ view (rs.dequeue)
 
 -- dequeue command from API interface
-dequeueCommand :: MonadIO m => Raft m (RequestId, [CommandEntry])
+dequeueCommand :: MonadIO m => Raft m (RequestId, [(Maybe Alias, CommandEntry)])
 dequeueCommand = join $ view (rs.dequeueFromApi)
 
 logMetric :: Monad m => Metric -> Raft m ()

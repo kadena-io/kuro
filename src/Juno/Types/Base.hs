@@ -11,7 +11,7 @@ module Juno.Types.Base
   , RequestId(..), startRequestId, toRequestId
   , ReceivedAt(..)
   -- for simplicity, re-export some core types that we need all over the place
-  , PublicKey, PrivateKey, Signature(..), sign, valid, importPublic, importPrivate
+  , PublicKey, PrivateKey, Signature(..), sign, valid, importPublic, importPrivate, exportPublic
   , Role(..)
   , EncryptionKey(..)
   , Alias(..)

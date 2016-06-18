@@ -8,7 +8,7 @@ module Juno.Runtime.MessageReceiver
   , ReceiverEnv(..)
   ) where
 
-import Control.Concurrent (forkIO)
+-- import Control.Concurrent (forkIO)
 import Control.Lens
 import Control.Monad
 import Control.Monad.Reader

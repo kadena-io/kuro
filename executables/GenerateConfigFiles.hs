@@ -20,7 +20,10 @@ import qualified Data.Map.Strict as Map
 import Juno.Types
 
 nodes :: [NodeID]
-nodes = iterate (\n@(NodeID h p _) -> n {_port = p + 1, _fullAddr = "tcp://" ++ h ++ ":" ++ show (p+1)}) (NodeID "127.0.0.1" 10000 "tcp://127.0.0.1:10000")
+nodes = iterate (\n@(NodeID h p _ _) -> n {_port = p + 1
+                                          , _fullAddr = "tcp://" ++ h ++ ":" ++ show (p+1)
+                                          , _alias = Alias $ "tcp://" ++ h ++ ":" ++ show (p+1)})
+                    (NodeID "127.0.0.1" 10000 "tcp://127.0.0.1:10000" $ Alias "tcp://127.0.0.1:10000")
 
 makeKeys :: CryptoRandomGen g => Int -> g -> [(PrivateKey,PublicKey)]
 makeKeys 0 _ = []
@@ -32,7 +35,7 @@ keyMaps :: [(PrivateKey,PublicKey)] -> (Map NodeID PrivateKey, Map NodeID Public
 keyMaps ls = (Map.fromList $ zip nodes (fst <$> ls), Map.fromList $ zip nodes (snd <$> ls))
 
 awsNodes :: [String] -> [NodeID]
-awsNodes = fmap (\h -> (NodeID h 10000 ("tcp://" ++ h ++ ":10000")))
+awsNodes = fmap (\h -> (NodeID h 10000 ("tcp://" ++ h ++ ":10000") $ Alias ("tcp://" ++ h ++ ":10000")))
 
 awsKeyMaps :: [NodeID] -> [(PrivateKey, PublicKey)] -> (Map NodeID PrivateKey, Map NodeID PublicKey)
 awsKeyMaps nodes' ls = (Map.fromList $ zip nodes' (fst <$> ls), Map.fromList $ zip nodes' (snd <$> ls))
@@ -96,6 +99,7 @@ createClusterConfig debugFollower (privMap, pubMap) clientPubMap nid = Config
   , _clientPublicKeys     = Map.union pubMap clientPubMap -- NOTE: [2016 04 26] all nodes are client (support API signing)
   , _myPrivateKey         = privMap Map.! nid
   , _myPublicKey          = pubMap Map.! nid
+  , _myEncryptionKey      = EncryptionKey $ exportPublic $ pubMap Map.! nid
   , _electionTimeoutRange = (3000000,6000000)
   , _heartbeatTimeout     = 1500000              -- seems like a while...
   , _batchTimeDelta       = fromSeconds' (1%100) -- default to 10ms
@@ -113,6 +117,7 @@ createClientConfig debugFollower clusterPubMap (privMap, pubMap) nid = Config
   , _clientPublicKeys     = pubMap
   , _myPrivateKey         = privMap Map.! nid
   , _myPublicKey          = pubMap Map.! nid
+  , _myEncryptionKey      = EncryptionKey $ exportPublic $ pubMap Map.! nid
   , _electionTimeoutRange = (3000000,6000000)
   , _heartbeatTimeout     = 1500000
   , _batchTimeDelta       = fromSeconds' (1%100) -- default to 10ms

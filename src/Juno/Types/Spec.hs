@@ -117,7 +117,7 @@ data RaftSpec m = RaftSpec
   -- ^ Same mvar map as _updateCmdMVarMap needs to run in Raft m
   , _cmdStatusMap     :: CommandMVarMap
 
-  , _dequeueFromApi   :: m (RequestId, [CommandEntry])
+  , _dequeueFromApi   :: m (RequestId, [(Maybe Alias, CommandEntry)])
   }
 makeLenses (''RaftSpec)
 

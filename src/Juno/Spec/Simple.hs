@@ -104,7 +104,7 @@ simpleRaftSpec :: MonadIO m
                -> (Metric -> m ())
                -> (MVar CommandMap -> RequestId -> CommandStatus -> m ())
                -> CommandMVarMap
-               -> OutChan (RequestId, [CommandEntry]) --IO (RequestId, [CommandEntry])
+               -> OutChan (RequestId, [(Maybe Alias, CommandEntry)]) --IO (RequestId, [CommandEntry])
                -> RaftSpec m
 simpleRaftSpec inboxRead cmdInboxRead aerInboxRead rvAndRvrRead outboxWrite eventRead eventWrite
                applyFn debugFn pubMetricFn updateMapFn cmdMVarMap getCommands = RaftSpec
@@ -200,7 +200,7 @@ getBacklog m cnt = do
     else threadDelay 1000 >> return []
 
 nodeIDtoAddr :: NodeID -> Addr String
-nodeIDtoAddr (NodeID _ _ a) = Addr $ a
+nodeIDtoAddr (NodeID _ _ a _) = Addr $ a
 
 toMsg :: NodeID -> msg -> OutBoundMsg String msg
 toMsg n b = OutBoundMsg (ROne $ nodeIDtoAddr n) b
@@ -230,7 +230,7 @@ setLineBuffering = do
   hSetBuffering stdout LineBuffering
   hSetBuffering stderr LineBuffering
 
-runClient :: (Command -> IO CommandResult) -> IO (RequestId, [CommandEntry]) -> CommandMVarMap -> IO ()
+runClient :: (Command -> IO CommandResult) -> IO (RequestId, [(Maybe Alias, CommandEntry)]) -> CommandMVarMap -> IO ()
 runClient applyFn getEntries cmdStatusMap' = do
   setLineBuffering
   rconf <- getConfig
@@ -259,8 +259,8 @@ runClient applyFn getEntries cmdStatusMap' = do
 --   shared state between API and protocol: sharedCmdStatusMap
 --   comminication channel btw API and protocol:
 --   [API write/place command -> toCommands] [getApiCommands -> juno read/poll command]
-runJuno :: (Command -> IO CommandResult) -> InChan (RequestId, [CommandEntry])
-        -> OutChan (RequestId, [CommandEntry]) -> CommandMVarMap -> IO ()
+runJuno :: (Command -> IO CommandResult) -> InChan (RequestId, [(Maybe Alias, CommandEntry)])
+        -> OutChan (RequestId, [(Maybe Alias, CommandEntry)]) -> CommandMVarMap -> IO ()
 runJuno applyFn toCommands getApiCommands sharedCmdStatusMap = do
   setLineBuffering
   rconf <- getConfig

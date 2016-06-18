@@ -1,4 +1,5 @@
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Juno.Consensus.Commit
   (doCommit
@@ -13,6 +14,7 @@ import Data.AffineSpace ((.-.))
 import Data.Int (Int64)
 import Data.Thyme.Clock (UTCTime, microseconds)
 
+import qualified Data.ByteString.Char8 as BSC
 import qualified Data.Sequence as Seq
 import qualified Data.Map as Map
 
@@ -51,7 +53,7 @@ interval :: UTCTime -> UTCTime -> Int64
 interval start end = view microseconds $ end .-. start
 
 logApplyLatency :: Monad m => Command -> Raft m ()
-logApplyLatency (Command _ _ _ provenance) = case provenance of
+logApplyLatency (Command _ _ _ _ provenance) = case provenance of
   NewMsg -> return ()
   ReceivedMsg _digest _orig mReceivedAt -> case mReceivedAt of
     Just (ReceivedAt arrived) -> do
@@ -62,11 +64,25 @@ logApplyLatency (Command _ _ _ provenance) = case provenance of
 applyCommand :: Monad m => UTCTime -> Command -> Raft m (NodeID, CommandResponse)
 applyCommand tEnd cmd@Command{..} = do
   apply <- view (rs.applyLogEntry)
+  me <- _alias <$> view (cfg.nodeId)
+  encKey <- view (cfg.myEncryptionKey)
   logApplyLatency cmd
-  result <- apply cmd
+  result <- case decryptCommand me encKey cmd of
+              Left res -> return res
+              Right v -> apply $ cmd {_cmdEntry = v }
   updateCmdStatusMap cmd result tEnd -- shared with the API and to query state
   replayMap %= Map.insert (_cmdClientId, getCmdSigOrInvariantError "applyCommand" cmd) (Just result)
   ((,) _cmdClientId) <$> makeCommandResponse tEnd cmd result
+
+decryptCommand :: Alias -> EncryptionKey -> Command -> Either CommandResult CommandEntry
+decryptCommand me encKey Command{..}
+    | _cmdEncryptGroup == Nothing = Right _cmdEntry
+    | Just me == _cmdEncryptGroup = case decrypt' encKey (unCommandEntry $ _cmdEntry) of
+        Right v -> Right $ CommandEntry v
+        Left err -> Left $ CommandResult $ BSC.pack $ "Failed to decrypt private Command: " ++ err
+    | otherwise = Left $ CommandResult "Not party to Private Command"
+  where
+    decrypt' _ v = Right v
 
 updateCmdStatusMap :: Monad m => Command -> CommandResult -> UTCTime -> Raft m ()
 updateCmdStatusMap cmd cmdResult tEnd = do

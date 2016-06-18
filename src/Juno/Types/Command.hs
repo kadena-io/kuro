@@ -6,6 +6,7 @@ module Juno.Types.Command
   , CommandResult(..)
   , CommandStatus(..)
   , CommandMap(..), CommandMVarMap, initCommandMap, setNextCmdRequestId
+  , EncryptionKey(..)
   ) where
 
 import Control.Concurrent (MVar, newMVar, takeMVar, putMVar)

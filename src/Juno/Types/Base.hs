@@ -13,6 +13,8 @@ module Juno.Types.Base
   -- for simplicity, re-export some core types that we need all over the place
   , PublicKey, PrivateKey, Signature(..), sign, valid, importPublic, importPrivate
   , Role(..)
+  , EncryptionKey(..)
+  , Alias(..)
   ) where
 
 import Control.Monad (mzero)
@@ -20,6 +22,7 @@ import Crypto.Ed25519.Pure ( PublicKey, PrivateKey, Signature(..), sign, valid
                            , importPublic, importPrivate, exportPublic, exportPrivate)
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.ByteString (ByteString)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Base16 as B16
 import Data.Serialize (Serialize)
@@ -35,7 +38,10 @@ import Data.Aeson.Types (defaultOptions,Options(..))
 import GHC.Int (Int64)
 import GHC.Generics hiding (from)
 
-data NodeID = NodeID { _host :: !String, _port :: !Word64, _fullAddr :: !String }
+newtype Alias = Alias { unAlias :: String }
+  deriving (Show, Read, Eq, Ord, Generic, Serialize, ToJSON, FromJSON)
+
+data NodeID = NodeID { _host :: !String, _port :: !Word64, _fullAddr :: !String, _alias :: !Alias}
   deriving (Eq,Ord,Read,Show,Generic)
 instance Serialize NodeID
 instance ToJSON NodeID where
@@ -63,6 +69,18 @@ startRequestId = RequestId 0
 
 toRequestId :: Int64 -> RequestId
 toRequestId a = RequestId a
+
+newtype EncryptionKey = EncryptionKey { unEncryptionKey :: ByteString }
+  deriving (Show, Eq, Ord, Generic, Serialize)
+instance ToJSON EncryptionKey where
+  toJSON = toJSON . decodeUtf8 . B16.encode . unEncryptionKey
+instance FromJSON EncryptionKey where
+  parseJSON (String s) = do
+    (s',leftovers) <- return $ B16.decode $ encodeUtf8 s
+    if leftovers == B.empty
+      then return $ EncryptionKey s'
+      else mzero
+  parseJSON _ = mzero
 
 deriving instance Eq Signature
 deriving instance Ord Signature

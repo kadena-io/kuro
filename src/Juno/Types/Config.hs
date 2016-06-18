@@ -1,11 +1,12 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module Juno.Types.Config
   ( Config(..), otherNodes, nodeId, electionTimeoutRange, heartbeatTimeout
   , enableDebug, publicKeys, clientPublicKeys, myPrivateKey, clientTimeoutLimit
-  , myPublicKey, batchTimeDelta, dontDebugFollower, apiPort
+  , myPublicKey, batchTimeDelta, dontDebugFollower, apiPort, myEncryptionKey
   , KeySet(..), ksClient, ksCluster
   ) where
 
@@ -30,6 +31,7 @@ data Config = Config
   , _clientPublicKeys     :: !(Map NodeID PublicKey)
   , _myPrivateKey         :: !PrivateKey
   , _myPublicKey          :: !PublicKey
+  , _myEncryptionKey      :: !EncryptionKey
   , _electionTimeoutRange :: !(Int,Int)
   , _heartbeatTimeout     :: !Int
   , _batchTimeDelta       :: !NominalDiffTime

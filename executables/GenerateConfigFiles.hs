@@ -22,8 +22,8 @@ import Juno.Types
 nodes :: [NodeID]
 nodes = iterate (\n@(NodeID h p _ _) -> n {_port = p + 1
                                           , _fullAddr = "tcp://" ++ h ++ ":" ++ show (p+1)
-                                          , _alias = Alias $ "tcp://" ++ h ++ ":" ++ show (p+1)})
-                    (NodeID "127.0.0.1" 10000 "tcp://127.0.0.1:10000" $ Alias "tcp://127.0.0.1:10000")
+                                          , _alias = Alias $ "node" ++ show (p+1-10000)})
+                    (NodeID "127.0.0.1" 10000 "tcp://127.0.0.1:10000" $ Alias "node0")
 
 makeKeys :: CryptoRandomGen g => Int -> g -> [(PrivateKey,PublicKey)]
 makeKeys 0 _ = []

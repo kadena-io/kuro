@@ -54,43 +54,51 @@ showResult cmdStatusMap' rId pgm@(Just cnt) =
         showResult cmdStatusMap' rId pgm
 
 --  -> OutChan CommandResult
-runREPL :: InChan (RequestId, [(Maybe Alias, CommandEntry)]) -> CommandMVarMap -> IO ()
-runREPL toCommands' cmdStatusMap' = do
+runREPL :: InChan (RequestId, [(Maybe Alias, CommandEntry)]) -> CommandMVarMap -> Maybe Alias -> IO ()
+runREPL toCommands' cmdStatusMap' alias' = do
   cmd <- readPrompt
   case cmd of
-    "" -> runREPL toCommands' cmdStatusMap'
+    "" -> runREPL toCommands' cmdStatusMap' alias'
     _ -> do
       cmd' <- return $ BSC.pack cmd
-      if take 11 cmd == "batch test:"
-      then case readMaybe $ drop 11 cmd of
-        Just n -> do
-          rId <- liftIO $ setNextCmdRequestId cmdStatusMap'
-          writeChan toCommands' (rId, [(Nothing, CommandEntry cmd')])
-          --- this is the tracer round for timing purposes
-          putStrLn $ "Sending " ++ show n ++ " 'transfer(Acct1->Acct2, 1%1)' transactions batched"
-          showResult cmdStatusMap' (rId + RequestId n) (Just n)
-          runREPL toCommands' cmdStatusMap'
-        Nothing -> runREPL toCommands' cmdStatusMap'
-      else if take 10 cmd == "many test:"
-      then
-        case readMaybe $ drop 10 cmd of
-          Just n -> do
-            cmds <- replicateM n
-                      (do rid <- setNextCmdRequestId cmdStatusMap'; return (rid, [(Nothing, CommandEntry "transfer(Acct1->Acct2, 1%1)")]))
-            writeList2Chan toCommands' cmds
-            --- this is the tracer round for timing purposes
-            putStrLn $ "Sending " ++ show n ++ " 'transfer(Acct1->Acct2, 1%1)' transactions individually"
-            showResult cmdStatusMap' (fst $ last cmds) (Just $ fromIntegral n)
-            runREPL toCommands' cmdStatusMap'
-          Nothing -> runREPL toCommands' cmdStatusMap'
-      else
-        case readHopper cmd' of
-          Left err -> putStrLn cmd >> putStrLn err >> runREPL toCommands' cmdStatusMap'
-          Right _ -> do
-            rId <- liftIO $ setNextCmdRequestId cmdStatusMap'
-            writeChan toCommands' (rId, [(Nothing, CommandEntry cmd')])
-            showResult cmdStatusMap' rId Nothing
-            runREPL toCommands' cmdStatusMap'
+      case readAlias cmd' of
+        Just alias@(Just a') -> do
+          putStrLn $ "Encrypting all future commands for: " ++ show a'
+          runREPL toCommands' cmdStatusMap' alias
+        Just Nothing -> do
+          putStrLn "Encryption disabled: All commands in are visible to all"
+          runREPL toCommands' cmdStatusMap' Nothing
+        Nothing -> do
+          if take 11 cmd == "batch test:"
+          then case readMaybe $ drop 11 cmd of
+            Just n -> do
+              rId <- liftIO $ setNextCmdRequestId cmdStatusMap'
+              writeChan toCommands' (rId, [(alias', CommandEntry cmd')])
+              --- this is the tracer round for timing purposes
+              putStrLn $ "Sending " ++ show n ++ " 'transfer(Acct1->Acct2, 1%1)' transactions batched"
+              showResult cmdStatusMap' (rId + RequestId n) (Just n)
+              runREPL toCommands' cmdStatusMap' alias'
+            Nothing -> runREPL toCommands' cmdStatusMap' alias'
+          else if take 10 cmd == "many test:"
+          then do
+            case readMaybe $ drop 10 cmd of
+              Just n -> do
+                cmds <- replicateM n
+                          (do rid <- setNextCmdRequestId cmdStatusMap'; return (rid, [(alias', CommandEntry "transfer(Acct1->Acct2, 1%1)")]))
+                writeList2Chan toCommands' cmds
+                --- this is the tracer round for timing purposes
+                putStrLn $ "Sending " ++ show n ++ " 'transfer(Acct1->Acct2, 1%1)' transactions individually"
+                showResult cmdStatusMap' (fst $ last cmds) (Just $ fromIntegral n)
+                runREPL toCommands' cmdStatusMap' alias'
+              Nothing -> runREPL toCommands' cmdStatusMap' alias'
+          else
+            case readHopper cmd' of
+              Left err -> putStrLn cmd >> putStrLn err >> runREPL toCommands' cmdStatusMap' alias'
+              Right _ -> do
+                rId <- liftIO $ setNextCmdRequestId cmdStatusMap'
+                writeChan toCommands' (rId, [(alias', CommandEntry cmd')])
+                showResult cmdStatusMap' rId Nothing
+                runREPL toCommands' cmdStatusMap' alias'
 
 intervalOfNumerous :: Int64 -> Int64 -> String
 intervalOfNumerous cnt mics = let
@@ -114,4 +122,4 @@ main = do
       applyFn _x = return $ CommandResult "Failure"
   void $ CL.fork $ runClient applyFn getEntries cmdStatusMap'
   threadDelay 100000
-  runREPL toCommands cmdStatusMap'
+  runREPL toCommands cmdStatusMap' Nothing

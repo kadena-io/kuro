@@ -64,8 +64,8 @@ commandGetter getEntries cmdStatusMap' = do
     (rid@(RequestId _), cmdEntries) <- getEntries
     -- support for special REPL command "> batch test:5000", runs hardcoded batch job
     cmds' <- case cmdEntries of
-               (_,CommandEntry cmd):[] | SB8.take 11 cmd == "batch test:" -> do
-                                          let missiles = take (batchSize cmd) $ repeat $ hardcodedTransfers nid
+               (alias,CommandEntry cmd):[] | SB8.take 11 cmd == "batch test:" -> do
+                                          let missiles = take (batchSize cmd) $ repeat $ hardcodedTransfers nid alias
                                           liftIO $ sequence $ missiles
                _ -> liftIO $ sequence $ fmap (nextRid nid) cmdEntries
     -- set current requestId in Raft to the value associated with this request.
@@ -85,8 +85,8 @@ commandGetter getEntries cmdStatusMap' = do
       rid <- (setNextCmdRequestId cmdStatusMap')
       return (Command entry nid rid alias' NewMsg)
 
-    hardcodedTransfers :: NodeID -> IO Command
-    hardcodedTransfers nid = nextRid nid (Nothing, transferCmdEntry)
+    hardcodedTransfers :: NodeID -> Maybe Alias -> IO Command
+    hardcodedTransfers nid alias = nextRid nid (alias, transferCmdEntry)
 
     transferCmdEntry :: CommandEntry
     transferCmdEntry = (CommandEntry "transfer(Acct1->Acct2, 1 % 1)")

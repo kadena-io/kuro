@@ -8,6 +8,7 @@ module Apps.Juno.Parser (
   ,readHopper
   ,programCodeDelimiter
   ,getAccountsFromTransferCommand
+  ,readAlias
   ) where
 
 import Control.Monad
@@ -31,7 +32,7 @@ import Juno.Hoplite.Term (HopliteTerm(..))
 import Juno.Hoplite.Types (Literal(..))
 import Juno.Hoplite.Transmatic
 
-import Juno.Types.Base (RequestId(..))
+import Juno.Types.Base (RequestId(..), Alias(..))
 
 -- sample for reference: "{\"_swiftCommand\":\"bar\",\"_swiftText\":\"foo\"}"
 data SwiftBlob = SwiftBlob {
@@ -210,6 +211,17 @@ transfer = do
   d <- decimal
   _ <- char ')'
   return (ts, n % d)
+
+readAlias :: BSC.ByteString -> Maybe (Maybe Alias)
+readAlias m = case Atto.parseOnly setAlias m of
+  Left e -> Nothing
+  Right (Nothing) -> Just Nothing
+  Right (Just v) -> Just (Just v)
+
+setAlias :: (Monad m, TokenParsing m) => m (Maybe Alias)
+setAlias = do
+  _ <- ssString "encrypt for:"
+  (ssString "none" >> return Nothing) <|> (some anyChar >>= return . Just . Alias)
 
 routeText :: (Monad m, TokenParsing m) => m [Text]
 routeText = do

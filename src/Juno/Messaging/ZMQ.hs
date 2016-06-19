@@ -41,7 +41,7 @@ sendProcess outboxRead !r = do
     !toPoll <- recipList newRol addrs
     mapM_ (\s -> send s [] msg) toPoll
     liftIO $ putMVar rMvar newRol
-    liftIO $ moreLogging "Sent Msg"
+    -- liftIO $ moreLogging "Sent Msg"
 
 updateRolodex :: Rolodex String (Socket z Push) -> Recipients String -> ZMQ z (Rolodex String (Socket z Push))
 updateRolodex r@(Rolodex !_rol) RAll = return $! r

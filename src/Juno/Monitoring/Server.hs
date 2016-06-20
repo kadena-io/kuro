@@ -34,6 +34,7 @@ awsDashVar k v = void $ forkIO $ void $ system $
   ++ k
   ++ ",Value="
   ++ v
+  ++ " >/dev/null"
 
 startMonitoring :: Config -> IO (Metric -> IO ())
 startMonitoring config = do

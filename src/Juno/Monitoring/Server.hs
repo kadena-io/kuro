@@ -59,8 +59,9 @@ startMonitoring config = do
 
   return $ \case
     -- Consensus
-    MetricTerm (Term t) ->
+    MetricTerm (Term t) -> do
       Gauge.set termGauge $ fromIntegral t
+      awsDashVar "Applied" $ show t
     MetricCommitIndex (LogIndex idx) -> do
       Gauge.set commitIndexGauge $ fromIntegral idx
       awsDashVar "CommitIndex" $ show idx

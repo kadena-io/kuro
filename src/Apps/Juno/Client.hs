@@ -59,6 +59,7 @@ runREPL toCommands' cmdStatusMap' alias' = do
   cmd <- readPrompt
   case cmd of
     "" -> runREPL toCommands' cmdStatusMap' alias'
+    v | v == "sleep" -> threadDelay 5000000 >> runREPL toCommands' cmdStatusMap' alias'
     _ -> do
       cmd' <- return $ BSC.pack cmd
       case readAlias cmd' of

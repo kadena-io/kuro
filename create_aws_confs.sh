@@ -25,8 +25,8 @@ for ip in `cat aws-conf/junoservers.privateIp`; do
     conf="${ip}-cluster-aws.yaml"
     script="${idir}/start.sh"
     mv aws-conf/$conf $idir/conf/$conf
-    echo "$!/bin/sh
-./junoserver +RTS -N8 -T -RTS -c conf/${conf} --apiPort 8000 > /dev/null 2>&1
+    echo "#!/bin/sh
+nohup ./junoserver +RTS -N8 -T -RTS -c conf/${conf} --apiPort 8000 > /dev/null 2>&1 &
 " > $script
     chmod +x $script
 done

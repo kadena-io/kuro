@@ -5,6 +5,10 @@ module Juno.Monitoring.Server
   ( startMonitoring
   ) where
 
+import System.Process (system)
+
+import Control.Monad (void)
+import Control.Concurrent (forkIO)
 import Control.Lens ((^.), to)
 import Data.Text.Encoding (decodeUtf8)
 
@@ -23,6 +27,13 @@ startApi :: Config -> IO Server
 startApi config = forkServer "localhost" port
   where
     port = 80 + fromIntegral (config ^. nodeId . to _port)
+
+awsDashVar :: String -> String -> IO ()
+awsDashVar k v = void $ forkIO $ void $ system $
+  "aws ec2 create-tags --resources `ec2metadata --instance-id` --tags Key="
+  ++ k
+  ++ ",Value="
+  ++ v
 
 startMonitoring :: Config -> IO (Metric -> IO ())
 startMonitoring config = do
@@ -50,8 +61,9 @@ startMonitoring config = do
     -- Consensus
     MetricTerm (Term t) ->
       Gauge.set termGauge $ fromIntegral t
-    MetricCommitIndex (LogIndex idx) ->
+    MetricCommitIndex (LogIndex idx) -> do
       Gauge.set commitIndexGauge $ fromIntegral idx
+      awsDashVar "CommitIndex" $ show idx
     MetricCommitPeriod p ->
       Dist.add commitPeriodDist p
     MetricCurrentLeader mNode ->
@@ -65,10 +77,12 @@ startMonitoring config = do
       Label.set nodeIdLabel $ nodeDescription node
       Label.set hostLabel $ T.pack host
       Gauge.set portGauge $ fromIntegral port
-    MetricRole role ->
+    MetricRole role -> do
       Label.set roleLabel $ T.pack $ show role
-    MetricAppliedIndex (LogIndex idx) ->
+      awsDashVar "Role" $ show role
+    MetricAppliedIndex (LogIndex idx) -> do
       Gauge.set appliedIndexGauge $ fromIntegral idx
+      awsDashVar "Applied" $ show idx
     MetricApplyLatency l ->
       Dist.add applyLatencyDist l
     -- Cluster

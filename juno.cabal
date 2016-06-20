@@ -121,6 +121,7 @@ library
                      , parsers
                      , prelude-extras
                      , primitive
+                     , process
                      , random
                      , snap-core
                      , snap-core-cors

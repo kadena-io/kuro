@@ -1,6 +1,11 @@
 #!/bin/bash
 
-rm aws-conf/*yaml aws-conf/*privateIp
+if [ -d "aws-conf" ]
+then
+    rm -rf aws-conf/*
+else
+    mkdir aws-conf
+fi
 
 aws ec2 describe-instances --filter Name=tag:Name,Values=junoserver \
   | grep '"PrivateIpAddress"' \
@@ -13,3 +18,15 @@ aws ec2 describe-instances --filter Name=tag:Name,Values=junoclient \
   | uniq | sort > aws-conf/junoclient.privateIp
 
 stack exec -- genconfs --aws aws-conf/junoservers.privateIp aws-conf/junoclient.privateIp
+
+for ip in `cat aws-conf/junoservers.privateIp`; do
+    idir="aws-conf/${ip}"
+    mkdir -p $idir/conf
+    conf="${ip}-cluster-aws.yaml"
+    script="${idir}/start.sh"
+    mv aws-conf/$conf $idir/conf/$conf
+    echo "$!/bin/sh
+./junoserver +RTS -N8 -T -RTS -c conf/${conf} --apiPort 8000 > /dev/null 2>&1
+" > $script
+    chmod +x $script
+done

@@ -30,7 +30,7 @@ startApi config = forkServer "localhost" port
 
 awsDashVar :: String -> String -> IO ()
 awsDashVar k v = void $ forkIO $ void $ system $
-  "aws ec2 create-tags --resources `ec2metadata --instance-id` --tags Key="
+  "aws ec2 create-tags --resources `ec2-metadata --instance-id || ec2metadata --instance-id` --tags Key="
   ++ k
   ++ ",Value="
   ++ v

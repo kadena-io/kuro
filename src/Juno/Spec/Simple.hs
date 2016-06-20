@@ -19,10 +19,11 @@ import Juno.Messaging.ZMQ
 import Juno.Monitoring.Server (startMonitoring)
 import Juno.Runtime.Api.ApiServer
 
+import System.Process (system)
 import System.IO (BufferMode(..),stdout,stderr,hSetBuffering)
 import Control.Lens
 import Control.Monad
-import Control.Concurrent (modifyMVar_, yield, threadDelay, takeMVar, putMVar, newMVar, MVar)
+import Control.Concurrent (modifyMVar_, yield, threadDelay, takeMVar, putMVar, newMVar, MVar, forkIO)
 import qualified Control.Concurrent.Lifted as CL
 import Control.Concurrent.Chan.Unagi
 import qualified Control.Concurrent.Chan.Unagi.NoBlocking as NoBlock
@@ -230,9 +231,25 @@ setLineBuffering = do
   hSetBuffering stdout LineBuffering
   hSetBuffering stderr LineBuffering
 
+awsDashVar :: String -> String -> IO ()
+awsDashVar k v = void $ forkIO $ void $ system $
+  "aws ec2 create-tags --resources `ec2-metadata --instance-id | sed 's/^.*: //g'` --tags Key="
+  ++ k
+  ++ ",Value="
+  ++ v
+  ++ " >/dev/null"
+
+resetAwsEnv :: IO ()
+resetAwsEnv = do
+  awsDashVar "Role" "Startup"
+  awsDashVar "Term" "Startup"
+  awsDashVar "AppliedIndex" "Startup"
+  awsDashVar "CommitIndex" "Startup"
+
 runClient :: (Command -> IO CommandResult) -> IO (RequestId, [(Maybe Alias, CommandEntry)]) -> CommandMVarMap -> IO ()
 runClient applyFn getEntries cmdStatusMap' = do
   setLineBuffering
+  resetAwsEnv
   rconf <- getConfig
   me <- return $ nodeIDtoAddr $ rconf ^. nodeId
   (inboxWrite, inboxRead) <- NoBlock.newChan
@@ -263,6 +280,7 @@ runJuno :: (Command -> IO CommandResult) -> InChan (RequestId, [(Maybe Alias, Co
         -> OutChan (RequestId, [(Maybe Alias, CommandEntry)]) -> CommandMVarMap -> IO ()
 runJuno applyFn toCommands getApiCommands sharedCmdStatusMap = do
   setLineBuffering
+  resetAwsEnv
   rconf <- getConfig
   me <- return $ nodeIDtoAddr $ rconf ^. nodeId
   -- Start The Api Server, communicates with the Juno protocol via sharedCmdStatusMap

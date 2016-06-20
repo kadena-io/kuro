@@ -84,7 +84,7 @@ startMonitoring config = do
       awsDashVar "Role" $ show role
     MetricAppliedIndex (LogIndex idx) -> do
       Gauge.set appliedIndexGauge $ fromIntegral idx
-      awsDashVar "Applied" $ show idx
+      awsDashVar "AppliedIndex" $ show idx
     MetricApplyLatency l ->
       Dist.add applyLatencyDist l
     -- Cluster

@@ -26,7 +26,7 @@ import Juno.Types.Message.Signed
 
 data AppendEntriesResponse = AppendEntriesResponse
   { _aerTerm       :: !Term
-  , _aerNodeId     :: !NodeID
+  , _aerNodeId     :: !NodeId
   , _aerSuccess    :: !Bool
   , _aerConvinced  :: !Bool
   , _aerIndex      :: !LogIndex
@@ -48,7 +48,7 @@ instance Ord AppendEntriesResponse where
   (AppendEntriesResponse t n s c i h v p) <= (AppendEntriesResponse t' n' s' c' i' h' v' p') =
     (n,t,i,h,v,s,c,p) <= (n',t',i',h',v',s',c',p')
 
-data AERWire = AERWire (Term,NodeID,Bool,Bool,LogIndex,ByteString)
+data AERWire = AERWire (Term,NodeId,Bool,Bool,LogIndex,ByteString)
   deriving (Show, Generic)
 instance Serialize AERWire
 
@@ -75,7 +75,7 @@ instance WireFormat AppendEntriesResponse where
   {-# INLINE fromWire #-}
 
 
-newtype AlotOfAERs = AlotOfAERs { _unAlot :: Map NodeID (Set AppendEntriesResponse)}
+newtype AlotOfAERs = AlotOfAERs { _unAlot :: Map NodeId (Set AppendEntriesResponse)}
   deriving (Show, Eq)
 makeLenses ''AlotOfAERs
 

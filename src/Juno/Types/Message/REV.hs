@@ -17,15 +17,15 @@ import Juno.Types.Base
 import Juno.Types.Message.Signed
 
 data Revolution = Revolution
-  { _revClientId   :: !NodeID
-  , _revLeaderId   :: !NodeID
+  { _revClientId   :: !NodeId
+  , _revLeaderId   :: !NodeId
   , _revRequestId  :: !RequestId
   , _revProvenance :: !Provenance
   }
   deriving (Show, Eq, Generic)
 makeLenses ''Revolution
 
-data REVWire = REVWire (NodeID,NodeID,RequestId)
+data REVWire = REVWire (NodeId,NodeId,RequestId)
   deriving (Show, Generic)
 instance Serialize REVWire
 

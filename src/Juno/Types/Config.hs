@@ -25,10 +25,10 @@ import GHC.Generics hiding (from)
 import Juno.Types.Base
 
 data Config = Config
-  { _otherNodes           :: !(Set NodeID)
-  , _nodeId               :: !NodeID
-  , _publicKeys           :: !(Map NodeID PublicKey)
-  , _clientPublicKeys     :: !(Map NodeID PublicKey)
+  { _otherNodes           :: !(Set NodeId)
+  , _nodeId               :: !NodeId
+  , _publicKeys           :: !(Map NodeId PublicKey)
+  , _clientPublicKeys     :: !(Map NodeId PublicKey)
   , _myPrivateKey         :: !PrivateKey
   , _myPublicKey          :: !PublicKey
   , _myEncryptionKey      :: !EncryptionKey
@@ -56,7 +56,7 @@ instance FromJSON Config where
   parseJSON = genericParseJSON defaultOptions { fieldLabelModifier = drop 1 }
 
 data KeySet = KeySet
-  { _ksCluster :: !(Map NodeID PublicKey)
-  , _ksClient  :: !(Map NodeID PublicKey)
+  { _ksCluster :: !(Map NodeId PublicKey)
+  , _ksClient  :: !(Map NodeId PublicKey)
   } deriving (Show)
 makeLenses ''KeySet

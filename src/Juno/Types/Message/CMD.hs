@@ -22,7 +22,7 @@ import Juno.Types.Message.Signed
 
 data Command = Command
   { _cmdEntry      :: !CommandEntry
-  , _cmdClientId   :: !NodeID
+  , _cmdClientId   :: !NodeId
   , _cmdRequestId  :: !RequestId
   , _cmdEncryptGroup :: !(Maybe Alias)
   , _cmdProvenance :: !Provenance
@@ -30,7 +30,7 @@ data Command = Command
   deriving (Show, Eq, Generic)
 makeLenses ''Command
 
-data CMDWire = CMDWire !(CommandEntry, NodeID, RequestId, Maybe Alias)
+data CMDWire = CMDWire !(CommandEntry, NodeId, RequestId, Maybe Alias)
   deriving (Show, Generic)
 instance Serialize CMDWire
 

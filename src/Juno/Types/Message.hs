@@ -41,7 +41,7 @@ signedRPCtoRPC ts ks s@(SignedRPC (Digest _ _ _ CMDB) _) = (\rpc -> rpc `seq` CM
 signedRPCtoRPC ts ks s@(SignedRPC (Digest _ _ _ REV)  _) = (\rpc -> rpc `seq` REV'  rpc) <$> fromWire ts ks s
 {-# INLINE signedRPCtoRPC #-}
 
-rpcToSignedRPC :: NodeID -> PublicKey -> PrivateKey -> RPC -> SignedRPC
+rpcToSignedRPC :: NodeId -> PublicKey -> PrivateKey -> RPC -> SignedRPC
 rpcToSignedRPC nid pubKey privKey (AE' v) = toWire nid pubKey privKey v
 rpcToSignedRPC nid pubKey privKey (AER' v) = toWire nid pubKey privKey v
 rpcToSignedRPC nid pubKey privKey (RV' v) = toWire nid pubKey privKey v

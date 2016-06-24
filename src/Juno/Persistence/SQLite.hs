@@ -27,9 +27,9 @@ instance Serialize Provenance
 instance Serialize LogEntry
 instance Serialize RequestVoteResponse
 
-instance ToField NodeID where
+instance ToField NodeId where
   toField n = toField $ encode n
-instance FromField NodeID where
+instance FromField NodeId where
   fromField f = do
     s :: ByteString <- fromField f
     case decode s of

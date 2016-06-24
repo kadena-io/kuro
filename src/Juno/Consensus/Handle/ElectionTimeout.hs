@@ -25,9 +25,9 @@ import qualified Juno.Types as JT
 data ElectionTimeoutEnv = ElectionTimeoutEnv {
       _nodeRole :: Role
     , _term :: Term
-    , _lazyVote :: Maybe (Term,NodeID,LogIndex)
-    , _nodeId :: NodeID
-    , _otherNodes :: Set.Set NodeID
+    , _lazyVote :: Maybe (Term,NodeId,LogIndex)
+    , _nodeId :: NodeId
+    , _otherNodes :: Set.Set NodeId
     , _logEntries :: Log LogEntry
     , _leaderWithoutFollowers :: Bool
     , _myPrivateKey :: PrivateKey
@@ -39,20 +39,20 @@ data ElectionTimeoutOut =
     AlreadyLeader |
     VoteForLazyCandidate {
       _lazyTerm :: Term
-    , _lazyCandidate :: NodeID
+    , _lazyCandidate :: NodeId
     , _lazyResponse :: RequestVoteResponse
     } |
     AbdicateAndLazyVote {
       _lazyTerm :: Term
-    , _lazyCandidate :: NodeID
+    , _lazyCandidate :: NodeId
     , _lazyResponse :: RequestVoteResponse
     } |
     BecomeCandidate {
       _newTerm :: Term
     , _newRole :: Role
-    , _myNodeId :: NodeID -- just to be explicit, obviously it's us
+    , _myNodeId :: NodeId -- just to be explicit, obviously it's us
     , _selfYesVote :: RequestVoteResponse
-    , _potentialVotes :: Set.Set NodeID
+    , _potentialVotes :: Set.Set NodeId
     }
 
 handleElectionTimeout :: (MonadReader ElectionTimeoutEnv m, MonadWriter [String] m) => String -> m ElectionTimeoutOut
@@ -133,7 +133,7 @@ handle msg = do
                resetElectionTimer
                sendAllRequestVotes
 
-castLazyVote :: Monad m => Term -> NodeID -> RequestVoteResponse -> JT.Raft m ()
+castLazyVote :: Monad m => Term -> NodeId -> RequestVoteResponse -> JT.Raft m ()
 castLazyVote lazyTerm' lazyCandidate' lazyResponse' = do
   setTerm lazyTerm'
   setVotedFor (Just lazyCandidate')
@@ -146,7 +146,7 @@ castLazyVote lazyTerm' lazyCandidate' lazyResponse' = do
   resetElectionTimer
 
 -- THREAD: SERVER MAIN. updates state
-setVotedFor :: Monad m => Maybe NodeID -> JT.Raft m ()
+setVotedFor :: Monad m => Maybe NodeId -> JT.Raft m ()
 setVotedFor mvote = do
   void $ JT.rs.JT.writeVotedFor ^$ mvote
   JT.votedFor .= mvote
@@ -158,7 +158,7 @@ sendAllRequestVotes = traverse_ sendRequestVote =<< use JT.cPotentialVotes
 
 
 -- uses state, but does not update
-sendRequestVote :: Monad m => NodeID -> JT.Raft m ()
+sendRequestVote :: Monad m => NodeId -> JT.Raft m ()
 sendRequestVote target = do
   ct <- use JT.term
   nid <- view (JT.cfg.JT.nodeId)

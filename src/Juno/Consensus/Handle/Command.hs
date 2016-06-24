@@ -26,24 +26,24 @@ import Juno.Consensus.Handle.AppendEntriesResponse (updateCommitProofMap)
 data CommandEnv = CommandEnv {
       _nodeRole :: Role
     , _term :: Term
-    , _currentLeader :: Maybe NodeID
-    , _replayMap :: Map.Map (NodeID, Signature) (Maybe CommandResult)
-    , _nodeId :: NodeID
+    , _currentLeader :: Maybe NodeId
+    , _replayMap :: Map.Map (NodeId, Signature) (Maybe CommandResult)
+    , _nodeId :: NodeId
 }
 makeLenses ''CommandEnv
 
 data CommandOut =
     UnknownLeader |
     RetransmitToLeader {
-      _leaderId :: NodeID
+      _leaderId :: NodeId
     , _cmd :: RPC } |
     CommitAndPropagate {
       _newEntry :: LogEntry
-    , _replayKey :: (NodeID, Signature)
+    , _replayKey :: (NodeId, Signature)
     } |
     AlreadySeen |
     SendCommandResponse {
-      _clientId :: NodeID
+      _clientId :: NodeId
     , _signedReponse :: RPC
     }
 

@@ -23,19 +23,19 @@ import qualified Juno.Types as JT
 data RequestVoteEnv = RequestVoteEnv {
 -- Old Constructors
     _term             :: Term
-  , _votedFor         :: Maybe NodeID
-  , _lazyVote         :: Maybe (Term, NodeID, LogIndex)
-  , _currentLeader    :: Maybe NodeID
+  , _votedFor         :: Maybe NodeId
+  , _lazyVote         :: Maybe (Term, NodeId, LogIndex)
+  , _currentLeader    :: Maybe NodeId
   , _ignoreLeader     :: Bool
   , _logEntries       :: Log LogEntry
 -- New Constructors
-  , _myNodeId :: NodeID
+  , _myNodeId :: NodeId
   }
 makeLenses ''RequestVoteEnv
 
 data RequestVoteOut = NoAction
-                    | UpdateLazyVote { _stateCastLazyVote :: (Term, NodeID, LogIndex) }
-                    | VoteForRPCSender { _returnMsgs :: (NodeID, RequestVoteResponse) }
+                    | UpdateLazyVote { _stateCastLazyVote :: (Term, NodeId, LogIndex) }
+                    | VoteForRPCSender { _returnMsgs :: (NodeId, RequestVoteResponse) }
 
 handleRequestVote :: (MonadWriter [String] m, MonadReader RequestVoteEnv m) => RequestVote -> m RequestVoteOut
 handleRequestVote RequestVote{..} = do
@@ -92,7 +92,7 @@ handleRequestVote RequestVote{..} = do
       m <- createRequestVoteResponse' _rvCandidateId lli False
       return $ VoteForRPCSender m
 
-createRequestVoteResponse' :: (MonadWriter [String] m, MonadReader RequestVoteEnv m) => NodeID -> LogIndex -> Bool -> m (NodeID, RequestVoteResponse)
+createRequestVoteResponse' :: (MonadWriter [String] m, MonadReader RequestVoteEnv m) => NodeId -> LogIndex -> Bool -> m (NodeId, RequestVoteResponse)
 createRequestVoteResponse' target lastLogIndex' vote = do
   term' <- view term
   myNodeId' <- view myNodeId

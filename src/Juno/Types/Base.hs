@@ -5,7 +5,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 
 module Juno.Types.Base
-  ( NodeID(..)
+  ( NodeId(..)
   , Term(..), startTerm
   , LogIndex(..), startIndex
   , RequestId(..), startRequestId, toRequestId
@@ -41,12 +41,12 @@ import GHC.Generics hiding (from)
 newtype Alias = Alias { unAlias :: String }
   deriving (Show, Read, Eq, Ord, Generic, Serialize, ToJSON, FromJSON)
 
-data NodeID = NodeID { _host :: !String, _port :: !Word64, _fullAddr :: !String, _alias :: !Alias}
+data NodeId = NodeId { _host :: !String, _port :: !Word64, _fullAddr :: !String, _alias :: !Alias}
   deriving (Eq,Ord,Read,Show,Generic)
-instance Serialize NodeID
-instance ToJSON NodeID where
+instance Serialize NodeId
+instance ToJSON NodeId where
   toJSON = genericToJSON defaultOptions { fieldLabelModifier = drop 1 }
-instance FromJSON NodeID where
+instance FromJSON NodeId where
   parseJSON = genericParseJSON defaultOptions { fieldLabelModifier = drop 1 }
 
 newtype Term = Term Int
@@ -103,9 +103,9 @@ instance FromJSON PublicKey where
              Nothing -> mzero
       else mzero
   parseJSON _ = mzero
-instance ToJSON (Map NodeID PublicKey) where
+instance ToJSON (Map NodeId PublicKey) where
   toJSON = toJSON . Map.toList
-instance FromJSON (Map NodeID PublicKey) where
+instance FromJSON (Map NodeId PublicKey) where
   parseJSON = fmap Map.fromList . parseJSON
 
 instance Eq PrivateKey where
@@ -123,9 +123,9 @@ instance FromJSON PrivateKey where
              Nothing -> mzero
       else mzero
   parseJSON _ = mzero
-instance ToJSON (Map NodeID PrivateKey) where
+instance ToJSON (Map NodeId PrivateKey) where
   toJSON = toJSON . Map.toList
-instance FromJSON (Map NodeID PrivateKey) where
+instance FromJSON (Map NodeId PrivateKey) where
   parseJSON = fmap Map.fromList . parseJSON
 
 -- These instances suck, but I can't figure out how to use the Get monad to fail out if not

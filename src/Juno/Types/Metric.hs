@@ -12,10 +12,10 @@ data Metric
   = MetricTerm Term
   | MetricCommitIndex LogIndex
   | MetricCommitPeriod Double          -- For computing throughput
-  | MetricCurrentLeader (Maybe NodeID)
+  | MetricCurrentLeader (Maybe NodeId)
   | MetricHash ByteString
   -- Node metrics:
-  | MetricNodeId NodeID
+  | MetricNodeId NodeId
   | MetricRole Role
   | MetricAppliedIndex LogIndex
   | MetricApplyLatency Double

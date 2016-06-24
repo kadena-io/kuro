@@ -30,15 +30,15 @@ import Juno.Types.Message.Signed
 data RequestVoteResponse = RequestVoteResponse
   { _rvrTerm        :: !Term
   , _rvrCurLogIndex :: !LogIndex
-  , _rvrNodeId      :: !NodeID
+  , _rvrNodeId      :: !NodeId
   , _voteGranted    :: !Bool
-  , _rvrCandidateId :: !NodeID
+  , _rvrCandidateId :: !NodeId
   , _rvrProvenance  :: !Provenance
   }
   deriving (Show, Eq, Ord, Generic)
 makeLenses ''RequestVoteResponse
 
-data RVRWire = RVRWire (Term,LogIndex,NodeID,Bool,NodeID)
+data RVRWire = RVRWire (Term,LogIndex,NodeId,Bool,NodeId)
   deriving (Show, Generic)
 instance Serialize RVRWire
 

@@ -32,29 +32,29 @@ data AEResponseEnv = AEResponseEnv {
 -- Old Constructors
     _nodeRole             :: Role
   , _term             :: Term
-  , _commitProof      :: Map NodeID AppendEntriesResponse
+  , _commitProof      :: Map NodeId AppendEntriesResponse
   }
 makeLenses ''AEResponseEnv
 
 data AEResponseOut = AEResponseOut
-  { _stateMergeCommitProof :: Map NodeID AppendEntriesResponse
+  { _stateMergeCommitProof :: Map NodeId AppendEntriesResponse
   , _leaderState :: LeaderState }
 
 data LeaderState =
   DoNothing |
   NotLeader |
   StatelessSendAE
-    { _sendAENodeID :: NodeID } |
+    { _sendAENodeId :: NodeId } |
   Unconvinced -- sends AE after
-    { _sendAENodeID :: NodeID
-    , _deleteConvinced :: NodeID } |
+    { _sendAENodeId :: NodeId
+    , _deleteConvinced :: NodeId } |
   ConvincedAndUnsuccessful -- sends AE after
-    { _sendAENodeID :: NodeID
+    { _sendAENodeId :: NodeId
     , _setLaggingLogIndex :: LogIndex } |
   ConvincedAndSuccessful -- does not send AE after
-    { _incrementNextIndexNode :: NodeID
+    { _incrementNextIndexNode :: NodeId
     , _incrementNextIndexLogIndex :: LogIndex
-    , _insertConvinced :: NodeID}
+    , _insertConvinced :: NodeId}
 
 
 data Convinced = Convinced | NotConvinced
@@ -91,10 +91,10 @@ handleAEResponse aer@AppendEntriesResponse{..} = do
                          | _aerTerm < ct = OldRequestTerm
                          | otherwise = NewerRequestTerm
 
-updateCommitProofMap :: AppendEntriesResponse -> Map NodeID AppendEntriesResponse -> Map NodeID AppendEntriesResponse
+updateCommitProofMap :: AppendEntriesResponse -> Map NodeId AppendEntriesResponse -> Map NodeId AppendEntriesResponse
 updateCommitProofMap aerNew m = Map.alter go nid m
   where
-    nid :: NodeID
+    nid :: NodeId
     nid = _aerNodeId aerNew
     go = \case
       Nothing   -> Just aerNew
@@ -126,7 +126,7 @@ handle ae = do
       JT.lConvinced %= Set.insert _insertConvinced
       resetElectionTimerLeader
     ConvincedAndUnsuccessful{..} -> do
-      updateLNextIndex $ Map.insert _sendAENodeID _setLaggingLogIndex
+      updateLNextIndex $ Map.insert _sendAENodeId _setLaggingLogIndex
       resetElectionTimerLeader
 
 handleAlotOfAers :: Monad m => AlotOfAERs -> JT.Raft m ()

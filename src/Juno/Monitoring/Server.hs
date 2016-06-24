@@ -18,7 +18,7 @@ import qualified System.Metrics.Label as Label
 import qualified System.Metrics.Gauge as Gauge
 import qualified System.Metrics.Distribution as Dist
 
-import Juno.Types (Config, nodeId, Metric(..), LogIndex(..), Term(..), NodeID(..), _port)
+import Juno.Types (Config, nodeId, Metric(..), LogIndex(..), Term(..), NodeId(..), _port)
 import Juno.Monitoring.EkgMonitor (Server, forkServer, getLabel, getGauge, getDistribution)
 
 -- TODO: possibly switch to 'newStore' API. this allows us to use groups.
@@ -75,7 +75,7 @@ startMonitoring config = do
     MetricHash bs ->
       Label.set hashLabel $ decodeUtf8 $ B64.encode bs
     -- Node
-    MetricNodeId node@(NodeID host port _ _) -> do
+    MetricNodeId node@(NodeId host port _ _) -> do
       Label.set nodeIdLabel $ nodeDescription node
       Label.set hostLabel $ T.pack host
       Gauge.set portGauge $ fromIntegral port
@@ -96,5 +96,5 @@ startMonitoring config = do
       Gauge.set availableSizeGauge $ fromIntegral size
 
   where
-    nodeDescription :: NodeID -> T.Text
-    nodeDescription (NodeID host port _ _) = T.pack $ host ++ ":" ++ show port
+    nodeDescription :: NodeId -> T.Text
+    nodeDescription (NodeId host port _ _) = T.pack $ host ++ ":" ++ show port

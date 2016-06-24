@@ -19,9 +19,9 @@ import Juno.Util.Util (debug, getRevSigOrInvariantError)
 import qualified Juno.Types as JT
 
 data RevolutionEnv = RevolutionEnv {
-    _lazyVote         :: Maybe (Term, NodeID, LogIndex) -- Handler
-  , _currentLeader    :: Maybe NodeID -- Client,Handler,Role
-  , _replayMap        :: Map (NodeID, Signature) (Maybe CommandResult) -- Handler
+    _lazyVote         :: Maybe (Term, NodeId, LogIndex) -- Handler
+  , _currentLeader    :: Maybe NodeId -- Client,Handler,Role
+  , _replayMap        :: Map (NodeId, Signature) (Maybe CommandResult) -- Handler
 }
 makeLenses ''RevolutionEnv
 
@@ -29,9 +29,9 @@ data RevolutionOut =
   UnknownNode |
   RevolutionCalledOnNonLeader |
   IgnoreLeader
-    { _deleteReplayMapEntry :: (NodeID, Signature) } |
+    { _deleteReplayMapEntry :: (NodeId, Signature) } |
   IgnoreLeaderAndClearLazyVote
-    { _deleteReplayMapEntry :: (NodeID, Signature) }
+    { _deleteReplayMapEntry :: (NodeId, Signature) }
 
 handleRevolution :: (MonadReader RevolutionEnv m, MonadWriter [String] m) => Revolution -> m RevolutionOut
 handleRevolution rev@Revolution{..} = do

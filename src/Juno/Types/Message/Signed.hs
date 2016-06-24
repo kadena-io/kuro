@@ -32,7 +32,7 @@ instance Serialize MsgType
 
 -- | Digest containing Sender ID, Signature, Sender's Public Key and the message type
 data Digest = Digest
-  { _digNodeId :: !NodeID
+  { _digNodeId :: !NodeId
   , _digSig    :: !Signature
   , _digPubkey :: !PublicKey
   , _digType   :: !MsgType
@@ -61,7 +61,7 @@ data SignedRPC = SignedRPC
 instance Serialize SignedRPC
 
 class WireFormat a where
-  toWire   :: NodeID -> PublicKey -> PrivateKey -> a -> SignedRPC
+  toWire   :: NodeId -> PublicKey -> PrivateKey -> a -> SignedRPC
   fromWire :: Maybe ReceivedAt -> KeySet -> SignedRPC -> Either String a
 
 -- | Based on the MsgType in the SignedRPC's Digest, we know which set of keys are needed to validate the message
@@ -69,7 +69,7 @@ verifySignedRPC :: KeySet -> SignedRPC -> Either String ()
 verifySignedRPC !KeySet{..} s@(SignedRPC !Digest{..} !bdy)
   | _digType == CMD || _digType == REV || _digType == CMDB =
       case Map.lookup _digNodeId _ksClient of
-        Nothing -> Left $! "PubKey not found for NodeID: " ++ show _digNodeId
+        Nothing -> Left $! "PubKey not found for NodeId: " ++ show _digNodeId
         Just !key
           | key /= _digPubkey -> Left $! "Public key in storage doesn't match digest's key for msg: " ++ show s
           | otherwise -> if not $ valid bdy key _digSig
@@ -77,7 +77,7 @@ verifySignedRPC !KeySet{..} s@(SignedRPC !Digest{..} !bdy)
                          else Right ()
   | otherwise =
       case Map.lookup _digNodeId _ksCluster of
-        Nothing -> Left $! "PubKey not found for NodeID: " ++ show _digNodeId
+        Nothing -> Left $! "PubKey not found for NodeId: " ++ show _digNodeId
         Just !key
           | key /= _digPubkey -> Left $! "Public key in storage doesn't match digest's key for msg: " ++ show s
           | otherwise -> if not $ valid bdy key _digSig

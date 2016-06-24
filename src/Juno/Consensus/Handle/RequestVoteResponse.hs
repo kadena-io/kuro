@@ -33,7 +33,7 @@ makeLenses ''RequestVoteResponseEnv
 data RequestVoteResponseOut =
     BecomeLeader { _newYesVotes :: Set.Set RequestVoteResponse } |
     UpdateYesVotes { _newYesVotes :: Set.Set RequestVoteResponse } |
-    DeletePotentialVote { _voteNodeId :: NodeID } |
+    DeletePotentialVote { _voteNodeId :: NodeId } |
     RevertToFollower |
     NoAction
 

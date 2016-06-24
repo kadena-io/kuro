@@ -29,12 +29,12 @@ import Juno.Util.Util
 import Juno.Types
 import Juno.Runtime.Timer (resetLastBatchUpdate)
 
-createAppendEntries' :: NodeID
-                   -> Map NodeID LogIndex
+createAppendEntries' :: NodeId
+                   -> Map NodeId LogIndex
                    -> Log LogEntry
                    -> Term
-                   -> NodeID
-                   -> Set NodeID
+                   -> NodeId
+                   -> Set NodeId
                    -> Set RequestVoteResponse
                    -> RPC
 createAppendEntries' target lNextIndex' es ct nid vts yesVotes =
@@ -45,7 +45,7 @@ createAppendEntries' target lNextIndex' es ct nid vts yesVotes =
   in
     AE' $ AppendEntries ct nid pli plt (getEntriesAfter pli es) vts' NewMsg
 
-sendAppendEntries :: Monad m => NodeID -> Raft m ()
+sendAppendEntries :: Monad m => NodeId -> Raft m ()
 sendAppendEntries target = do
   lNextIndex' <- use lNextIndex
   es <- use logEntries
@@ -70,7 +70,7 @@ sendAllAppendEntries = do
   resetLastBatchUpdate
   debug "Sent All AppendEntries"
 
-createAppendEntriesResponse' :: Bool -> Bool -> Term -> NodeID -> LogIndex -> ByteString -> RPC
+createAppendEntriesResponse' :: Bool -> Bool -> Term -> NodeId -> LogIndex -> ByteString -> RPC
 createAppendEntriesResponse' success convinced ct nid lindex lhash =
   AER' $ AppendEntriesResponse ct nid success convinced lindex lhash True NewMsg
 
@@ -84,7 +84,7 @@ createAppendEntriesResponse success convinced = do
     AER' aer -> return aer
     _ -> error "deep invariant error"
 
-sendAppendEntriesResponse :: Monad m => NodeID -> Bool -> Bool -> Raft m ()
+sendAppendEntriesResponse :: Monad m => NodeId -> Bool -> Bool -> Raft m ()
 sendAppendEntriesResponse target success convinced = do
   ct <- use term
   nid <- view (cfg.nodeId)
@@ -102,15 +102,15 @@ sendAllAppendEntriesResponse = do
   oNodes <- view (cfg.otherNodes)
   sendRPCs $ (,aer) <$> Set.toList oNodes
 
-createRequestVoteResponse :: MonadWriter [String] m => Term -> LogIndex -> NodeID -> NodeID -> Bool -> m RequestVoteResponse
+createRequestVoteResponse :: MonadWriter [String] m => Term -> LogIndex -> NodeId -> NodeId -> Bool -> m RequestVoteResponse
 createRequestVoteResponse term' logIndex' myNodeId' target vote = do
   tell ["Created RequestVoteResponse: " ++ show term']
   return $ RequestVoteResponse term' logIndex' myNodeId' vote target NewMsg
 
-sendResults :: Monad m => [(NodeID, CommandResponse)] -> Raft m ()
+sendResults :: Monad m => [(NodeId, CommandResponse)] -> Raft m ()
 sendResults results = sendRPCs $ second CMDR' <$> results
 
-sendRPC :: Monad m => NodeID -> RPC -> Raft m ()
+sendRPC :: Monad m => NodeId -> RPC -> Raft m ()
 sendRPC target rpc = do
   send <- view (rs.sendMessage)
   myNodeId <- view (cfg.nodeId)
@@ -118,11 +118,11 @@ sendRPC target rpc = do
   pubKey <- view (cfg.myPublicKey)
   send target $ encode $ rpcToSignedRPC myNodeId pubKey privKey rpc
 
-encodedRPC :: NodeID -> PrivateKey -> PublicKey -> RPC -> ByteString
+encodedRPC :: NodeId -> PrivateKey -> PublicKey -> RPC -> ByteString
 encodedRPC myNodeId privKey pubKey rpc = encode $! rpcToSignedRPC myNodeId pubKey privKey rpc
 {-# INLINE encodedRPC #-}
 
-sendRPCs :: Monad m => [(NodeID, RPC)] -> Raft m ()
+sendRPCs :: Monad m => [(NodeId, RPC)] -> Raft m ()
 sendRPCs rpcs = do
   send <- view (rs.sendMessages)
   myNodeId <- view (cfg.nodeId)

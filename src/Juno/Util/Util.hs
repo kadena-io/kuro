@@ -95,13 +95,13 @@ setRole newRole = do
   nodeRole .= newRole
   logMetric $ MetricRole newRole
 
-setCurrentLeader :: Monad m => Maybe NodeID -> Raft m ()
+setCurrentLeader :: Monad m => Maybe NodeId -> Raft m ()
 setCurrentLeader mNode = do
   currentLeader .= mNode
   logMetric $ MetricCurrentLeader mNode
 
 updateLNextIndex :: Monad m
-                 => (Map.Map NodeID LogIndex -> Map.Map NodeID LogIndex)
+                 => (Map.Map NodeId LogIndex -> Map.Map NodeId LogIndex)
                  -> Raft m ()
 updateLNextIndex f = do
   lNextIndex %= f
@@ -115,7 +115,7 @@ updateLNextIndex f = do
                        in succ $ Map.size $ Map.filter (>= oneBehind) lni
 
 setLNextIndex :: Monad m
-              => Map.Map NodeID LogIndex
+              => Map.Map NodeId LogIndex
               -> Raft m ()
 setLNextIndex = updateLNextIndex . const
 

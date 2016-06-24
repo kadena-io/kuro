@@ -28,7 +28,7 @@ import Juno.Types.Log
 data AppendEntriesEnv = AppendEntriesEnv {
 -- Old Constructors
     _term             :: Term
-  , _currentLeader    :: Maybe NodeID
+  , _currentLeader    :: Maybe NodeId
   , _ignoreLeader     :: Bool
   , _logEntries       :: Log LogEntry
 -- New Constructors
@@ -46,22 +46,22 @@ data CheckForNewLeaderOut =
   NewLeaderConfirmed {
       _stateRsUpdateTerm  :: Term
     , _stateIgnoreLeader  :: Bool
-    , _stateCurrentLeader :: NodeID
+    , _stateCurrentLeader :: NodeId
     , _stateRole          :: Role
     }
 
 data AppendEntriesResult =
     Ignore |
     SendUnconvincedResponse {
-      _responseLeaderId :: NodeID } |
+      _responseLeaderId :: NodeId } |
     ValidLeaderAndTerm {
-        _responseLeaderId :: NodeID
+        _responseLeaderId :: NodeId
       , _validReponse :: ValidResponse }
 
 data ValidResponse =
     SendFailureResponse |
     Commit {
-        _replay :: Map (NodeID, Signature) (Maybe CommandResult)
+        _replay :: Map (NodeId, Signature) (Maybe CommandResult)
       , _updatedLog :: Log LogEntry }
 
 -- THREAD: SERVER MAIN. updates state
@@ -69,7 +69,7 @@ handleAppendEntries :: (MonadWriter [String] m, MonadReader AppendEntriesEnv m) 
 handleAppendEntries ae@AppendEntries{..} = do
   tell ["received appendEntries: " ++ show _prevLogIndex ]
   nlo <- checkForNewLeader ae
-  (currentLeader',ignoreLeader',currentTerm' ) :: (Maybe NodeID,Bool,Term) <-
+  (currentLeader',ignoreLeader',currentTerm' ) :: (Maybe NodeId,Bool,Term) <-
                 case nlo of
                   LeaderUnchanged -> (,,) <$> view currentLeader <*> view ignoreLeader <*> view term
                   NewLeaderConfirmed{..} -> return (Just _stateCurrentLeader,_stateIgnoreLeader,_stateRsUpdateTerm)
@@ -114,7 +114,7 @@ checkForNewLeader AppendEntries{..} = do
           Follower
      else return LeaderUnchanged
 
-confirmElection :: (MonadWriter [String] m, MonadReader AppendEntriesEnv m) => NodeID -> Term -> Set RequestVoteResponse -> m Bool
+confirmElection :: (MonadWriter [String] m, MonadReader AppendEntriesEnv m) => NodeId -> Term -> Set RequestVoteResponse -> m Bool
 confirmElection leader' term' votes = do
   quorumSize' <- view quorumSize
   tell ["confirming election of a new leader"]
@@ -122,7 +122,7 @@ confirmElection leader' term' votes = do
     then return $ all (validateVote leader' term') votes
     else return False
 
-validateVote :: NodeID -> Term -> RequestVoteResponse -> Bool
+validateVote :: NodeId -> Term -> RequestVoteResponse -> Bool
 validateVote leader' term' RequestVoteResponse{..} = _rvrCandidateId == leader' && _rvrTerm == term'
 
 

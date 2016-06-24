@@ -93,7 +93,7 @@ decodeLEWire !ts !ks !les = go les Seq.empty
       Right cmd' -> go ls (v |> LogEntry t cmd' hsh)
 {-# INLINE decodeLEWire #-}
 
-encodeLEWire :: NodeID -> PublicKey -> PrivateKey -> Seq LogEntry -> [LEWire]
+encodeLEWire :: NodeId -> PublicKey -> PrivateKey -> Seq LogEntry -> [LEWire]
 encodeLEWire nid pubKey privKey les =
   (\LogEntry{..} -> LEWire (_leTerm, toWire nid pubKey privKey _leCommand, _leHash)) <$> toList les
 {-# INLINE encodeLEWire #-}

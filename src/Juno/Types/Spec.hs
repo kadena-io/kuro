@@ -63,19 +63,19 @@ data RaftSpec m = RaftSpec
   , _writeTermNumber  :: Term -> m ()
 
     -- ^ Function to read the node voted for from persistent storage.
-  , _readVotedFor     :: m (Maybe NodeID)
+  , _readVotedFor     :: m (Maybe NodeId)
 
     -- ^ Function to write the node voted for to persistent storage.
-  , _writeVotedFor    :: Maybe NodeID -> m ()
+  , _writeVotedFor    :: Maybe NodeId -> m ()
 
     -- ^ Function to apply a log entry to the state machine.
   , _applyLogEntry    :: Command -> m CommandResult
 
     -- ^ Function to send a message to a node.
-  , _sendMessage      :: NodeID -> ByteString -> m ()
+  , _sendMessage      :: NodeId -> ByteString -> m ()
 
     -- ^ Send more than one message at once
-  , _sendMessages     :: [(NodeID,ByteString)] -> m ()
+  , _sendMessages     :: [(NodeId,ByteString)] -> m ()
 
     -- ^ Function to get the next message.
   , _getMessage       :: m (ReceivedAt, SignedRPC)
@@ -93,7 +93,7 @@ data RaftSpec m = RaftSpec
   , _getRvAndRVRs     :: m (ReceivedAt, SignedRPC)
 
     -- ^ Function to log a debug message (no newline).
-  , _debugPrint       :: NodeID -> String -> m ()
+  , _debugPrint       :: NodeId -> String -> m ()
 
   , _publishMetric    :: Metric -> m ()
 
@@ -124,22 +124,22 @@ makeLenses (''RaftSpec)
 data RaftState = RaftState
   { _nodeRole             :: Role
   , _term             :: Term
-  , _votedFor         :: Maybe NodeID
-  , _lazyVote         :: Maybe (Term, NodeID, LogIndex)
-  , _currentLeader    :: Maybe NodeID
+  , _votedFor         :: Maybe NodeId
+  , _lazyVote         :: Maybe (Term, NodeId, LogIndex)
+  , _currentLeader    :: Maybe NodeId
   , _ignoreLeader     :: Bool
   , _logEntries       :: Log LogEntry
   , _commitIndex      :: LogIndex
   , _lastApplied      :: LogIndex
-  , _commitProof      :: Map NodeID AppendEntriesResponse
+  , _commitProof      :: Map NodeId AppendEntriesResponse
   , _timerThread      :: Maybe ThreadId
   , _timeSinceLastAER :: Int
-  , _replayMap        :: Map (NodeID, Signature) (Maybe CommandResult)
+  , _replayMap        :: Map (NodeId, Signature) (Maybe CommandResult)
   , _cYesVotes        :: Set RequestVoteResponse
-  , _cPotentialVotes  :: Set NodeID
-  , _lNextIndex       :: Map NodeID LogIndex
-  , _lMatchIndex      :: Map NodeID LogIndex
-  , _lConvinced       :: Set NodeID
+  , _cPotentialVotes  :: Set NodeId
+  , _lNextIndex       :: Map NodeId LogIndex
+  , _lMatchIndex      :: Map NodeId LogIndex
+  , _lConvinced       :: Set NodeId
   , _lLastBatchUpdate :: (UTCTime, Maybe ByteString)
   -- used for metrics
   , _lastCommitTime   :: Maybe UTCTime

@@ -61,7 +61,7 @@ logApplyLatency (Command _ _ _ _ provenance) = case provenance of
       logMetric $ MetricApplyLatency $ fromIntegral $ interval arrived now
     Nothing -> return ()
 
-applyCommand :: Monad m => UTCTime -> Command -> Raft m (NodeID, CommandResponse)
+applyCommand :: Monad m => UTCTime -> Command -> Raft m (NodeId, CommandResponse)
 applyCommand tEnd cmd@Command{..} = do
   apply <- view (rs.applyLogEntry)
   me <- _alias <$> view (cfg.nodeId)
@@ -103,7 +103,7 @@ makeCommandResponse tEnd cmd result = do
     Just (ReceivedAt tStart) -> interval tStart tEnd
   return $ makeCommandResponse' nid mlid cmd result lat
 
-makeCommandResponse' :: NodeID -> Maybe NodeID -> Command -> CommandResult -> Int64 -> CommandResponse
+makeCommandResponse' :: NodeId -> Maybe NodeId -> Command -> CommandResult -> Int64 -> CommandResponse
 makeCommandResponse' nid mlid Command{..} result lat = CommandResponse
              result
              (maybe nid id mlid)

@@ -18,7 +18,7 @@ import Juno.Types.Message.Signed
 
 data RequestVote = RequestVote
   { _rvTerm        :: !Term
-  , _rvCandidateId :: !NodeID -- Sender ID Right? We don't forward RV's
+  , _rvCandidateId :: !NodeId -- Sender ID Right? We don't forward RV's
   , _rvLastLogIndex  :: !LogIndex
   , _rvLastLogTerm   :: !Term
   , _rvProvenance  :: !Provenance
@@ -26,7 +26,7 @@ data RequestVote = RequestVote
   deriving (Show, Eq, Generic)
 makeLenses ''RequestVote
 
-data RVWire = RVWire (Term,NodeID,LogIndex,Term)
+data RVWire = RVWire (Term,NodeId,LogIndex,Term)
   deriving (Show, Generic)
 instance Serialize RVWire
 

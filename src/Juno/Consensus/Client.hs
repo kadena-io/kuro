@@ -80,12 +80,12 @@ commandGetter getEntries cmdStatusMap' = do
     batchSize :: (Num c, Read c) => SB8.ByteString -> c
     batchSize cmd = maybe 500 id . readMaybe $ drop 11 $ SB8.unpack cmd
 
-    nextRid :: NodeID -> (Maybe Alias,CommandEntry) -> IO Command
+    nextRid :: NodeId -> (Maybe Alias,CommandEntry) -> IO Command
     nextRid nid (alias',entry) = do
       rid <- (setNextCmdRequestId cmdStatusMap')
       return (Command entry nid rid alias' NewMsg)
 
-    hardcodedTransfers :: NodeID -> Maybe Alias -> IO Command
+    hardcodedTransfers :: NodeId -> Maybe Alias -> IO Command
     hardcodedTransfers nid alias = nextRid nid (alias, transferCmdEntry)
 
     transferCmdEntry :: CommandEntry

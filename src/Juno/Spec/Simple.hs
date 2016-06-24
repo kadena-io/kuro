@@ -84,12 +84,12 @@ showDebug' msg = do
   (ZonedTime (LocalTime d t) _) <- getZonedTime
   putStrLn $ (showGregorian d) ++ "T" ++ (take 15 $ show t) ++ " " ++ msg
 
-showDebug :: NodeID -> String -> IO ()
+showDebug :: NodeId -> String -> IO ()
 showDebug _ msg = do
   (ZonedTime (LocalTime d t) _) <- getZonedTime
   putStrLn $ (showGregorian d) ++ "T" ++ (take 15 $ show t) ++ " " ++ msg
 
-noDebug :: NodeID -> String -> IO ()
+noDebug :: NodeId -> String -> IO ()
 noDebug _ _ = return ()
 
 simpleRaftSpec :: MonadIO m
@@ -101,7 +101,7 @@ simpleRaftSpec :: MonadIO m
                -> Bounded.OutChan Event
                -> Bounded.InChan Event
                -> (Command -> m CommandResult)
-               -> (NodeID -> String -> m ())
+               -> (NodeId -> String -> m ())
                -> (Metric -> m ())
                -> (MVar CommandMap -> RequestId -> CommandStatus -> m ())
                -> CommandMVarMap
@@ -200,18 +200,18 @@ getBacklog m cnt = do
     then return blog
     else threadDelay 1000 >> return []
 
-nodeIDtoAddr :: NodeID -> Addr String
-nodeIDtoAddr (NodeID _ _ a _) = Addr $ a
+nodeIDtoAddr :: NodeId -> Addr String
+nodeIDtoAddr (NodeId _ _ a _) = Addr $ a
 
-toMsg :: NodeID -> msg -> OutBoundMsg String msg
+toMsg :: NodeId -> msg -> OutBoundMsg String msg
 toMsg n b = OutBoundMsg (ROne $ nodeIDtoAddr n) b
 
-sendMsgs :: InChan (OutBoundMsg String ByteString) -> [(NodeID, ByteString)] -> IO ()
+sendMsgs :: InChan (OutBoundMsg String ByteString) -> [(NodeId, ByteString)] -> IO ()
 sendMsgs outboxWrite ns = do
   writeList2Chan outboxWrite $! uncurry toMsg <$> ns
   yield
 
-sendMsg :: InChan (OutBoundMsg String ByteString) -> NodeID -> ByteString -> IO ()
+sendMsg :: InChan (OutBoundMsg String ByteString) -> NodeId -> ByteString -> IO ()
 sendMsg outboxWrite n s = do
   let addr = ROne $ nodeIDtoAddr n
       msg = OutBoundMsg addr s

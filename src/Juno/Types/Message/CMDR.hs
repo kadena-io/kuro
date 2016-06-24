@@ -20,8 +20,8 @@ import Juno.Types.Message.Signed
 
 data CommandResponse = CommandResponse
   { _cmdrResult     :: !CommandResult
-  , _cmdrLeaderId   :: !NodeID
-  , _cmdrNodeId     :: !NodeID
+  , _cmdrLeaderId   :: !NodeId
+  , _cmdrNodeId     :: !NodeId
   , _cmdrRequestId  :: !RequestId
   , _cmdrLatency    :: !Int64
   , _cmdrProvenance :: !Provenance
@@ -29,7 +29,7 @@ data CommandResponse = CommandResponse
   deriving (Show, Eq, Generic)
 makeLenses ''CommandResponse
 
-data CMDRWire = CMDRWire (CommandResult, NodeID, NodeID, RequestId, Int64)
+data CMDRWire = CMDRWire (CommandResult, NodeId, NodeId, RequestId, Int64)
   deriving (Show, Generic)
 instance Serialize CMDRWire
 

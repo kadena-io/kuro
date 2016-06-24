@@ -25,7 +25,7 @@ import Juno.Types.Log
 
 data AppendEntries = AppendEntries
   { _aeTerm        :: !Term
-  , _leaderId      :: !NodeID
+  , _leaderId      :: !NodeId
   , _prevLogIndex  :: !LogIndex
   , _prevLogTerm   :: !Term
   , _aeEntries     :: !(Seq LogEntry)
@@ -35,7 +35,7 @@ data AppendEntries = AppendEntries
   deriving (Show, Eq, Generic)
 makeLenses ''AppendEntries
 
-data AEWire = AEWire (Term,NodeID,LogIndex,Term,[LEWire],[SignedRPC])
+data AEWire = AEWire (Term,NodeId,LogIndex,Term,[LEWire],[SignedRPC])
   deriving (Show, Generic)
 instance Serialize AEWire
 

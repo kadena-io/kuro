@@ -50,12 +50,12 @@ apiReceiver = do
     batchSize :: (Num c, Read c) => SB8.ByteString -> c
     batchSize cmd = maybe 500 id . readMaybe $ drop 11 $ SB8.unpack cmd
 
-    nextRid :: NodeID -> CommandMVarMap -> (Maybe Alias, CommandEntry) -> IO Command
+    nextRid :: NodeId -> CommandMVarMap -> (Maybe Alias, CommandEntry) -> IO Command
     nextRid nid cmdMap (alias,entry) = do
       rid <- (setNextCmdRequestId' cmdMap)
       return (Command entry nid rid alias NewMsg)
 
-    hardcodedTransfers :: NodeID -> CommandMVarMap -> Maybe Alias -> IO Command
+    hardcodedTransfers :: NodeId -> CommandMVarMap -> Maybe Alias -> IO Command
     hardcodedTransfers nid cmdMap alias = nextRid nid cmdMap (alias, transferCmdEntry)
 
     transferCmdEntry :: CommandEntry

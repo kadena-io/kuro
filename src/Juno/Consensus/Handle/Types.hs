@@ -3,7 +3,7 @@
 {-# LANGUAGE Rank2Types #-}
 
 module Juno.Consensus.Handle.Types (
-    NodeID(..)
+    NodeId(..)
   , CommandEntry(..)
   , CommandResult(..)
   , Term(..), startTerm

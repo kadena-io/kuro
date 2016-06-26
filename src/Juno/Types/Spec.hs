@@ -1,4 +1,6 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module Juno.Types.Spec
@@ -9,6 +11,7 @@ module Juno.Types.Spec
   , sendMessages, getMessage, getMessages, getNewCommands, getNewEvidence, getRvAndRVRs
   , debugPrint, publishMetric, getTimestamp, random
   , enqueue, enqueueMultiple, dequeue, enqueueLater, killEnqueued
+  , viewConfig, readConfig
   -- for API <-> Juno communication
   , dequeueFromApi ,cmdStatusMap, updateCmdMap
   , RaftEnv(..), cfg, clusterSize, quorumSize, rs
@@ -24,9 +27,11 @@ module Juno.Types.Spec
 import Control.Concurrent (MVar, ThreadId)
 import Control.Lens hiding (Index, (|>))
 import Control.Monad.RWS.Strict (RWST)
+import Control.Monad.IO.Class
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Set (Set)
+import Data.IORef
 import qualified Data.Set as Set
 import Data.ByteString (ByteString)
 import Data.Thyme.Clock
@@ -179,9 +184,17 @@ initialRaftState = RaftState
 type Raft = RWST (RaftEnv) () RaftState IO
 
 data RaftEnv = RaftEnv
-  { _cfg         :: Config
+  { _cfg         :: IORef Config
   , _clusterSize :: Int
   , _quorumSize  :: Int
   , _rs          :: RaftSpec
   }
 makeLenses ''RaftEnv
+
+readConfig :: Raft Config
+readConfig = view cfg >>= liftIO . readIORef
+
+viewConfig :: Getting r Config r -> Raft r
+viewConfig l = do
+  (c :: Config) <- view cfg >>= liftIO . readIORef
+  return $ view l c

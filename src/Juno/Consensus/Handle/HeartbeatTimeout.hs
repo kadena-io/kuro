@@ -49,7 +49,7 @@ handle msg = do
     IsLeader -> do
       sendAllAppendEntries
       resetHeartbeatTimer
-      hbMicrosecs <- view (JT.cfg . JT.heartbeatTimeout)
+      hbMicrosecs <- JT.viewConfig JT.heartbeatTimeout
       JT.timeSinceLastAER %= (+ hbMicrosecs)
     NotLeader -> JT.timeSinceLastAER .= 0 -- probably overkill, but nice to know this gets set to 0 if not leader
     NoFollowers -> do

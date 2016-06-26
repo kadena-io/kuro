@@ -4,6 +4,7 @@ module Juno.Consensus.Server
 
 import Control.Lens
 import qualified Data.Set as Set
+import Data.IORef
 
 import Juno.Consensus.Handle
 import Juno.Consensus.Api (apiReceiver)
@@ -20,9 +21,10 @@ runRaftServer renv rconf spec = do
   let csize = 1 + Set.size (rconf ^. otherNodes)
       qsize = getQuorumSize csize
   void $ runMessageReceiver renv
+  rconf' <- newIORef rconf
   runRWS_
     raft
-    (RaftEnv rconf csize qsize spec)
+    (RaftEnv rconf' csize qsize spec)
     initialRaftState
 
 -- THREAD: SERVER MAIN

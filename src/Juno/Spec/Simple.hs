@@ -20,10 +20,11 @@ import Juno.Monitoring.Server (startMonitoring)
 import Juno.Runtime.Api.ApiServer
 
 -- import System.Process (system)
+-- import Control.Concurrent (forkIO)
 import System.IO (BufferMode(..),stdout,stderr,hSetBuffering)
 import Control.Lens
 import Control.Monad
-import Control.Concurrent (modifyMVar_, yield, threadDelay, takeMVar, putMVar, newMVar, MVar, forkIO)
+import Control.Concurrent (modifyMVar_, yield, threadDelay, takeMVar, putMVar, newMVar, MVar)
 import qualified Control.Concurrent.Lifted as CL
 import Control.Concurrent.Chan.Unagi
 import qualified Control.Concurrent.Chan.Unagi.NoBlocking as NoBlock

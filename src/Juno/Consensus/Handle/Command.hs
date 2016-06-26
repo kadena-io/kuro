@@ -81,7 +81,7 @@ handleCommand cmd@Command{..} = do
 
 handleSingleCommand :: Command -> JT.Raft ()
 handleSingleCommand cmd = do
-  c <- view JT.cfg
+  c <- JT.readConfig
   s <- get
   (out,_) <- runReaderT (runWriterT (handleCommand cmd)) $
              CommandEnv (JT._nodeRole s)

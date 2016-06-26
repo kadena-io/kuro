@@ -7,6 +7,7 @@ module Juno.Consensus.Client
 
 import Control.Lens hiding (Index)
 import Control.Monad.RWS
+import Data.IORef
 import Data.Foldable (traverse_)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -37,9 +38,10 @@ runRaftClient renv getEntries cmdStatusMap' rconf spec@RaftSpec{..} = do
   -- TODO: do we really need currentRequestId in state any longer, doing this to keep them in sync
   (CommandMap rid _) <- readMVar cmdStatusMap'
   void $ runMessageReceiver renv -- THREAD: CLIENT MESSAGE RECEIVER
+  rconf' <- newIORef rconf
   runRWS_
     (raftClient (lift getEntries) cmdStatusMap')
-    (RaftEnv rconf csize qsize spec)
+    (RaftEnv rconf' csize qsize spec)
     -- TODO: because UTC can flow backwards, this request ID is problematic:
     initialRaftState {_currentRequestId = rid}-- only use currentLeader and logEntries
 
@@ -48,7 +50,7 @@ runRaftClient renv getEntries cmdStatusMap' rconf spec@RaftSpec{..} = do
 -- THREAD: CLIENT MAIN
 raftClient :: Raft (RequestId, [(Maybe Alias, CommandEntry)]) -> CommandMVarMap -> Raft ()
 raftClient getEntries cmdStatusMap' = do
-  nodes <- view (cfg.otherNodes)
+  nodes <- viewConfig otherNodes
   when (Set.null nodes) $ error "The client has no nodes to send requests to."
   setCurrentLeader $ Just $ Set.findMin nodes
   void $ CL.fork $ commandGetter getEntries cmdStatusMap' -- THREAD: CLIENT COMMAND REPL?
@@ -59,7 +61,7 @@ raftClient getEntries cmdStatusMap' = do
 -- THREAD: CLIENT COMMAND
 commandGetter :: Raft (RequestId, [(Maybe Alias, CommandEntry)]) -> CommandMVarMap -> Raft ()
 commandGetter getEntries cmdStatusMap' = do
-  nid <- view (cfg.nodeId)
+  nid <- viewConfig nodeId
   forever $ do
     (rid@(RequestId _), cmdEntries) <- getEntries
     -- support for special REPL command "> batch test:5000", runs hardcoded batch job
@@ -122,7 +124,7 @@ clientHandleEvents cmdStatusMap' = forever $ do
 -- If the client doesn't know the leader? Then set leader to first node, the client will be updated with the real leaderId when it receives a command response.
 setLeaderToFirst :: Raft ()
 setLeaderToFirst = do
-  nodes <- view (cfg.otherNodes)
+  nodes <- viewConfig otherNodes
   when (Set.null nodes) $ error "the client has no nodes to send requests to"
   setCurrentLeader $ Just $ Set.findMin nodes
 
@@ -130,7 +132,7 @@ setLeaderToFirst = do
 setLeaderToNext :: Raft ()
 setLeaderToNext = do
   mlid <- use currentLeader
-  nodes <- view (cfg.otherNodes)
+  nodes <- viewConfig otherNodes
   case mlid of
     Just lid -> case Set.lookupGT lid nodes of
       Just nlid -> setCurrentLeader $ Just nlid

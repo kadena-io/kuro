@@ -22,7 +22,6 @@ import Data.Aeson (encode, object, (.=))
 import Data.Aeson.Encode.Pretty (encodePretty)
 
 import Juno.Types (CommandEntry(..), CommandResult(..))
-import Juno.Types.Base (RequestId)
 import Juno.Types.Message.CMD
 import Schwifty.Swift.M105.Types (SWIFT)
 
@@ -48,7 +47,7 @@ setBalances bals ps = ps { DEval._persistentBalances = bals }
 
 --JunoEnv:  MVar (State, Map(TX -> Swift))
 runCommand :: JunoEnv -> Command -> IO CommandResult
-runCommand env Command{_cmdEntry = cmd'@_, _cmdRequestId = rid@_} = do
+runCommand env Command{_cmdEntry = cmd'@_, _cmdRequestId = _rid@_} = do
   mvar <- return $ getStateMVar env
   orgState@(ps, ss, store) <- MV.takeMVar mvar -- persistent s, swift, prog input store
   let bals = balances ps

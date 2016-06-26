@@ -104,7 +104,7 @@ selfVoteProvenance rvr = do
 
 handle :: String -> JT.Raft ()
 handle msg = do
-  c <- view JT.cfg
+  c <- JT.readConfig
   s <- get
   leaderWithoutFollowers' <- hasElectionTimerLeaderFired
   (out,l) <- runReaderT (runWriterT (handleElectionTimeout msg)) $
@@ -161,7 +161,7 @@ sendAllRequestVotes = traverse_ sendRequestVote =<< use JT.cPotentialVotes
 sendRequestVote :: NodeId -> JT.Raft ()
 sendRequestVote target = do
   ct <- use JT.term
-  nid <- view (JT.cfg.JT.nodeId)
+  nid <- JT.viewConfig JT.nodeId
   es <- use JT.logEntries
   debug $ "sendRequestVote: " ++ show ct
   sendRPC target $ RV' $ RequestVote ct nid (maxIndex es) (lastLogTerm es) NewMsg

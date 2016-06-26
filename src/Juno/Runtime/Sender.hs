@@ -50,7 +50,7 @@ sendAppendEntries target = do
   lNextIndex' <- use lNextIndex
   es <- use logEntries
   ct <- use term
-  nid <- view (cfg.nodeId)
+  nid <- viewConfig nodeId
   vts <- use lConvinced
   yesVotes <- use cYesVotes
   sendRPC target $ createAppendEntries' target lNextIndex' es ct nid vts yesVotes
@@ -62,10 +62,10 @@ sendAllAppendEntries = do
   lNextIndex' <- use lNextIndex
   es <- use logEntries
   ct <- use term
-  nid <- view (cfg.nodeId)
+  nid <- viewConfig nodeId
   vts <- use lConvinced
   yesVotes <- use cYesVotes
-  oNodes <- view (cfg.otherNodes)
+  oNodes <- viewConfig otherNodes
   sendRPCs $ (\target -> (target, createAppendEntries' target lNextIndex' es ct nid vts yesVotes)) <$> Set.toList oNodes
   resetLastBatchUpdate
   debug "Sent All AppendEntries"
@@ -77,7 +77,7 @@ createAppendEntriesResponse' success convinced ct nid lindex lhash =
 createAppendEntriesResponse :: Bool -> Bool -> Raft AppendEntriesResponse
 createAppendEntriesResponse success convinced = do
   ct <- use term
-  nid <- view (cfg.nodeId)
+  nid <- viewConfig nodeId
   es <- use logEntries
   case createAppendEntriesResponse' success convinced ct nid
            (maxIndex es) (lastLogHash es) of
@@ -87,7 +87,7 @@ createAppendEntriesResponse success convinced = do
 sendAppendEntriesResponse :: NodeId -> Bool -> Bool -> Raft ()
 sendAppendEntriesResponse target success convinced = do
   ct <- use term
-  nid <- view (cfg.nodeId)
+  nid <- viewConfig nodeId
   es <- use logEntries
   sendRPC target $ createAppendEntriesResponse' success convinced ct nid
               (maxIndex es) (lastLogHash es)
@@ -96,10 +96,10 @@ sendAppendEntriesResponse target success convinced = do
 sendAllAppendEntriesResponse :: Raft ()
 sendAllAppendEntriesResponse = do
   ct <- use term
-  nid <- view (cfg.nodeId)
+  nid <- viewConfig nodeId
   es <- use logEntries
   aer <- return $ createAppendEntriesResponse' True True ct nid (maxIndex es) (lastLogHash es)
-  oNodes <- view (cfg.otherNodes)
+  oNodes <- viewConfig otherNodes
   sendRPCs $ (,aer) <$> Set.toList oNodes
 
 createRequestVoteResponse :: MonadWriter [String] m => Term -> LogIndex -> NodeId -> NodeId -> Bool -> m RequestVoteResponse
@@ -113,9 +113,9 @@ sendResults results = sendRPCs $ second CMDR' <$> results
 sendRPC :: NodeId -> RPC -> Raft ()
 sendRPC target rpc = do
   send <- view (rs.sendMessage)
-  myNodeId <- view (cfg.nodeId)
-  privKey <- view (cfg.myPrivateKey)
-  pubKey <- view (cfg.myPublicKey)
+  myNodeId <- viewConfig nodeId
+  privKey <- viewConfig myPrivateKey
+  pubKey <- viewConfig myPublicKey
   liftIO $ send target $ encode $ rpcToSignedRPC myNodeId pubKey privKey rpc
 
 encodedRPC :: NodeId -> PrivateKey -> PublicKey -> RPC -> ByteString
@@ -125,8 +125,8 @@ encodedRPC myNodeId privKey pubKey rpc = encode $! rpcToSignedRPC myNodeId pubKe
 sendRPCs :: [(NodeId, RPC)] -> Raft ()
 sendRPCs rpcs = do
   send <- view (rs.sendMessages)
-  myNodeId <- view (cfg.nodeId)
-  privKey <- view (cfg.myPrivateKey)
-  pubKey <- view (cfg.myPublicKey)
+  myNodeId <- viewConfig nodeId
+  privKey <- viewConfig myPrivateKey
+  pubKey <- viewConfig myPublicKey
   msgs <- return ((second (encodedRPC myNodeId privKey pubKey) <$> rpcs ) `using` parList rseq)
   liftIO $ send msgs

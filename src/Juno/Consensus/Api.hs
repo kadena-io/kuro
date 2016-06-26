@@ -26,7 +26,7 @@ import Juno.Runtime.Sender (sendRPC)
 -- THREAD: CLIENT COMMAND
 apiReceiver :: Raft ()
 apiReceiver = do
-  nid <- view (cfg.nodeId)
+  nid <- viewConfig nodeId
   forever $ do
     cmdMap <- view (rs.cmdStatusMap)
     (rid@(RequestId _), cmdEntries) <- dequeueCommand
@@ -99,6 +99,6 @@ clientSendCommandBatch' cmdb@CommandBatch{..} = do
 -- If the client doesn't know the leader? Then set leader to first node, the client will be updated with the real leaderId when it receives a command response.
 setLeaderToFirst' :: Raft ()
 setLeaderToFirst' = do
-  nodes <- view (cfg.otherNodes)
+  nodes <- viewConfig otherNodes
   when (Set.null nodes) $ error "the client has no nodes to send requests to"
   setCurrentLeader $ Just $ Set.findMin nodes

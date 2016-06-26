@@ -44,9 +44,9 @@ getQuorumSize n = 1 + floor (fromIntegral n / 2 :: Float)
 debug :: String -> Raft ()
 debug s = do
   dbg <- view (rs.debugPrint)
-  nid <- view (cfg.nodeId)
+  nid <- viewConfig nodeId
   role' <- use nodeRole
-  dontDebugFollower' <- view (cfg.dontDebugFollower)
+  dontDebugFollower' <- viewConfig dontDebugFollower
   case role' of
     Leader -> liftIO $ dbg nid $ "\ESC[0;34m[LEADER]\ESC[0m: " ++ s
     Follower -> liftIO $ when (not dontDebugFollower') $ dbg nid $ "\ESC[0;32m[FOLLOWER]\ESC[0m: " ++ s
@@ -79,7 +79,7 @@ logMetric metric = view (rs.publishMetric) >>= \f -> liftIO $ f metric
 
 logStaticMetrics :: Raft ()
 logStaticMetrics = do
-  logMetric . MetricNodeId =<< view (cfg.nodeId)
+  logMetric . MetricNodeId =<< viewConfig nodeId
   logMetric . MetricClusterSize =<< view clusterSize
   logMetric . MetricQuorumSize =<< view quorumSize
 

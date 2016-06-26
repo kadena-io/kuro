@@ -98,10 +98,10 @@ handle m = do
 becomeLeader :: JT.Raft ()
 becomeLeader = do
   setRole Leader
-  setCurrentLeader . Just =<< view (JT.cfg.JT.nodeId)
+  setCurrentLeader . Just =<< JT.viewConfig JT.nodeId
   ni <- entryCount <$> use JT.logEntries
-  setLNextIndex =<< Map.fromSet (const ni) <$> view (JT.cfg.JT.otherNodes)
-  (JT.lMatchIndex .=) =<< Map.fromSet (const startIndex) <$> view (JT.cfg.JT.otherNodes)
+  setLNextIndex =<< Map.fromSet (const ni) <$> JT.viewConfig JT.otherNodes
+  (JT.lMatchIndex .=) =<< Map.fromSet (const startIndex) <$> JT.viewConfig JT.otherNodes
   JT.lConvinced .= Set.empty
   sendAllAppendEntries
   resetHeartbeatTimer

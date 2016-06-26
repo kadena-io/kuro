@@ -131,7 +131,7 @@ handle ae = do
 
 handleAlotOfAers :: AlotOfAERs -> JT.Raft ()
 handleAlotOfAers (AlotOfAERs m) = do
-  ks <- KeySet <$> view (JT.cfg . JT.publicKeys) <*> view (JT.cfg . JT.clientPublicKeys)
+  ks <- KeySet <$> JT.viewConfig JT.publicKeys <*> JT.viewConfig JT.clientPublicKeys
   res <- return ((processSetAer ks <$> Map.elems m) `using` parList rseq)
   aers <- catMaybes <$> mapM (\(a,l) -> mapM_ debug l >> return a) res
   mapM_ handle aers

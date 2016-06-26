@@ -32,7 +32,7 @@ issueBatch = do
     Candidate -> return ()
     Leader -> do
       -- right now, only batch if leader
-      batchTimeDelta' <- view (cfg.batchTimeDelta)
+      batchTimeDelta' <- viewConfig batchTimeDelta
       curTime <- view (rs.getTimestamp) >>= liftIO
       (ts, h) <- use lLastBatchUpdate
       when (curTime .-. ts >= batchTimeDelta') $ do

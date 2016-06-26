@@ -13,7 +13,7 @@ import Juno.Types
 import Juno.Util.Util
 
 getNewElectionTimeout :: Raft Int
-getNewElectionTimeout = view (cfg.electionTimeoutRange) >>= randomRIO
+getNewElectionTimeout = viewConfig electionTimeoutRange >>= randomRIO
 
 resetElectionTimer :: Raft ()
 resetElectionTimer = do
@@ -22,7 +22,7 @@ resetElectionTimer = do
 
 hasElectionTimerLeaderFired :: Raft Bool
 hasElectionTimerLeaderFired = do
-  maxTimeout <- ((*2) . snd) <$> view (cfg.electionTimeoutRange)
+  maxTimeout <- ((*2) . snd) <$> viewConfig electionTimeoutRange
   timeSinceLastAER' <- use timeSinceLastAER
   return $ timeSinceLastAER' >= maxTimeout
 
@@ -31,7 +31,7 @@ resetElectionTimerLeader = timeSinceLastAER .= 0
 
 resetHeartbeatTimer :: Raft ()
 resetHeartbeatTimer = do
-  timeout <- view (cfg.heartbeatTimeout)
+  timeout <- viewConfig heartbeatTimeout
   setTimedEvent (HeartbeatTimeout $ show (timeout `div` 1000) ++ "ms") timeout
 
 cancelTimer :: Raft ()

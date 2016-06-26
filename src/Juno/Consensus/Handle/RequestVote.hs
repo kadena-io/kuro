@@ -101,7 +101,7 @@ createRequestVoteResponse' target lastLogIndex' vote = do
 
 handle :: RequestVote -> JT.Raft ()
 handle rv = do
-  r <- ask
+  r <- JT.readConfig
   s <- get
   let rve = RequestVoteEnv
               (JT._term s)
@@ -110,7 +110,7 @@ handle rv = do
               (JT._currentLeader s)
               (JT._ignoreLeader s)
               (JT._logEntries s)
-              (JT._nodeId $ JT._cfg r)
+              (JT._nodeId r)
   (rvo, l) <- runReaderT (runWriterT (handleRequestVote rv)) rve
   mapM_ debug l
   case rvo of

@@ -65,8 +65,8 @@ logApplyLatency (Command _ _ _ _ provenance) = case provenance of
 applyCommand :: UTCTime -> Command -> Raft (NodeId, CommandResponse)
 applyCommand tEnd cmd@Command{..} = do
   apply <- view (rs.applyLogEntry)
-  me <- _alias <$> view (cfg.nodeId)
-  encKey <- view (cfg.myEncryptionKey)
+  me <- _alias <$> viewConfig nodeId
+  encKey <- viewConfig myEncryptionKey
   logApplyLatency cmd
   result <- case decryptCommand me encKey cmd of
               Left res -> return res
@@ -97,7 +97,7 @@ updateCmdStatusMap cmd cmdResult tEnd = do
 
 makeCommandResponse :: UTCTime -> Command -> CommandResult -> Raft CommandResponse
 makeCommandResponse tEnd cmd result = do
-  nid <- view (cfg.nodeId)
+  nid <- viewConfig nodeId
   mlid <- use currentLeader
   lat <- return $ case _pTimeStamp $ _cmdProvenance cmd of
     Nothing -> 1 -- don't want a div by zero error downstream and this is for demo purposes

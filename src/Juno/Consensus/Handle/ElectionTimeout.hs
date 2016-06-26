@@ -102,7 +102,7 @@ selfVoteProvenance rvr = do
   (SignedRPC dig bdy) <- return $ toWire nodeId' myPublicKey' myPrivateKey' rvr
   return $ ReceivedMsg dig bdy Nothing
 
-handle :: Monad m => String -> JT.Raft m ()
+handle :: String -> JT.Raft ()
 handle msg = do
   c <- view JT.cfg
   s <- get
@@ -133,7 +133,7 @@ handle msg = do
                resetElectionTimer
                sendAllRequestVotes
 
-castLazyVote :: Monad m => Term -> NodeId -> RequestVoteResponse -> JT.Raft m ()
+castLazyVote :: Term -> NodeId -> RequestVoteResponse -> JT.Raft ()
 castLazyVote lazyTerm' lazyCandidate' lazyResponse' = do
   setTerm lazyTerm'
   setVotedFor (Just lazyCandidate')
@@ -146,19 +146,19 @@ castLazyVote lazyTerm' lazyCandidate' lazyResponse' = do
   resetElectionTimer
 
 -- THREAD: SERVER MAIN. updates state
-setVotedFor :: Monad m => Maybe NodeId -> JT.Raft m ()
+setVotedFor :: Maybe NodeId -> JT.Raft ()
 setVotedFor mvote = do
   void $ JT.rs.JT.writeVotedFor ^$ mvote
   JT.votedFor .= mvote
 
 
 -- uses state, but does not update
-sendAllRequestVotes :: Monad m => JT.Raft m ()
+sendAllRequestVotes :: JT.Raft ()
 sendAllRequestVotes = traverse_ sendRequestVote =<< use JT.cPotentialVotes
 
 
 -- uses state, but does not update
-sendRequestVote :: Monad m => NodeId -> JT.Raft m ()
+sendRequestVote :: NodeId -> JT.Raft ()
 sendRequestVote target = do
   ct <- use JT.term
   nid <- view (JT.cfg.JT.nodeId)

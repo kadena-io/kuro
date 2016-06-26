@@ -15,7 +15,7 @@ import Juno.Runtime.MessageReceiver
 import qualified Control.Concurrent.Lifted as CL
 import Control.Monad
 
-runRaftServer :: ReceiverEnv -> Config -> RaftSpec (Raft IO) -> IO ()
+runRaftServer :: ReceiverEnv -> Config -> RaftSpec -> IO ()
 runRaftServer renv rconf spec = do
   let csize = 1 + Set.size (rconf ^. otherNodes)
       qsize = getQuorumSize csize
@@ -26,7 +26,7 @@ runRaftServer renv rconf spec = do
     initialRaftState
 
 -- THREAD: SERVER MAIN
-raft :: Raft IO ()
+raft :: Raft ()
 raft = do
   logStaticMetrics
   void $ CL.fork apiReceiver     -- THREAD: waits for cmds from API, signs and sends to leader.

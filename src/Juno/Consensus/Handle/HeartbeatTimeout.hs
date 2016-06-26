@@ -36,7 +36,7 @@ handleHeartbeatTimeout s = do
               else return IsLeader
     _ -> return NotLeader
 
-handle :: Monad m => String -> JT.Raft m ()
+handle :: String -> JT.Raft ()
 handle msg = do
   s <- get
   leaderWithoutFollowers' <- hasElectionTimerLeaderFired

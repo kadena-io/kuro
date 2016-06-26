@@ -48,76 +48,76 @@ import Juno.Types.Metric
 -- et -- "entry type", serialized format for submissions into Raft
 -- rt -- "return type", serialized format for "results" or "responses"
 -- mt -- "message type", serialized format for sending over wire
-data RaftSpec m = RaftSpec
+data RaftSpec = RaftSpec
   {
     -- ^ Function to get a log entry from persistent storage.
-    _readLogEntry     :: LogIndex -> m (Maybe CommandEntry)
+    _readLogEntry     :: LogIndex -> IO (Maybe CommandEntry)
 
     -- ^ Function to write a log entry to persistent storage.
-  , _writeLogEntry    :: LogIndex -> (Term,CommandEntry) -> m ()
+  , _writeLogEntry    :: LogIndex -> (Term,CommandEntry) -> IO ()
 
     -- ^ Function to get the term number from persistent storage.
-  , _readTermNumber   :: m Term
+  , _readTermNumber   :: IO Term
 
     -- ^ Function to write the term number to persistent storage.
-  , _writeTermNumber  :: Term -> m ()
+  , _writeTermNumber  :: Term -> IO ()
 
     -- ^ Function to read the node voted for from persistent storage.
-  , _readVotedFor     :: m (Maybe NodeId)
+  , _readVotedFor     :: IO (Maybe NodeId)
 
     -- ^ Function to write the node voted for to persistent storage.
-  , _writeVotedFor    :: Maybe NodeId -> m ()
+  , _writeVotedFor    :: Maybe NodeId -> IO ()
 
     -- ^ Function to apply a log entry to the state machine.
-  , _applyLogEntry    :: Command -> m CommandResult
+  , _applyLogEntry    :: Command -> IO CommandResult
 
     -- ^ Function to send a message to a node.
-  , _sendMessage      :: NodeId -> ByteString -> m ()
+  , _sendMessage      :: NodeId -> ByteString -> IO ()
 
     -- ^ Send more than one message at once
-  , _sendMessages     :: [(NodeId,ByteString)] -> m ()
+  , _sendMessages     :: [(NodeId,ByteString)] -> IO ()
 
     -- ^ Function to get the next message.
-  , _getMessage       :: m (ReceivedAt, SignedRPC)
+  , _getMessage       :: IO (ReceivedAt, SignedRPC)
 
     -- ^ Function to get the next N SignedRPCs not of type CMD, CMDB, or AER
-  , _getMessages   :: Int -> m [(ReceivedAt, SignedRPC)]
+  , _getMessages   :: Int -> IO [(ReceivedAt, SignedRPC)]
 
     -- ^ Function to get the next N SignedRPCs of type CMD or CMDB
-  , _getNewCommands   :: Int -> m [(ReceivedAt, SignedRPC)]
+  , _getNewCommands   :: Int -> IO [(ReceivedAt, SignedRPC)]
 
     -- ^ Function to get the next N SignedRPCs of type AER
-  , _getNewEvidence   :: Int -> m [(ReceivedAt, SignedRPC)]
+  , _getNewEvidence   :: Int -> IO [(ReceivedAt, SignedRPC)]
 
     -- ^ Function to get the next RV or RVR
-  , _getRvAndRVRs     :: m (ReceivedAt, SignedRPC)
+  , _getRvAndRVRs     :: IO (ReceivedAt, SignedRPC)
 
     -- ^ Function to log a debug message (no newline).
-  , _debugPrint       :: NodeId -> String -> m ()
+  , _debugPrint       :: NodeId -> String -> IO ()
 
-  , _publishMetric    :: Metric -> m ()
+  , _publishMetric    :: Metric -> IO ()
 
-  , _getTimestamp     :: m UTCTime
+  , _getTimestamp     :: IO UTCTime
 
-  , _random           :: forall a . Random a => (a, a) -> m a
+  , _random           :: forall a . Random a => (a, a) -> IO a
 
-  , _enqueue          :: Event -> m ()
+  , _enqueue          :: Event -> IO ()
 
-  , _enqueueMultiple  :: [Event] -> m ()
+  , _enqueueMultiple  :: [Event] -> IO ()
 
-  , _enqueueLater     :: Int -> Event -> m ThreadId
+  , _enqueueLater     :: Int -> Event -> IO ThreadId
 
-  , _killEnqueued     :: ThreadId -> m ()
+  , _killEnqueued     :: ThreadId -> IO ()
 
-  , _dequeue          :: m Event
+  , _dequeue          :: IO Event
 
   -- ^ How the API communicates with Raft, later could be redis w/e, etc.
-  , _updateCmdMap     :: MVar CommandMap -> RequestId -> CommandStatus -> m ()
+  , _updateCmdMap     :: MVar CommandMap -> RequestId -> CommandStatus -> IO ()
 
   -- ^ Same mvar map as _updateCmdMVarMap needs to run in Raft m
   , _cmdStatusMap     :: CommandMVarMap
 
-  , _dequeueFromApi   :: m (RequestId, [(Maybe Alias, CommandEntry)])
+  , _dequeueFromApi   :: IO (RequestId, [(Maybe Alias, CommandEntry)])
   }
 makeLenses (''RaftSpec)
 
@@ -176,12 +176,12 @@ initialRaftState = RaftState
   0          -- nextRequestId
   0          -- numTimeouts
 
-type Raft m = RWST (RaftEnv m) () RaftState m
+type Raft = RWST (RaftEnv) () RaftState IO
 
-data RaftEnv m = RaftEnv
+data RaftEnv = RaftEnv
   { _cfg         :: Config
   , _clusterSize :: Int
   , _quorumSize  :: Int
-  , _rs          :: RaftSpec (Raft m)
+  , _rs          :: RaftSpec
   }
 makeLenses ''RaftEnv

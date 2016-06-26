@@ -10,6 +10,7 @@ where
 import Data.List
 import Control.Lens
 import Control.Monad
+import Control.Monad.IO.Class
 import Data.AffineSpace ((.-.))
 import Data.Int (Int64)
 import Data.Thyme.Clock (UTCTime, microseconds)
@@ -25,17 +26,17 @@ import Juno.Util.Util
 import Juno.Runtime.Sender (sendResults)
 
 -- THREAD: SERVER MAIN.
-doCommit :: Monad m => Raft m ()
+doCommit :: Raft ()
 doCommit = do
   commitUpdate <- updateCommitIndex
   when commitUpdate applyLogEntries
 
-applyLogEntries :: Monad m => Raft m ()
+applyLogEntries :: Raft ()
 applyLogEntries = do
   la <- use lastApplied
   ci <- use commitIndex
   le <- use logEntries
-  now <- join $ view (rs.getTimestamp)
+  now <- view (rs.getTimestamp) >>= liftIO
   let leToApply = Seq.drop (fromIntegral $ la + 1) . takeEntries (ci + 1) $ le
   results <- mapM (applyCommand now . _leCommand) leToApply
   r <- use nodeRole
@@ -52,16 +53,16 @@ applyLogEntries = do
 interval :: UTCTime -> UTCTime -> Int64
 interval start end = view microseconds $ end .-. start
 
-logApplyLatency :: Monad m => Command -> Raft m ()
+logApplyLatency :: Command -> Raft ()
 logApplyLatency (Command _ _ _ _ provenance) = case provenance of
   NewMsg -> return ()
   ReceivedMsg _digest _orig mReceivedAt -> case mReceivedAt of
     Just (ReceivedAt arrived) -> do
-      now <- join $ view (rs.getTimestamp)
+      now <- view (rs.getTimestamp) >>= liftIO
       logMetric $ MetricApplyLatency $ fromIntegral $ interval arrived now
     Nothing -> return ()
 
-applyCommand :: Monad m => UTCTime -> Command -> Raft m (NodeId, CommandResponse)
+applyCommand :: UTCTime -> Command -> Raft (NodeId, CommandResponse)
 applyCommand tEnd cmd@Command{..} = do
   apply <- view (rs.applyLogEntry)
   me <- _alias <$> view (cfg.nodeId)
@@ -69,7 +70,7 @@ applyCommand tEnd cmd@Command{..} = do
   logApplyLatency cmd
   result <- case decryptCommand me encKey cmd of
               Left res -> return res
-              Right v -> apply $ cmd {_cmdEntry = v }
+              Right v -> liftIO $ apply $ cmd {_cmdEntry = v }
   updateCmdStatusMap cmd result tEnd -- shared with the API and to query state
   replayMap %= Map.insert (_cmdClientId, getCmdSigOrInvariantError "applyCommand" cmd) (Just result)
   ((,) _cmdClientId) <$> makeCommandResponse tEnd cmd result
@@ -84,7 +85,7 @@ decryptCommand me encKey Command{..}
   where
     decrypt' _ v = Right v
 
-updateCmdStatusMap :: Monad m => Command -> CommandResult -> UTCTime -> Raft m ()
+updateCmdStatusMap :: Command -> CommandResult -> UTCTime -> Raft ()
 updateCmdStatusMap cmd cmdResult tEnd = do
   rid <- return $ _cmdRequestId cmd
   mvarMap <- view (rs.cmdStatusMap)
@@ -92,9 +93,9 @@ updateCmdStatusMap cmd cmdResult tEnd = do
   lat <- return $ case _pTimeStamp $ _cmdProvenance cmd of
     Nothing -> 1 -- don't want a div by zero error downstream and this is for demo purposes
     Just (ReceivedAt tStart) -> interval tStart tEnd
-  void $ updateMapFn mvarMap rid (CmdApplied cmdResult lat)
+  liftIO $ void $ updateMapFn mvarMap rid (CmdApplied cmdResult lat)
 
-makeCommandResponse :: Monad m => UTCTime -> Command -> CommandResult -> Raft m CommandResponse
+makeCommandResponse :: UTCTime -> Command -> CommandResult -> Raft CommandResponse
 makeCommandResponse tEnd cmd result = do
   nid <- view (cfg.nodeId)
   mlid <- use currentLeader
@@ -112,12 +113,12 @@ makeCommandResponse' nid mlid Command{..} result lat = CommandResponse
              lat
              NewMsg
 
-logCommitChange :: Monad m => LogIndex -> LogIndex -> Raft m ()
+logCommitChange :: LogIndex -> LogIndex -> Raft ()
 logCommitChange before after
   | after > before = do
       logMetric $ MetricCommitIndex after
       mLastTime <- use lastCommitTime
-      now <- join $ view (rs.getTimestamp)
+      now <- view (rs.getTimestamp) >>= liftIO
       case mLastTime of
         Nothing -> return ()
         Just lastTime ->
@@ -128,7 +129,7 @@ logCommitChange before after
       lastCommitTime ?= now
   | otherwise = return ()
 
-updateCommitIndex :: Monad m => Raft m Bool
+updateCommitIndex :: Raft Bool
 updateCommitIndex = do
   ci <- use commitIndex
   proof <- use commitProof

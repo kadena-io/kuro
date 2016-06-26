@@ -29,7 +29,7 @@ runRaftClient :: ReceiverEnv
               -> IO (RequestId, [(Maybe Alias,CommandEntry)])
               -> CommandMVarMap
               -> Config
-              -> RaftSpec (Raft IO)
+              -> RaftSpec
               -> IO ()
 runRaftClient renv getEntries cmdStatusMap' rconf spec@RaftSpec{..} = do
   let csize = Set.size $ rconf ^. otherNodes
@@ -46,7 +46,7 @@ runRaftClient renv getEntries cmdStatusMap' rconf spec@RaftSpec{..} = do
 -- TODO: don't run in raft, own monad stack
 -- StateT ClientState (ReaderT ClientEnv IO)
 -- THREAD: CLIENT MAIN
-raftClient :: Raft IO (RequestId, [(Maybe Alias, CommandEntry)]) -> CommandMVarMap -> Raft IO ()
+raftClient :: Raft (RequestId, [(Maybe Alias, CommandEntry)]) -> CommandMVarMap -> Raft ()
 raftClient getEntries cmdStatusMap' = do
   nodes <- view (cfg.otherNodes)
   when (Set.null nodes) $ error "The client has no nodes to send requests to."
@@ -57,7 +57,7 @@ raftClient getEntries cmdStatusMap' = do
 
 -- get commands with getEntry and put them on the event queue to be sent
 -- THREAD: CLIENT COMMAND
-commandGetter :: MonadIO m => Raft m (RequestId, [(Maybe Alias, CommandEntry)]) -> CommandMVarMap -> Raft m ()
+commandGetter :: Raft (RequestId, [(Maybe Alias, CommandEntry)]) -> CommandMVarMap -> Raft ()
 commandGetter getEntries cmdStatusMap' = do
   nid <- view (cfg.nodeId)
   forever $ do
@@ -91,13 +91,13 @@ commandGetter getEntries cmdStatusMap' = do
     transferCmdEntry :: CommandEntry
     transferCmdEntry = (CommandEntry "transfer(Acct1->Acct2, 1 % 1)")
 
-setNextRequestId :: Monad m => RequestId -> Raft m RequestId
+setNextRequestId :: RequestId -> Raft RequestId
 setNextRequestId rid = do
   currentRequestId .= rid
   use currentRequestId
 
 -- THREAD: CLIENT MAIN. updates state
-clientHandleEvents :: MonadIO m => CommandMVarMap -> Raft m ()
+clientHandleEvents :: CommandMVarMap -> Raft ()
 clientHandleEvents cmdStatusMap' = forever $ do
   e <- dequeueEvent -- blocking queue
   case e of
@@ -120,14 +120,14 @@ clientHandleEvents cmdStatusMap' = forever $ do
 
 -- THREAD: CLIENT MAIN. updates state
 -- If the client doesn't know the leader? Then set leader to first node, the client will be updated with the real leaderId when it receives a command response.
-setLeaderToFirst :: Monad m => Raft m ()
+setLeaderToFirst :: Raft ()
 setLeaderToFirst = do
   nodes <- view (cfg.otherNodes)
   when (Set.null nodes) $ error "the client has no nodes to send requests to"
   setCurrentLeader $ Just $ Set.findMin nodes
 
 -- THREAD: CLIENT MAIN. updates state.
-setLeaderToNext :: Monad m => Raft m ()
+setLeaderToNext :: Raft ()
 setLeaderToNext = do
   mlid <- use currentLeader
   nodes <- view (cfg.otherNodes)
@@ -138,7 +138,7 @@ setLeaderToNext = do
     Nothing -> setLeaderToFirst
 
 -- THREAD: CLIENT MAIN. updates state
-clientSendCommand :: Monad m => Command -> Raft m ()
+clientSendCommand :: Command -> Raft ()
 clientSendCommand cmd@Command{..} = do
   mlid <- use currentLeader
   case mlid of
@@ -154,7 +154,7 @@ clientSendCommand cmd@Command{..} = do
       clientSendCommand cmd
 
 -- THREAD: CLIENT MAIN. updates state
-clientSendCommandBatch :: Monad m => CommandBatch -> Raft m ()
+clientSendCommandBatch :: CommandBatch -> Raft ()
 clientSendCommandBatch cmdb@CommandBatch{..} = do
   mlid <- use currentLeader
   case mlid of
@@ -172,7 +172,7 @@ clientSendCommandBatch cmdb@CommandBatch{..} = do
 
 -- THREAD: CLIENT MAIN. updates state
 -- Command has been applied
-clientHandleCommandResponse :: MonadIO m => CommandMVarMap -> CommandResponse -> Raft m ()
+clientHandleCommandResponse :: CommandMVarMap -> CommandResponse -> Raft ()
 clientHandleCommandResponse cmdStatusMap' CommandResponse{..} = do
   prs <- use pendingRequests
   when (Map.member _cmdrRequestId prs) $ do

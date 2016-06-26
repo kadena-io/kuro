@@ -19,7 +19,7 @@ import Juno.Messaging.ZMQ
 import Juno.Monitoring.Server (startMonitoring)
 import Juno.Runtime.Api.ApiServer
 
-import System.Process (system)
+-- import System.Process (system)
 import System.IO (BufferMode(..),stdout,stderr,hSetBuffering)
 import Control.Lens
 import Control.Monad
@@ -92,21 +92,20 @@ showDebug _ msg = do
 noDebug :: NodeId -> String -> IO ()
 noDebug _ _ = return ()
 
-simpleRaftSpec :: MonadIO m
-               => MVar (NoBlock.Stream (ReceivedAt, SignedRPC))
+simpleRaftSpec :: MVar (NoBlock.Stream (ReceivedAt, SignedRPC))
                -> MVar (NoBlock.Stream (ReceivedAt, SignedRPC))
                -> MVar (NoBlock.Stream (ReceivedAt, SignedRPC))
                -> OutChan (ReceivedAt, SignedRPC)
                -> InChan (OutBoundMsg String ByteString)
                -> Bounded.OutChan Event
                -> Bounded.InChan Event
-               -> (Command -> m CommandResult)
-               -> (NodeId -> String -> m ())
-               -> (Metric -> m ())
-               -> (MVar CommandMap -> RequestId -> CommandStatus -> m ())
+               -> (Command -> IO CommandResult)
+               -> (NodeId -> String -> IO ())
+               -> (Metric -> IO ())
+               -> (MVar CommandMap -> RequestId -> CommandStatus -> IO ())
                -> CommandMVarMap
                -> OutChan (RequestId, [(Maybe Alias, CommandEntry)]) --IO (RequestId, [CommandEntry])
-               -> RaftSpec m
+               -> RaftSpec
 simpleRaftSpec inboxRead cmdInboxRead aerInboxRead rvAndRvrRead outboxWrite eventRead eventWrite
                applyFn debugFn pubMetricFn updateMapFn cmdMVarMap getCommands = RaftSpec
     {
@@ -232,12 +231,13 @@ setLineBuffering = do
   hSetBuffering stderr LineBuffering
 
 awsDashVar :: String -> String -> IO ()
-awsDashVar k v = void $ forkIO $ void $ system $
-  "aws ec2 create-tags --resources `ec2-metadata --instance-id | sed 's/^.*: //g'` --tags Key="
-  ++ k
-  ++ ",Value="
-  ++ v
-  ++ " >/dev/null"
+awsDashVar _ _ = return ()
+--awsDashVar k v = void $ forkIO $ void $ system $
+--  "aws ec2 create-tags --resources `ec2-metadata --instance-id | sed 's/^.*: //g'` --tags Key="
+--  ++ k
+--  ++ ",Value="
+--  ++ v
+--  ++ " >/dev/null"
 
 resetAwsEnv :: IO ()
 resetAwsEnv = do
@@ -267,7 +267,7 @@ runClient applyFn getEntries cmdStatusMap' = do
   -- STUBs mocking
   (_, stubGetApiCommands) <- newChan
   let raftSpec = simpleRaftSpec inboxRead' cmdInboxRead' aerInboxRead' rvAndRvrRead
-                 outboxWrite eventRead eventWrite (liftIO . applyFn) (liftIO2 debugFn)
+                 outboxWrite eventRead eventWrite (liftIO . applyFn) (debugFn)
                  (liftIO . pubMetric) updateCmdMapFn cmdStatusMap' stubGetApiCommands
   let receiverEnv = simpleReceiverEnv inboxRead' cmdInboxRead' aerInboxRead' rvAndRvrRead rconf eventWrite
   runRaftClient receiverEnv getEntries cmdStatusMap' rconf raftSpec
@@ -305,7 +305,7 @@ runJuno applyFn toCommands getApiCommands sharedCmdStatusMap = do
   runMsgServer inboxWrite cmdInboxWrite aerInboxWrite rvAndRvrWrite outboxRead me [] -- ZMQ forks
   let raftSpec = simpleRaftSpec inboxRead' cmdInboxRead' aerInboxRead' rvAndRvrRead
                  outboxWrite eventRead eventWrite (liftIO . applyFn)
-                 (liftIO2 debugFn) (liftIO . pubMetric) updateCmdMapFn
+                 (debugFn) (liftIO . pubMetric) updateCmdMapFn
                  sharedCmdStatusMap getApiCommands
   let receiverEnv = simpleReceiverEnv inboxRead' cmdInboxRead' aerInboxRead' rvAndRvrRead rconf eventWrite
   runRaftServer receiverEnv rconf raftSpec

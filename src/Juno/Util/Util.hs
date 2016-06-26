@@ -41,68 +41,67 @@ seqIndex s i =
 getQuorumSize :: Int -> Int
 getQuorumSize n = 1 + floor (fromIntegral n / 2 :: Float)
 
-debug :: Monad m => String -> Raft m ()
+debug :: String -> Raft ()
 debug s = do
   dbg <- view (rs.debugPrint)
   nid <- view (cfg.nodeId)
   role' <- use nodeRole
   dontDebugFollower' <- view (cfg.dontDebugFollower)
   case role' of
-    Leader -> dbg nid $ "\ESC[0;34m[LEADER]\ESC[0m: " ++ s
-    Follower -> when (not dontDebugFollower') $ dbg nid $ "\ESC[0;32m[FOLLOWER]\ESC[0m: " ++ s
-    Candidate -> dbg nid $ "\ESC[1;33m[CANDIDATE]\ESC[0m: " ++ s
+    Leader -> liftIO $ dbg nid $ "\ESC[0;34m[LEADER]\ESC[0m: " ++ s
+    Follower -> liftIO $ when (not dontDebugFollower') $ dbg nid $ "\ESC[0;32m[FOLLOWER]\ESC[0m: " ++ s
+    Candidate -> liftIO $ dbg nid $ "\ESC[1;33m[CANDIDATE]\ESC[0m: " ++ s
 
-randomRIO :: (Monad m, R.Random a) => (a,a) -> Raft m a
-randomRIO rng = view (rs.random) >>= \f -> f rng -- R.randomRIO
+randomRIO :: R.Random a => (a,a) -> Raft a
+randomRIO rng = view (rs.random) >>= \f -> liftIO $ f rng -- R.randomRIO
 
-runRWS_ :: Monad m => RWST r w s m a -> r -> s -> m ()
+runRWS_ :: MonadIO m => RWST r w s m a -> r -> s -> m ()
 runRWS_ ma r s = void $ runRWST ma r s
 
 -- no state update
-enqueueEvent :: Monad m => Event -> Raft m ()
-enqueueEvent event = view (rs.enqueue) >>= \f -> f event
+enqueueEvent :: Event -> Raft ()
+enqueueEvent event = view (rs.enqueue) >>= \f -> liftIO $ f event
   -- lift $ writeChan ein event
 
-enqueueEventLater :: Monad m => Int -> Event -> Raft m CL.ThreadId
-enqueueEventLater t event = view (rs.enqueueLater) >>= \f -> f t event
+enqueueEventLater :: Int -> Event -> Raft CL.ThreadId
+enqueueEventLater t event = view (rs.enqueueLater) >>= \f -> liftIO $ f t event
 
 -- no state update
-dequeueEvent :: Monad m => Raft m Event
-dequeueEvent = join $ view (rs.dequeue)
+dequeueEvent :: Raft Event
+dequeueEvent = view (rs.dequeue) >>= \f -> liftIO f
 
 -- dequeue command from API interface
-dequeueCommand :: MonadIO m => Raft m (RequestId, [(Maybe Alias, CommandEntry)])
-dequeueCommand = join $ view (rs.dequeueFromApi)
+dequeueCommand :: Raft (RequestId, [(Maybe Alias, CommandEntry)])
+dequeueCommand = view (rs.dequeueFromApi) >>= \f -> liftIO f
 
-logMetric :: Monad m => Metric -> Raft m ()
-logMetric metric = view (rs.publishMetric) >>= \f -> f metric
+logMetric :: Metric -> Raft ()
+logMetric metric = view (rs.publishMetric) >>= \f -> liftIO $ f metric
 
-logStaticMetrics :: Monad m => Raft m ()
+logStaticMetrics :: Raft ()
 logStaticMetrics = do
   logMetric . MetricNodeId =<< view (cfg.nodeId)
   logMetric . MetricClusterSize =<< view clusterSize
   logMetric . MetricQuorumSize =<< view quorumSize
 
 
-setTerm :: Monad m => Term -> Raft m ()
+setTerm :: Term -> Raft ()
 setTerm t = do
   void $ rs.writeTermNumber ^$ t
   term .= t
   logMetric $ MetricTerm t
 
-setRole :: Monad m => Role -> Raft m ()
+setRole :: Role -> Raft ()
 setRole newRole = do
   nodeRole .= newRole
   logMetric $ MetricRole newRole
 
-setCurrentLeader :: Monad m => Maybe NodeId -> Raft m ()
+setCurrentLeader :: Maybe NodeId -> Raft ()
 setCurrentLeader mNode = do
   currentLeader .= mNode
   logMetric $ MetricCurrentLeader mNode
 
-updateLNextIndex :: Monad m
-                 => (Map.Map NodeId LogIndex -> Map.Map NodeId LogIndex)
-                 -> Raft m ()
+updateLNextIndex :: (Map.Map NodeId LogIndex -> Map.Map NodeId LogIndex)
+                 -> Raft ()
 updateLNextIndex f = do
   lNextIndex %= f
   lni <- use lNextIndex
@@ -114,9 +113,8 @@ updateLNextIndex f = do
     availSize lni ci = let oneBehind = pred ci
                        in succ $ Map.size $ Map.filter (>= oneBehind) lni
 
-setLNextIndex :: Monad m
-              => Map.Map NodeId LogIndex
-              -> Raft m ()
+setLNextIndex :: Map.Map NodeId LogIndex
+              -> Raft ()
 setLNextIndex = updateLNextIndex . const
 
 getCmdSigOrInvariantError :: String -> Command -> Signature

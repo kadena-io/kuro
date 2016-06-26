@@ -24,7 +24,7 @@ import Juno.Runtime.Sender (sendRPC)
 -- TODO do we need all this? can we just enqueueEvent directly?
 -- get commands with getEntry and put them on the event queue to be sent
 -- THREAD: CLIENT COMMAND
-apiReceiver :: MonadIO m => Raft m ()
+apiReceiver :: Raft ()
 apiReceiver = do
   nid <- view (cfg.nodeId)
   forever $ do
@@ -71,7 +71,7 @@ setNextCmdRequestId' cmdMapMvar = do
   return nextId
 
 -- This should be broken now? This node might not be the leader.
-setNextRequestId' :: Monad m => RequestId -> Raft m RequestId
+setNextRequestId' :: RequestId -> Raft RequestId
 setNextRequestId' rid = do
   currentRequestId .= rid
   use currentRequestId
@@ -79,7 +79,7 @@ setNextRequestId' rid = do
 -- | Always send CommandBatches, a single Command is a batch of size 1.
 -- Sends to the leader, knows the leader because running in Raft
 -- THREAD: CLIENT MAIN. updates state
-clientSendCommandBatch' :: Monad m => CommandBatch -> Raft m ()
+clientSendCommandBatch' :: CommandBatch -> Raft ()
 clientSendCommandBatch' cmdb@CommandBatch{..} = do
   mlid <- use currentLeader
   case mlid of
@@ -97,7 +97,7 @@ clientSendCommandBatch' cmdb@CommandBatch{..} = do
 
 -- THREAD: CLIENT MAIN. updates state
 -- If the client doesn't know the leader? Then set leader to first node, the client will be updated with the real leaderId when it receives a command response.
-setLeaderToFirst' :: Monad m => Raft m ()
+setLeaderToFirst' :: Raft ()
 setLeaderToFirst' = do
   nodes <- view (cfg.otherNodes)
   when (Set.null nodes) $ error "the client has no nodes to send requests to"

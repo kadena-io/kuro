@@ -99,7 +99,7 @@ createRequestVoteResponse' target lastLogIndex' vote = do
   (target,) <$> createRequestVoteResponse term' lastLogIndex' myNodeId' target vote
 
 
-handle :: Monad m => RequestVote -> JT.Raft m ()
+handle :: RequestVote -> JT.Raft ()
 handle rv = do
   r <- ask
   s <- get

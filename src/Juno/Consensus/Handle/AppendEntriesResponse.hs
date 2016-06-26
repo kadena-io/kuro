@@ -102,7 +102,7 @@ updateCommitProofMap aerNew m = Map.alter go nid m
                      then Just aerNew
                      else Just aerOld
 
-handle :: Monad m => AppendEntriesResponse -> JT.Raft m ()
+handle :: AppendEntriesResponse -> JT.Raft ()
 handle ae = do
   s <- get
   let ape = AEResponseEnv
@@ -129,7 +129,7 @@ handle ae = do
       updateLNextIndex $ Map.insert _sendAENodeId _setLaggingLogIndex
       resetElectionTimerLeader
 
-handleAlotOfAers :: Monad m => AlotOfAERs -> JT.Raft m ()
+handleAlotOfAers :: AlotOfAERs -> JT.Raft ()
 handleAlotOfAers (AlotOfAERs m) = do
   ks <- KeySet <$> view (JT.cfg . JT.publicKeys) <*> view (JT.cfg . JT.clientPublicKeys)
   res <- return ((processSetAer ks <$> Map.elems m) `using` parList rseq)

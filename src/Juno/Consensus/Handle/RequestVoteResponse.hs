@@ -71,7 +71,7 @@ checkElection votes = do
   else return $ UpdateYesVotes votes
 
 
-handle :: Monad m => RequestVoteResponse -> JT.Raft m ()
+handle :: RequestVoteResponse -> JT.Raft ()
 handle m = do
   r <- ask
   s <- get
@@ -95,7 +95,7 @@ handle m = do
 
 
 -- THREAD: SERVER MAIN. updates state
-becomeLeader :: Monad m => JT.Raft m ()
+becomeLeader :: JT.Raft ()
 becomeLeader = do
   setRole Leader
   setCurrentLeader . Just =<< view (JT.cfg.JT.nodeId)
@@ -107,7 +107,7 @@ becomeLeader = do
   resetHeartbeatTimer
   resetElectionTimerLeader
 
-revertToLastQuorumState :: Monad m => JT.Raft m ()
+revertToLastQuorumState :: JT.Raft ()
 revertToLastQuorumState = do
   es <- use JT.logEntries
   setRole Follower

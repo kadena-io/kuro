@@ -151,7 +151,7 @@ appendLogEntries pli newEs = do
     else
       return $ Commit replay logEntries''
 
-applyNewLeader :: Monad m => CheckForNewLeaderOut -> JT.Raft m ()
+applyNewLeader :: CheckForNewLeaderOut -> JT.Raft ()
 applyNewLeader LeaderUnchanged = return ()
 applyNewLeader NewLeaderConfirmed{..} = do
   setTerm _stateRsUpdateTerm
@@ -159,14 +159,14 @@ applyNewLeader NewLeaderConfirmed{..} = do
   setCurrentLeader $ Just _stateCurrentLeader
   setRole _stateRole
 
-logHashChange :: Monad m => JT.Raft m ()
+logHashChange :: JT.Raft ()
 logHashChange = do
   mLastHash <- firstOf (_last.JT.leHash) <$> use JT.logEntries
   case mLastHash of
     Just lastHash -> logMetric $ JT.MetricHash lastHash
     Nothing -> return ()
 
-handle :: Monad m => AppendEntries -> JT.Raft m ()
+handle :: AppendEntries -> JT.Raft ()
 handle ae = do
   r <- ask
   s <- get

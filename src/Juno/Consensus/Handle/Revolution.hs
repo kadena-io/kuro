@@ -50,7 +50,7 @@ handleRevolution rev@Revolution{..} = do
       _ -> return RevolutionCalledOnNonLeader
   else return UnknownNode
 
-handle :: Monad m => Revolution -> JT.Raft m ()
+handle :: Revolution -> JT.Raft ()
 handle msg = do
   s <- get
   (out,l) <- runReaderT (runWriterT (handleRevolution msg)) $

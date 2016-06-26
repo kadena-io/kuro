@@ -19,11 +19,11 @@ import qualified Data.Map.Strict as Map
 
 import Juno.Types
 
-nodes :: [NodeID]
-nodes = iterate (\n@(NodeID h p _ _) -> n {_port = p + 1
+nodes :: [NodeId]
+nodes = iterate (\n@(NodeId h p _ _) -> n {_port = p + 1
                                           , _fullAddr = "tcp://" ++ h ++ ":" ++ show (p+1)
                                           , _alias = Alias $ "node" ++ show (p+1-10000)})
-                    (NodeID "127.0.0.1" 10000 "tcp://127.0.0.1:10000" $ Alias "node0")
+                    (NodeId "127.0.0.1" 10000 "tcp://127.0.0.1:10000" $ Alias "node0")
 
 makeKeys :: CryptoRandomGen g => Int -> g -> [(PrivateKey,PublicKey)]
 makeKeys 0 _ = []
@@ -31,13 +31,13 @@ makeKeys n g = case generateKeyPair g of
   Left err -> error $ show err
   Right (p,priv,g') -> (p,priv) : makeKeys (n-1) g'
 
-keyMaps :: [(PrivateKey,PublicKey)] -> (Map NodeID PrivateKey, Map NodeID PublicKey)
+keyMaps :: [(PrivateKey,PublicKey)] -> (Map NodeId PrivateKey, Map NodeId PublicKey)
 keyMaps ls = (Map.fromList $ zip nodes (fst <$> ls), Map.fromList $ zip nodes (snd <$> ls))
 
-awsNodes :: [String] -> [NodeID]
-awsNodes = fmap (\h -> (NodeID h 10000 ("tcp://" ++ h ++ ":10000") $ Alias ("tcp://" ++ h ++ ":10000")))
+awsNodes :: [String] -> [NodeId]
+awsNodes = fmap (\h -> (NodeId h 10000 ("tcp://" ++ h ++ ":10000") $ Alias ("tcp://" ++ h ++ ":10000")))
 
-awsKeyMaps :: [NodeID] -> [(PrivateKey, PublicKey)] -> (Map NodeID PrivateKey, Map NodeID PublicKey)
+awsKeyMaps :: [NodeId] -> [(PrivateKey, PublicKey)] -> (Map NodeId PrivateKey, Map NodeId PublicKey)
 awsKeyMaps nodes' ls = (Map.fromList $ zip nodes' (fst <$> ls), Map.fromList $ zip nodes' (snd <$> ls))
 
 main :: IO ()
@@ -91,7 +91,7 @@ mainLocal = do
       mapM_ (\c' -> Y.encodeFile ("conf" </> show (_port $ _nodeId c') ++ "-client.yaml") c') clientConfs
     _ -> putStrLn "Failed to read either input into a number, please try again"
 
-createClusterConfig :: Bool -> (Map NodeID PrivateKey, Map NodeID PublicKey) -> Map NodeID PublicKey -> NodeID -> Config
+createClusterConfig :: Bool -> (Map NodeId PrivateKey, Map NodeId PublicKey) -> Map NodeId PublicKey -> NodeId -> Config
 createClusterConfig debugFollower (privMap, pubMap) clientPubMap nid = Config
   { _otherNodes           = Set.delete nid $ Map.keysSet pubMap
   , _nodeId               = nid
@@ -100,8 +100,8 @@ createClusterConfig debugFollower (privMap, pubMap) clientPubMap nid = Config
   , _myPrivateKey         = privMap Map.! nid
   , _myPublicKey          = pubMap Map.! nid
   , _myEncryptionKey      = EncryptionKey $ exportPublic $ pubMap Map.! nid
-  , _electionTimeoutRange = (30000000,60000000)
-  , _heartbeatTimeout     = 1500000              -- seems like a while...
+  , _electionTimeoutRange = (3000000,6000000)
+  , _heartbeatTimeout     = 500000              -- seems like a while...
   , _batchTimeDelta       = fromSeconds' (1%100) -- default to 10ms
   , _enableDebug          = True
   , _clientTimeoutLimit   = 50000
@@ -109,7 +109,7 @@ createClusterConfig debugFollower (privMap, pubMap) clientPubMap nid = Config
   , _apiPort              = 8000
   }
 
-createClientConfig :: Bool -> Map NodeID PublicKey -> (Map NodeID PrivateKey, Map NodeID PublicKey) -> NodeID -> Config
+createClientConfig :: Bool -> Map NodeId PublicKey -> (Map NodeId PrivateKey, Map NodeId PublicKey) -> NodeId -> Config
 createClientConfig debugFollower clusterPubMap (privMap, pubMap) nid = Config
   { _otherNodes           = Map.keysSet clusterPubMap
   , _nodeId               = nid
@@ -118,8 +118,8 @@ createClientConfig debugFollower clusterPubMap (privMap, pubMap) nid = Config
   , _myPrivateKey         = privMap Map.! nid
   , _myPublicKey          = pubMap Map.! nid
   , _myEncryptionKey      = EncryptionKey $ exportPublic $ pubMap Map.! nid
-  , _electionTimeoutRange = (30000000,60000000)
-  , _heartbeatTimeout     = 1500000
+  , _electionTimeoutRange = (3000000,6000000)
+  , _heartbeatTimeout     = 500000
   , _batchTimeDelta       = fromSeconds' (1%100) -- default to 10ms
   , _enableDebug          = False
   , _clientTimeoutLimit   = 50000

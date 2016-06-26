@@ -45,7 +45,7 @@ createAppendEntries' target lNextIndex' es ct nid vts yesVotes =
   in
     AE' $ AppendEntries ct nid pli plt (getEntriesAfter pli es) vts' NewMsg
 
-sendAppendEntries :: Monad m => NodeId -> Raft m ()
+sendAppendEntries :: NodeId -> Raft ()
 sendAppendEntries target = do
   lNextIndex' <- use lNextIndex
   es <- use logEntries
@@ -57,7 +57,7 @@ sendAppendEntries target = do
   resetLastBatchUpdate
   debug $ "sendAppendEntries: " ++ show ct
 
-sendAllAppendEntries :: Monad m => Raft m ()
+sendAllAppendEntries :: Raft ()
 sendAllAppendEntries = do
   lNextIndex' <- use lNextIndex
   es <- use logEntries
@@ -74,7 +74,7 @@ createAppendEntriesResponse' :: Bool -> Bool -> Term -> NodeId -> LogIndex -> By
 createAppendEntriesResponse' success convinced ct nid lindex lhash =
   AER' $ AppendEntriesResponse ct nid success convinced lindex lhash True NewMsg
 
-createAppendEntriesResponse :: Monad m => Bool -> Bool -> Raft m AppendEntriesResponse
+createAppendEntriesResponse :: Bool -> Bool -> Raft AppendEntriesResponse
 createAppendEntriesResponse success convinced = do
   ct <- use term
   nid <- view (cfg.nodeId)
@@ -84,7 +84,7 @@ createAppendEntriesResponse success convinced = do
     AER' aer -> return aer
     _ -> error "deep invariant error"
 
-sendAppendEntriesResponse :: Monad m => NodeId -> Bool -> Bool -> Raft m ()
+sendAppendEntriesResponse :: NodeId -> Bool -> Bool -> Raft ()
 sendAppendEntriesResponse target success convinced = do
   ct <- use term
   nid <- view (cfg.nodeId)
@@ -93,7 +93,7 @@ sendAppendEntriesResponse target success convinced = do
               (maxIndex es) (lastLogHash es)
   debug $ "Sent AppendEntriesResponse: " ++ show ct
 
-sendAllAppendEntriesResponse :: Monad m => Raft m ()
+sendAllAppendEntriesResponse :: Raft ()
 sendAllAppendEntriesResponse = do
   ct <- use term
   nid <- view (cfg.nodeId)
@@ -107,26 +107,26 @@ createRequestVoteResponse term' logIndex' myNodeId' target vote = do
   tell ["Created RequestVoteResponse: " ++ show term']
   return $ RequestVoteResponse term' logIndex' myNodeId' vote target NewMsg
 
-sendResults :: Monad m => [(NodeId, CommandResponse)] -> Raft m ()
+sendResults :: [(NodeId, CommandResponse)] -> Raft ()
 sendResults results = sendRPCs $ second CMDR' <$> results
 
-sendRPC :: Monad m => NodeId -> RPC -> Raft m ()
+sendRPC :: NodeId -> RPC -> Raft ()
 sendRPC target rpc = do
   send <- view (rs.sendMessage)
   myNodeId <- view (cfg.nodeId)
   privKey <- view (cfg.myPrivateKey)
   pubKey <- view (cfg.myPublicKey)
-  send target $ encode $ rpcToSignedRPC myNodeId pubKey privKey rpc
+  liftIO $ send target $ encode $ rpcToSignedRPC myNodeId pubKey privKey rpc
 
 encodedRPC :: NodeId -> PrivateKey -> PublicKey -> RPC -> ByteString
 encodedRPC myNodeId privKey pubKey rpc = encode $! rpcToSignedRPC myNodeId pubKey privKey rpc
 {-# INLINE encodedRPC #-}
 
-sendRPCs :: Monad m => [(NodeId, RPC)] -> Raft m ()
+sendRPCs :: [(NodeId, RPC)] -> Raft ()
 sendRPCs rpcs = do
   send <- view (rs.sendMessages)
   myNodeId <- view (cfg.nodeId)
   privKey <- view (cfg.myPrivateKey)
   pubKey <- view (cfg.myPublicKey)
   msgs <- return ((second (encodedRPC myNodeId privKey pubKey) <$> rpcs ) `using` parList rseq)
-  send msgs
+  liftIO $ send msgs

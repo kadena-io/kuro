@@ -79,7 +79,7 @@ handleCommand cmd@Command{..} = do
       -- anything
       return UnknownLeader
 
-handleSingleCommand :: Monad m => Command -> JT.Raft m ()
+handleSingleCommand :: Command -> JT.Raft ()
 handleSingleCommand cmd = do
   c <- view JT.cfg
   s <- get
@@ -100,8 +100,8 @@ handleSingleCommand cmd = do
                myEvidence <- createAppendEntriesResponse True True
                JT.commitProof %= updateCommitProofMap myEvidence
 
-handle :: Monad m => Command -> JT.Raft m ()
+handle :: Command -> JT.Raft ()
 handle cmd = handleSingleCommand cmd
 
-handleBatch :: Monad m => CommandBatch -> JT.Raft m ()
+handleBatch :: CommandBatch -> JT.Raft ()
 handleBatch CommandBatch{..} = mapM_ handleSingleCommand _cmdbBatch

@@ -5,10 +5,10 @@ module Juno.Monitoring.Server
   ( startMonitoring
   ) where
 
-import System.Process (system)
+-- import System.Process (system)
 
-import Control.Monad (void)
-import Control.Concurrent (forkIO)
+-- import Control.Monad (void)
+-- import Control.Concurrent (forkIO)
 import Control.Lens ((^.), to)
 import Data.Text.Encoding (decodeUtf8)
 
@@ -29,12 +29,13 @@ startApi config = forkServer "localhost" port
     port = 80 + fromIntegral (config ^. nodeId . to _port)
 
 awsDashVar :: String -> String -> IO ()
-awsDashVar k v = void $ forkIO $ void $ system $
-  "aws ec2 create-tags --resources `ec2-metadata --instance-id | sed 's/^.*: //g'` --tags Key="
-  ++ k
-  ++ ",Value="
-  ++ v
-  ++ " >/dev/null"
+awsDashVar _  _ = return ()
+--awsDashVar k v = void $ forkIO $ void $ system $
+--  "aws ec2 create-tags --resources `ec2-metadata --instance-id | sed 's/^.*: //g'` --tags Key="
+--  ++ k
+--  ++ ",Value="
+--  ++ v
+--  ++ " >/dev/null"
 
 startMonitoring :: Config -> IO (Metric -> IO ())
 startMonitoring config = do

@@ -6,6 +6,7 @@ where
 import Control.Lens hiding ((:>))
 import Data.AffineSpace
 import Control.Monad
+import Control.Monad.IO.Class
 import Data.Maybe
 
 import Juno.Types
@@ -22,7 +23,7 @@ import qualified Juno.Consensus.Handle.ElectionTimeout as PureElectionTimeout
 import qualified Juno.Consensus.Handle.HeartbeatTimeout as PureHeartbeatTimeout
 import qualified Juno.Consensus.Handle.Revolution as PureRevolution
 
-issueBatch :: Monad m => Raft m ()
+issueBatch :: Raft ()
 issueBatch = do
   role' <- use nodeRole
   ci <- use commitIndex
@@ -32,7 +33,7 @@ issueBatch = do
     Leader -> do
       -- right now, only batch if leader
       batchTimeDelta' <- view (cfg.batchTimeDelta)
-      curTime <- join $ view (rs.getTimestamp)
+      curTime <- view (rs.getTimestamp) >>= liftIO
       (ts, h) <- use lLastBatchUpdate
       when (curTime .-. ts >= batchTimeDelta') $ do
         doCommit
@@ -41,15 +42,15 @@ issueBatch = do
         then do
           sendAllAppendEntriesResponse
           sendAllAppendEntries
-          curTime' <- join $ view (rs.getTimestamp)
+          curTime' <- view (rs.getTimestamp) >>= liftIO
           lLastBatchUpdate .= (curTime', h)
           debug "Batch Issuance Triggered"
         else do
-          curTime' <- join $ view (rs.getTimestamp)
+          curTime' <- view (rs.getTimestamp) >>= liftIO
           lLastBatchUpdate .= (curTime', h)
 
 -- THREAD: SERVER MAIN
-handleEvents :: Monad m => Raft m ()
+handleEvents :: Raft ()
 handleEvents = forever $ do
   e <- dequeueEvent
   case e of
@@ -58,7 +59,7 @@ handleEvents = forever $ do
     ElectionTimeout s  -> PureElectionTimeout.handle s >> issueBatch
     HeartbeatTimeout s -> PureHeartbeatTimeout.handle s >> issueBatch
 
-handleRPC :: Monad m => RPC -> Raft m ()
+handleRPC :: RPC -> Raft ()
 handleRPC rpc = case rpc of
   AE' ae          -> PureAppendEntries.handle ae
   AER' aer        -> PureAppendEntriesResponse.handle aer

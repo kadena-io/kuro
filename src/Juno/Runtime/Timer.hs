@@ -7,49 +7,49 @@ module Juno.Runtime.Timer
   , cancelTimer
   ) where
 
-import Control.Monad
+import Control.Monad.IO.Class
 import Control.Lens hiding (Index)
 import Juno.Types
 import Juno.Util.Util
 
-getNewElectionTimeout :: Monad m => Raft m Int
+getNewElectionTimeout :: Raft Int
 getNewElectionTimeout = view (cfg.electionTimeoutRange) >>= randomRIO
 
-resetElectionTimer :: Monad m => Raft m ()
+resetElectionTimer :: Raft ()
 resetElectionTimer = do
   timeout <- getNewElectionTimeout
   setTimedEvent (ElectionTimeout $ show (timeout `div` 1000) ++ "ms") timeout
 
-hasElectionTimerLeaderFired :: Monad m => Raft m Bool
+hasElectionTimerLeaderFired :: Raft Bool
 hasElectionTimerLeaderFired = do
   maxTimeout <- ((*2) . snd) <$> view (cfg.electionTimeoutRange)
   timeSinceLastAER' <- use timeSinceLastAER
   return $ timeSinceLastAER' >= maxTimeout
 
-resetElectionTimerLeader :: Monad m => Raft m ()
+resetElectionTimerLeader :: Raft ()
 resetElectionTimerLeader = timeSinceLastAER .= 0
 
-resetHeartbeatTimer :: Monad m => Raft m ()
+resetHeartbeatTimer :: Raft ()
 resetHeartbeatTimer = do
   timeout <- view (cfg.heartbeatTimeout)
   setTimedEvent (HeartbeatTimeout $ show (timeout `div` 1000) ++ "ms") timeout
 
-cancelTimer :: Monad m => Raft m ()
+cancelTimer :: Raft ()
 cancelTimer = do
   tmr <- use timerThread
   case tmr of
     Nothing -> return ()
-    Just t -> view (rs.killEnqueued) >>= \f -> f t
+    Just t -> view (rs.killEnqueued) >>= \f -> liftIO $ f t
   timerThread .= Nothing
 
-setTimedEvent :: Monad m => Event -> Int -> Raft m ()
+setTimedEvent :: Event -> Int -> Raft ()
 setTimedEvent e t = do
   cancelTimer
   tmr <- enqueueEventLater t e -- forks, no state
   timerThread .= Just tmr
 
-resetLastBatchUpdate :: Monad m => Raft m ()
+resetLastBatchUpdate :: Raft ()
 resetLastBatchUpdate = do
-  curTime <- join $ view (rs.getTimestamp)
+  curTime <- view (rs.getTimestamp) >>= liftIO
   l <- lastEntry <$> use logEntries
   lLastBatchUpdate .= (curTime, _leHash <$> l)

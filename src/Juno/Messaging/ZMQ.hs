@@ -24,7 +24,7 @@ import Data.Thyme.LocalTime
 import System.IO (hFlush, stderr, stdout)
 
 import Juno.Messaging.Types
-import Juno.Types (ReceivedAt(..),Digest(..),MsgType(..),SignedRPC(..))
+import Juno.Types (ReceivedAt(..),Digest(..),MsgType(..),SignedRPC(..), Addr(..), Rolodex(..), Recipients(..), OutBoundMsg(..), ListenOn(..))
 -- import Juno.Util.Combinator (foreverRetry)
 
 sendProcess :: OutChan (OutBoundMsg String ByteString)

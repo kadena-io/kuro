@@ -4,7 +4,11 @@ module Juno.Types.Message
   ( module X
   , RPC(..)
   , signedRPCtoRPC, rpcToSignedRPC
+  , Addr(..), Rolodex(..), ListenOn(..), Recipients(..), OutBoundMsg(..)
   ) where
+
+import qualified Data.Set as Set
+import qualified Data.Map.Strict as Map
 
 import GHC.Generics
 
@@ -19,6 +23,21 @@ import Juno.Types.Message.REV as X
 import Juno.Types.Message.RV as X
 import Juno.Types.Message.RVR as X
 import Juno.Types.Message.Signed as X
+
+newtype Addr a = Addr { _unAddr :: a } deriving (Read,Show,Eq,Ord)
+newtype Rolodex a s = Rolodex {_unRolodex :: Map.Map (Addr a) (ListenOn s)}
+newtype ListenOn a = ListenOn {_unListenOn :: a}
+
+-- | Specifiy who the message should go to
+data Recipients a = RAll
+                  | RSome (Set.Set (Addr a))
+                  | ROne (Addr a)
+                  deriving (Show,Eq,Generic)
+
+data OutBoundMsg addr msg = OutBoundMsg {
+  _obmTo     :: Recipients addr
+  , _obmBody :: msg
+  } deriving (Show, Eq)
 
 data RPC = AE'   AppendEntries
          | AER'  AppendEntriesResponse

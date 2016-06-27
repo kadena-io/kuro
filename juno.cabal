@@ -64,6 +64,7 @@ library
                      , Juno.Types
                      , Juno.Types.Base
                      , Juno.Types.Command
+                     , Juno.Types.Comms
                      , Juno.Types.Config
                      , Juno.Types.Event
                      , Juno.Types.Log

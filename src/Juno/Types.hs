@@ -4,6 +4,7 @@ module Juno.Types
 
 import Juno.Types.Base as X
 import Juno.Types.Command as X
+import Juno.Types.Comms as X
 import Juno.Types.Config as X
 import Juno.Types.Event as X
 import Juno.Types.Log as X

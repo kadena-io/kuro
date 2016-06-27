@@ -1,14 +1,18 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Juno.Types.Comms
   ( Comms(..)
-  , ReceivedAER(..)
-  , ReceivedCMD(..)
-  , ReceivedRVorRVR(..)
-  , ReceivedGeneral(..)
-  , OtherNodes(..)
-  , ConsensusEvent(..)
+  , CommChannel(..), inChan, outChan
+  , Dispatch(..), inboundAER, inboundCMD, inboundRVorRVR, inboundGeneral, outboundGeneral, internalEvent
+  , initDispatch
+  , InboundAER(..)
+  , InboundCMD(..)
+  , InboundRVorRVR(..)
+  , InboundGeneral(..)
+  , OutboundGeneral(..)
+  , InternalEvent(..)
   ) where
 
 import Juno.Types.Base
@@ -16,6 +20,7 @@ import Juno.Types.Event
 import Juno.Types.Message.Signed
 import Juno.Types.Message
 
+import Control.Lens
 import Control.Monad
 import Control.Concurrent (threadDelay, takeMVar, putMVar, newMVar, MVar)
 
@@ -29,21 +34,26 @@ import Data.Typeable
 class Comms c where
   type InChan c :: *
   type OutChan c :: *
-  initComms :: IO (InChan c, OutChan c)
+  initComms :: IO (CommChannel c)
   readComm :: OutChan c -> IO c
   readComms :: OutChan c -> Int -> IO [c]
   writeComm :: InChan c -> c -> IO ()
 
-newtype ReceivedAER = ReceivedAER { _unReceivedAER :: (ReceivedAt, SignedRPC)}
+data CommChannel a = CommChannel
+  { _inChan :: InChan a
+  , _outChan :: OutChan a
+  } deriving (Typeable)
+
+newtype InboundAER = InboundAER { _unInboundAER :: (ReceivedAt, SignedRPC)}
   deriving (Show, Eq, Typeable)
 
-instance Comms ReceivedAER where
-  type InChan ReceivedAER  = NoBlock.InChan ReceivedAER
-  type OutChan ReceivedAER = MVar (NoBlock.Stream ReceivedAER)
+instance Comms InboundAER where
+  type InChan InboundAER  = NoBlock.InChan InboundAER
+  type OutChan InboundAER = MVar (NoBlock.Stream InboundAER)
   initComms = do
     (i, o) <- NoBlock.newChan
     m <- newMVar =<< return . head =<< NoBlock.streamChan 1 o
-    return (i,m)
+    return $ CommChannel i m
   readComm m = do
     possibleRead <- takeMVar m
     t <- NoBlock.tryReadNext possibleRead
@@ -58,16 +68,16 @@ instance Comms ReceivedAER where
       else threadDelay 1000 >> return []
   writeComm i c = NoBlock.writeChan i c
 
-newtype ReceivedCMD = ReceivedCMD { _unReceivedCMD :: (ReceivedAt, SignedRPC)}
+newtype InboundCMD = InboundCMD { _unInboundCMD :: (ReceivedAt, SignedRPC)}
   deriving (Show, Eq, Typeable)
 
-instance Comms ReceivedCMD where
-  type InChan ReceivedCMD  = NoBlock.InChan ReceivedCMD
-  type OutChan ReceivedCMD = MVar (NoBlock.Stream ReceivedCMD)
+instance Comms InboundCMD where
+  type InChan InboundCMD  = NoBlock.InChan InboundCMD
+  type OutChan InboundCMD = MVar (NoBlock.Stream InboundCMD)
   initComms = do
     (i, o) <- NoBlock.newChan
     m <- newMVar =<< return . head =<< NoBlock.streamChan 1 o
-    return (i,m)
+    return $ CommChannel i m
   readComm m = do
     possibleRead <- takeMVar m
     t <- NoBlock.tryReadNext possibleRead
@@ -82,16 +92,16 @@ instance Comms ReceivedCMD where
       else threadDelay 1000 >> return []
   writeComm i c = NoBlock.writeChan i c
 
-newtype ReceivedRVorRVR = ReceivedRVorRVR { _unReceivedRVorRVR :: (ReceivedAt, SignedRPC)}
+newtype InboundRVorRVR = InboundRVorRVR { _unInboundRVorRVR :: (ReceivedAt, SignedRPC)}
   deriving (Show, Eq, Typeable)
 
-instance Comms ReceivedRVorRVR where
-  type InChan ReceivedRVorRVR  = Unagi.InChan ReceivedRVorRVR
-  type OutChan ReceivedRVorRVR = MVar (Maybe (Unagi.Element ReceivedRVorRVR, IO ReceivedRVorRVR), Unagi.OutChan ReceivedRVorRVR)
+instance Comms InboundRVorRVR where
+  type InChan InboundRVorRVR  = Unagi.InChan InboundRVorRVR
+  type OutChan InboundRVorRVR = MVar (Maybe (Unagi.Element InboundRVorRVR, IO InboundRVorRVR), Unagi.OutChan InboundRVorRVR)
   initComms = do
     (i, o) <- Unagi.newChan
     m <- newMVar (Nothing, o)
-    return (i,m)
+    return $ CommChannel i m
   readComm m = do
     (e, o) <- takeMVar m
     case e of
@@ -113,16 +123,16 @@ instance Comms ReceivedRVorRVR where
           Just v' -> readRegularUnagi (Just v') m o cnt
   writeComm i c = Unagi.writeChan i c
 
-newtype ReceivedGeneral = ReceivedGeneral { _unReceivedGeneral :: (ReceivedAt, SignedRPC)}
+newtype InboundGeneral = InboundGeneral { _unInboundGeneral :: (ReceivedAt, SignedRPC)}
   deriving (Show, Eq, Typeable)
 
-instance Comms ReceivedGeneral where
-  type InChan ReceivedGeneral  = NoBlock.InChan ReceivedGeneral
-  type OutChan ReceivedGeneral = MVar (NoBlock.Stream ReceivedGeneral)
+instance Comms InboundGeneral where
+  type InChan InboundGeneral  = NoBlock.InChan InboundGeneral
+  type OutChan InboundGeneral = MVar (NoBlock.Stream InboundGeneral)
   initComms = do
     (i, o) <- NoBlock.newChan
     m <- newMVar =<< return . head =<< NoBlock.streamChan 1 o
-    return (i,m)
+    return $ CommChannel i m
   readComm m = do
     possibleRead <- takeMVar m
     t <- NoBlock.tryReadNext possibleRead
@@ -137,16 +147,16 @@ instance Comms ReceivedGeneral where
       else threadDelay 1000 >> return []
   writeComm i c = NoBlock.writeChan i c
 
-newtype OtherNodes = OtherNodes { _unOtherNodes :: OutBoundMsg String ByteString}
+newtype OutboundGeneral = OutboundGeneral { _unOutboundGeneral :: OutBoundMsg String ByteString}
   deriving (Show, Eq, Typeable)
 
-instance Comms OtherNodes where
-  type InChan OtherNodes  = Unagi.InChan OtherNodes
-  type OutChan OtherNodes = MVar (Maybe (Unagi.Element OtherNodes, IO OtherNodes), Unagi.OutChan OtherNodes)
+instance Comms OutboundGeneral where
+  type InChan OutboundGeneral  = Unagi.InChan OutboundGeneral
+  type OutChan OutboundGeneral = MVar (Maybe (Unagi.Element OutboundGeneral, IO OutboundGeneral), Unagi.OutChan OutboundGeneral)
   initComms = do
     (i, o) <- Unagi.newChan
     m <- newMVar (Nothing, o)
-    return (i,m)
+    return $ CommChannel i m
   readComm m = do
     (e, o) <- takeMVar m
     case e of
@@ -168,16 +178,16 @@ instance Comms OtherNodes where
           Just v' -> readRegularUnagi (Just v') m o cnt
   writeComm i c = Unagi.writeChan i c
 
-newtype ConsensusEvent = ConsensusEvent { _unConsensusEvent :: Event}
+newtype InternalEvent = InternalEvent { _unInternalEvent :: Event}
   deriving (Show, Typeable)
 
-instance Comms ConsensusEvent where
-  type InChan ConsensusEvent  = Bounded.InChan ConsensusEvent
-  type OutChan ConsensusEvent = MVar (Maybe (Bounded.Element ConsensusEvent, IO ConsensusEvent), Bounded.OutChan ConsensusEvent)
+instance Comms InternalEvent where
+  type InChan InternalEvent  = Bounded.InChan InternalEvent
+  type OutChan InternalEvent = MVar (Maybe (Bounded.Element InternalEvent, IO InternalEvent), Bounded.OutChan InternalEvent)
   initComms = do
     (i, o) <- Bounded.newChan 20
     m <- newMVar (Nothing, o)
-    return (i,m)
+    return $ CommChannel i m
   readComm m = do
     (e, o) <- takeMVar m
     case e of
@@ -198,6 +208,24 @@ instance Comms ConsensusEvent where
           Nothing -> putMVar m (Just (v,blockingRead),o) >> return []
           Just v' -> readBoundedUnagi (Just v') m o cnt
   writeComm i c = Bounded.writeChan i c
+
+data Dispatch = Dispatch
+  { _inboundAER :: CommChannel InboundAER
+  , _inboundCMD :: CommChannel InboundCMD
+  , _inboundRVorRVR :: CommChannel InboundRVorRVR
+  , _inboundGeneral :: CommChannel InboundGeneral
+  , _outboundGeneral :: CommChannel OutboundGeneral
+  , _internalEvent :: CommChannel InternalEvent
+  } deriving (Typeable)
+
+initDispatch :: IO Dispatch
+initDispatch = Dispatch
+            <$> initComms
+            <*> initComms
+            <*> initComms
+            <*> initComms
+            <*> initComms
+            <*> initComms
 
 -- Utility Functions to allow for reading N elements off a queue
 readRegularUnagi :: (Num a, Ord a)
@@ -244,3 +272,6 @@ readStream m strm cnt'
       case s of
         NoBlock.Next a strm' -> liftM (a:) (readStream m strm' (cnt'-1))
         NoBlock.Pending -> putMVar m strm >> return []
+
+makeLenses ''CommChannel
+makeLenses ''Dispatch

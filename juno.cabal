@@ -48,7 +48,6 @@ library
                      , Juno.Hoplite.Term
                      , Juno.Hoplite.Transmatic
                      , Juno.Hoplite.Types
-                     , Juno.Messaging.Types
                      , Juno.Messaging.ZMQ
                      , Juno.Monitoring.EkgJson
                      , Juno.Monitoring.EkgMonitor

@@ -8,12 +8,10 @@ module Juno.Messaging.ZMQ (
   runMsgServer
   ) where
 
+import Control.Lens
 import Control.Concurrent (forkIO, threadDelay, yield, newMVar, takeMVar, putMVar, yield)
 import qualified Control.Concurrent.Async as Async
-import Control.Concurrent.Chan.Unagi
-import qualified Control.Concurrent.Chan.Unagi.NoBlocking as NoBlock
 import Control.Monad.State.Strict
-import Data.ByteString (ByteString)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import System.ZMQ4.Monadic
@@ -23,18 +21,25 @@ import Data.Thyme.Calendar (showGregorian)
 import Data.Thyme.LocalTime
 import System.IO (hFlush, stderr, stdout)
 
-import Juno.Messaging.Types
-import Juno.Types (ReceivedAt(..),Digest(..),MsgType(..),SignedRPC(..), Addr(..), Rolodex(..), Recipients(..), OutBoundMsg(..), ListenOn(..))
+import Juno.Types (ReceivedAt(..),Digest(..),MsgType(..),SignedRPC(..)
+                  ,Addr(..),Rolodex(..),Recipients(..),OutBoundMsg(..),ListenOn(..)
+                  ,Comms(..),inChan,outChan
+                  ,OutboundGeneral(..),outboundGeneral
+                  ,Dispatch(..),inboundAER,inboundCMD,inboundRVorRVR,inboundGeneral
+                  ,InboundAER(..)
+                  ,InboundCMD(..)
+                  ,InboundRVorRVR(..)
+                  ,InboundGeneral(..))
 -- import Juno.Util.Combinator (foreverRetry)
 
-sendProcess :: OutChan (OutBoundMsg String ByteString)
+sendProcess :: OutChan OutboundGeneral
             -> Rolodex String (Socket z Push)
             -> ZMQ z ()
-sendProcess outboxRead !r = do
+sendProcess outChan' !r = do
   -- liftIO $ moreLogging "Entered sendProcess"
   rMvar <- liftIO $ newMVar r
   forever $ do
-    (OutBoundMsg !addrs !msg) <- liftIO $! readChan outboxRead
+    (OutBoundMsg !addrs !msg) <- liftIO $! _unOutboundGeneral <$> readComm outChan'
     -- liftIO $ moreLogging $ "Sending message to " ++ (show addrs) ++ " ## MSG ## " ++ show msg
     r' <- liftIO $ takeMVar rMvar
     !newRol <- updateRolodex r' addrs
@@ -81,15 +86,17 @@ moreLogging msg = do
   hFlush stdout >> hFlush stderr
 
 
-runMsgServer :: NoBlock.InChan (ReceivedAt, SignedRPC)
-             -> NoBlock.InChan (ReceivedAt, SignedRPC)
-             -> NoBlock.InChan (ReceivedAt, SignedRPC)
-             -> InChan (ReceivedAt, SignedRPC)
-             -> OutChan (OutBoundMsg String ByteString)
+runMsgServer :: Dispatch
              -> Addr String
              -> [Addr String]
              -> IO ()
-runMsgServer inboxWrite cmdInboxWrite aerInboxWrite rvAndRvrWrite outboxRead me addrList = void $ forkIO $ forever $ do
+runMsgServer dispatch me addrList = void $ forkIO $ forever $ do
+  inboxWrite <- return $ dispatch ^. inboundGeneral.inChan
+  cmdInboxWrite <- return $ dispatch ^. inboundCMD.inChan
+  aerInboxWrite <- return $ dispatch ^. inboundAER.inChan
+  rvAndRvrWrite <- return $ dispatch ^. inboundRVorRVR.inChan
+  outboxRead <- return $ dispatch ^. outboundGeneral.outChan
+
   zmqThread <- Async.async $ runZMQ $ do
     -- liftIO $ moreLogging "Launching ZMQ_THREAD"
     zmqReceiver <- async $ do
@@ -106,13 +113,13 @@ runMsgServer inboxWrite cmdInboxWrite aerInboxWrite rvAndRvrWrite outboxRead me 
             liftIO yield
           Right s@(SignedRPC dig _)
             | _digType dig == RV || _digType dig == RVR ->
-              liftIO $ writeChan rvAndRvrWrite (ReceivedAt ts, s) >> yield
+              liftIO $ writeComm rvAndRvrWrite (InboundRVorRVR (ReceivedAt ts, s)) >> yield
             | _digType dig == CMD || _digType dig == CMDB ->
-              liftIO $ NoBlock.writeChan cmdInboxWrite (ReceivedAt ts, s) >> yield
+              liftIO $ writeComm cmdInboxWrite (InboundCMD (ReceivedAt ts, s)) >> yield
             | _digType dig == AER ->
-              liftIO $ NoBlock.writeChan aerInboxWrite (ReceivedAt ts, s) >> yield
+              liftIO $ writeComm aerInboxWrite (InboundAER (ReceivedAt ts, s)) >> yield
             | otherwise           ->
-              liftIO $ NoBlock.writeChan inboxWrite (ReceivedAt ts, s) >> yield
+              liftIO $ writeComm inboxWrite (InboundGeneral (ReceivedAt ts, s)) >> yield
     liftIO $ threadDelay 100000 -- to be sure that the receive side is up first
 
     -- liftIO $ moreLogging "Launching ZMQ_SENDER"

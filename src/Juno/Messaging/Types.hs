@@ -1,20 +1,12 @@
-{-# LANGUAGE DeriveAnyClass    #-}
-{-# LANGUAGE DeriveGeneric     #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RankNTypes        #-}
+{-# LANGUAGE RankNTypes #-}
 
 module Juno.Messaging.Types (
   Spec(..)
-  ,Addr(..)
-  ,OutBoundMsg(..)
-  ,Recipients(..)
-  ,ListenOn(..)
-  ,Rolodex(..)
   ) where
 
 import Control.Concurrent.Chan.Unagi
 import Data.Serialize
-import Juno.Types (ReceivedAt, Addr(..), Rolodex(..), Recipients(..), OutBoundMsg(..), ListenOn(..))
+import Juno.Types (ReceivedAt, Addr(..), Rolodex(..), OutBoundMsg(..))
 
 data Spec addr msg sock = Spec {
   -- | Messages for you

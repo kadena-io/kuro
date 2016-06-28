@@ -21,15 +21,7 @@ import Data.Thyme.Calendar (showGregorian)
 import Data.Thyme.LocalTime
 import System.IO (hFlush, stderr, stdout)
 
-import Juno.Types (ReceivedAt(..),Digest(..),MsgType(..),SignedRPC(..)
-                  ,Addr(..),Rolodex(..),Recipients(..),OutBoundMsg(..),ListenOn(..)
-                  ,Comms(..),inChan,outChan
-                  ,OutboundGeneral(..),outboundGeneral
-                  ,Dispatch(..),inboundAER,inboundCMD,inboundRVorRVR,inboundGeneral
-                  ,InboundAER(..)
-                  ,InboundCMD(..)
-                  ,InboundRVorRVR(..)
-                  ,InboundGeneral(..))
+import Juno.Types
 -- import Juno.Util.Combinator (foreverRetry)
 
 sendProcess :: OutChan OutboundGeneral
@@ -91,11 +83,11 @@ runMsgServer :: Dispatch
              -> [Addr String]
              -> IO ()
 runMsgServer dispatch me addrList = void $ forkIO $ forever $ do
-  inboxWrite <- return $ dispatch ^. inboundGeneral.inChan
-  cmdInboxWrite <- return $ dispatch ^. inboundCMD.inChan
-  aerInboxWrite <- return $ dispatch ^. inboundAER.inChan
-  rvAndRvrWrite <- return $ dispatch ^. inboundRVorRVR.inChan
-  outboxRead <- return $ dispatch ^. outboundGeneral.outChan
+  inboxWrite <- return $ inChan $ dispatch ^. inboundGeneral
+  cmdInboxWrite <- return $ inChan $ dispatch ^. inboundCMD
+  aerInboxWrite <- return $ inChan $ dispatch ^. inboundAER
+  rvAndRvrWrite <- return $ inChan $ dispatch ^. inboundRVorRVR
+  outboxRead <- return $ outChan $ dispatch ^. outboundGeneral
 
   zmqThread <- Async.async $ runZMQ $ do
     -- liftIO $ moreLogging "Launching ZMQ_THREAD"

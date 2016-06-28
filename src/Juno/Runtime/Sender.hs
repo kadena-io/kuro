@@ -112,7 +112,7 @@ sendResults results = sendRPCs $ second CMDR' <$> results
 
 sendRPC :: NodeId -> RPC -> Raft ()
 sendRPC target rpc = do
-  send <- view (rs.sendMessage)
+  send <- view sendMessage
   myNodeId <- viewConfig nodeId
   privKey <- viewConfig myPrivateKey
   pubKey <- viewConfig myPublicKey
@@ -124,7 +124,7 @@ encodedRPC myNodeId privKey pubKey rpc = encode $! rpcToSignedRPC myNodeId pubKe
 
 sendRPCs :: [(NodeId, RPC)] -> Raft ()
 sendRPCs rpcs = do
-  send <- view (rs.sendMessages)
+  send <- view sendMessages
   myNodeId <- viewConfig nodeId
   privKey <- viewConfig myPrivateKey
   pubKey <- viewConfig myPublicKey

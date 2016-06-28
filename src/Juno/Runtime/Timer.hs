@@ -39,7 +39,7 @@ cancelTimer = do
   tmr <- use timerThread
   case tmr of
     Nothing -> return ()
-    Just t -> view (rs.killEnqueued) >>= \f -> liftIO $ f t
+    Just t -> view killEnqueued >>= \f -> liftIO $ f t
   timerThread .= Nothing
 
 setTimedEvent :: Event -> Int -> Raft ()

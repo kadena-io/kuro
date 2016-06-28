@@ -1,5 +1,7 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
 
@@ -20,15 +22,11 @@ import qualified Data.Serialize as S
 import qualified Data.Set as Set
 
 import Juno.Util.Combinator (foreverRetry)
-import Juno.Types hiding (getMessages, getNewCommands, getNewEvidence, enqueue, debugPrint, nodeId, getRvAndRVRs)
+import Juno.Types hiding (debugPrint, nodeId)
 
 data ReceiverEnv = ReceiverEnv
-  { _getMessages    :: Int -> IO [(ReceivedAt, SignedRPC)]
-  , _getNewCommands :: Int -> IO [(ReceivedAt, SignedRPC)]
-  , _getNewEvidence :: Int -> IO [(ReceivedAt, SignedRPC)]
-  , _getRvAndRVRs :: IO (ReceivedAt, SignedRPC)
+  { _dispatch :: Dispatch
   , _keySet :: KeySet
-  , _enqueue :: Event -> IO ()
   , _debugPrint :: String -> IO ()
   }
 makeLenses ''ReceiverEnv
@@ -41,10 +39,14 @@ runMessageReceiver env = void $ foreverRetry "MSG_RECEIVER_TURBO" $ runReaderT m
 messageReceiver :: ReaderT ReceiverEnv IO ()
 messageReceiver = do
   env <- ask
-  gm <- view getMessages
-  getCmds <- view getNewCommands
-  getAers <- view getNewEvidence
-  enqueueEvent <- view enqueue
+  (gm' :: OutChan InboundGeneral) <- outChan <$> view (dispatch.inboundGeneral)
+  let gm n = readComms gm' n
+  getCmds' <- outChan <$> view (dispatch.inboundCMD)
+  let getCmds n = readComms getCmds' n
+  getAers' <- outChan <$> view (dispatch.inboundAER)
+  let getAers n = readComms getAers' n
+  enqueueEvent' <- inChan <$> view (dispatch.internalEvent)
+  let enqueueEvent = writeComm enqueueEvent' . InternalEvent
   debug <- view debugPrint
   -- KeySet <$> view (cfg.publicKeys) <*> view (cfg.clientPublicKeys)
   ks <- view keySet
@@ -53,8 +55,8 @@ messageReceiver = do
     (alotOfAers, invalidAers) <- toAlotOfAers <$> getAers 2000
     unless (alotOfAers == mempty) $ enqueueEvent $ AERs alotOfAers
     mapM_ debug invalidAers
-    gm 50 >>= \s -> runReaderT (sequentialVerify ks s) env
-    verifiedCmds <- parallelVerify ks <$> getCmds 5000
+    gm 50 >>= \s -> runReaderT (sequentialVerify _unInboundGeneral ks s) env
+    verifiedCmds <- parallelVerify _unInboundCMD ks <$> getCmds 5000
     (invalidCmds, validCmds) <- return $ partitionEithers verifiedCmds
     mapM_ debug invalidCmds
     cmds@(CommandBatch cmds' _) <- return $ batchCommands validCmds
@@ -65,42 +67,41 @@ messageReceiver = do
 
 rvAndRvrFastPath :: ReaderT ReceiverEnv IO ()
 rvAndRvrFastPath = do
-  getRvAndRVRs' <- view getRvAndRVRs
-  enqueueEvent <- view enqueue
+  getRvAndRVRs' <- outChan <$> view (dispatch.inboundRVorRVR)
+  enqueueEvent <- inChan <$> view (dispatch.internalEvent)
   debug <- view debugPrint
   ks <- view keySet
   liftIO $ forever $ do
-    (ts, msg) <- getRvAndRVRs'
+    (ts, msg) <- _unInboundRVorRVR <$> readComm getRvAndRVRs'
     case signedRPCtoRPC (Just ts) ks msg of
       Left err -> debug err
       Right v -> do
         debug $ "Received " ++ show (_digType $ _sigDigest msg)
-        enqueueEvent $ ERPC v
+        writeComm enqueueEvent $ InternalEvent $ ERPC v
 
-toAlotOfAers :: [(ReceivedAt,SignedRPC)] -> (AlotOfAERs, [String])
+toAlotOfAers :: [InboundAER] -> (AlotOfAERs, [String])
 toAlotOfAers s = (alotOfAers, invalids)
   where
-    (invalids, decodedAers) = partitionEithers $ uncurry aerOnlyDecode <$> s
+    (invalids, decodedAers) = partitionEithers $ uncurry (aerOnlyDecode) . _unInboundAER <$> s
     mkAlot aer@AppendEntriesResponse{..} = AlotOfAERs $ Map.insert _aerNodeId (Set.singleton aer) Map.empty
     alotOfAers = mconcat (mkAlot <$> decodedAers)
 
 
-sequentialVerify :: (MonadIO m, MonadReader ReceiverEnv m) => KeySet -> [(ReceivedAt, SignedRPC)] -> m ()
-sequentialVerify ks msgs = do
-  (aes, noAes) <- return $ partition (\(_,SignedRPC{..}) -> if _digType _sigDigest == AE then True else False) msgs
-  (invalid, validNoAes) <- return $ partitionEithers $ parallelVerify ks noAes
-  enqueueEvent <- view enqueue
+sequentialVerify :: (MonadIO m, MonadReader ReceiverEnv m)
+                 => (f -> (ReceivedAt, SignedRPC)) -> KeySet -> [f] -> m ()
+sequentialVerify f ks msgs = do
+  (aes, noAes) <- return $ partition (\(_,SignedRPC{..}) -> if _digType _sigDigest == AE then True else False) (f <$> msgs)
+  (invalid, validNoAes) <- return $ partitionEithers $ parallelVerify id ks noAes
+  enqueueEvent <- inChan <$> view (dispatch.internalEvent)
   debug <- view debugPrint
-  unless (null validNoAes) $ mapM_ (liftIO . enqueueEvent . ERPC) validNoAes
+  unless (null validNoAes) $ mapM_ (liftIO . writeComm enqueueEvent . InternalEvent . ERPC) validNoAes
   unless (null invalid) $ mapM_ (liftIO . debug) invalid
   unless (null aes) $ mapM_ (\(ts,msg) -> case signedRPCtoRPC (Just ts) ks msg of
             Left err -> liftIO $ debug err
-            Right v -> liftIO $ enqueueEvent $ ERPC v) aes
+            Right v -> liftIO $ writeComm enqueueEvent $ InternalEvent $ ERPC v) aes
 
-
-
-parallelVerify :: KeySet -> [(ReceivedAt, SignedRPC)] -> [Either String RPC]
-parallelVerify ks msgs = ((\(ts, msg) -> signedRPCtoRPC (Just ts) ks msg) <$> msgs) `using` parList rseq
+parallelVerify :: (f -> (ReceivedAt,SignedRPC)) -> KeySet -> [f] -> [Either String RPC]
+parallelVerify f ks msgs = ((\(ts, msg) -> signedRPCtoRPC (Just ts) ks msg) . f <$> msgs) `using` parList rseq
 
 
 batchCommands :: [RPC] -> CommandBatch

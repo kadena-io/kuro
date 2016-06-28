@@ -7,14 +7,14 @@ module Juno.Types.Spec
   ( Raft
   , RaftSpec(..)
   , readLogEntry, writeLogEntry, readTermNumber, writeTermNumber
-  , readVotedFor, writeVotedFor, applyLogEntry, sendMessage
-  , sendMessages, getMessage, getMessages, getNewCommands, getNewEvidence, getRvAndRVRs
+  , readVotedFor, writeVotedFor, applyLogEntry
   , debugPrint, publishMetric, getTimestamp, random
-  , enqueue, enqueueMultiple, dequeue, enqueueLater, killEnqueued
   , viewConfig, readConfig
   -- for API <-> Juno communication
   , dequeueFromApi ,cmdStatusMap, updateCmdMap
   , RaftEnv(..), cfg, clusterSize, quorumSize, rs
+  , enqueue, enqueueMultiple, dequeue, enqueueLater, killEnqueued
+  , sendMessage, sendMessages
   , RaftState(..), nodeRole, term, votedFor, lazyVote, currentLeader, ignoreLeader
   , logEntries, commitIndex, commitProof, lastApplied, timerThread, replayMap
   , cYesVotes, cPotentialVotes, lNextIndex, lMatchIndex, lConvinced
@@ -22,9 +22,10 @@ module Juno.Types.Spec
   , timeSinceLastAER, lLastBatchUpdate
   , initialRaftState
   , Event(..)
+  , mkRaftEnv
   ) where
 
-import Control.Concurrent (MVar, ThreadId)
+import Control.Concurrent (MVar, ThreadId, killThread, yield, forkIO, threadDelay)
 import Control.Lens hiding (Index, (|>))
 import Control.Monad.RWS.Strict (RWST)
 import Control.Monad.IO.Class
@@ -45,6 +46,7 @@ import Juno.Types.Event
 import Juno.Types.Log
 import Juno.Types.Message
 import Juno.Types.Metric
+import Juno.Types.Comms
 
 -- | A structure containing all the implementation details for running
 -- the raft protocol.
@@ -76,27 +78,6 @@ data RaftSpec = RaftSpec
     -- ^ Function to apply a log entry to the state machine.
   , _applyLogEntry    :: Command -> IO CommandResult
 
-    -- ^ Function to send a message to a node.
-  , _sendMessage      :: NodeId -> ByteString -> IO ()
-
-    -- ^ Send more than one message at once
-  , _sendMessages     :: [(NodeId,ByteString)] -> IO ()
-
-    -- ^ Function to get the next message.
-  , _getMessage       :: IO (ReceivedAt, SignedRPC)
-
-    -- ^ Function to get the next N SignedRPCs not of type CMD, CMDB, or AER
-  , _getMessages   :: Int -> IO [(ReceivedAt, SignedRPC)]
-
-    -- ^ Function to get the next N SignedRPCs of type CMD or CMDB
-  , _getNewCommands   :: Int -> IO [(ReceivedAt, SignedRPC)]
-
-    -- ^ Function to get the next N SignedRPCs of type AER
-  , _getNewEvidence   :: Int -> IO [(ReceivedAt, SignedRPC)]
-
-    -- ^ Function to get the next RV or RVR
-  , _getRvAndRVRs     :: IO (ReceivedAt, SignedRPC)
-
     -- ^ Function to log a debug message (no newline).
   , _debugPrint       :: NodeId -> String -> IO ()
 
@@ -105,16 +86,6 @@ data RaftSpec = RaftSpec
   , _getTimestamp     :: IO UTCTime
 
   , _random           :: forall a . Random a => (a, a) -> IO a
-
-  , _enqueue          :: Event -> IO ()
-
-  , _enqueueMultiple  :: [Event] -> IO ()
-
-  , _enqueueLater     :: Int -> Event -> IO ThreadId
-
-  , _killEnqueued     :: ThreadId -> IO ()
-
-  , _dequeue          :: IO Event
 
   -- ^ How the API communicates with Raft, later could be redis w/e, etc.
   , _updateCmdMap     :: MVar CommandMap -> RequestId -> CommandStatus -> IO ()
@@ -188,8 +159,52 @@ data RaftEnv = RaftEnv
   , _clusterSize :: Int
   , _quorumSize  :: Int
   , _rs          :: RaftSpec
+  , _sendMessage      :: NodeId -> ByteString -> IO ()
+  , _sendMessages     :: [(NodeId,ByteString)] -> IO ()
+  , _enqueue          :: Event -> IO ()
+  , _enqueueMultiple  :: [Event] -> IO ()
+  , _enqueueLater     :: Int -> Event -> IO ThreadId
+  , _killEnqueued     :: ThreadId -> IO ()
+  , _dequeue          :: IO Event
   }
 makeLenses ''RaftEnv
+
+mkRaftEnv :: IORef Config -> Int -> Int -> RaftSpec -> Dispatch -> RaftEnv
+mkRaftEnv conf' cSize qSize rSpec dispatch = RaftEnv
+    { _cfg = conf'
+    , _clusterSize = cSize
+    , _quorumSize = qSize
+    , _rs = rSpec
+    , _sendMessage = sendMsg g'
+    , _sendMessages = sendMsgs g'
+    , _enqueue = writeComm eIn' . InternalEvent
+    , _enqueueMultiple = mapM_ (writeComm eIn' . InternalEvent)
+    , _enqueueLater = \t e -> forkIO (threadDelay t >> writeComm eIn' (InternalEvent e))
+    , _killEnqueued = killThread
+    , _dequeue = _unInternalEvent <$> readComm eOut'
+    }
+  where
+    g' = (inChan $ dispatch ^. outboundGeneral)
+    (InternalEventCC (eIn', eOut')) = (dispatch ^. internalEvent)
+
+-- These are going here temporarily until I rework the ZMQ layer
+nodeIDtoAddr :: NodeId -> Addr String
+nodeIDtoAddr (NodeId _ _ a _) = Addr $ a
+
+toMsg :: NodeId -> ByteString -> OutboundGeneral
+toMsg n b = OutboundGeneral $ OutBoundMsg (ROne $ nodeIDtoAddr n) b
+
+sendMsgs :: InChan OutboundGeneral -> [(NodeId, ByteString)] -> IO ()
+sendMsgs outboxWrite ns = do
+  mapM_ (writeComm outboxWrite . uncurry toMsg) ns
+  yield
+
+sendMsg :: InChan OutboundGeneral -> NodeId -> ByteString -> IO ()
+sendMsg outboxWrite n s = do
+  let addr = ROne $ nodeIDtoAddr n
+      msg = OutboundGeneral $ OutBoundMsg addr s
+  writeComm outboxWrite msg
+  yield
 
 readConfig :: Raft Config
 readConfig = view cfg >>= liftIO . readIORef

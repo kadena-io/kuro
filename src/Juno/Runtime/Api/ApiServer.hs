@@ -21,7 +21,7 @@ import Snap.Core
 import Snap.CORS
 
 import Apps.Juno.ApiHandlers
-import Juno.Types hiding (Config)
+import Juno.Types hiding (Config, InChan, OutChan)
 
 -- |
 -- Starts the API server which will listen on a port for incoming client

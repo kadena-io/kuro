@@ -33,7 +33,7 @@ import System.Posix.Files
 import Apps.Juno.JsonTypes
 import Apps.Juno.Ledger
 import Apps.Juno.Parser
-import Juno.Types hiding (CommandBatch)
+import Juno.Types hiding (CommandBatch, InChan, OutChan)
 import Schwifty.Swift.M105.Types
 import Schwifty.Swift.M105.Parser
 import Apps.Juno.ApiDemoHandler (transferDemoReqHandler)

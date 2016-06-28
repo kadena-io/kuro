@@ -60,15 +60,15 @@ runRWS_ ma r s = void $ runRWST ma r s
 
 -- no state update
 enqueueEvent :: Event -> Raft ()
-enqueueEvent event = view (rs.enqueue) >>= \f -> liftIO $ f event
+enqueueEvent event = view (enqueue) >>= \f -> liftIO $ f event
   -- lift $ writeChan ein event
 
 enqueueEventLater :: Int -> Event -> Raft CL.ThreadId
-enqueueEventLater t event = view (rs.enqueueLater) >>= \f -> liftIO $ f t event
+enqueueEventLater t event = view (enqueueLater) >>= \f -> liftIO $ f t event
 
 -- no state update
 dequeueEvent :: Raft Event
-dequeueEvent = view (rs.dequeue) >>= \f -> liftIO f
+dequeueEvent = view (dequeue) >>= \f -> liftIO f
 
 -- dequeue command from API interface
 dequeueCommand :: Raft (RequestId, [(Maybe Alias, CommandEntry)])

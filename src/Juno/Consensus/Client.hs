@@ -41,7 +41,7 @@ runRaftClient renv getEntries cmdStatusMap' rconf spec@RaftSpec{..} = do
   rconf' <- newIORef rconf
   runRWS_
     (raftClient (lift getEntries) cmdStatusMap')
-    (RaftEnv rconf' csize qsize spec)
+    (mkRaftEnv rconf' csize qsize spec (_dispatch renv))
     -- TODO: because UTC can flow backwards, this request ID is problematic:
     initialRaftState {_currentRequestId = rid}-- only use currentLeader and logEntries
 

@@ -24,7 +24,7 @@ runRaftServer renv rconf spec = do
   rconf' <- newIORef rconf
   runRWS_
     raft
-    (RaftEnv rconf' csize qsize spec)
+    (mkRaftEnv rconf' csize qsize spec (_dispatch renv))
     initialRaftState
 
 -- THREAD: SERVER MAIN

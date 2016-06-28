@@ -17,7 +17,7 @@ import Data.Sequence
 import Data.ByteString hiding (concat)
 import qualified Data.Text as T
 
-import Juno.Types
+import Juno.Types hiding (InChan, OutChan)
 
 -- These live here as orphans, and not in Types, because trying to Serialize these things should be a type level error
 -- with rare exception (i.e. for hashing the log entry). Moreover, accidentally sending Provenance over the wire could

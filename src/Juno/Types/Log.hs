@@ -9,7 +9,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 
 module Juno.Types.Log
-  ( LogEntry(..), leTerm, leCommand, leHash
+  ( LogEntry(..), leTerm, leLogIndex, leCommand, leHash
   , Log(..), lEntries
   , LEWire(..), encodeLEWire, decodeLEWire, decodeLEWire', toSeqLogEntry
   , lookupEntry
@@ -44,6 +44,7 @@ import Juno.Types.Message.CMD
 
 data LogEntry = LogEntry
   { _leTerm    :: !Term
+  , _leLogIndex :: !LogIndex
   , _leCommand :: !Command
   , _leHash    :: !ByteString
   }
@@ -65,14 +66,14 @@ type instance IxValue (Log a) = a
 type instance Lens.Index (Log a) = LogIndex
 instance Ixed (Log a) where ix i = lEntries.ix (fromIntegral i)
 
-data LEWire = LEWire (Term, SignedRPC, ByteString)
+data LEWire = LEWire (Term, LogIndex, SignedRPC, ByteString)
   deriving (Show, Generic)
 instance Serialize LEWire
 
 decodeLEWire' :: Maybe ReceivedAt -> KeySet -> LEWire -> Either String LogEntry
-decodeLEWire' !ts !ks (LEWire !(t,cmd,hsh)) = case fromWire ts ks cmd of
+decodeLEWire' !ts !ks (LEWire !(t,i,cmd,hsh)) = case fromWire ts ks cmd of
       Left !err -> Left $!err
-      Right !cmd' -> Right $! LogEntry t cmd' hsh
+      Right !cmd' -> Right $! LogEntry t i cmd' hsh
 {-# INLINE decodeLEWire' #-}
 
 -- TODO: check if `toSeqLogEntry ele = Seq.fromList <$> sequence ele` is fusable?
@@ -88,14 +89,14 @@ decodeLEWire :: Maybe ReceivedAt -> KeySet -> [LEWire] -> Either String (Seq Log
 decodeLEWire !ts !ks !les = go les Seq.empty
   where
     go [] s = Right $! s
-    go (LEWire !(t,cmd,hsh):ls) v = case fromWire ts ks cmd of
+    go (LEWire !(t,i,cmd,hsh):ls) v = case fromWire ts ks cmd of
       Left err -> Left $! err
-      Right cmd' -> go ls (v |> LogEntry t cmd' hsh)
+      Right cmd' -> go ls (v |> LogEntry t i cmd' hsh)
 {-# INLINE decodeLEWire #-}
 
 encodeLEWire :: NodeId -> PublicKey -> PrivateKey -> Seq LogEntry -> [LEWire]
 encodeLEWire nid pubKey privKey les =
-  (\LogEntry{..} -> LEWire (_leTerm, toWire nid pubKey privKey _leCommand, _leHash)) <$> toList les
+  (\LogEntry{..} -> LEWire (_leTerm, _leLogIndex, toWire nid pubKey privKey _leCommand, _leHash)) <$> toList les
 {-# INLINE encodeLEWire #-}
 
 -- | Get last entry.
@@ -151,9 +152,9 @@ getEntriesAfter pli = Seq.take 8000 . Seq.drop (fromIntegral $ pli + 1) . _lEntr
 -- TODO: This uses the old decode encode trick and should be changed...
 hashLogEntry :: Maybe LogEntry -> LogEntry -> LogEntry
 hashLogEntry (Just LogEntry{ _leHash = prevHash }) le@LogEntry{..} =
-  le { _leHash = hash SHA256 (encode $ LEWire (_leTerm, getCmdSignedRPC le, prevHash))}
+  le { _leHash = hash SHA256 (encode $ LEWire (_leTerm, _leLogIndex, getCmdSignedRPC le, prevHash))}
 hashLogEntry Nothing le@LogEntry{..} =
-  le { _leHash = hash SHA256 (encode $ LEWire (_leTerm, getCmdSignedRPC le, mempty))}
+  le { _leHash = hash SHA256 (encode $ LEWire (_leTerm, _leLogIndex, getCmdSignedRPC le, mempty))}
 
 getCmdSignedRPC :: LogEntry -> SignedRPC
 getCmdSignedRPC LogEntry{ _leCommand = Command{ _cmdProvenance = ReceivedMsg{ _pDig = dig, _pOrig = bdy }}} =

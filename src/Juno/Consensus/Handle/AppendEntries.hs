@@ -58,6 +58,7 @@ data AppendEntriesResult =
         _responseLeaderId :: NodeId
       , _validReponse :: ValidResponse }
 
+-- TODO: we need a Noop version as well
 data ValidResponse =
     SendFailureResponse |
     Commit {

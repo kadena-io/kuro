@@ -24,7 +24,7 @@ import System.IO (hFlush, stderr, stdout)
 import Juno.Types
 -- import Juno.Util.Combinator (foreverRetry)
 
-sendProcess :: OutChan OutboundGeneral
+sendProcess :: OutboundGeneralChannel
             -> Rolodex String (Socket z Push)
             -> ZMQ z ()
 sendProcess outChan' !r = do
@@ -83,11 +83,11 @@ runMsgServer :: Dispatch
              -> [Addr String]
              -> IO ()
 runMsgServer dispatch me addrList = void $ forkIO $ forever $ do
-  inboxWrite <- return $ inChan $ dispatch ^. inboundGeneral
-  cmdInboxWrite <- return $ inChan $ dispatch ^. inboundCMD
-  aerInboxWrite <- return $ inChan $ dispatch ^. inboundAER
-  rvAndRvrWrite <- return $ inChan $ dispatch ^. inboundRVorRVR
-  outboxRead <- return $ outChan $ dispatch ^. outboundGeneral
+  inboxWrite <- return $ dispatch ^. inboundGeneral
+  cmdInboxWrite <- return $ dispatch ^. inboundCMD
+  aerInboxWrite <- return $ dispatch ^. inboundAER
+  rvAndRvrWrite <- return $ dispatch ^. inboundRVorRVR
+  outboxRead <- return $ dispatch ^. outboundGeneral
 
   zmqThread <- Async.async $ runZMQ $ do
     -- liftIO $ moreLogging "Launching ZMQ_THREAD"

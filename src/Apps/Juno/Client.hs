@@ -17,7 +17,7 @@ import System.IO
 import GHC.Int (Int64)
 
 import Juno.Spec.Simple
-import Juno.Types hiding (InChan, OutChan)
+import Juno.Types
 
 import Apps.Juno.Parser
 

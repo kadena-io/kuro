@@ -39,13 +39,13 @@ runMessageReceiver env = void $ foreverRetry "MSG_RECEIVER_TURBO" $ runReaderT m
 messageReceiver :: ReaderT ReceiverEnv IO ()
 messageReceiver = do
   env <- ask
-  (gm' :: OutChan InboundGeneral) <- outChan <$> view (dispatch.inboundGeneral)
+  gm' <- view (dispatch.inboundGeneral)
   let gm n = readComms gm' n
-  getCmds' <- outChan <$> view (dispatch.inboundCMD)
+  getCmds' <- view (dispatch.inboundCMD)
   let getCmds n = readComms getCmds' n
-  getAers' <- outChan <$> view (dispatch.inboundAER)
+  getAers' <- view (dispatch.inboundAER)
   let getAers n = readComms getAers' n
-  enqueueEvent' <- inChan <$> view (dispatch.internalEvent)
+  enqueueEvent' <- view (dispatch.internalEvent)
   let enqueueEvent = writeComm enqueueEvent' . InternalEvent
   debug <- view debugPrint
   -- KeySet <$> view (cfg.publicKeys) <*> view (cfg.clientPublicKeys)
@@ -67,8 +67,8 @@ messageReceiver = do
 
 rvAndRvrFastPath :: ReaderT ReceiverEnv IO ()
 rvAndRvrFastPath = do
-  getRvAndRVRs' <- outChan <$> view (dispatch.inboundRVorRVR)
-  enqueueEvent <- inChan <$> view (dispatch.internalEvent)
+  getRvAndRVRs' <- view (dispatch.inboundRVorRVR)
+  enqueueEvent <- view (dispatch.internalEvent)
   debug <- view debugPrint
   ks <- view keySet
   liftIO $ forever $ do
@@ -92,7 +92,7 @@ sequentialVerify :: (MonadIO m, MonadReader ReceiverEnv m)
 sequentialVerify f ks msgs = do
   (aes, noAes) <- return $ partition (\(_,SignedRPC{..}) -> if _digType _sigDigest == AE then True else False) (f <$> msgs)
   (invalid, validNoAes) <- return $ partitionEithers $ parallelVerify id ks noAes
-  enqueueEvent <- inChan <$> view (dispatch.internalEvent)
+  enqueueEvent <- view (dispatch.internalEvent)
   debug <- view debugPrint
   unless (null validNoAes) $ mapM_ (liftIO . writeComm enqueueEvent . InternalEvent . ERPC) validNoAes
   unless (null invalid) $ mapM_ (liftIO . debug) invalid

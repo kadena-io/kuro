@@ -177,15 +177,15 @@ mkRaftEnv conf' cSize qSize rSpec dispatch = RaftEnv
     , _rs = rSpec
     , _sendMessage = sendMsg g'
     , _sendMessages = sendMsgs g'
-    , _enqueue = writeComm eIn' . InternalEvent
-    , _enqueueMultiple = mapM_ (writeComm eIn' . InternalEvent)
-    , _enqueueLater = \t e -> forkIO (threadDelay t >> writeComm eIn' (InternalEvent e))
+    , _enqueue = writeComm ie' . InternalEvent
+    , _enqueueMultiple = mapM_ (writeComm ie' . InternalEvent)
+    , _enqueueLater = \t e -> forkIO (threadDelay t >> writeComm ie' (InternalEvent e))
     , _killEnqueued = killThread
-    , _dequeue = _unInternalEvent <$> readComm eOut'
+    , _dequeue = _unInternalEvent <$> readComm ie'
     }
   where
-    g' = (inChan $ dispatch ^. outboundGeneral)
-    (InternalEventCC (eIn', eOut')) = (dispatch ^. internalEvent)
+    g' = dispatch ^. outboundGeneral
+    ie' = dispatch ^. internalEvent
 
 -- These are going here temporarily until I rework the ZMQ layer
 nodeIDtoAddr :: NodeId -> Addr String
@@ -194,12 +194,12 @@ nodeIDtoAddr (NodeId _ _ a _) = Addr $ a
 toMsg :: NodeId -> ByteString -> OutboundGeneral
 toMsg n b = OutboundGeneral $ OutBoundMsg (ROne $ nodeIDtoAddr n) b
 
-sendMsgs :: InChan OutboundGeneral -> [(NodeId, ByteString)] -> IO ()
+sendMsgs :: OutboundGeneralChannel -> [(NodeId, ByteString)] -> IO ()
 sendMsgs outboxWrite ns = do
   mapM_ (writeComm outboxWrite . uncurry toMsg) ns
   yield
 
-sendMsg :: InChan OutboundGeneral -> NodeId -> ByteString -> IO ()
+sendMsg :: OutboundGeneralChannel -> NodeId -> ByteString -> IO ()
 sendMsg outboxWrite n s = do
   let addr = ROne $ nodeIDtoAddr n
       msg = OutboundGeneral $ OutBoundMsg addr s

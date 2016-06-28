@@ -1,3 +1,4 @@
+{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -16,9 +17,12 @@ module Juno.Types.Comms
   , InboundGeneral(..)
   , OutboundGeneral(..)
   , InternalEvent(..)
-  , InChan
-  , OutChan
-  , CommChannel(..)
+  , InboundAERChannel(..)
+  , InboundCMDChannel(..)
+  , InboundRVorRVRChannel(..)
+  , InboundGeneralChannel(..)
+  , OutboundGeneralChannel(..)
+  , InternalEventChannel(..)
   ) where
 
 import Juno.Types.Base
@@ -55,92 +59,68 @@ newtype OutboundGeneral = OutboundGeneral { _unOutboundGeneral :: OutBoundMsg St
 newtype InternalEvent = InternalEvent { _unInternalEvent :: Event}
   deriving (Show, Typeable)
 
-type family InChan c where
-  InChan InboundAER = NoBlock.InChan InboundAER
-  InChan InboundCMD = NoBlock.InChan InboundCMD
-  InChan InboundRVorRVR = Unagi.InChan InboundRVorRVR
-  InChan InboundGeneral = NoBlock.InChan InboundGeneral
-  InChan OutboundGeneral = Unagi.InChan OutboundGeneral
-  InChan InternalEvent = Bounded.InChan InternalEvent
+newtype InboundAERChannel =
+  InboundAERChannel (NoBlock.InChan InboundAER, MVar (NoBlock.Stream InboundAER))
+newtype InboundCMDChannel =
+  InboundCMDChannel (NoBlock.InChan InboundCMD, MVar (NoBlock.Stream InboundCMD))
+newtype InboundRVorRVRChannel =
+  InboundRVorRVRChannel (Unagi.InChan InboundRVorRVR, MVar (Maybe (Unagi.Element InboundRVorRVR, IO InboundRVorRVR), Unagi.OutChan InboundRVorRVR))
+newtype InboundGeneralChannel =
+  InboundGeneralChannel (NoBlock.InChan InboundGeneral, MVar (NoBlock.Stream InboundGeneral))
+newtype OutboundGeneralChannel =
+  OutboundGeneralChannel (Unagi.InChan OutboundGeneral, MVar (Maybe (Unagi.Element OutboundGeneral, IO OutboundGeneral), Unagi.OutChan OutboundGeneral))
+newtype InternalEventChannel =
+  InternalEventChannel (Bounded.InChan InternalEvent, MVar (Maybe (Bounded.Element InternalEvent, IO InternalEvent), Bounded.OutChan InternalEvent))
 
-type family OutChan c where
-  OutChan InboundAER = MVar (NoBlock.Stream InboundAER)
-  OutChan InboundCMD = MVar (NoBlock.Stream InboundCMD)
-  OutChan InboundRVorRVR = MVar (Maybe (Unagi.Element InboundRVorRVR, IO InboundRVorRVR), Unagi.OutChan InboundRVorRVR)
-  OutChan InboundGeneral = MVar (NoBlock.Stream InboundGeneral)
-  OutChan OutboundGeneral = MVar (Maybe (Unagi.Element OutboundGeneral, IO OutboundGeneral), Unagi.OutChan OutboundGeneral)
-  OutChan InternalEvent = MVar (Maybe (Bounded.Element InternalEvent, IO InternalEvent), Bounded.OutChan InternalEvent)
+class Comms f c | c -> f where
+  initComms :: IO c
+  readComm :: c -> IO f
+  readComms :: c -> Int -> IO [f]
+  writeComm :: c -> f -> IO ()
 
-class Comms c where
-  data CommChannel c :: *
-  inChan :: CommChannel c -> InChan c
-  outChan :: CommChannel c -> OutChan c
-  initComms :: IO (CommChannel c)
-  readComm :: OutChan c -> IO c
-  readComms :: OutChan c -> Int -> IO [c]
-  writeComm :: InChan c -> c -> IO ()
+instance Comms InboundAER InboundAERChannel where
+  initComms = InboundAERChannel <$> initCommsNoBlock
+  readComm (InboundAERChannel (_,o)) = readCommNoBlock o
+  readComms (InboundAERChannel (_,o)) = readCommsNoBlock o
+  writeComm (InboundAERChannel (i,_)) = writeCommNoBlock i
 
-instance Comms InboundAER where
-  data CommChannel InboundAER = InboundAERCC (InChan InboundAER, OutChan InboundAER)
-  inChan (InboundAERCC (i,_)) = i
-  outChan (InboundAERCC (_,m)) = m
-  initComms = InboundAERCC <$> initCommsNoBlock
-  readComm = readCommNoBlock
-  readComms = readCommsNoBlock
-  writeComm = writeCommNoBlock
+instance Comms InboundCMD InboundCMDChannel where
+  initComms = InboundCMDChannel <$> initCommsNoBlock
+  readComm (InboundCMDChannel (_,o))  = readCommNoBlock o
+  readComms (InboundCMDChannel (_,o)) = readCommsNoBlock o
+  writeComm (InboundCMDChannel (i,_)) = writeCommNoBlock i
 
-instance Comms InboundCMD where
-  data CommChannel InboundCMD = InboundCMDCC (InChan InboundCMD, OutChan InboundCMD)
-  inChan (InboundCMDCC (i,_)) = i
-  outChan (InboundCMDCC (_,m)) = m
-  initComms = InboundCMDCC <$> initCommsNoBlock
-  readComm = readCommNoBlock
-  readComms = readCommsNoBlock
-  writeComm = writeCommNoBlock
+instance Comms InboundGeneral InboundGeneralChannel where
+  initComms = InboundGeneralChannel <$> initCommsNoBlock
+  readComm (InboundGeneralChannel (_,o))  = readCommNoBlock o
+  readComms (InboundGeneralChannel (_,o)) = readCommsNoBlock o
+  writeComm (InboundGeneralChannel (i,_)) = writeCommNoBlock i
 
-instance Comms InboundGeneral where
-  data CommChannel InboundGeneral = InboundGeneralCC (InChan InboundGeneral, OutChan InboundGeneral)
-  inChan (InboundGeneralCC (i,_)) = i
-  outChan (InboundGeneralCC (_,m)) = m
-  initComms = InboundGeneralCC <$> initCommsNoBlock
-  readComm = readCommNoBlock
-  readComms = readCommsNoBlock
-  writeComm = writeCommNoBlock
+instance Comms InboundRVorRVR InboundRVorRVRChannel where
+  initComms = InboundRVorRVRChannel <$> initCommsUnagi
+  readComm (InboundRVorRVRChannel (_,o)) = readCommUnagi o
+  readComms (InboundRVorRVRChannel (_,o)) = readCommsUnagi o
+  writeComm (InboundRVorRVRChannel (i,_)) = writeCommUnagi i
 
-instance Comms InboundRVorRVR where
-  data CommChannel InboundRVorRVR = InboundRVorRVRCC (InChan InboundRVorRVR, OutChan InboundRVorRVR)
-  inChan (InboundRVorRVRCC (i,_)) = i
-  outChan (InboundRVorRVRCC (_,m)) = m
-  initComms = InboundRVorRVRCC <$> initCommsUnagi
-  readComm = readCommUnagi
-  readComms = readCommsUnagi
-  writeComm = writeCommUnagi
+instance Comms OutboundGeneral OutboundGeneralChannel where
+  initComms = OutboundGeneralChannel <$> initCommsUnagi
+  readComm (OutboundGeneralChannel (_,o)) = readCommUnagi o
+  readComms (OutboundGeneralChannel (_,o)) = readCommsUnagi o
+  writeComm (OutboundGeneralChannel (i,_)) = writeCommUnagi i
 
-instance Comms OutboundGeneral where
-  data CommChannel OutboundGeneral = OutboundGeneralCC (InChan OutboundGeneral, OutChan OutboundGeneral)
-  inChan (OutboundGeneralCC (i,_)) = i
-  outChan (OutboundGeneralCC (_,m)) = m
-  initComms = OutboundGeneralCC <$> initCommsUnagi
-  readComm = readCommUnagi
-  readComms = readCommsUnagi
-  writeComm = writeCommUnagi
-
-instance Comms InternalEvent where
-  data CommChannel InternalEvent = InternalEventCC (InChan InternalEvent, OutChan InternalEvent)
-  inChan (InternalEventCC (i,_)) = i
-  outChan (InternalEventCC (_,m)) = m
-  initComms = InternalEventCC <$> initCommsBounded
-  readComm = readCommBounded
-  readComms = readCommsBounded
-  writeComm = writeCommBounded
+instance Comms InternalEvent InternalEventChannel where
+  initComms = InternalEventChannel <$> initCommsBounded
+  readComm (InternalEventChannel (_,o)) = readCommBounded o
+  readComms (InternalEventChannel (_,o)) = readCommsBounded o
+  writeComm (InternalEventChannel (i,_)) = writeCommBounded i
 
 data Dispatch = Dispatch
-  { _inboundAER      :: CommChannel InboundAER
-  , _inboundCMD      :: CommChannel InboundCMD
-  , _inboundRVorRVR  :: CommChannel InboundRVorRVR
-  , _inboundGeneral  :: CommChannel InboundGeneral
-  , _outboundGeneral :: CommChannel OutboundGeneral
-  , _internalEvent   :: CommChannel InternalEvent
+  { _inboundAER      :: InboundAERChannel
+  , _inboundCMD      :: InboundCMDChannel
+  , _inboundRVorRVR  :: InboundRVorRVRChannel
+  , _inboundGeneral  :: InboundGeneralChannel
+  , _outboundGeneral :: OutboundGeneralChannel
+  , _internalEvent   :: InternalEventChannel
   } deriving (Typeable)
 
 

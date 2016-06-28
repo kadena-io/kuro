@@ -27,21 +27,14 @@ infixr 0 ^=<<.
   Getting (a -> m b) r (a -> m b) -> Getting a s a -> m b
 lf ^=<<. la = view lf >>= (use la >>=)
 
-prettyThreadDetails :: String -> IO ()
-prettyThreadDetails _msg = return ()
---prettyThreadDetails _msg = do
---  (ZonedTime (LocalTime d' t') _) <- getZonedTime
---  putStrLn $ (showGregorian d') ++ "T" ++ (take 15 $ show t') ++ " [THREAD]: " ++ msg
---  hFlush stdout >> hFlush stderr
-
-foreverRetry :: String -> IO () -> IO ()
-foreverRetry threadName action = void $ forkIO $ forever $ do
+foreverRetry :: (String -> IO ()) -> String -> IO () -> IO ()
+foreverRetry debug threadName action = void $ forkIO $ forever $ do
   threadDied <- newEmptyMVar
-  void $ forkFinally (prettyThreadDetails (threadName ++ " launching") >> action >> putMVar threadDied ())
+  void $ forkFinally (debug (threadName ++ " launching") >> action >> putMVar threadDied ())
     $ \res -> do
       case res of
-        Right () -> prettyThreadDetails $ threadName ++ " died returning () with no details"
-        Left err -> prettyThreadDetails $ threadName ++ " exception " ++ show err
+        Right () -> debug $ threadName ++ " died returning () with no details"
+        Left err -> debug $ threadName ++ " exception " ++ show err
       putMVar threadDied ()
   takeMVar threadDied
-  prettyThreadDetails $ threadName ++ "got MVar... restarting"
+  debug $ threadName ++ "got MVar... restarting"

@@ -27,7 +27,9 @@ import Control.Concurrent (modifyMVar_, MVar)
 import qualified Control.Concurrent.Lifted as CL
 import qualified Control.Concurrent.Chan.Unagi as Unagi
 
+import qualified Data.ByteString.Char8 as BSC
 import qualified Data.Map as Map
+import Data.Monoid ((<>))
 import Data.Thyme.Calendar (showGregorian)
 import Data.Thyme.Clock (getCurrentTime)
 import Data.Thyme.LocalTime
@@ -35,6 +37,9 @@ import Data.Thyme.LocalTime
 import System.Console.GetOpt
 import System.Environment
 import System.Exit
+import System.Log.FastLogger
+import Control.AutoUpdate (mkAutoUpdate, defaultUpdateSettings,updateAction,updateFreq)
+
 
 import Control.Monad.IO.Class
 
@@ -76,18 +81,28 @@ getConfig = do
           return $ apiPort .~ apiPort' $ conf'
     (_,_,errs)     -> mapM_ putStrLn errs >> exitFailure
 
-showDebug' :: String -> IO ()
-showDebug' msg = do
-  (ZonedTime (LocalTime d t) _) <- getZonedTime
-  putStrLn $ (showGregorian d) ++ "T" ++ (take 15 $ show t) ++ " " ++ msg
+showDebug' :: TimedFastLogger -> String -> IO ()
+showDebug' fs m = fs (\t -> (toLogStr t) <> " " <> (toLogStr $ BSC.pack $ m) <> "\n")
 
-showDebug :: NodeId -> String -> IO ()
-showDebug _ msg = do
-  (ZonedTime (LocalTime d t) _) <- getZonedTime
-  putStrLn $ (showGregorian d) ++ "T" ++ (take 15 $ show t) ++ " " ++ msg
+showDebug :: TimedFastLogger -> NodeId -> String -> IO ()
+showDebug fs _ msg = showDebug' fs msg
 
 noDebug :: NodeId -> String -> IO ()
 noDebug _ _ = return ()
+
+getSysLogTime :: IO (FormattedTime)
+getSysLogTime = do
+  (ZonedTime (LocalTime d t) _) <- getZonedTime
+  return $ BSC.pack $ (showGregorian d) ++ "T" ++ (take 12 $ show t)
+
+timeCache :: IO (IO FormattedTime)
+timeCache = mkAutoUpdate defaultUpdateSettings
+  {  updateAction = getSysLogTime
+  ,  updateFreq = 1000 -- every millisecond
+  }
+
+initSysLog :: IO (TimedFastLogger)
+initSysLog = fst <$> newTimedFastLogger (join timeCache) (LogStdout defaultBufSize)
 
 simpleRaftSpec :: (Command -> IO CommandResult)
                -> (NodeId -> String -> IO ())
@@ -130,11 +145,12 @@ simpleRaftSpec applyFn debugFn pubMetricFn updateMapFn cmdMVarMap getCommands = 
 
 simpleReceiverEnv :: Dispatch
                   -> Config
+                  -> (String -> IO ())
                   -> RENV.ReceiverEnv
-simpleReceiverEnv dispatch conf = RENV.ReceiverEnv
+simpleReceiverEnv dispatch conf debugFn = RENV.ReceiverEnv
   dispatch
   (KeySet (view publicKeys conf) (view clientPublicKeys conf))
-  showDebug'
+  debugFn
 
 updateCmdMapFn :: MonadIO m => MVar CommandMap -> RequestId -> CommandStatus -> m ()
 updateCmdMapFn cmdMapMvar rid cmdStatus =
@@ -173,11 +189,13 @@ runClient applyFn getEntries cmdStatusMap' = do
   setLineBuffering
   resetAwsEnv
   rconf <- getConfig
-  let debugFn = if (rconf ^. enableDebug) then showDebug else noDebug
+  fs <- initSysLog
+  let debugFn = if (rconf ^. enableDebug) then showDebug fs else noDebug
+  let debugFn' = if (rconf ^. enableDebug) then showDebug' fs else (\_ -> return ())
   pubMetric <- startMonitoring rconf
   dispatch <- initDispatch
   me <- return $ nodeIDtoAddr $ rconf ^. nodeId
-  runMsgServer dispatch me [] -- ZMQ
+  runMsgServer dispatch me [] debugFn' -- ZMQ
   -- STUBs mocking
   (_, stubGetApiCommands) <- Unagi.newChan
   let raftSpec = simpleRaftSpec
@@ -187,7 +205,7 @@ runClient applyFn getEntries cmdStatusMap' = do
                    updateCmdMapFn
                    cmdStatusMap'
                    stubGetApiCommands
-  let receiverEnv = simpleReceiverEnv dispatch rconf
+  let receiverEnv = simpleReceiverEnv dispatch rconf debugFn'
   runRaftClient receiverEnv getEntries cmdStatusMap' rconf raftSpec
 
 -- | sets up and runs both API and raft protocol
@@ -207,11 +225,13 @@ runJuno applyFn toCommands getApiCommands sharedCmdStatusMap = do
   let myApiPort = rconf ^. apiPort -- passed in on startup (default 8000): `--apiPort 8001`
   void $ CL.fork $ runApiServer toCommands sharedCmdStatusMap myApiPort
 
-  let debugFn = if rconf ^. enableDebug then showDebug else noDebug
+  fs <- initSysLog
+  let debugFn = if (rconf ^. enableDebug) then showDebug fs else noDebug
+  let debugFn' = if (rconf ^. enableDebug) then showDebug' fs else (\_ -> return ())
 
   -- each node has its own snap monitoring server
   pubMetric <- startMonitoring rconf
-  runMsgServer dispatch me [] -- ZMQ
+  runMsgServer dispatch me [] debugFn' -- ZMQ
   let raftSpec = simpleRaftSpec
                    (liftIO . applyFn)
                    (debugFn)
@@ -219,5 +239,5 @@ runJuno applyFn toCommands getApiCommands sharedCmdStatusMap = do
                    updateCmdMapFn
                    sharedCmdStatusMap
                    getApiCommands
-  let receiverEnv = simpleReceiverEnv dispatch rconf
+  let receiverEnv = simpleReceiverEnv dispatch rconf debugFn'
   runRaftServer receiverEnv rconf raftSpec

@@ -17,28 +17,24 @@ import qualified Data.Set as Set
 import System.ZMQ4.Monadic
 import Data.Thyme.Clock
 import Data.Serialize
-import Data.Thyme.Calendar (showGregorian)
-import Data.Thyme.LocalTime
-import System.IO (hFlush, stderr, stdout)
 
 import Juno.Types
--- import Juno.Util.Combinator (foreverRetry)
 
 sendProcess :: OutboundGeneralChannel
             -> Rolodex String (Socket z Push)
             -> ZMQ z ()
 sendProcess outChan' !r = do
-  -- liftIO $ moreLogging "Entered sendProcess"
+  -- liftIO $ debug $ "[ZMQ_SEND_PROCESS] Entered"
   rMvar <- liftIO $ newMVar r
   forever $ do
     (OutBoundMsg !addrs !msg) <- liftIO $! _unOutboundGeneral <$> readComm outChan'
-    -- liftIO $ moreLogging $ "Sending message to " ++ (show addrs) ++ " ## MSG ## " ++ show msg
+    -- liftIO $ debug $ "[ZMQ_SEND_PROCESS] Sending message to " ++ (show addrs) ++ " ## MSG ## " ++ show msg
     r' <- liftIO $ takeMVar rMvar
     !newRol <- updateRolodex r' addrs
     !toPoll <- recipList newRol addrs
     mapM_ (\s -> send s [] msg) toPoll
     liftIO $ putMVar rMvar newRol
-    -- liftIO $ moreLogging "Sent Msg"
+    -- liftIO $ debug $ "[ZMQ_SEND_PROCESS] Sent Msg"
 
 updateRolodex :: Rolodex String (Socket z Push) -> Recipients String -> ZMQ z (Rolodex String (Socket z Push))
 updateRolodex r@(Rolodex !_rol) RAll = return $! r
@@ -71,18 +67,12 @@ recipList (Rolodex r) RAll = return $! _unListenOn <$> Map.elems r
 recipList (Rolodex r) (RSome addrs) = return $! _unListenOn . (r Map.!) <$> Set.toList addrs
 recipList (Rolodex r) (ROne addr) = return $! _unListenOn <$> [r Map.! addr]
 
-moreLogging :: String -> IO ()
-moreLogging msg = do
-  (ZonedTime (LocalTime d' t') _) <- getZonedTime
-  putStrLn $ (showGregorian d') ++ "T" ++ (take 15 $ show t') ++ " [ZMQ]: " ++ msg
-  hFlush stdout >> hFlush stderr
-
-
 runMsgServer :: Dispatch
              -> Addr String
              -> [Addr String]
+             -> (String -> IO ())
              -> IO ()
-runMsgServer dispatch me addrList = void $ forkIO $ forever $ do
+runMsgServer dispatch me addrList debug = void $ forkIO $ forever $ do
   inboxWrite <- return $ dispatch ^. inboundGeneral
   cmdInboxWrite <- return $ dispatch ^. inboundCMD
   aerInboxWrite <- return $ dispatch ^. inboundAER
@@ -90,9 +80,9 @@ runMsgServer dispatch me addrList = void $ forkIO $ forever $ do
   outboxRead <- return $ dispatch ^. outboundGeneral
 
   zmqThread <- Async.async $ runZMQ $ do
-    -- liftIO $ moreLogging "Launching ZMQ_THREAD"
+    -- liftIO $ debug $ "[ZMQ_THREAD] Launching..."
     zmqReceiver <- async $ do
-      -- liftIO $ moreLogging "Launching ZMQ_RECEIVER"
+      -- liftIO $ debug $ "[ZMQ_RECEIVER] Launching..."
       sock <- socket Pull
       _ <- bind sock $ _unAddr me
       forever $ do
@@ -100,8 +90,8 @@ runMsgServer dispatch me addrList = void $ forkIO $ forever $ do
         ts <- liftIO getCurrentTime
         case decode newMsg of
           Left err -> do
-            liftIO $ moreLogging $ "Failed to deserialize to SignedRPC [Msg]: " ++ show newMsg
-            liftIO $ moreLogging $ "Failed to deserialize to SignedRPC [Error]: " ++ err
+            liftIO $ debug $ "[ZMQ_RECEIVER] Failed to deserialize to SignedRPC [Msg]: " ++ show newMsg
+            liftIO $ debug $ "[ZMQ_RECEIVER] Failed to deserialize to SignedRPC [Error]: " ++ err
             liftIO yield
           Right s@(SignedRPC dig _)
             | _digType dig == RV || _digType dig == RVR ->
@@ -114,16 +104,16 @@ runMsgServer dispatch me addrList = void $ forkIO $ forever $ do
               liftIO $ writeComm inboxWrite (InboundGeneral (ReceivedAt ts, s)) >> yield
     liftIO $ threadDelay 100000 -- to be sure that the receive side is up first
 
-    -- liftIO $ moreLogging "Launching ZMQ_SENDER"
+    -- liftIO $ debug $ "[ZMQ_SENDER] Launching..."
     zmqSender <- async $ do
       rolodex <- addNewAddrs (Rolodex Map.empty) addrList
       void $ sendProcess outboxRead rolodex
-      -- liftIO $ moreLogging "Exiting ZMQ_SENDER"
+      -- liftIO $ debug $ "[ZMQ_SENDER] Exiting"
     liftIO $ (Async.waitEitherCancel zmqReceiver zmqSender) >>= \res' -> case res' of
-      Left () -> liftIO $ moreLogging "ZMQ_RECEIVER returned with ()"
-      Right v -> liftIO $ moreLogging $ "ZMQ_SENDER returned with " ++ show v
-    liftIO $ moreLogging "Exiting ZMQ_THREAD"
+      Left () -> liftIO $ debug $ "[ZMQ_RECEIVER] returned with ()"
+      Right v -> liftIO $ debug $ "[ZMQ_SENDER] returned with " ++ show v
+    liftIO $ debug $ "[ZMQ_THREAD] Exiting"
   res <- Async.waitCatch zmqThread
   Async.cancel zmqThread >> case res of
-    Right () -> moreLogging "ZMQ_MSG_SERVER died returning () with no details"
-    Left err -> moreLogging $ "ZMQ_MSG_SERVER exception " ++ show err
+    Right () -> debug $ "[ZMQ_MSG_SERVER] died returning () with no details"
+    Left err -> debug $ "[ZMQ_MSG_SERVER] exception " ++ show err

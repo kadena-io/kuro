@@ -89,6 +89,7 @@ library
                      , array
                      , async
                      , attoparsec
+                     , auto-update
                      , base < 5
                      , base16-bytestring
                      , base64-bytestring >= 1.0.0.1 && < 1.1
@@ -105,6 +106,7 @@ library
                      , ekg-json
                      , enclosed-exceptions
                      , enclosed-exceptions
+                     , fast-logger
                      , filepath
                      , ghc-prim
                      , hspec

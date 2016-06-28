@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -32,7 +33,7 @@ data ReceiverEnv = ReceiverEnv
 makeLenses ''ReceiverEnv
 
 runMessageReceiver :: ReceiverEnv -> IO ()
-runMessageReceiver env = void $ foreverRetry "MSG_RECEIVER_TURBO" $ runReaderT messageReceiver env
+runMessageReceiver env = void $ foreverRetry (env ^. debugPrint) "MSG_RECEIVER_TURBO" $ runReaderT messageReceiver env
 
 -- | Thread to take incoming messages and write them to the event queue.
 -- THREAD: MESSAGE RECEIVER (client and server), no state updates
@@ -50,7 +51,7 @@ messageReceiver = do
   debug <- view debugPrint
   -- KeySet <$> view (cfg.publicKeys) <*> view (cfg.clientPublicKeys)
   ks <- view keySet
-  void $ liftIO $ foreverRetry "RV_AND_RVR_MSGRECVER" $ runReaderT rvAndRvrFastPath env
+  void $ liftIO $ foreverRetry debug "RV_AND_RVR_MSGRECVER" $ runReaderT rvAndRvrFastPath env
   liftIO $ forever $ do
     (alotOfAers, invalidAers) <- toAlotOfAers <$> getAers 2000
     unless (alotOfAers == mempty) $ enqueueEvent $ AERs alotOfAers

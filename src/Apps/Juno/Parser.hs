@@ -214,7 +214,7 @@ transfer = do
 
 readAlias :: BSC.ByteString -> Maybe (Maybe Alias)
 readAlias m = case Atto.parseOnly setAlias m of
-  Left e -> Nothing
+  Left _e -> Nothing
   Right (Nothing) -> Just Nothing
   Right (Just v) -> Just (Just v)
 

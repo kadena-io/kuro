@@ -9,7 +9,7 @@ module Apps.Juno.JsonTypes where
 import           Control.Applicative
 import           Control.Monad (mzero)
 import           Data.Aeson as JSON
-import           Data.Aeson.Types (Options(..),defaultOptions,parseMaybe)
+import           Data.Aeson.Types (Options(..),parseMaybe)
 import           Data.Char (isSpace)
 import           Data.Ratio
 import qualified Data.Text as T

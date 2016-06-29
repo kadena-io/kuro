@@ -12,7 +12,7 @@ module Juno.Types.Spec
   , viewConfig, readConfig
   -- for API <-> Juno communication
   , dequeueFromApi ,cmdStatusMap, updateCmdMap
-  , RaftEnv(..), cfg, clusterSize, quorumSize, rs
+  , RaftEnv(..), cfg, logThread, clusterSize, quorumSize, rs
   , enqueue, enqueueMultiple, dequeue, enqueueLater, killEnqueued
   , sendMessage, sendMessages
   , RaftState(..), nodeRole, term, votedFor, lazyVote, currentLeader, ignoreLeader
@@ -104,9 +104,6 @@ data RaftState = RaftState
   , _lazyVote         :: Maybe (Term, NodeId, LogIndex)
   , _currentLeader    :: Maybe NodeId
   , _ignoreLeader     :: Bool
-  , _logEntries       :: Log LogEntry
-  , _commitIndex      :: LogIndex
-  , _lastApplied      :: LogIndex
   , _commitProof      :: Map NodeId AppendEntriesResponse
   , _timerThread      :: Maybe ThreadId
   , _timeSinceLastAER :: Int
@@ -134,9 +131,6 @@ initialRaftState = RaftState
   Nothing    -- lazyVote
   Nothing    -- currentLeader
   False      -- ignoreLeader
-  mempty     -- log
-  startIndex -- commitIndex
-  startIndex -- lastApplied
   Map.empty  -- commitProof
   Nothing    -- timerThread
   0          -- timeSinceLastAER
@@ -155,10 +149,11 @@ initialRaftState = RaftState
 type Raft = RWST (RaftEnv) () RaftState IO
 
 data RaftEnv = RaftEnv
-  { _cfg         :: IORef Config
-  , _clusterSize :: Int
-  , _quorumSize  :: Int
-  , _rs          :: RaftSpec
+  { _cfg              :: IORef Config
+  , _logThread        :: IORef (LogState LogIndex)
+  , _clusterSize      :: Int
+  , _quorumSize       :: Int
+  , _rs               :: RaftSpec
   , _sendMessage      :: NodeId -> ByteString -> IO ()
   , _sendMessages     :: [(NodeId,ByteString)] -> IO ()
   , _enqueue          :: Event -> IO ()
@@ -169,9 +164,10 @@ data RaftEnv = RaftEnv
   }
 makeLenses ''RaftEnv
 
-mkRaftEnv :: IORef Config -> Int -> Int -> RaftSpec -> Dispatch -> RaftEnv
-mkRaftEnv conf' cSize qSize rSpec dispatch = RaftEnv
+mkRaftEnv :: IORef Config -> IORef (LogState LogIndex) -> Int -> Int -> RaftSpec -> Dispatch -> RaftEnv
+mkRaftEnv conf' log' cSize qSize rSpec dispatch = RaftEnv
     { _cfg = conf'
+    , _logThread = log'
     , _clusterSize = cSize
     , _quorumSize = qSize
     , _rs = rSpec

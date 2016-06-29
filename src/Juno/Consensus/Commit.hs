@@ -138,7 +138,6 @@ updateCommitIndex = do
   qsize <- view quorumSize
 
   ls <- getLogState
-  es <- return $ ls ^. logEntries
   ci <- return $ ls ^. commitIndex
 
   let maxLogIndex = maxIndex' ls
@@ -154,7 +153,7 @@ updateCommitIndex = do
               else return False
     Right qci -> if qci > ci
                 then do
-                  accessLogs $ updateLogState (\ls -> ls {_commitIndex = qci})
+                  accessLogs $ updateLogState (\ls' -> ls' {_commitIndex = qci})
                   logCommitChange ci qci
                   commitProof %= Map.filter (\a -> qci < _aerIndex a)
                   debug $ "Commit index is now: " ++ show qci

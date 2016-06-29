@@ -16,6 +16,8 @@ module Juno.Types.Log
   , LogState(..), logEntries, lastApplied, lastLogIndex, nextLogIndex, commitIndex
   , LogApi(..)
   , initLogState
+  , NewLogEntries(..), nlwMinLogIdx, nlwMaxLogIdx, nlwPrvLogIdx, nlwEntries
+  , toNewLogEntries
   ) where
 
 import Control.Parallel.Strategies
@@ -26,6 +28,7 @@ import Data.Sequence (Seq, (|>))
 import qualified Data.Sequence as Seq
 import Data.ByteString (ByteString)
 import Data.Serialize
+import Data.Maybe (fromJust)
 import Data.Foldable
 import Data.IORef
 import Data.Thyme.Time.Core ()
@@ -132,13 +135,52 @@ class LogApi a where
   getEntriesAfter' :: LogIndex -> a -> Seq LogEntry
   -- | Recursively hash entries from index to tail.
   updateLogHashesFromIndex :: LogIndex -> IORef a -> IO ()
-  updateLogHashesFromIndex' :: LogIndex -> a -> a
   -- | Append/hash a single entry
-  appendLogEntry :: LogEntry -> IORef a -> IO ()
-  appendLogEntry' :: LogEntry -> a -> a
+  appendLogEntry :: (LogIndex -> LogEntry) -> IORef a -> IO ()
   -- | Add/hash entries at specified index.
-  addLogEntriesAt :: LogIndex -> Seq LogEntry -> IORef a -> IO ()
-  addLogEntriesAt' :: LogIndex -> Seq LogEntry -> a -> a
+  addLogEntriesAt :: NewLogEntries -> IORef a -> IO ()
+
+data NewLogEntries = NewLogEntries
+  { _nlwMinLogIdx :: LogIndex
+  , _nlwMaxLogIdx :: LogIndex
+  , _nlwPrvLogIdx :: LogIndex
+  , _nlwEntries :: Seq LogEntry
+  } deriving (Show, Eq, Generic)
+makeLenses ''NewLogEntries
+
+seqHead :: Seq a -> Maybe a
+seqHead s = case Seq.viewl s of
+  (e Seq.:< _) -> Just e
+  _            -> Nothing
+
+seqTail :: Seq a -> Maybe a
+seqTail s = case Seq.viewr s of
+  (_ Seq.:> e) -> Just e
+  _        -> Nothing
+
+toNewLogEntries :: LogIndex -> Seq LogEntry -> Either String NewLogEntries
+toNewLogEntries prevLogIndex les = do
+  let minLogIdx = _leLogIndex $ fromJust $ seqHead les
+      maxLogIdx = _leLogIndex $ fromJust $ seqTail les
+  if prevLogIndex /= minLogIdx - 1
+  then Left $ "PrevLogIndex ("
+            ++ show prevLogIndex
+            ++ ") should be -1 the head entry's ("
+            ++ show minLogIdx
+            ++ ")"
+  else if fromIntegral (maxLogIdx - minLogIdx + 1) /= Seq.length les && maxLogIdx /= startIndex && minLogIdx /= startIndex
+       then Left $ "HeadLogIdx - TailLogIdx + 1 != length les: "
+                 ++ show maxLogIdx
+                 ++ " - "
+                 ++ show minLogIdx
+                 ++ " + 1 != "
+                 ++ show (Seq.length les)
+       else -- TODO: add a protection in here to check that Seq's LogIndexs are
+            -- strictly increasing by 1 from right to left
+            return $ NewLogEntries { _nlwMinLogIdx = minLogIdx
+                                   , _nlwMaxLogIdx = maxLogIdx
+                                   , _nlwPrvLogIdx = prevLogIndex
+                                   , _nlwEntries   = les }
 
 data LogState a = LogState
   { _logEntries       :: !(Log a)
@@ -213,39 +255,48 @@ instance LogApi (LogState LogEntry) where
 
   updateLogHashesFromIndex i ref = atomicModifyIORef' ref (\ls ->
     case lookupEntry' i ls of
-      Just _ -> (updateLogHashesFromIndex' (succ i) $
-                over (logEntries.lEntries) (Seq.adjust (hashLogEntry (lookupEntry' (i - 1) ls)) (fromIntegral i)) ls
+      Just _ -> (ls {_logEntries = updateLogHashesFromIndex' i $ _logEntries ls}
                 ,())
       Nothing -> (ls,())
     )
 
-  updateLogHashesFromIndex' i ls =
-    case lookupEntry' i ls of
-      Just _ -> updateLogHashesFromIndex' (succ i) $
-                over (logEntries.lEntries) (Seq.adjust (hashLogEntry (lookupEntry' (i - 1) ls)) (fromIntegral i)) ls
-      Nothing -> ls
-
   -- TODO: this needs to handle picking the right LogIndex
   appendLogEntry le ref = atomicModifyIORef' ref (\ls -> (appendLogEntry' le ls, ()))
-  appendLogEntry' le@LogEntry{..} ls = case lastEntry' ls of
-      Just ple -> over (logEntries.lEntries) (Seq.|> hashLogEntry (Just ple) le) ls
-      Nothing -> ls { _logEntries = Log $ Seq.singleton (hashLogEntry Nothing le)
-                    , _lastLogIndex = _leLogIndex
-                    , _nextLogIndex = _leLogIndex + 1
-                    }
 
-  addLogEntriesAt pli newLEs ref = atomicModifyIORef' ref (\ls -> (addLogEntriesAt' pli newLEs ls,()))
-  addLogEntriesAt' pli newLEs ls =
-    let ls' = updateLogHashesFromIndex' (pli + 1)
-                 . over (logEntries.lEntries) ((Seq.>< newLEs)
-                 . Seq.take (fromIntegral pli + 1))
-                 $ ls
-        lastIdx = case lastEntry' ls' of
-          Nothing -> startIndex
-          Just i -> _leLogIndex i
-    in ls' { _lastLogIndex = lastIdx
-           , _nextLogIndex = lastIdx + 1
-           }
+  addLogEntriesAt NewLogEntries{..} ref = atomicModifyIORef' ref (\ls -> (addLogEntriesAt' _nlwPrvLogIdx _nlwEntries ls,()))
+
+addLogEntriesAt' :: LogIndex -> Seq LogEntry -> LogState LogEntry -> LogState LogEntry
+addLogEntriesAt' pli newLEs ls =
+  let ls' = updateLogHashesFromIndex' (pli + 1)
+                . over (lEntries) ((Seq.>< newLEs)
+                . Seq.take (fromIntegral pli + 1))
+                $ _logEntries ls
+      lastIdx = case ls' ^. lEntries of
+        (_ :> e) -> _leLogIndex e
+        _        -> startIndex
+  in ls { _logEntries = ls'
+        , _lastLogIndex = lastIdx
+        , _nextLogIndex = lastIdx + 1
+        }
+
+-- Since the only node to ever append a log entry is the Leader we can start keeping the logs in sync here
+appendLogEntry' :: (LogIndex -> LogEntry) -> LogState LogEntry -> LogState LogEntry
+appendLogEntry' le ls = case lastEntry' ls of
+    Just ple -> let
+        le' = le $ ls ^. nextLogIndex
+        ls' = over (logEntries.lEntries) (Seq.|> hashLogEntry (Just ple) le') ls
+      in ls' { _lastLogIndex = ls ^. nextLogIndex
+             , _nextLogIndex = (ls ^. nextLogIndex) + 1 }
+    Nothing -> ls { _logEntries = Log $ Seq.singleton (hashLogEntry Nothing (le $ 1 + startIndex))
+                  , _lastLogIndex = startIndex + 1
+                  , _nextLogIndex = startIndex + 2 }
+
+updateLogHashesFromIndex' :: LogIndex -> Log LogEntry -> Log LogEntry
+updateLogHashesFromIndex' i ls =
+  case firstOf (ix i) ls of
+    Just _ -> updateLogHashesFromIndex' (succ i) $
+              over (lEntries) (Seq.adjust (hashLogEntry (firstOf (ix (i - 1)) ls)) (fromIntegral i)) ls
+    Nothing -> ls
 
 -- TODO: This uses the old decode encode trick and should be changed...
 hashLogEntry :: Maybe LogEntry -> LogEntry -> LogEntry

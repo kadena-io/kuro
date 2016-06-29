@@ -29,6 +29,7 @@ module Juno.Consensus.Handle.Types (
   , ReceivedAt(..)
   , Log(..)
   , LogState(..)
+  , NewLogEntries(..)
   ) where
 
 -- This module exists so we don't need to do a bunch of selective/hiding imports

@@ -25,7 +25,6 @@ import Juno.Consensus.Handle.AppendEntriesResponse (updateCommitProofMap)
 data CommandEnv = CommandEnv {
       _nodeRole :: Role
     , _term :: Term
-    , _lastLogIndex :: LogIndex
     , _currentLeader :: Maybe NodeId
     , _replayMap :: Map.Map (NodeId, Signature) (Maybe CommandResult)
     , _nodeId :: NodeId
@@ -38,7 +37,7 @@ data CommandOut =
       _leaderId :: NodeId
     , _cmd :: RPC } |
     CommitAndPropagate {
-      _newEntry :: LogEntry
+      _newEntry :: (LogIndex -> LogEntry)
     , _replayKey :: (NodeId, Signature)
     } |
     AlreadySeen |
@@ -53,7 +52,6 @@ handleCommand cmd@Command{..} = do
   tell ["got a command RPC"]
   r <- view nodeRole
   ct <- view term
-  li <- view lastLogIndex
   mlid <- view currentLeader
   replays <- view replayMap
   nid <- view nodeId
@@ -70,7 +68,7 @@ handleCommand cmd@Command{..} = do
     (_, Leader, _) ->
       -- we're the leader, so append this to our log with the current term
       -- and propagate it to replicas
-      return $ CommitAndPropagate (LogEntry ct (li+1) cmd B.empty) (_cmdClientId, cmdSig)
+      return $ CommitAndPropagate (\li -> LogEntry ct li cmd B.empty) (_cmdClientId, cmdSig)
     (_, _, Just lid) ->
       -- we're not the leader, but we know who the leader is, so forward this
       -- command (don't sign it ourselves, as it comes from the client)
@@ -84,11 +82,9 @@ handleSingleCommand :: Command -> JT.Raft ()
 handleSingleCommand cmd = do
   c <- JT.readConfig
   s <- get
-  nIdx <- accessLogs $ JT.maxIndex
   (out,_) <- runReaderT (runWriterT (handleCommand cmd)) $
              CommandEnv (JT._nodeRole s)
                         (JT._term s)
-                        (nIdx)
                         (JT._currentLeader s)
                         (JT._replayMap s)
                         (JT._nodeId c)

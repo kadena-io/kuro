@@ -18,7 +18,7 @@ import Juno.Runtime.Sender (createRequestVoteResponse,sendRPC)
 import Juno.Runtime.Timer (resetElectionTimer, hasElectionTimerLeaderFired)
 import Juno.Util.Combinator ((^$))
 import Juno.Util.Util
-import Juno.Types.Log
+import Juno.Types.Log hiding (logEntries)
 
 import qualified Juno.Types as JT
 
@@ -28,7 +28,7 @@ data ElectionTimeoutEnv = ElectionTimeoutEnv {
     , _lazyVote :: Maybe (Term,NodeId,LogIndex)
     , _nodeId :: NodeId
     , _otherNodes :: Set.Set NodeId
-    , _logEntries :: Log LogEntry
+    , _logEntries :: LogState LogEntry
     , _leaderWithoutFollowers :: Bool
     , _myPrivateKey :: PrivateKey
     , _myPublicKey :: PublicKey
@@ -87,7 +87,7 @@ becomeCandidate = do
   newTerm <- (+1) <$> view term
   me <- view nodeId
   es <- view logEntries
-  selfVote <- createRequestVoteResponse newTerm (maxIndex es) me me True
+  selfVote <- createRequestVoteResponse newTerm (maxIndex' es) me me True
   provenance <- selfVoteProvenance selfVote
   potentials <- view otherNodes
   return $ BecomeCandidate newTerm Candidate me
@@ -107,6 +107,7 @@ handle msg = do
   c <- JT.readConfig
   s <- get
   leaderWithoutFollowers' <- hasElectionTimerLeaderFired
+  ls <- getLogState
   (out,l) <- runReaderT (runWriterT (handleElectionTimeout msg)) $
              ElectionTimeoutEnv
              (JT._nodeRole s)
@@ -114,7 +115,7 @@ handle msg = do
              (JT._lazyVote s)
              (JT._nodeId c)
              (JT._otherNodes c)
-             (JT._logEntries s)
+             (ls)
              leaderWithoutFollowers'
              (JT._myPrivateKey c)
              (JT._myPublicKey c)
@@ -162,6 +163,6 @@ sendRequestVote :: NodeId -> JT.Raft ()
 sendRequestVote target = do
   ct <- use JT.term
   nid <- JT.viewConfig JT.nodeId
-  es <- use JT.logEntries
+  ls <- getLogState
   debug $ "sendRequestVote: " ++ show ct
-  sendRPC target $ RV' $ RequestVote ct nid (maxIndex es) (lastLogTerm es) NewMsg
+  sendRPC target $ RV' $ RequestVote ct nid (maxIndex' ls) (lastLogTerm' ls) NewMsg

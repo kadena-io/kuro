@@ -12,7 +12,7 @@ import Data.Maybe
 import Juno.Types
 import Juno.Consensus.Commit (doCommit)
 import Juno.Runtime.Sender (sendAllAppendEntries,sendAllAppendEntriesResponse)
-import Juno.Util.Util (debug, dequeueEvent)
+import Juno.Util.Util (debug, dequeueEvent, accessLogs)
 
 import qualified Juno.Consensus.Handle.AppendEntries as PureAppendEntries
 import qualified Juno.Consensus.Handle.AppendEntriesResponse as PureAppendEntriesResponse
@@ -26,7 +26,7 @@ import qualified Juno.Consensus.Handle.Revolution as PureRevolution
 issueBatch :: Raft ()
 issueBatch = do
   role' <- use nodeRole
-  ci <- use commitIndex
+  ci <- accessLogs $ viewLogState commitIndex
   case role' of
     Follower -> debug $ "Commit index is still: " ++ show ci
     Candidate -> return ()
@@ -37,7 +37,7 @@ issueBatch = do
       (ts, h) <- use lLastBatchUpdate
       when (curTime .-. ts >= batchTimeDelta') $ do
         doCommit
-        latestLogHash <- (fmap _leHash.lastEntry) <$> use logEntries
+        latestLogHash <- do {le <- accessLogs lastEntry; return $ _leHash <$> le}
         if latestLogHash /= h || isNothing latestLogHash
         then do
           sendAllAppendEntriesResponse

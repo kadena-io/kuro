@@ -28,6 +28,7 @@ module Juno.Consensus.Handle.Types (
   , PrivateKey, PublicKey, Signature(..)
   , ReceivedAt(..)
   , Log(..)
+  , LogState(..)
   ) where
 
 -- This module exists so we don't need to do a bunch of selective/hiding imports

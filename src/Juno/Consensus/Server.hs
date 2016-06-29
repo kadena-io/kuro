@@ -22,9 +22,10 @@ runRaftServer renv rconf spec = do
       qsize = getQuorumSize csize
   void $ runMessageReceiver renv
   rconf' <- newIORef rconf
+  ls <- initLogState
   runRWS_
     raft
-    (mkRaftEnv rconf' csize qsize spec (_dispatch renv))
+    (mkRaftEnv rconf' ls csize qsize spec (_dispatch renv))
     initialRaftState
 
 -- THREAD: SERVER MAIN

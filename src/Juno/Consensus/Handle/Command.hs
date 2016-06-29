@@ -15,10 +15,9 @@ import Data.ByteString as B
 import qualified Data.Map as Map
 
 import Juno.Consensus.Commit (makeCommandResponse')
-import Juno.Types.Log
 import Juno.Consensus.Handle.Types
 import Juno.Runtime.Sender (sendRPC, createAppendEntriesResponse)
-import Juno.Util.Util (getCmdSigOrInvariantError)
+import Juno.Util.Util (getCmdSigOrInvariantError, accessLogs)
 import qualified Juno.Types as JT
 
 import Juno.Consensus.Handle.AppendEntriesResponse (updateCommitProofMap)
@@ -71,7 +70,7 @@ handleCommand cmd@Command{..} = do
     (_, Leader, _) ->
       -- we're the leader, so append this to our log with the current term
       -- and propagate it to replicas
-      return $ CommitAndPropagate (LogEntry ct li cmd B.empty) (_cmdClientId, cmdSig)
+      return $ CommitAndPropagate (LogEntry ct (li+1) cmd B.empty) (_cmdClientId, cmdSig)
     (_, _, Just lid) ->
       -- we're not the leader, but we know who the leader is, so forward this
       -- command (don't sign it ourselves, as it comes from the client)
@@ -85,10 +84,11 @@ handleSingleCommand :: Command -> JT.Raft ()
 handleSingleCommand cmd = do
   c <- JT.readConfig
   s <- get
+  nIdx <- accessLogs $ JT.maxIndex
   (out,_) <- runReaderT (runWriterT (handleCommand cmd)) $
              CommandEnv (JT._nodeRole s)
                         (JT._term s)
-                        (JT.maxIndex $ JT._logEntries s)
+                        (nIdx)
                         (JT._currentLeader s)
                         (JT._replayMap s)
                         (JT._nodeId c)
@@ -98,7 +98,7 @@ handleSingleCommand cmd = do
     (RetransmitToLeader lid rpc) -> sendRPC lid rpc
     (SendCommandResponse cid rpc) -> sendRPC cid rpc
     (CommitAndPropagate newEntry replayKey) -> do
-               JT.logEntries %= appendLogEntry newEntry
+               accessLogs $ JT.appendLogEntry newEntry
                JT.replayMap %= Map.insert replayKey Nothing
                myEvidence <- createAppendEntriesResponse True True
                JT.commitProof %= updateCommitProofMap myEvidence

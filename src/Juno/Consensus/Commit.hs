@@ -33,22 +33,25 @@ doCommit = do
 
 applyLogEntries :: Raft ()
 applyLogEntries = do
-  la <- use lastApplied
-  ci <- use commitIndex
-  le <- use logEntries
+  ls <- getLogState
+  la <- return $ ls ^. lastApplied
+  ci <- return $ ls ^. commitIndex
   now <- view (rs.getTimestamp) >>= liftIO
-  let leToApply = Seq.drop (fromIntegral $ la + 1) . takeEntries (ci + 1) $ le
-  results <- mapM (applyCommand now . _leCommand) leToApply
-  r <- use nodeRole
-  lastApplied .= ci
-  logMetric $ MetricAppliedIndex ci
-  if not (null results)
-    then if r == Leader
-         then do
-           debug $ "Applied and Responded to " ++ show (length results) ++ " CMD(s)"
-           sendResults $! toList results
-         else debug $ "Applied " ++ show (length results) ++ " CMD(s)"
-    else debug "Applied log entries but did not send results?"
+  leToApply' <- return $ fmap (Seq.drop (fromIntegral $ la + 1)) $ takeEntries' (ci + 1) $ ls
+  case leToApply' of
+    Nothing -> debug $ "No new entries to apply"
+    Just leToApply -> do
+      results <- mapM (applyCommand now . _leCommand) leToApply
+      r <- use nodeRole
+      accessLogs $ updateLogState (\ls' -> ls' {_lastApplied = ci})
+      logMetric $ MetricAppliedIndex ci
+      if not (null results)
+        then if r == Leader
+            then do
+              debug $ "Applied and Responded to " ++ show (length results) ++ " CMD(s)"
+              sendResults $! toList results
+            else debug $ "Applied " ++ show (length results) ++ " CMD(s)"
+        else debug "Applied log entries but did not send results?"
 
 interval :: UTCTime -> UTCTime -> Int64
 interval start end = view microseconds $ end .-. start
@@ -131,16 +134,18 @@ logCommitChange before after
 
 updateCommitIndex :: Raft Bool
 updateCommitIndex = do
-  ci <- use commitIndex
   proof <- use commitProof
   qsize <- view quorumSize
-  es <- use logEntries
 
-  let maxLogIndex = maxIndex es
+  ls <- getLogState
+  es <- return $ ls ^. logEntries
+  ci <- return $ ls ^. commitIndex
+
+  let maxLogIndex = maxIndex' ls
 
   let evidence = reverse $ sortOn _aerIndex $ Map.elems proof
 
-  case checkCommitProof qsize es maxLogIndex evidence of
+  case checkCommitProof qsize ls maxLogIndex evidence of
     Left 0 -> return False
     Left n -> if maxLogIndex > fromIntegral ci
               then do
@@ -149,20 +154,20 @@ updateCommitIndex = do
               else return False
     Right qci -> if qci > ci
                 then do
-                  commitIndex .= qci
+                  accessLogs $ updateLogState (\ls -> ls {_commitIndex = qci})
                   logCommitChange ci qci
                   commitProof %= Map.filter (\a -> qci < _aerIndex a)
                   debug $ "Commit index is now: " ++ show qci
                   return True
                 else return False
 
-checkCommitProof :: Int -> Log LogEntry -> LogIndex -> [AppendEntriesResponse] -> Either Int LogIndex
+checkCommitProof :: Int -> LogState LogEntry -> LogIndex -> [AppendEntriesResponse] -> Either Int LogIndex
 checkCommitProof qsize les maxLogIdx evidence = go 0 evidence
   where
     go n [] = Left n
     go n (ev:evs) = if _aerIndex ev > maxLogIdx
                     then go n evs
-                    else if Just (_aerHash ev) == (_leHash <$> lookupEntry (_aerIndex ev) les)
+                    else if Just (_aerHash ev) == (_leHash <$> lookupEntry' (_aerIndex ev) les)
                          then if (n+1) >= qsize
                               then Right $ _aerIndex ev
                               else go (n+1) evs

@@ -1,9 +1,13 @@
+{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Juno.Util.Util
   ( seqIndex
   , getQuorumSize
+  , accessLogs
+  , getLogState
   , debug
   , randomRIO
   , runRWS_
@@ -28,6 +32,7 @@ import Control.Lens
 import Data.Sequence (Seq)
 import Control.Monad.RWS.Strict
 import qualified Control.Concurrent.Lifted as CL
+import Data.IORef
 import qualified Data.Sequence as Seq
 import qualified Data.Map.Strict as Map
 import qualified System.Random as R
@@ -40,6 +45,12 @@ seqIndex s i =
 
 getQuorumSize :: Int -> Int
 getQuorumSize n = 1 + floor (fromIntegral n / 2 :: Float)
+
+accessLogs :: (IORef (LogState LogEntry) -> IO b) -> Raft b
+accessLogs cmd = view logThread >>= liftIO . cmd
+
+getLogState :: Raft (LogState LogEntry)
+getLogState = view logThread >>= liftIO . readIORef
 
 debug :: String -> Raft ()
 debug s = do
@@ -105,7 +116,7 @@ updateLNextIndex :: (Map.Map NodeId LogIndex -> Map.Map NodeId LogIndex)
 updateLNextIndex f = do
   lNextIndex %= f
   lni <- use lNextIndex
-  ci <- use commitIndex
+  ci <- accessLogs $ viewLogState commitIndex
   logMetric $ MetricAvailableSize $ availSize lni ci
 
   where

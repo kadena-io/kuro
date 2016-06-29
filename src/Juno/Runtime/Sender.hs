@@ -22,6 +22,7 @@ import Data.ByteString (ByteString)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Set (Set)
+
 import qualified Data.Set as Set
 import Data.Serialize
 
@@ -31,7 +32,7 @@ import Juno.Runtime.Timer (resetLastBatchUpdate)
 
 createAppendEntries' :: NodeId
                    -> Map NodeId LogIndex
-                   -> Log LogEntry
+                   -> LogState LogEntry
                    -> Term
                    -> NodeId
                    -> Set NodeId
@@ -40,15 +41,15 @@ createAppendEntries' :: NodeId
 createAppendEntries' target lNextIndex' es ct nid vts yesVotes =
   let
     mni = Map.lookup target lNextIndex'
-    (pli,plt) = logInfoForNextIndex mni es
+    (pli,plt) = logInfoForNextIndex' mni es
     vts' = if Set.member target vts then Set.empty else yesVotes
   in
-    AE' $ AppendEntries ct nid pli plt (getEntriesAfter pli es) vts' NewMsg
+    AE' $ AppendEntries ct nid pli plt (getEntriesAfter' pli es) vts' NewMsg
 
 sendAppendEntries :: NodeId -> Raft ()
 sendAppendEntries target = do
   lNextIndex' <- use lNextIndex
-  es <- use logEntries
+  es <- getLogState
   ct <- use term
   nid <- viewConfig nodeId
   vts <- use lConvinced
@@ -60,7 +61,7 @@ sendAppendEntries target = do
 sendAllAppendEntries :: Raft ()
 sendAllAppendEntries = do
   lNextIndex' <- use lNextIndex
-  es <- use logEntries
+  es <- getLogState
   ct <- use term
   nid <- viewConfig nodeId
   vts <- use lConvinced
@@ -78,9 +79,9 @@ createAppendEntriesResponse :: Bool -> Bool -> Raft AppendEntriesResponse
 createAppendEntriesResponse success convinced = do
   ct <- use term
   nid <- viewConfig nodeId
-  es <- use logEntries
+  es <- getLogState
   case createAppendEntriesResponse' success convinced ct nid
-           (maxIndex es) (lastLogHash es) of
+           (maxIndex' es) (lastLogHash' es) of
     AER' aer -> return aer
     _ -> error "deep invariant error"
 
@@ -88,17 +89,17 @@ sendAppendEntriesResponse :: NodeId -> Bool -> Bool -> Raft ()
 sendAppendEntriesResponse target success convinced = do
   ct <- use term
   nid <- viewConfig nodeId
-  es <- use logEntries
+  es <- getLogState
   sendRPC target $ createAppendEntriesResponse' success convinced ct nid
-              (maxIndex es) (lastLogHash es)
+              (maxIndex' es) (lastLogHash' es)
   debug $ "Sent AppendEntriesResponse: " ++ show ct
 
 sendAllAppendEntriesResponse :: Raft ()
 sendAllAppendEntriesResponse = do
   ct <- use term
   nid <- viewConfig nodeId
-  es <- use logEntries
-  aer <- return $ createAppendEntriesResponse' True True ct nid (maxIndex es) (lastLogHash es)
+  es <- getLogState
+  aer <- return $ createAppendEntriesResponse' True True ct nid (maxIndex' es) (lastLogHash' es)
   oNodes <- viewConfig otherNodes
   sendRPCs $ (,aer) <$> Set.toList oNodes
 

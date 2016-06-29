@@ -51,5 +51,6 @@ setTimedEvent e t = do
 resetLastBatchUpdate :: Raft ()
 resetLastBatchUpdate = do
   curTime <- view (rs.getTimestamp) >>= liftIO
-  l <- lastEntry <$> use logEntries
+  --l <- lastEntry <$> use logEntries
+  l <- accessLogs lastEntry
   lLastBatchUpdate .= (curTime, _leHash <$> l)

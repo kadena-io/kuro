@@ -18,7 +18,6 @@ import Juno.Runtime.Sender (sendAllAppendEntries)
 import Juno.Runtime.Timer (resetHeartbeatTimer, resetElectionTimerLeader,
                            resetElectionTimer)
 import Juno.Util.Util
-import Juno.Types.Log
 import qualified Juno.Types as JT
 
 data RequestVoteResponseEnv = RequestVoteResponseEnv {
@@ -75,12 +74,12 @@ handle :: RequestVoteResponse -> JT.Raft ()
 handle m = do
   r <- ask
   s <- get
-  es <- use JT.logEntries
+  mni <- accessLogs $ JT.maxIndex
   (o,l) <- runReaderT (runWriterT (handleRequestVoteResponse m))
            (RequestVoteResponseEnv
             (JT._nodeRole s)
             (JT._term s)
-            (maxIndex es)
+            (mni)
             (JT._cYesVotes s)
             (JT._quorumSize r))
   mapM_ debug l
@@ -99,8 +98,8 @@ becomeLeader :: JT.Raft ()
 becomeLeader = do
   setRole Leader
   setCurrentLeader . Just =<< JT.viewConfig JT.nodeId
-  ni <- entryCount <$> use JT.logEntries
-  setLNextIndex =<< Map.fromSet (const ni) <$> JT.viewConfig JT.otherNodes
+  ni <- accessLogs $ JT.entryCount
+  setLNextIndex =<< Map.fromSet (const $ LogIndex ni) <$> JT.viewConfig JT.otherNodes
   (JT.lMatchIndex .=) =<< Map.fromSet (const startIndex) <$> JT.viewConfig JT.otherNodes
   JT.lConvinced .= Set.empty
   sendAllAppendEntries
@@ -109,11 +108,10 @@ becomeLeader = do
 
 revertToLastQuorumState :: JT.Raft ()
 revertToLastQuorumState = do
-  es <- use JT.logEntries
   setRole Follower
   setCurrentLeader Nothing
   JT.ignoreLeader .= False
-  setTerm (lastLogTerm es)
+  (accessLogs $ JT.lastEntry) >>= setTerm . maybe JT.startTerm JT._leTerm
   JT.votedFor .= Nothing
   JT.cYesVotes .= Set.empty
   JT.cPotentialVotes .= Set.empty

@@ -94,41 +94,51 @@ encodeLEWire nid pubKey privKey les =
 {-# INLINE encodeLEWire #-}
 
 class LogApi a where
+  -- | Query current state
+  viewLogState :: Getting t (a) t -> IORef a -> IO t
+  updateLogState :: (a -> a) -> IORef a -> IO ()
   -- | Get the first entry
   firstEntry :: IORef a -> IO (Maybe LogEntry)
---  firstEntry' :: a -> Maybe LogEntry
+  firstEntry' :: a -> Maybe LogEntry
   -- | Get last entry.
   lastEntry :: IORef a -> IO (Maybe LogEntry)
   lastEntry' :: a -> Maybe LogEntry
   -- | Get largest index in ledger.
   maxIndex :: IORef a -> IO LogIndex
---  maxIndex' :: a -> LogIndex
+  maxIndex' :: a -> LogIndex
   -- | Get count of entries in ledger.
   entryCount :: IORef a -> IO Int
---  entryCount' :: a -> Int
+  entryCount' :: a -> Int
   -- | Safe index
   lookupEntry :: LogIndex -> IORef a -> IO (Maybe LogEntry)
   lookupEntry' :: LogIndex -> a -> Maybe LogEntry
   -- | Take operation: `takeEntries 3 $ Log $ Seq.fromList [0,1,2,3,4] == fromList [0,1,2]`
   takeEntries :: LogIndex -> IORef a -> IO (Maybe (Seq LogEntry))
+  takeEntries' :: LogIndex -> a -> (Maybe (Seq LogEntry))
   -- | called by leaders sending appendEntries.
   -- given a replica's nextIndex, get the index and term to send as
   -- prevLog(Index/Term)
   logInfoForNextIndex :: Maybe LogIndex -> IORef a -> IO (LogIndex,Term)
+  logInfoForNextIndex' :: Maybe LogIndex -> a -> (LogIndex,Term)
   -- | Latest hash or empty
   lastLogHash :: IORef a -> IO ByteString
+  lastLogHash' :: a -> ByteString
   -- | Latest term on log or 'startTerm'
   lastLogTerm :: IORef a -> IO Term
+  lastLogTerm' :: a -> Term
   -- | get entries after index to beginning, with limit, for AppendEntries message.
   -- TODO make monadic to get 8000 limit from config.
   getEntriesAfter :: LogIndex -> IORef a -> IO (Seq LogEntry)
+  getEntriesAfter' :: LogIndex -> a -> Seq LogEntry
   -- | Recursively hash entries from index to tail.
   updateLogHashesFromIndex :: LogIndex -> IORef a -> IO ()
   updateLogHashesFromIndex' :: LogIndex -> a -> a
   -- | Append/hash a single entry
   appendLogEntry :: LogEntry -> IORef a -> IO ()
+  appendLogEntry' :: LogEntry -> a -> a
   -- | Add/hash entries at specified index.
   addLogEntriesAt :: LogIndex -> Seq LogEntry -> IORef a -> IO ()
+  addLogEntriesAt' :: LogIndex -> Seq LogEntry -> a -> a
 
 data LogState a = LogState
   { _logEntries       :: !(Log a)
@@ -136,7 +146,7 @@ data LogState a = LogState
   , _lastLogIndex     :: !LogIndex
   , _nextLogIndex     :: !LogIndex
   , _commitIndex      :: !LogIndex
-  }
+  } deriving (Show, Eq, Generic)
 makeLenses ''LogState
 
 viewLogSeq :: LogState LogEntry -> Seq LogEntry
@@ -155,7 +165,11 @@ initLogState = newIORef $ LogState
   }
 
 instance LogApi (LogState LogEntry) where
-  firstEntry ref = readIORef ref >>= \ls -> return $ case viewLogs ls of
+  viewLogState l ref = readIORef ref >>= return . view l
+  updateLogState f ref = atomicModifyIORef' ref (\ls -> (f ls,()))
+
+  firstEntry ref = readIORef ref >>= return . firstEntry'
+  firstEntry' ls = case viewLogs ls of
     (e :< _) -> Just e
     _        -> Nothing
 
@@ -164,31 +178,38 @@ instance LogApi (LogState LogEntry) where
     (_ :> e) -> Just e
     _        -> Nothing
 
-  maxIndex ref = view lastLogIndex <$> readIORef ref
+  maxIndex ref = readIORef ref >>= return . maxIndex'
+  maxIndex' ls = maybe startIndex _leLogIndex (lastEntry' ls)
 
-  entryCount ref = fromIntegral . Seq.length . viewLogSeq <$> readIORef ref
+  entryCount ref = readIORef ref >>= return . entryCount'
+  entryCount' ls = fromIntegral . Seq.length . viewLogSeq $ ls
 
   lookupEntry i ref = lookupEntry' i <$> readIORef ref
   lookupEntry' i = firstOf (ix i) . viewLogs
 
-  takeEntries t ref = readIORef ref >>= \ls -> return $ case Seq.take (fromIntegral t) $ viewLogSeq ls of
+  takeEntries t ref = readIORef ref >>= return . takeEntries' t
+  takeEntries' t ls = case Seq.take (fromIntegral t) $ viewLogSeq ls of
     v | Seq.null v -> Nothing
       | otherwise  -> Just v
 
-  logInfoForNextIndex Nothing          _ = return (startIndex, startTerm)
-  logInfoForNextIndex (Just myNextIdx) ref = readIORef ref >>= \ls -> do
-    pli <- return $ myNextIdx - 1
-    return $ case lookupEntry' pli ls of
+  logInfoForNextIndex' Nothing          _  = (startIndex, startTerm)
+  logInfoForNextIndex' (Just myNextIdx) ls = let pli = myNextIdx - 1 in
+    case lookupEntry' pli ls of
           Just LogEntry{..} -> (pli, _leTerm)
           -- this shouldn't happen, because nextIndex - 1 should always be at
           -- most our last entry
           Nothing -> (startIndex, startTerm)
+  logInfoForNextIndex Nothing          _ = return (startIndex, startTerm)
+  logInfoForNextIndex mni ref = readIORef ref >>= return . logInfoForNextIndex' mni
 
-  lastLogHash ref = maybe mempty _leHash <$> lastEntry ref
+  lastLogHash ref = readIORef ref >>= return . lastLogHash'
+  lastLogHash' = maybe mempty _leHash . lastEntry'
 
-  lastLogTerm ref = maybe startTerm _leTerm <$> lastEntry ref
+  lastLogTerm ref = readIORef ref >>= return . lastLogTerm'
+  lastLogTerm' ls = maybe startTerm _leTerm $ lastEntry' ls
 
-  getEntriesAfter pli ref = Seq.take 8000 . Seq.drop (fromIntegral $ pli + 1) . viewLogSeq <$> readIORef ref
+  getEntriesAfter pli ref = readIORef ref >>= return . getEntriesAfter' pli
+  getEntriesAfter' pli = Seq.take 8000 . Seq.drop (fromIntegral $ pli + 1) . viewLogSeq
 
   updateLogHashesFromIndex i ref = atomicModifyIORef' ref (\ls ->
     case lookupEntry' i ls of
@@ -204,16 +225,17 @@ instance LogApi (LogState LogEntry) where
                 over (logEntries.lEntries) (Seq.adjust (hashLogEntry (lookupEntry' (i - 1) ls)) (fromIntegral i)) ls
       Nothing -> ls
 
-  appendLogEntry le@LogEntry{..} ref = atomicModifyIORef' ref (\ls ->
-    case lastEntry' ls of
-      Just ple -> (over (logEntries.lEntries) (Seq.|> hashLogEntry (Just ple) le) ls, ())
-      Nothing -> (ls { _logEntries = Log $ Seq.singleton (hashLogEntry Nothing le)
+  -- TODO: this needs to handle picking the right LogIndex
+  appendLogEntry le ref = atomicModifyIORef' ref (\ls -> (appendLogEntry' le ls, ()))
+  appendLogEntry' le@LogEntry{..} ls = case lastEntry' ls of
+      Just ple -> over (logEntries.lEntries) (Seq.|> hashLogEntry (Just ple) le) ls
+      Nothing -> ls { _logEntries = Log $ Seq.singleton (hashLogEntry Nothing le)
                     , _lastLogIndex = _leLogIndex
                     , _nextLogIndex = _leLogIndex + 1
-                    }, ())
-    )
+                    }
 
-  addLogEntriesAt pli newLEs ref = atomicModifyIORef' ref (\ls ->
+  addLogEntriesAt pli newLEs ref = atomicModifyIORef' ref (\ls -> (addLogEntriesAt' pli newLEs ls,()))
+  addLogEntriesAt' pli newLEs ls =
     let ls' = updateLogHashesFromIndex' (pli + 1)
                  . over (logEntries.lEntries) ((Seq.>< newLEs)
                  . Seq.take (fromIntegral pli + 1))
@@ -221,11 +243,9 @@ instance LogApi (LogState LogEntry) where
         lastIdx = case lastEntry' ls' of
           Nothing -> startIndex
           Just i -> _leLogIndex i
-    in (ls' { _lastLogIndex = lastIdx
-            , _nextLogIndex = lastIdx + 1
-            }
-       ,())
-    )
+    in ls' { _lastLogIndex = lastIdx
+           , _nextLogIndex = lastIdx + 1
+           }
 
 -- TODO: This uses the old decode encode trick and should be changed...
 hashLogEntry :: Maybe LogEntry -> LogEntry -> LogEntry

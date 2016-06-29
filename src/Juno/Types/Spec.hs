@@ -150,7 +150,7 @@ type Raft = RWST (RaftEnv) () RaftState IO
 
 data RaftEnv = RaftEnv
   { _cfg              :: IORef Config
-  , _logThread        :: IORef (LogState LogIndex)
+  , _logThread        :: IORef (LogState LogEntry)
   , _clusterSize      :: Int
   , _quorumSize       :: Int
   , _rs               :: RaftSpec
@@ -164,7 +164,7 @@ data RaftEnv = RaftEnv
   }
 makeLenses ''RaftEnv
 
-mkRaftEnv :: IORef Config -> IORef (LogState LogIndex) -> Int -> Int -> RaftSpec -> Dispatch -> RaftEnv
+mkRaftEnv :: IORef Config -> IORef (LogState LogEntry) -> Int -> Int -> RaftSpec -> Dispatch -> RaftEnv
 mkRaftEnv conf' log' cSize qSize rSpec dispatch = RaftEnv
     { _cfg = conf'
     , _logThread = log'

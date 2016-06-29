@@ -12,13 +12,11 @@ import Control.Monad.Reader
 import Control.Monad.Writer.Strict
 import Control.Monad.State (get)
 
-import Juno.Util.Util (debug)
+import Juno.Util.Util (debug, getLogState)
 import Juno.Runtime.Sender (sendRPC,createRequestVoteResponse)
-import Juno.Types.Log
+import qualified Juno.Types as JT
 
 import Juno.Consensus.Handle.Types
-
-import qualified Juno.Types as JT
 
 data RequestVoteEnv = RequestVoteEnv {
 -- Old Constructors
@@ -27,7 +25,7 @@ data RequestVoteEnv = RequestVoteEnv {
   , _lazyVote         :: Maybe (Term, NodeId, LogIndex)
   , _currentLeader    :: Maybe NodeId
   , _ignoreLeader     :: Bool
-  , _logEntries       :: Log LogEntry
+  , _logEntries       :: LogState LogEntry
 -- New Constructors
   , _myNodeId :: NodeId
   }
@@ -45,8 +43,8 @@ handleRequestVote RequestVote{..} = do
   term' <- view term
   currentLeader' <- view currentLeader
   ignoreLeader' <- view ignoreLeader
-  let lli = maxIndex logEntries'
-      llt = lastLogTerm logEntries'
+  let lli = JT.maxIndex' logEntries'
+      llt = JT.lastLogTerm' logEntries'
   case votedFor' of
     _      | ignoreLeader' && currentLeader' == Just _rvCandidateId -> return NoAction
       -- don't respond to a candidate if they were leader and a client
@@ -103,13 +101,14 @@ handle :: RequestVote -> JT.Raft ()
 handle rv = do
   r <- JT.readConfig
   s <- get
+  ls <- getLogState
   let rve = RequestVoteEnv
               (JT._term s)
               (JT._votedFor s)
               (JT._lazyVote s)
               (JT._currentLeader s)
               (JT._ignoreLeader s)
-              (JT._logEntries s)
+              (ls)
               (JT._nodeId r)
   (rvo, l) <- runReaderT (runWriterT (handleRequestVote rv)) rve
   mapM_ debug l

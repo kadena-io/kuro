@@ -30,7 +30,7 @@ data AppendEntriesEnv = AppendEntriesEnv {
     _term             :: Term
   , _currentLeader    :: Maybe NodeId
   , _ignoreLeader     :: Bool
-  , _logEntries       :: Log LogEntry
+  , _logState         :: LogState LogEntry
 -- New Constructors
   , _quorumSize       :: Int
   }
@@ -63,7 +63,7 @@ data ValidResponse =
     SendFailureResponse |
     Commit {
         _replay :: Map (NodeId, Signature) (Maybe CommandResult)
-      , _updatedLog :: Log LogEntry }
+      , _updatedLog :: LogState LogEntry }
 
 -- THREAD: SERVER MAIN. updates state
 handleAppendEntries :: (MonadWriter [String] m, MonadReader AppendEntriesEnv m) => AppendEntries -> m AppendEntriesOut
@@ -129,8 +129,8 @@ validateVote leader' term' RequestVoteResponse{..} = _rvrCandidateId == leader' 
 
 prevLogEntryMatches :: MonadReader AppendEntriesEnv m => LogIndex -> Term -> m Bool
 prevLogEntryMatches pli plt = do
-  es <- view logEntries
-  case lookupEntry pli es of
+  ls <- view logState
+  case lookupEntry' pli ls of
     -- if we don't have the entry, only return true if pli is startIndex
     Nothing    -> return (pli == startIndex)
     -- if we do have the entry, return true if the terms match
@@ -139,15 +139,15 @@ prevLogEntryMatches pli plt = do
 appendLogEntries :: (MonadWriter [String] m, MonadReader AppendEntriesEnv m)
                  => LogIndex -> Seq LogEntry -> m ValidResponse
 appendLogEntries pli newEs = do
-  les <- view logEntries
-  logEntries'' <- return $ addLogEntriesAt pli newEs les
+  ls <- view logState
+  logEntries'' <- return $ addLogEntriesAt' pli newEs ls
   replay <- return $
     foldl (\m LogEntry{_leCommand = c@Command{..}} ->
             Map.insert (_cmdClientId, getCmdSigOrInvariantError "appendLogEntries" c) Nothing m)
     Map.empty newEs
-  if entryCount les /= entryCount logEntries''
+  if entryCount' ls /= entryCount' logEntries''
     then do
-      tell ["replaying LogEntry(s): " ++ show (entryCount les) ++ " through " ++ show (entryCount logEntries'') ]
+      tell ["replaying LogEntry(s): " ++ show (entryCount' ls) ++ " through " ++ show (entryCount' logEntries'') ]
       return $ Commit replay logEntries''
     else
       return $ Commit replay logEntries''
@@ -162,23 +162,22 @@ applyNewLeader NewLeaderConfirmed{..} = do
 
 logHashChange :: JT.Raft ()
 logHashChange = do
-  mLastHash <- firstOf (_last.JT.leHash) <$> use JT.logEntries
-  case mLastHash of
-    Just lastHash -> logMetric $ JT.MetricHash lastHash
-    Nothing -> return ()
+  mLastHash <- accessLogs $ lastLogHash
+  logMetric $ JT.MetricHash mLastHash
 
 handle :: AppendEntries -> JT.Raft ()
 handle ae = do
   r <- ask
   s <- get
+  ls <- getLogState
   let ape = AppendEntriesEnv
               (JT._term s)
               (JT._currentLeader s)
               (JT._ignoreLeader s)
-              (JT._logEntries s)
+              (ls)
               (JT._quorumSize r)
   (AppendEntriesOut{..}, l) <- runReaderT (runWriterT (handleAppendEntries ae)) ape
-  ci <- return $ JT._commitIndex s
+  ci <- return $ ls ^. commitIndex
   unless (ci == _prevLogIndex ae && length l == 1) $ mapM_ debug l
   applyNewLeader _newLeaderAction
   case _result of
@@ -189,8 +188,10 @@ handle ae = do
       JT.lazyVote .= Nothing
       case _validReponse of
         SendFailureResponse -> sendAppendEntriesResponse _responseLeaderId False True
-        (Commit rMap updatedLog') -> do
-          JT.logEntries .= updatedLog'
+        (Commit rMap LogState{..}) -> do
+          -- TODO: clean up this workflow to make more sense... for no we'll just update the things
+          -- that need updating but eventually we need to do the apply inside the LogThread
+          accessLogs $ updateLogState (\ls' -> ls' { _logEntries = _logEntries, _lastLogIndex = _lastLogIndex, _nextLogIndex = _nextLogIndex})
           logHashChange
           JT.replayMap %= Map.union rMap
           myEvidence <- createAppendEntriesResponse True True

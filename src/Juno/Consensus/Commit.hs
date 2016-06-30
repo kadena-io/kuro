@@ -153,7 +153,7 @@ updateCommitIndex' = do
               else return False
     Right qci -> if qci > ci
                 then do
-                  accessLogs $ updateCommitIndex $ UpdateCommitIndex qci
+                  accessLogs $ updateLogs $ ULCommitIdx $ UpdateCommitIndex qci
                   logCommitChange ci qci
                   commitProof %= Map.filter (\a -> qci < _aerIndex a)
                   debug $ "Commit index is now: " ++ show qci

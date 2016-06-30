@@ -91,12 +91,12 @@ testWireRoundtrip = do
 -- ##########################################################
 
 -- #######################################################################
--- NodeID's + Keys for Client (10002), Leader (10000) and Follower (10001)
+-- NodeId's + Keys for Client (10002), Leader (10000) and Follower (10001)
 -- #######################################################################
-nodeIdLeader, nodeIdFollower, nodeIdClient :: NodeID
-nodeIdLeader = NodeID "localhost" 10000 "tcp://127.0.0.1:10000"
-nodeIdFollower = NodeID "localhost" 10001 "tcp://127.0.0.1:10001"
-nodeIdClient = NodeID "localhost" 10002 "tcp://127.0.0.1:10002"
+nodeIdLeader, nodeIdFollower, nodeIdClient :: NodeId
+nodeIdLeader = NodeId "localhost" 10000 "tcp://127.0.0.1:10000" $ Alias "leader"
+nodeIdFollower = NodeId "localhost" 10001 "tcp://127.0.0.1:10001" $ Alias "follower"
+nodeIdClient = NodeId "localhost" 10002 "tcp://127.0.0.1:10002" $ Alias "client"
 
 privKeyLeader, privKeyFollower, privKeyClient :: PrivateKey
 privKeyLeader = maybe (error "bad leader key") id $ importPrivate "\204m\223Uo|\211.\144\131\&5Xmlyd$\165T\148\&11P\142m\249\253$\216\232\220c"
@@ -137,11 +137,13 @@ cmdRPC1 = Command
   { _cmdEntry = CommandEntry "CreateAccount foo"
   , _cmdClientId = nodeIdClient
   , _cmdRequestId = RequestId 0
+  , _cmdEncryptGroup = Nothing
   , _cmdProvenance = NewMsg }
 cmdRPC2 = Command
   { _cmdEntry = CommandEntry "CreateAccount foo"
   , _cmdClientId = nodeIdClient
   , _cmdRequestId = RequestId 1
+  , _cmdEncryptGroup = Nothing
   , _cmdProvenance = NewMsg }
 
 cmdSignedRPC1, cmdSignedRPC2 :: SignedRPC
@@ -175,15 +177,17 @@ cmdrSignedRPC = toWire nodeIdLeader pubKeyLeader privKeyLeader cmdrRPC
 -- Given this, they are handled differently (no provenance)
 -- ########################################################
 logEntry1, logEntry2 :: LogEntry
-logEntry1 = LogEntry
+logEntry1 = hashLogEntry Nothing $ LogEntry
   { _leTerm    = Term 0
+  , _leLogIndex = 0
   , _leCommand = cmdRPC1'
-  , _leHash    = "\237\157D\GS\158k\214\188\219.,\248\226\232\174\227\228\236R\t\189\&3v\NUL\255\&5\224\&4|\178\STX\252"
+  , _leHash    = ""
   }
-logEntry2 = LogEntry
+logEntry2 = hashLogEntry (Just logEntry1) $ LogEntry
   { _leTerm    = Term 0
+  , _leLogIndex = 1
   , _leCommand = cmdRPC2'
-  , _leHash    = "\244\136\187c\222\164\131\178;D)M\DEL\142|\251Kv\213\186\247q;3`\194\227O\US\223Q\157"
+  , _leHash    = ""
   }
 
 leSeq, leSeqDecoded :: Seq LogEntry

@@ -195,7 +195,7 @@ handle ae = do
       case _validReponse of
         SendFailureResponse -> sendAppendEntriesResponse _responseLeaderId False True
         (Commit rMap rle) -> do
-          accessLogs $ addLogEntriesAt rle
+          accessLogs $ updateLogs $ ULReplicate rle
           logHashChange
           JT.replayMap %= Map.union rMap
           myEvidence <- createAppendEntriesResponse True True

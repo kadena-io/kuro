@@ -132,7 +132,7 @@ handleSingleCommand cmd = do
     (RetransmitToLeader lid rpc) -> sendRPC lid rpc
     (SendCommandResponse cid rpc) -> sendRPC cid rpc
     (CommitAndPropagate newEntry replayKey) -> do
-               accessLogs $ JT.appendLogEntry newEntry
+               accessLogs $ JT.updateLogs $ ULNew newEntry
                JT.replayMap %= Map.insert replayKey Nothing
                myEvidence <- createAppendEntriesResponse True True
                JT.commitProof %= updateCommitProofMap myEvidence
@@ -154,7 +154,7 @@ handleBatch cmdb@CommandBatch{..} = do
                         (JT._nodeId c)
   case out of
     IAmLeader BatchProcessing{..} -> do
-      accessLogs $ JT.appendLogEntry $ NewLogEntries (JT._term s) newEntries
+      accessLogs $ JT.updateLogs $ ULNew $ NewLogEntries (JT._term s) newEntries
       JT.replayMap .= updatedReplays
       myEvidence <- createAppendEntriesResponse True True
       JT.commitProof %= updateCommitProofMap myEvidence

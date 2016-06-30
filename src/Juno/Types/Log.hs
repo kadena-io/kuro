@@ -20,6 +20,9 @@ module Juno.Types.Log
   , toReplicateLogEntries
   , NewLogEntries(..), nleTerm, nleEntries
   , UpdateCommitIndex(..), uci
+  , UpdateLogs(..)
+  -- used for testing
+  , hashLogEntry
   ) where
 
 import Control.Parallel.Strategies
@@ -160,12 +163,7 @@ class LogApi a where
   -- TODO make monadic to get 8000 limit from config.
   getEntriesAfter :: LogIndex -> IORef a -> IO (Seq LogEntry)
   getEntriesAfter' :: LogIndex -> a -> Seq LogEntry
-  -- | Append/hash a single entry
-  appendLogEntry :: NewLogEntries -> IORef a -> IO ()
-  -- | Add/hash entries at specified index.
-  addLogEntriesAt :: ReplicateLogEntries -> IORef a -> IO ()
-  -- | Update Commit Index
-  updateCommitIndex :: UpdateCommitIndex -> IORef a -> IO ()
+  updateLogs :: UpdateLogs -> IORef a -> IO ()
 
 seqHead :: Seq a -> Maybe a
 seqHead s = case Seq.viewl s of
@@ -272,12 +270,12 @@ instance LogApi (LogState LogEntry) where
   getEntriesAfter pli ref = readIORef ref >>= return . getEntriesAfter' pli
   getEntriesAfter' pli = Seq.take 8000 . Seq.drop (fromIntegral $ pli + 1) . viewLogSeq
 
-  -- TODO: this needs to handle picking the right LogIndex
-  appendLogEntry le ref = atomicModifyIORef' ref (\ls -> (appendLogEntry' le ls, ()))
-
-  addLogEntriesAt ReplicateLogEntries{..} ref = atomicModifyIORef' ref (\ls -> (addLogEntriesAt' _rlePrvLogIdx _rleEntries ls,()))
-
-  updateCommitIndex UpdateCommitIndex{..} ref = atomicModifyIORef' ref (\ls -> (ls {_commitIndex = _uci},()))
+  updateLogs (ULNew nle) ref = atomicModifyIORef' ref
+                                 (\ls -> (appendLogEntry' nle ls, ()))
+  updateLogs (ULReplicate ReplicateLogEntries{..}) ref = atomicModifyIORef' ref
+                                  (\ls -> (addLogEntriesAt' _rlePrvLogIdx _rleEntries ls,()))
+  updateLogs (ULCommitIdx UpdateCommitIndex{..}) ref = atomicModifyIORef' ref
+                                  (\ls -> (ls {_commitIndex = _uci},()))
 
 
 addLogEntriesAt' :: LogIndex -> Seq LogEntry -> LogState LogEntry -> LogState LogEntry
@@ -295,6 +293,7 @@ addLogEntriesAt' pli newLEs ls =
         }
 
 -- Since the only node to ever append a log entry is the Leader we can start keeping the logs in sync here
+-- TODO: this needs to handle picking the right LogIndex
 appendLogEntry' :: NewLogEntries -> LogState LogEntry -> LogState LogEntry
 appendLogEntry' NewLogEntries{..} ls = case lastEntry' ls of
     Just ple -> let

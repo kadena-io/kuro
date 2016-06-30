@@ -29,7 +29,10 @@ module Juno.Consensus.Handle.Types (
   , ReceivedAt(..)
   , Log(..)
   , LogState(..)
-  , NewLogEntries(..)
+  , ReplicateLogEntries(..), rleMinLogIdx, rleMaxLogIdx, rlePrvLogIdx, rleEntries
+  , toReplicateLogEntries
+  , NewLogEntries(..), nleTerm, nleEntries
+  , UpdateCommitIndex(..), uci
   ) where
 
 -- This module exists so we don't need to do a bunch of selective/hiding imports

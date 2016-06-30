@@ -64,7 +64,7 @@ data ValidResponse =
     SendFailureResponse |
     Commit {
         _replay :: Map (NodeId, Signature) (Maybe CommandResult)
-      , _newEntries :: NewLogEntries } |
+      , _newEntries :: ReplicateLogEntries } |
     DoNothing
 
 -- THREAD: SERVER MAIN. updates state
@@ -142,21 +142,21 @@ appendLogEntries :: (MonadWriter [String] m, MonadReader AppendEntriesEnv m)
                  => LogIndex -> Seq LogEntry -> m ValidResponse
 appendLogEntries pli newEs
   | Seq.null newEs = return DoNothing
-  | otherwise = case JT.toNewLogEntries pli newEs of
+  | otherwise = case JT.toReplicateLogEntries pli newEs of
       Left err -> do
           tell ["Failure to Append Logs: " ++ err]
           return SendFailureResponse
-      Right nlw -> do
+      Right rle -> do
         replay <- return $
           foldl (\m LogEntry{_leCommand = c@Command{..}} ->
                   Map.insert (_cmdClientId, getCmdSigOrInvariantError "appendLogEntries" c) Nothing m)
           Map.empty newEs
-        if pli /= _nlwMaxLogIdx nlw
+        if pli /= _rleMaxLogIdx rle
           then do
-            tell ["replicated LogEntry(s): " ++ (show $ _nlwMinLogIdx nlw) ++ " through " ++ (show $ _nlwMaxLogIdx nlw)]
-            return $ Commit replay nlw
+            tell ["replicated LogEntry(s): " ++ (show $ _rleMinLogIdx rle) ++ " through " ++ (show $ _rleMaxLogIdx rle)]
+            return $ Commit replay rle
           else
-            return $ Commit replay nlw
+            return $ Commit replay rle
 
 applyNewLeader :: CheckForNewLeaderOut -> JT.Raft ()
 applyNewLeader LeaderUnchanged = return ()
@@ -194,8 +194,8 @@ handle ae = do
       JT.lazyVote .= Nothing
       case _validReponse of
         SendFailureResponse -> sendAppendEntriesResponse _responseLeaderId False True
-        (Commit rMap nlw) -> do
-          accessLogs $ addLogEntriesAt nlw
+        (Commit rMap rle) -> do
+          accessLogs $ addLogEntriesAt rle
           logHashChange
           JT.replayMap %= Map.union rMap
           myEvidence <- createAppendEntriesResponse True True

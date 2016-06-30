@@ -52,6 +52,7 @@ instance WireFormat Command where
   {-# INLINE toWire #-}
   {-# INLINE fromWire #-}
 
+-- TODO: kill provenance for CommandBatch.
 data CommandBatch = CommandBatch
   { _cmdbBatch :: ![Command]
   , _cmdbProvenance :: !Provenance

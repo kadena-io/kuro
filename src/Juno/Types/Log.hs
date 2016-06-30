@@ -16,8 +16,10 @@ module Juno.Types.Log
   , LogState(..), logEntries, lastApplied, lastLogIndex, nextLogIndex, commitIndex
   , LogApi(..)
   , initLogState
-  , NewLogEntries(..), nlwMinLogIdx, nlwMaxLogIdx, nlwPrvLogIdx, nlwEntries
-  , toNewLogEntries
+  , ReplicateLogEntries(..), rleMinLogIdx, rleMaxLogIdx, rlePrvLogIdx, rleEntries
+  , toReplicateLogEntries
+  , NewLogEntries(..), nleTerm, nleEntries
+  , UpdateCommitIndex(..), uci
   ) where
 
 import Control.Parallel.Strategies
@@ -27,6 +29,7 @@ import qualified Control.Lens as Lens
 import Data.Sequence (Seq, (|>))
 import qualified Data.Sequence as Seq
 import Data.ByteString (ByteString)
+import qualified Data.ByteString as B
 import Data.Serialize
 import Data.Maybe (fromJust)
 import Data.Foldable
@@ -96,6 +99,30 @@ encodeLEWire nid pubKey privKey les =
   (\LogEntry{..} -> LEWire (_leTerm, _leLogIndex, toWire nid pubKey privKey _leCommand, _leHash)) <$> toList les
 {-# INLINE encodeLEWire #-}
 
+data ReplicateLogEntries = ReplicateLogEntries
+  { _rleMinLogIdx :: LogIndex
+  , _rleMaxLogIdx :: LogIndex
+  , _rlePrvLogIdx :: LogIndex
+  , _rleEntries :: Seq LogEntry
+  } deriving (Show, Eq, Generic)
+makeLenses ''ReplicateLogEntries
+
+data NewLogEntries = NewLogEntries
+  { _nleTerm :: Term
+  , _nleEntries :: [Command]
+  } deriving (Show, Eq, Generic)
+makeLenses ''NewLogEntries
+
+newtype UpdateCommitIndex = UpdateCommitIndex {_uci :: LogIndex}
+  deriving (Show, Eq, Generic)
+makeLenses ''UpdateCommitIndex
+
+data UpdateLogs =
+  ULReplicate ReplicateLogEntries |
+  ULNew NewLogEntries |
+  ULCommitIdx UpdateCommitIndex
+  deriving (Show, Eq, Generic)
+
 class LogApi a where
   -- | Query current state
   viewLogState :: Getting t (a) t -> IORef a -> IO t
@@ -136,17 +163,11 @@ class LogApi a where
   -- | Recursively hash entries from index to tail.
   updateLogHashesFromIndex :: LogIndex -> IORef a -> IO ()
   -- | Append/hash a single entry
-  appendLogEntry :: (LogIndex -> LogEntry) -> IORef a -> IO ()
+  appendLogEntry :: NewLogEntries -> IORef a -> IO ()
   -- | Add/hash entries at specified index.
-  addLogEntriesAt :: NewLogEntries -> IORef a -> IO ()
-
-data NewLogEntries = NewLogEntries
-  { _nlwMinLogIdx :: LogIndex
-  , _nlwMaxLogIdx :: LogIndex
-  , _nlwPrvLogIdx :: LogIndex
-  , _nlwEntries :: Seq LogEntry
-  } deriving (Show, Eq, Generic)
-makeLenses ''NewLogEntries
+  addLogEntriesAt :: ReplicateLogEntries -> IORef a -> IO ()
+  -- | Update Commit Index
+  updateCommitIndex :: UpdateCommitIndex -> IORef a -> IO ()
 
 seqHead :: Seq a -> Maybe a
 seqHead s = case Seq.viewl s of
@@ -158,8 +179,8 @@ seqTail s = case Seq.viewr s of
   (_ Seq.:> e) -> Just e
   _        -> Nothing
 
-toNewLogEntries :: LogIndex -> Seq LogEntry -> Either String NewLogEntries
-toNewLogEntries prevLogIndex les = do
+toReplicateLogEntries :: LogIndex -> Seq LogEntry -> Either String ReplicateLogEntries
+toReplicateLogEntries prevLogIndex les = do
   let minLogIdx = _leLogIndex $ fromJust $ seqHead les
       maxLogIdx = _leLogIndex $ fromJust $ seqTail les
   if prevLogIndex /= minLogIdx - 1
@@ -177,10 +198,10 @@ toNewLogEntries prevLogIndex les = do
                  ++ show (Seq.length les)
        else -- TODO: add a protection in here to check that Seq's LogIndexs are
             -- strictly increasing by 1 from right to left
-            return $ NewLogEntries { _nlwMinLogIdx = minLogIdx
-                                   , _nlwMaxLogIdx = maxLogIdx
-                                   , _nlwPrvLogIdx = prevLogIndex
-                                   , _nlwEntries   = les }
+            return $ ReplicateLogEntries { _rleMinLogIdx = minLogIdx
+                                   , _rleMaxLogIdx = maxLogIdx
+                                   , _rlePrvLogIdx = prevLogIndex
+                                   , _rleEntries   = les }
 
 data LogState a = LogState
   { _logEntries       :: !(Log a)
@@ -263,7 +284,10 @@ instance LogApi (LogState LogEntry) where
   -- TODO: this needs to handle picking the right LogIndex
   appendLogEntry le ref = atomicModifyIORef' ref (\ls -> (appendLogEntry' le ls, ()))
 
-  addLogEntriesAt NewLogEntries{..} ref = atomicModifyIORef' ref (\ls -> (addLogEntriesAt' _nlwPrvLogIdx _nlwEntries ls,()))
+  addLogEntriesAt ReplicateLogEntries{..} ref = atomicModifyIORef' ref (\ls -> (addLogEntriesAt' _rlePrvLogIdx _rleEntries ls,()))
+
+  updateCommitIndex UpdateCommitIndex{..} ref = atomicModifyIORef' ref (\ls -> (ls {_commitIndex = _uci},()))
+
 
 addLogEntriesAt' :: LogIndex -> Seq LogEntry -> LogState LogEntry -> LogState LogEntry
 addLogEntriesAt' pli newLEs ls =
@@ -280,16 +304,30 @@ addLogEntriesAt' pli newLEs ls =
         }
 
 -- Since the only node to ever append a log entry is the Leader we can start keeping the logs in sync here
-appendLogEntry' :: (LogIndex -> LogEntry) -> LogState LogEntry -> LogState LogEntry
-appendLogEntry' le ls = case lastEntry' ls of
+appendLogEntry' :: NewLogEntries -> LogState LogEntry -> LogState LogEntry
+appendLogEntry' NewLogEntries{..} ls = case lastEntry' ls of
     Just ple -> let
-        le' = le $ ls ^. nextLogIndex
-        ls' = over (logEntries.lEntries) (Seq.|> hashLogEntry (Just ple) le') ls
-      in ls' { _lastLogIndex = ls ^. nextLogIndex
-             , _nextLogIndex = (ls ^. nextLogIndex) + 1 }
-    Nothing -> ls { _logEntries = Log $ Seq.singleton (hashLogEntry Nothing (le $ 1 + startIndex))
-                  , _lastLogIndex = startIndex + 1
-                  , _nextLogIndex = startIndex + 2 }
+        nle = newEntriesToLog (_nleTerm) (_leHash ple) (ls ^. nextLogIndex) _nleEntries
+        ls' = ls { _logEntries = Log $ (Seq.><) (viewLogSeq ls) nle }
+        lastIdx' = maybe (ls ^. lastLogIndex) _leLogIndex $ seqTail nle
+      in ls' { _lastLogIndex = lastIdx'
+             , _nextLogIndex = lastIdx' + 1 }
+    Nothing -> let
+        nle = newEntriesToLog (_nleTerm) (B.empty) (ls ^. nextLogIndex) _nleEntries
+        ls' = ls { _logEntries = Log nle }
+        lastIdx' = maybe (ls ^. lastLogIndex) _leLogIndex $ seqTail nle
+      in ls' { _lastLogIndex = lastIdx'
+             , _nextLogIndex = lastIdx' + 1 }
+
+newEntriesToLog :: Term -> ByteString -> LogIndex -> [Command] -> Seq LogEntry
+newEntriesToLog ct prevHash idx cmds = Seq.fromList $ go prevHash idx cmds
+  where
+    go _ _ [] = []
+    go prevHash' i [c] = [LogEntry ct i c (hashNewEntry prevHash' ct i c)]
+    go prevHash' i (c:cs) = let
+        newHash = hashNewEntry prevHash' ct i c
+      in (LogEntry ct i c newHash) : go newHash (i + 1) cs
+{-# INLINE newEntriesToLog #-}
 
 updateLogHashesFromIndex' :: LogIndex -> Log LogEntry -> Log LogEntry
 updateLogHashesFromIndex' i ls =
@@ -297,6 +335,14 @@ updateLogHashesFromIndex' i ls =
     Just _ -> updateLogHashesFromIndex' (succ i) $
               over (lEntries) (Seq.adjust (hashLogEntry (firstOf (ix (i - 1)) ls)) (fromIntegral i)) ls
     Nothing -> ls
+
+hashNewEntry :: ByteString -> Term -> LogIndex -> Command -> ByteString
+hashNewEntry prevHash leTerm' leLogIndex' cmd = hash SHA256 (encode $ LEWire (leTerm', leLogIndex', sigCmd cmd, prevHash))
+  where
+    sigCmd Command{ _cmdProvenance = ReceivedMsg{ _pDig = dig, _pOrig = bdy }} =
+      SignedRPC dig bdy
+    sigCmd Command{ _cmdProvenance = NewMsg } =
+      error "Invariant Failure: for a command to be in a log entry, it needs to have been received!"
 
 -- TODO: This uses the old decode encode trick and should be changed...
 hashLogEntry :: Maybe LogEntry -> LogEntry -> LogEntry

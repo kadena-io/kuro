@@ -28,7 +28,7 @@ import Juno.Runtime.Sender (sendResults)
 -- THREAD: SERVER MAIN.
 doCommit :: Raft ()
 doCommit = do
-  commitUpdate <- updateCommitIndex
+  commitUpdate <- updateCommitIndex'
   when commitUpdate applyLogEntries
 
 applyLogEntries :: Raft ()
@@ -132,8 +132,8 @@ logCommitChange before after
       lastCommitTime ?= now
   | otherwise = return ()
 
-updateCommitIndex :: Raft Bool
-updateCommitIndex = do
+updateCommitIndex' :: Raft Bool
+updateCommitIndex' = do
   proof <- use commitProof
   qsize <- view quorumSize
 
@@ -153,7 +153,7 @@ updateCommitIndex = do
               else return False
     Right qci -> if qci > ci
                 then do
-                  accessLogs $ updateLogState (\ls' -> ls' {_commitIndex = qci})
+                  accessLogs $ updateCommitIndex $ UpdateCommitIndex qci
                   logCommitChange ci qci
                   commitProof %= Map.filter (\a -> qci < _aerIndex a)
                   debug $ "Commit index is now: " ++ show qci

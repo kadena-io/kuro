@@ -29,6 +29,7 @@ import qualified Control.Concurrent.Chan.Unagi as Unagi
 
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 import Data.Monoid ((<>))
 import Data.Thyme.Calendar (showGregorian)
 import Data.Thyme.Clock (getCurrentTime)
@@ -181,9 +182,6 @@ resetAwsEnv = do
   awsDashVar "AppliedIndex" "Startup"
   awsDashVar "CommitIndex" "Startup"
 
-nodeIDtoAddr :: NodeId -> Addr String
-nodeIDtoAddr (NodeId _ _ a _) = Addr $ a
-
 runClient :: (Command -> IO CommandResult) -> IO (RequestId, [(Maybe Alias, CommandEntry)]) -> CommandMVarMap -> IO ()
 runClient applyFn getEntries cmdStatusMap' = do
   setLineBuffering
@@ -194,8 +192,9 @@ runClient applyFn getEntries cmdStatusMap' = do
   let debugFn' = if (rconf ^. enableDebug) then showDebug' fs else (\_ -> return ())
   pubMetric <- startMonitoring rconf
   dispatch <- initDispatch
-  me <- return $ nodeIDtoAddr $ rconf ^. nodeId
-  runMsgServer dispatch me [] debugFn' -- ZMQ
+  me <- return $ rconf ^. nodeId
+  oNodes <- return $ Set.toList $ rconf ^. otherNodes
+  runMsgServer dispatch me oNodes debugFn' -- ZMQ
   -- STUBs mocking
   (_, stubGetApiCommands) <- Unagi.newChan
   let raftSpec = simpleRaftSpec
@@ -218,7 +217,8 @@ runJuno applyFn toCommands getApiCommands sharedCmdStatusMap = do
   setLineBuffering
   resetAwsEnv
   rconf <- getConfig
-  me <- return $ nodeIDtoAddr $ rconf ^. nodeId
+  me <- return $ rconf ^. nodeId
+  oNodes <- return $ Set.toList $ rconf ^. otherNodes
   dispatch <- initDispatch
   -- Start The Api Server, communicates with the Juno protocol via sharedCmdStatusMap
   -- API interface will run on 800{nodeNum} for now, where the nodeNum for 10003 is 3
@@ -231,7 +231,7 @@ runJuno applyFn toCommands getApiCommands sharedCmdStatusMap = do
 
   -- each node has its own snap monitoring server
   pubMetric <- startMonitoring rconf
-  runMsgServer dispatch me [] debugFn' -- ZMQ
+  runMsgServer dispatch me oNodes debugFn' -- ZMQ
   let raftSpec = simpleRaftSpec
                    (liftIO . applyFn)
                    (debugFn)

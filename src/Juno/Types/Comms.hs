@@ -9,20 +9,28 @@
 
 module Juno.Types.Comms
   ( Comms(..)
-  , Dispatch(..), inboundAER, inboundCMD, inboundRVorRVR, inboundGeneral, outboundGeneral, internalEvent
-  , initDispatch
+  , Dispatch(..), initDispatch
   , InboundAER(..)
-  , InboundCMD(..)
-  , InboundRVorRVR(..)
-  , InboundGeneral(..)
-  , OutboundGeneral(..)
-  , InternalEvent(..)
   , InboundAERChannel(..)
+  , inboundAER
+  , InboundCMD(..)
+  , inboundCMD
+  , InboundRVorRVR(..)
   , InboundCMDChannel(..)
+  , inboundRVorRVR
   , InboundRVorRVRChannel(..)
+  , InboundGeneral(..)
   , InboundGeneralChannel(..)
+  , inboundGeneral
+  , OutboundGeneral(..)
   , OutboundGeneralChannel(..)
+  , outboundGeneral
+  , OutboundPub(..)
+  , OutboundPubChannel(..)
+  , outboundPub
+  , InternalEvent(..)
   , InternalEventChannel(..)
+  , internalEvent
   ) where
 
 import Juno.Types.Base
@@ -56,6 +64,9 @@ newtype InboundRVorRVR = InboundRVorRVR { _unInboundRVorRVR :: (ReceivedAt, Sign
 newtype OutboundGeneral = OutboundGeneral { _unOutboundGeneral :: OutBoundMsg String ByteString}
   deriving (Show, Eq, Typeable)
 
+newtype OutboundPub = OutboundPub { _unOutboundPub :: ByteString}
+  deriving (Show, Eq, Typeable)
+
 newtype InternalEvent = InternalEvent { _unInternalEvent :: Event}
   deriving (Show, Typeable)
 
@@ -69,6 +80,8 @@ newtype InboundGeneralChannel =
   InboundGeneralChannel (NoBlock.InChan InboundGeneral, MVar (NoBlock.Stream InboundGeneral))
 newtype OutboundGeneralChannel =
   OutboundGeneralChannel (Unagi.InChan OutboundGeneral, MVar (Maybe (Unagi.Element OutboundGeneral, IO OutboundGeneral), Unagi.OutChan OutboundGeneral))
+newtype OutboundPubChannel =
+  OutboundPubChannel (Unagi.InChan OutboundPub, MVar (Maybe (Unagi.Element OutboundPub, IO OutboundPub), Unagi.OutChan OutboundPub))
 newtype InternalEventChannel =
   InternalEventChannel (Bounded.InChan InternalEvent, MVar (Maybe (Bounded.Element InternalEvent, IO InternalEvent), Bounded.OutChan InternalEvent))
 
@@ -108,6 +121,12 @@ instance Comms OutboundGeneral OutboundGeneralChannel where
   readComms (OutboundGeneralChannel (_,o)) = readCommsUnagi o
   writeComm (OutboundGeneralChannel (i,_)) = writeCommUnagi i
 
+instance Comms OutboundPub OutboundPubChannel where
+  initComms = OutboundPubChannel <$> initCommsUnagi
+  readComm (OutboundPubChannel (_,o)) = readCommUnagi o
+  readComms (OutboundPubChannel (_,o)) = readCommsUnagi o
+  writeComm (OutboundPubChannel (i,_)) = writeCommUnagi i
+
 instance Comms InternalEvent InternalEventChannel where
   initComms = InternalEventChannel <$> initCommsBounded
   readComm (InternalEventChannel (_,o)) = readCommBounded o
@@ -120,6 +139,7 @@ data Dispatch = Dispatch
   , _inboundRVorRVR  :: InboundRVorRVRChannel
   , _inboundGeneral  :: InboundGeneralChannel
   , _outboundGeneral :: OutboundGeneralChannel
+  , _outboundPub :: OutboundPubChannel
   , _internalEvent   :: InternalEventChannel
   } deriving (Typeable)
 
@@ -127,6 +147,7 @@ data Dispatch = Dispatch
 initDispatch :: IO Dispatch
 initDispatch = Dispatch
   <$> initComms
+  <*> initComms
   <*> initComms
   <*> initComms
   <*> initComms

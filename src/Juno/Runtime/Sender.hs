@@ -100,8 +100,7 @@ sendAllAppendEntriesResponse = do
   nid <- viewConfig nodeId
   es <- getLogState
   aer <- return $ createAppendEntriesResponse' True True ct nid (maxIndex' es) (lastLogHash' es)
-  oNodes <- viewConfig otherNodes
-  sendRPCs $ (,aer) <$> Set.toList oNodes
+  pubRPC aer
 
 createRequestVoteResponse :: MonadWriter [String] m => Term -> LogIndex -> NodeId -> NodeId -> Bool -> m RequestVoteResponse
 createRequestVoteResponse term' logIndex' myNodeId' target vote = do
@@ -110,6 +109,14 @@ createRequestVoteResponse term' logIndex' myNodeId' target vote = do
 
 sendResults :: [(NodeId, CommandResponse)] -> Raft ()
 sendResults results = sendRPCs $ second CMDR' <$> results
+
+pubRPC :: RPC -> Raft ()
+pubRPC rpc = do
+  send <- view pubMessage
+  myNodeId <- viewConfig nodeId
+  privKey <- viewConfig myPrivateKey
+  pubKey <- viewConfig myPublicKey
+  liftIO $ send $ encode $ rpcToSignedRPC myNodeId pubKey privKey rpc
 
 sendRPC :: NodeId -> RPC -> Raft ()
 sendRPC target rpc = do

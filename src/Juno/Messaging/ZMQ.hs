@@ -1,4 +1,5 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE RecordWildCards    #-}
 {-# LANGUAGE DeriveAnyClass    #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes        #-}
@@ -67,9 +68,12 @@ recipList (Rolodex r) RAll = return $! _unListenOn <$> Map.elems r
 recipList (Rolodex r) (RSome addrs) = return $! _unListenOn . (r Map.!) <$> Set.toList addrs
 recipList (Rolodex r) (ROne addr) = return $! _unListenOn <$> [r Map.! addr]
 
+nodeIdToZmqAddr :: NodeId -> String
+nodeIdToZmqAddr NodeId{..} = "tcp://" ++ _host ++ ":" ++ show _port
+
 runMsgServer :: Dispatch
-             -> Addr String
-             -> [Addr String]
+             -> NodeId
+             -> [NodeId]
              -> (String -> IO ())
              -> IO ()
 runMsgServer dispatch me addrList debug = void $ forkIO $ forever $ do
@@ -78,13 +82,14 @@ runMsgServer dispatch me addrList debug = void $ forkIO $ forever $ do
   aerInboxWrite <- return $ dispatch ^. inboundAER
   rvAndRvrWrite <- return $ dispatch ^. inboundRVorRVR
   outboxRead <- return $ dispatch ^. outboundGeneral
+  pubRead <- return $ dispatch ^. outboundPub
 
   zmqThread <- Async.async $ runZMQ $ do
     -- liftIO $ debug $ "[ZMQ_THREAD] Launching..."
     zmqReceiver <- async $ do
       -- liftIO $ debug $ "[ZMQ_RECEIVER] Launching..."
       sock <- socket Pull
-      _ <- bind sock $ _unAddr me
+      _ <- bind sock $ nodeIdToZmqAddr me
       forever $ do
         newMsg <- receive sock
         ts <- liftIO getCurrentTime
@@ -102,13 +107,53 @@ runMsgServer dispatch me addrList debug = void $ forkIO $ forever $ do
               liftIO $ writeComm aerInboxWrite (InboundAER (ReceivedAt ts, s)) >> yield
             | otherwise           ->
               liftIO $ writeComm inboxWrite (InboundGeneral (ReceivedAt ts, s)) >> yield
+
+    -- Testing out using Pub sockets for AER's
+    -- TODO: figure out how to catch failures on _zmqPub like in zmqSender
+    _zmqPub <- liftM Async.link $ async $ do
+      liftIO $ debug $ "[ZMQ_PUB] Launching..."
+      pubSock <- socket Pub
+      _ <- bind pubSock $ nodeIdToZmqAddr $ me { _port = 5000 + _port me}
+      forever $ do
+        !msg <- liftIO $! _unOutboundPub <$> readComm pubRead
+        send pubSock [] msg
+
     liftIO $ threadDelay 100000 -- to be sure that the receive side is up first
 
     -- liftIO $ debug $ "[ZMQ_SENDER] Launching..."
     zmqSender <- async $ do
-      rolodex <- addNewAddrs (Rolodex Map.empty) addrList
+      rolodex <- addNewAddrs (Rolodex Map.empty) $ fmap (Addr . nodeIdToZmqAddr) addrList
       void $ sendProcess outboxRead rolodex
       -- liftIO $ debug $ "[ZMQ_SENDER] Exiting"
+
+    _zmqSub <- mapM (\addr -> liftM Async.link $ async $ do
+      subSocket <- socket Sub
+      subscribe subSocket ""
+      _ <- connect subSocket $ nodeIdToZmqAddr $ addr { _port = 5000 + _port addr }
+      liftIO $ debug $ "[ZMQ_SUB] made sub socket for: " ++ (show $ nodeIdToZmqAddr $ addr { _port = 5000 + _port addr })
+      forever $ do
+        newMsg <- receive subSocket
+        ts <- liftIO getCurrentTime
+        case decode newMsg of
+          Left err -> do
+            liftIO $ debug $ "[ZMQ_SUB] Failed to deserialize to SignedRPC [Msg]: " ++ show newMsg
+            liftIO $ debug $ "[ZMQ_SUB] Failed to deserialize to SignedRPC [Error]: " ++ err
+            liftIO yield
+          Right s@(SignedRPC dig _)
+            | _digType dig == RV || _digType dig == RVR -> do
+--              liftIO $ debug $ "[ZMQ_SUB] Received RVR from: " ++ (show $ _alias $ _digNodeId dig)
+              liftIO $ writeComm rvAndRvrWrite (InboundRVorRVR (ReceivedAt ts, s)) >> yield
+            | _digType dig == CMD || _digType dig == CMDB -> do
+--              liftIO $ debug $ "[ZMQ_SUB] Received CMD or CMDB, but I shouldn't have!"
+              liftIO $ writeComm cmdInboxWrite (InboundCMD (ReceivedAt ts, s)) >> yield
+            | _digType dig == AER -> do
+--              liftIO $ debug $ "[ZMQ_SUB] Received AER from: " ++ (show $ _alias $ _digNodeId dig)
+              liftIO $ writeComm aerInboxWrite (InboundAER (ReceivedAt ts, s)) >> yield
+            | otherwise           -> do
+--              liftIO $ debug $ "[ZMQ_SUB] Received " ++ (show $ _digType dig) ++ " from " ++ (show $ _alias $ _digNodeId dig)
+              liftIO $ writeComm inboxWrite (InboundGeneral (ReceivedAt ts, s)) >> yield
+      ) addrList
+
     liftIO $ (Async.waitEitherCancel zmqReceiver zmqSender) >>= \res' -> case res' of
       Left () -> liftIO $ debug $ "[ZMQ_RECEIVER] returned with ()"
       Right v -> liftIO $ debug $ "[ZMQ_SENDER] returned with " ++ show v

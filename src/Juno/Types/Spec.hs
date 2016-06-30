@@ -14,7 +14,7 @@ module Juno.Types.Spec
   , dequeueFromApi ,cmdStatusMap, updateCmdMap
   , RaftEnv(..), cfg, logThread, clusterSize, quorumSize, rs
   , enqueue, enqueueMultiple, dequeue, enqueueLater, killEnqueued
-  , sendMessage, sendMessages
+  , sendMessage, sendMessages, pubMessage
   , RaftState(..), nodeRole, term, votedFor, lazyVote, currentLeader, ignoreLeader
   , logEntries, commitIndex, commitProof, lastApplied, timerThread, replayMap
   , cYesVotes, cPotentialVotes, lNextIndex, lMatchIndex, lConvinced
@@ -156,6 +156,7 @@ data RaftEnv = RaftEnv
   , _rs               :: RaftSpec
   , _sendMessage      :: NodeId -> ByteString -> IO ()
   , _sendMessages     :: [(NodeId,ByteString)] -> IO ()
+  , _pubMessage       :: ByteString -> IO ()
   , _enqueue          :: Event -> IO ()
   , _enqueueMultiple  :: [Event] -> IO ()
   , _enqueueLater     :: Int -> Event -> IO ThreadId
@@ -173,6 +174,7 @@ mkRaftEnv conf' log' cSize qSize rSpec dispatch = RaftEnv
     , _rs = rSpec
     , _sendMessage = sendMsg g'
     , _sendMessages = sendMsgs g'
+    , _pubMessage = pubMsg p'
     , _enqueue = writeComm ie' . InternalEvent
     , _enqueueMultiple = mapM_ (writeComm ie' . InternalEvent)
     , _enqueueLater = \t e -> forkIO (threadDelay t >> writeComm ie' (InternalEvent e))
@@ -181,6 +183,7 @@ mkRaftEnv conf' log' cSize qSize rSpec dispatch = RaftEnv
     }
   where
     g' = dispatch ^. outboundGeneral
+    p' = dispatch ^. outboundPub
     ie' = dispatch ^. internalEvent
 
 -- These are going here temporarily until I rework the ZMQ layer
@@ -200,6 +203,11 @@ sendMsg outboxWrite n s = do
   let addr = ROne $ nodeIDtoAddr n
       msg = OutboundGeneral $ OutBoundMsg addr s
   writeComm outboxWrite msg
+  yield
+
+pubMsg :: OutboundPubChannel -> ByteString -> IO ()
+pubMsg pubWrite s = do
+  writeComm pubWrite $ OutboundPub s
   yield
 
 readConfig :: Raft Config

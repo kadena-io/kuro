@@ -160,8 +160,6 @@ class LogApi a where
   -- TODO make monadic to get 8000 limit from config.
   getEntriesAfter :: LogIndex -> IORef a -> IO (Seq LogEntry)
   getEntriesAfter' :: LogIndex -> a -> Seq LogEntry
-  -- | Recursively hash entries from index to tail.
-  updateLogHashesFromIndex :: LogIndex -> IORef a -> IO ()
   -- | Append/hash a single entry
   appendLogEntry :: NewLogEntries -> IORef a -> IO ()
   -- | Add/hash entries at specified index.
@@ -273,13 +271,6 @@ instance LogApi (LogState LogEntry) where
 
   getEntriesAfter pli ref = readIORef ref >>= return . getEntriesAfter' pli
   getEntriesAfter' pli = Seq.take 8000 . Seq.drop (fromIntegral $ pli + 1) . viewLogSeq
-
-  updateLogHashesFromIndex i ref = atomicModifyIORef' ref (\ls ->
-    case lookupEntry' i ls of
-      Just _ -> (ls {_logEntries = updateLogHashesFromIndex' i $ _logEntries ls}
-                ,())
-      Nothing -> (ls,())
-    )
 
   -- TODO: this needs to handle picking the right LogIndex
   appendLogEntry le ref = atomicModifyIORef' ref (\ls -> (appendLogEntry' le ls, ()))

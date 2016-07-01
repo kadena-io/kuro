@@ -9,4 +9,5 @@ data Event = ERPC RPC
            | AERs AlotOfAERs
            | ElectionTimeout String
            | HeartbeatTimeout String
+           | Tock -- used initially for the timer system to work (it uses a blocking channel read so on idle nothing happens)
   deriving (Show)

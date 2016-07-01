@@ -5,17 +5,17 @@ module Juno.Consensus.Client
   ( runRaftClient
   ) where
 
-import Control.Concurrent (MVar, modifyMVar_, readMVar)
+import Control.Concurrent (MVar, modifyMVar_, readMVar, newEmptyMVar, tryTakeMVar)
 import qualified Control.Concurrent.Lifted as CL
 import Control.Lens hiding (Index)
 import Control.Monad.RWS
 
 import Data.Foldable (traverse_)
 import Data.IORef
+import Text.Read (readMaybe)
 import qualified Data.ByteString.Char8 as SB8
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import Text.Read (readMaybe)
 
 import Juno.Runtime.MessageReceiver
 import Juno.Runtime.Sender (sendRPC)
@@ -40,12 +40,13 @@ runRaftClient renv getEntries cmdStatusMap' rconf spec@RaftSpec{..} disableTimeo
   (CommandMap rid _) <- readMVar cmdStatusMap'
   void $ runMessageReceiver renv -- THREAD: CLIENT MESSAGE RECEIVER
   rconf' <- newIORef rconf
+  timerTarget' <- newEmptyMVar
   ls <- initLogState
   runRWS_
     (raftClient (lift getEntries) cmdStatusMap' disableTimeouts)
-    (mkRaftEnv rconf' ls csize qsize spec (_dispatch renv))
+    (mkRaftEnv rconf' ls csize qsize spec (_dispatch renv) timerTarget')
     -- TODO: because UTC can flow backwards, this request ID is problematic:
-    initialRaftState {_currentRequestId = rid}-- only use currentLeader and logEntries
+    (initialRaftState timerTarget') {_currentRequestId = rid} -- only use currentLeader and logEntries
 
 -- TODO: don't run in raft, own monad stack
 -- StateT ClientState (ReaderT ClientEnv IO)
@@ -103,7 +104,12 @@ setNextRequestId rid = do
 -- THREAD: CLIENT MAIN. updates state
 clientHandleEvents :: CommandMVarMap -> MVar Bool -> Raft ()
 clientHandleEvents cmdStatusMap' disableTimeouts = forever $ do
-  e <- dequeueEvent -- blocking queue
+  timerTarget' <- use timerTarget
+  -- we use the MVar to preempt a backlog of messages when under load. This happens during a large 'many test'
+  tFired <- liftIO $ tryTakeMVar timerTarget'
+  e <- case tFired of
+    Nothing -> dequeueEvent
+    Just v -> return v
   case e of
     ERPC (CMDB' cmdb)   -> clientSendCommandBatch cmdb
     ERPC (CMD' cmd)     -> clientSendCommand cmd -- these are commands coming from the commandGetter thread

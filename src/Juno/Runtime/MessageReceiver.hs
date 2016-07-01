@@ -57,14 +57,14 @@ generalTurbine = do
   debug <- view debugPrint
   ks <- view keySet
   forever $ liftIO $ do
-    msgs <- gm 50
+    msgs <- gm 5
     (aes, noAes) <- return $ partition (\(_,SignedRPC{..}) -> if _digType _sigDigest == AE then True else False) (_unInboundGeneral <$> msgs)
-    (invalid, validNoAes) <- return $ partitionEithers $ parallelVerify id ks noAes
-    unless (null validNoAes) $ mapM_ (liftIO . enqueueEvent . ERPC) validNoAes
-    unless (null invalid) $ mapM_ (liftIO . debug) invalid
     unless (null aes) $ mapM_ (\(ts,msg) -> case signedRPCtoRPC (Just ts) ks msg of
-              Left err -> liftIO $ debug err
-              Right v -> liftIO $ enqueueEvent $ ERPC v) aes
+              Left err -> debug err
+              Right v -> (debug "[GENERAL_TURBINE] Enqueued AE") >> enqueueEvent (ERPC v)) aes
+    (invalid, validNoAes) <- return $ partitionEithers $ parallelVerify id ks noAes
+    unless (null validNoAes) $ mapM_ (enqueueEvent . ERPC) validNoAes
+    unless (null invalid) $ mapM_ debug invalid
 
 cmdTurbine :: ReaderT ReceiverEnv IO ()
 cmdTurbine = do

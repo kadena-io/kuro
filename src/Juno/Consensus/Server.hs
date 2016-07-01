@@ -2,19 +2,20 @@ module Juno.Consensus.Server
   ( runRaftServer
   ) where
 
+import Control.Concurrent (newEmptyMVar)
+import qualified Control.Concurrent.Lifted as CL
 import Control.Lens
+import Control.Monad
+
 import qualified Data.Set as Set
 import Data.IORef
 
-import Juno.Consensus.Handle
 import Juno.Consensus.Api (apiReceiver)
+import Juno.Consensus.Handle
+import Juno.Runtime.MessageReceiver
+import Juno.Runtime.Timer
 import Juno.Types
 import Juno.Util.Util
-import Juno.Runtime.Timer
-import Juno.Runtime.MessageReceiver
-
-import qualified Control.Concurrent.Lifted as CL
-import Control.Monad
 
 runRaftServer :: ReceiverEnv -> Config -> RaftSpec -> IO ()
 runRaftServer renv rconf spec = do
@@ -22,11 +23,12 @@ runRaftServer renv rconf spec = do
       qsize = getQuorumSize csize
   void $ runMessageReceiver renv
   rconf' <- newIORef rconf
+  timerTarget' <- newEmptyMVar
   ls <- initLogState
   runRWS_
     raft
-    (mkRaftEnv rconf' ls csize qsize spec (_dispatch renv))
-    initialRaftState
+    (mkRaftEnv rconf' ls csize qsize spec (_dispatch renv) timerTarget')
+    (initialRaftState timerTarget')
 
 -- THREAD: SERVER MAIN
 raft :: Raft ()

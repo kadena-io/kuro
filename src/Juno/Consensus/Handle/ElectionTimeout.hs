@@ -10,15 +10,15 @@ import Control.Lens
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer
-import Data.Foldable (traverse_)
+
 import qualified Data.Set as Set
 
 import Juno.Consensus.Handle.Types
 import Juno.Runtime.Sender (createRequestVoteResponse,sendAerRvRvr)
 import Juno.Runtime.Timer (resetElectionTimer, hasElectionTimerLeaderFired)
+import Juno.Types.Log hiding (logEntries)
 import Juno.Util.Combinator ((^$))
 import Juno.Util.Util
-import Juno.Types.Log hiding (logEntries)
 
 import qualified Juno.Types as JT
 
@@ -152,15 +152,9 @@ setVotedFor mvote = do
   void $ JT.rs.JT.writeVotedFor ^$ mvote
   JT.votedFor .= mvote
 
-
 -- uses state, but does not update
 sendAllRequestVotes :: JT.Raft ()
-sendAllRequestVotes = traverse_ sendRequestVote =<< use JT.cPotentialVotes
-
-
--- uses state, but does not update
-sendRequestVote :: NodeId -> JT.Raft ()
-sendRequestVote target = do
+sendAllRequestVotes = do
   ct <- use JT.term
   nid <- JT.viewConfig JT.nodeId
   ls <- getLogState

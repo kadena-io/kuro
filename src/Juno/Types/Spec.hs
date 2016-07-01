@@ -9,7 +9,7 @@ module Juno.Types.Spec
   , readLogEntry, writeLogEntry, readTermNumber, writeTermNumber
   , readVotedFor, writeVotedFor, applyLogEntry
   , debugPrint, publishMetric, getTimestamp, random
-  , viewConfig, readConfig
+  , viewConfig, readConfig, timerTarget
   -- for API <-> Juno communication
   , dequeueFromApi ,cmdStatusMap, updateCmdMap
   , RaftEnv(..), cfg, logThread, clusterSize, quorumSize, rs
@@ -25,16 +25,18 @@ module Juno.Types.Spec
   , mkRaftEnv
   ) where
 
-import Control.Concurrent (MVar, ThreadId, killThread, yield, forkIO, threadDelay)
+import Control.Concurrent (MVar, ThreadId, killThread, yield, forkIO, threadDelay, tryPutMVar)
 import Control.Lens hiding (Index, (|>))
-import Control.Monad.RWS.Strict (RWST)
+import Control.Monad (when)
 import Control.Monad.IO.Class
+import Control.Monad.RWS.Strict (RWST)
+
+import Data.ByteString (ByteString)
+import Data.IORef
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Set (Set)
-import Data.IORef
 import qualified Data.Set as Set
-import Data.ByteString (ByteString)
 import Data.Thyme.Clock
 import Data.Thyme.Time.Core ()
 import System.Random (Random)
@@ -106,6 +108,7 @@ data RaftState = RaftState
   , _ignoreLeader     :: Bool
   , _commitProof      :: Map NodeId AppendEntriesResponse
   , _timerThread      :: Maybe ThreadId
+  , _timerTarget      :: MVar Event
   , _timeSinceLastAER :: Int
   , _replayMap        :: Map (NodeId, Signature) (Maybe CommandResult)
   , _cYesVotes        :: Set RequestVoteResponse
@@ -123,8 +126,8 @@ data RaftState = RaftState
   }
 makeLenses ''RaftState
 
-initialRaftState :: RaftState
-initialRaftState = RaftState
+initialRaftState :: MVar Event -> RaftState
+initialRaftState timerTarget' = RaftState
   Follower   -- role
   startTerm  -- term
   Nothing    -- votedFor
@@ -133,6 +136,7 @@ initialRaftState = RaftState
   False      -- ignoreLeader
   Map.empty  -- commitProof
   Nothing    -- timerThread
+  timerTarget'
   0          -- timeSinceLastAER
   Map.empty  -- replayMap
   Set.empty  -- cYesVotes
@@ -165,8 +169,8 @@ data RaftEnv = RaftEnv
   }
 makeLenses ''RaftEnv
 
-mkRaftEnv :: IORef Config -> IORef (LogState LogEntry) -> Int -> Int -> RaftSpec -> Dispatch -> RaftEnv
-mkRaftEnv conf' log' cSize qSize rSpec dispatch = RaftEnv
+mkRaftEnv :: IORef Config -> IORef (LogState LogEntry) -> Int -> Int -> RaftSpec -> Dispatch -> MVar Event -> RaftEnv
+mkRaftEnv conf' log' cSize qSize rSpec dispatch timerTarget' = RaftEnv
     { _cfg = conf'
     , _logThread = log'
     , _clusterSize = cSize
@@ -177,7 +181,12 @@ mkRaftEnv conf' log' cSize qSize rSpec dispatch = RaftEnv
     , _sendAerRvRvrMessage = sendAerRvRvrMsg a'
     , _enqueue = writeComm ie' . InternalEvent
     , _enqueueMultiple = mapM_ (writeComm ie' . InternalEvent)
-    , _enqueueLater = \t e -> forkIO (threadDelay t >> writeComm ie' (InternalEvent e))
+    , _enqueueLater = \t e -> forkIO (do
+                                     threadDelay t
+                                     b <- tryPutMVar timerTarget' e
+                                     when (not b) (putStrLn "Failed to update timer MVar")
+                                     writeComm ie' (InternalEvent Tock)
+                                     ) -- TODO: what if it's already taken?
     , _killEnqueued = killThread
     , _dequeue = _unInternalEvent <$> readComm ie'
     }

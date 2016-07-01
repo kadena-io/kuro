@@ -126,11 +126,13 @@ runMsgServer dispatch me addrList debug = void $ forkIO $ forever $ do
       void $ sendProcess outboxRead rolodex
       -- liftIO $ debug $ "[ZMQ_SENDER] Exiting"
 
-    _zmqSub <- mapM (\addr -> liftM Async.link $ async $ do
+    _zmqSub <- liftM Async.link $ async $ do
       subSocket <- socket Sub
       subscribe subSocket ""
-      _ <- connect subSocket $ nodeIdToZmqAddr $ addr { _port = 5000 + _port addr }
-      liftIO $ debug $ "[ZMQ_SUB] made sub socket for: " ++ (show $ nodeIdToZmqAddr $ addr { _port = 5000 + _port addr })
+      void $ mapM_ (\addr -> do
+          _ <- connect subSocket $ nodeIdToZmqAddr $ addr { _port = 5000 + _port addr }
+          liftIO $ debug $ "[ZMQ_SUB] made sub socket for: " ++ (show $ nodeIdToZmqAddr $ addr { _port = 5000 + _port addr })
+          ) addrList
       forever $ do
         newMsg <- receive subSocket
         ts <- liftIO getCurrentTime
@@ -152,7 +154,6 @@ runMsgServer dispatch me addrList debug = void $ forkIO $ forever $ do
             | otherwise           -> do
 --              liftIO $ debug $ "[ZMQ_SUB] Received " ++ (show $ _digType dig) ++ " from " ++ (show $ _alias $ _digNodeId dig)
               liftIO $ writeComm inboxWrite (InboundGeneral (ReceivedAt ts, s)) >> yield
-      ) addrList
 
     liftIO $ (Async.waitEitherCancel zmqReceiver zmqSender) >>= \res' -> case res' of
       Left () -> liftIO $ debug $ "[ZMQ_RECEIVER] returned with ()"

@@ -221,7 +221,7 @@ readAlias m = case Atto.parseOnly setAlias m of
 setAlias :: (Monad m, TokenParsing m) => m (Maybe Alias)
 setAlias = do
   _ <- ssString "encrypt for:"
-  (ssString "none" >> return Nothing) <|> (some anyChar >>= return . Just . Alias)
+  (ssString "none" >> return Nothing) <|> (some anyChar >>= return . Just . Alias . BSC.pack)
 
 routeText :: (Monad m, TokenParsing m) => m [Text]
 routeText = do

@@ -153,6 +153,7 @@ library
 executable genconfs
   main-is:             GenerateConfigFiles.hs
   build-depends:       base < 5
+                     , bytestring
                      , containers
                      , crypto-api
                      , directory

@@ -13,7 +13,7 @@ import Control.Monad.Writer.Strict
 import Control.Monad.State (get)
 
 import Juno.Util.Util (debug, getLogState)
-import Juno.Runtime.Sender (sendRPC,createRequestVoteResponse)
+import Juno.Runtime.Sender (pubRPC,createRequestVoteResponse)
 import qualified Juno.Types as JT
 
 import Juno.Consensus.Handle.Types
@@ -115,4 +115,4 @@ handle rv = do
   case rvo of
     NoAction -> return ()
     UpdateLazyVote stateUpdate -> JT.lazyVote .= Just stateUpdate
-    VoteForRPCSender (targetNode, rpc) -> sendRPC targetNode $ JT.RVR' rpc
+    VoteForRPCSender (targetNode, rpc) -> pubRPC $ JT.RVR' rpc

@@ -64,7 +64,7 @@ runREPL toCommands' cmdStatusMap' alias' = do
       cmd' <- return $ BSC.pack cmd
       case readAlias cmd' of
         Just alias@(Just a') -> do
-          putStrLn $ "Encrypting all future commands for: " ++ unAlias a'
+          putStrLn $ "Encrypting all future commands for: " ++ show (unAlias a')
           runREPL toCommands' cmdStatusMap' alias
         Just Nothing -> do
           putStrLn "Encryption disabled: all future commands will be public"

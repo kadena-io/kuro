@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -24,29 +25,26 @@ module Juno.Types.Comms
   , inboundGeneral
   , OutboundGeneral(..)
   , OutboundGeneralChannel(..)
-  , outboundGeneral
-  , OutboundPub(..)
-  , OutboundPubChannel(..)
-  , outboundPub
+  , outboundGeneral, broadcastMsg, directMsg
   , InternalEvent(..)
   , InternalEventChannel(..)
   , internalEvent
   ) where
+
+import Control.Lens
+import Control.Monad
+import Control.Concurrent (threadDelay, takeMVar, putMVar, newMVar, MVar)
+import Data.ByteString (ByteString)
+
+import qualified Control.Concurrent.Chan.Unagi.Bounded as Bounded
+import qualified Control.Concurrent.Chan.Unagi as Unagi
+import qualified Control.Concurrent.Chan.Unagi.NoBlocking as NoBlock
 
 import Juno.Types.Base
 import Juno.Types.Event
 import Juno.Types.Message.Signed
 import Juno.Types.Message
 
-import Control.Lens
-import Control.Monad
-import Control.Concurrent (threadDelay, takeMVar, putMVar, newMVar, MVar)
-
-import qualified Control.Concurrent.Chan.Unagi.Bounded as Bounded
-import qualified Control.Concurrent.Chan.Unagi as Unagi
-import qualified Control.Concurrent.Chan.Unagi.NoBlocking as NoBlock
-
-import Data.ByteString hiding (head)
 import Data.Typeable
 
 newtype InboundAER = InboundAER { _unInboundAER :: (ReceivedAt, SignedRPC)}
@@ -61,11 +59,14 @@ newtype InboundGeneral = InboundGeneral { _unInboundGeneral :: (ReceivedAt, Sign
 newtype InboundRVorRVR = InboundRVorRVR { _unInboundRVorRVR :: (ReceivedAt, SignedRPC)}
   deriving (Show, Eq, Typeable)
 
-newtype OutboundGeneral = OutboundGeneral { _unOutboundGeneral :: OutBoundMsg String ByteString}
+newtype OutboundGeneral = OutboundGeneral { _unOutboundGeneral :: Envelope}
   deriving (Show, Eq, Typeable)
 
-newtype OutboundPub = OutboundPub { _unOutboundPub :: ByteString}
-  deriving (Show, Eq, Typeable)
+directMsg :: NodeId -> ByteString -> OutboundGeneral
+directMsg n b = OutboundGeneral $ Envelope (Topic $ unAlias $ _alias n, b)
+
+broadcastMsg :: ByteString -> OutboundGeneral
+broadcastMsg b = OutboundGeneral $ Envelope (Topic $ "all", b)
 
 newtype InternalEvent = InternalEvent { _unInternalEvent :: Event}
   deriving (Show, Typeable)
@@ -80,8 +81,6 @@ newtype InboundGeneralChannel =
   InboundGeneralChannel (NoBlock.InChan InboundGeneral, MVar (NoBlock.Stream InboundGeneral))
 newtype OutboundGeneralChannel =
   OutboundGeneralChannel (Unagi.InChan OutboundGeneral, MVar (Maybe (Unagi.Element OutboundGeneral, IO OutboundGeneral), Unagi.OutChan OutboundGeneral))
-newtype OutboundPubChannel =
-  OutboundPubChannel (Unagi.InChan OutboundPub, MVar (Maybe (Unagi.Element OutboundPub, IO OutboundPub), Unagi.OutChan OutboundPub))
 newtype InternalEventChannel =
   InternalEventChannel (Bounded.InChan InternalEvent, MVar (Maybe (Bounded.Element InternalEvent, IO InternalEvent), Bounded.OutChan InternalEvent))
 
@@ -121,12 +120,6 @@ instance Comms OutboundGeneral OutboundGeneralChannel where
   readComms (OutboundGeneralChannel (_,o)) = readCommsUnagi o
   writeComm (OutboundGeneralChannel (i,_)) = writeCommUnagi i
 
-instance Comms OutboundPub OutboundPubChannel where
-  initComms = OutboundPubChannel <$> initCommsUnagi
-  readComm (OutboundPubChannel (_,o)) = readCommUnagi o
-  readComms (OutboundPubChannel (_,o)) = readCommsUnagi o
-  writeComm (OutboundPubChannel (i,_)) = writeCommUnagi i
-
 instance Comms InternalEvent InternalEventChannel where
   initComms = InternalEventChannel <$> initCommsBounded
   readComm (InternalEventChannel (_,o)) = readCommBounded o
@@ -139,7 +132,6 @@ data Dispatch = Dispatch
   , _inboundRVorRVR  :: InboundRVorRVRChannel
   , _inboundGeneral  :: InboundGeneralChannel
   , _outboundGeneral :: OutboundGeneralChannel
-  , _outboundPub :: OutboundPubChannel
   , _internalEvent   :: InternalEventChannel
   } deriving (Typeable)
 
@@ -147,7 +139,6 @@ data Dispatch = Dispatch
 initDispatch :: IO Dispatch
 initDispatch = Dispatch
   <$> initComms
-  <*> initComms
   <*> initComms
   <*> initComms
   <*> initComms

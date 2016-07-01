@@ -193,7 +193,7 @@ runClient applyFn getEntries cmdStatusMap' = do
   pubMetric <- startMonitoring rconf
   dispatch <- initDispatch
   me <- return $ rconf ^. nodeId
-  oNodes <- return $ Set.toList $ rconf ^. otherNodes
+  oNodes <- return $ Set.toList $ Set.delete me $ Set.union (rconf ^. otherNodes) (Map.keysSet $ rconf ^. clientPublicKeys)
   runMsgServer dispatch me oNodes debugFn' -- ZMQ
   -- STUBs mocking
   (_, stubGetApiCommands) <- Unagi.newChan
@@ -218,7 +218,7 @@ runJuno applyFn toCommands getApiCommands sharedCmdStatusMap = do
   resetAwsEnv
   rconf <- getConfig
   me <- return $ rconf ^. nodeId
-  oNodes <- return $ Set.toList $ rconf ^. otherNodes
+  oNodes <- return $ Set.toList $ Set.delete me $ Set.union (rconf ^. otherNodes) (Map.keysSet $ rconf ^. clientPublicKeys)
   dispatch <- initDispatch
   -- Start The Api Server, communicates with the Juno protocol via sharedCmdStatusMap
   -- API interface will run on 800{nodeNum} for now, where the nodeNum for 10003 is 3

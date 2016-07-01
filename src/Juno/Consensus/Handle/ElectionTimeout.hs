@@ -14,7 +14,7 @@ import Data.Foldable (traverse_)
 import qualified Data.Set as Set
 
 import Juno.Consensus.Handle.Types
-import Juno.Runtime.Sender (createRequestVoteResponse,sendRPC)
+import Juno.Runtime.Sender (createRequestVoteResponse,pubRPC)
 import Juno.Runtime.Timer (resetElectionTimer, hasElectionTimerLeaderFired)
 import Juno.Util.Combinator ((^$))
 import Juno.Util.Util
@@ -141,7 +141,7 @@ castLazyVote lazyTerm' lazyCandidate' lazyResponse' = do
   JT.lazyVote .= Nothing
   JT.ignoreLeader .= False
   setCurrentLeader Nothing
-  sendRPC lazyCandidate' (RVR' lazyResponse')
+  pubRPC (RVR' lazyResponse')
   -- TODO: we need to verify that this is correct. It seems that a RVR (so a vote) is sent every time an election timeout fires.
   -- However, should that be the case? I think so, as you shouldn't vote for multiple people in the same election. Still though...
   resetElectionTimer
@@ -165,4 +165,4 @@ sendRequestVote target = do
   nid <- JT.viewConfig JT.nodeId
   ls <- getLogState
   debug $ "sendRequestVote: " ++ show ct
-  sendRPC target $ RV' $ RequestVote ct nid (maxIndex' ls) (lastLogTerm' ls) NewMsg
+  pubRPC $ RV' $ RequestVote ct nid (maxIndex' ls) (lastLogTerm' ls) NewMsg

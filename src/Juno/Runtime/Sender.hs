@@ -11,6 +11,7 @@ module Juno.Runtime.Sender
   , createAppendEntriesResponse
   , sendResults
   , sendRPC
+  , pubRPC
   ) where
 
 import Control.Lens
@@ -141,11 +142,13 @@ sendResults results = sendRPCs $ second CMDR' <$> results
 
 pubRPC :: RPC -> Raft ()
 pubRPC rpc = do
-  send <- view pubMessage
+  send <- view sendMessage
   myNodeId <- viewConfig nodeId
   privKey <- viewConfig myPrivateKey
   pubKey <- viewConfig myPublicKey
-  liftIO $ send $ encode $ rpcToSignedRPC myNodeId pubKey privKey rpc
+  sRpc <- return $ rpcToSignedRPC myNodeId pubKey privKey rpc
+  debug $ "Issuing broadcast msg: " ++ show (_digType $ _sigDigest sRpc)
+  liftIO $ send $ broadcastMsg $ encode $ sRpc
 
 sendRPC :: NodeId -> RPC -> Raft ()
 sendRPC target rpc = do
@@ -153,11 +156,9 @@ sendRPC target rpc = do
   myNodeId <- viewConfig nodeId
   privKey <- viewConfig myPrivateKey
   pubKey <- viewConfig myPublicKey
-  liftIO $ send target $ encode $ rpcToSignedRPC myNodeId pubKey privKey rpc
-
-encodedRPC :: NodeId -> PrivateKey -> PublicKey -> RPC -> ByteString
-encodedRPC myNodeId privKey pubKey rpc = encode $! rpcToSignedRPC myNodeId pubKey privKey rpc
-{-# INLINE encodedRPC #-}
+  sRpc <- return $ rpcToSignedRPC myNodeId pubKey privKey rpc
+  debug $ "Issuing direct msg: " ++ show (_digType $ _sigDigest sRpc)
+  liftIO $ send $ directMsg target $ encode $ sRpc
 
 sendRPCs :: [(NodeId, RPC)] -> Raft ()
 sendRPCs rpcs = do
@@ -165,5 +166,6 @@ sendRPCs rpcs = do
   myNodeId <- viewConfig nodeId
   privKey <- viewConfig myPrivateKey
   pubKey <- viewConfig myPublicKey
-  msgs <- return ((second (encodedRPC myNodeId privKey pubKey) <$> rpcs ) `using` parList rseq)
-  liftIO $ send msgs
+  msgs <- return (((\(n,msg) -> (n, rpcToSignedRPC myNodeId pubKey privKey msg)) <$> rpcs ) `using` parList rseq)
+  --mapM_ (\(_,r) -> debug $ "Issuing (multi) direct msg: " ++ show (_digType $ _sigDigest r)) msgs
+  liftIO $ send $ (\(n,r) -> directMsg n $ encode r) <$> msgs

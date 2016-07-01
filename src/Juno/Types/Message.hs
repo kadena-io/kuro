@@ -4,12 +4,13 @@ module Juno.Types.Message
   ( module X
   , RPC(..)
   , signedRPCtoRPC, rpcToSignedRPC
-  , Addr(..), Rolodex(..), ListenOn(..), Recipients(..), OutBoundMsg(..)
+  , Topic(..)
+  , Envelope(..)
+  , sealEnvelope, openEnvelope
   ) where
 
-import qualified Data.Set as Set
-import qualified Data.Map.Strict as Map
-
+import Data.ByteString (ByteString)
+import Data.List.NonEmpty (NonEmpty(..))
 import GHC.Generics
 
 import Juno.Types.Base
@@ -24,20 +25,21 @@ import Juno.Types.Message.RV as X
 import Juno.Types.Message.RVR as X
 import Juno.Types.Message.Signed as X
 
-newtype Addr a = Addr { _unAddr :: a } deriving (Read,Show,Eq,Ord)
-newtype Rolodex a s = Rolodex {_unRolodex :: Map.Map (Addr a) (ListenOn s)}
-newtype ListenOn a = ListenOn {_unListenOn :: a}
+newtype Topic = Topic {_unTopic :: ByteString}
+  deriving (Show, Eq)
+newtype Envelope = Envelope { _unOutBoundMsg :: (Topic, ByteString) }
+  deriving (Show, Eq)
 
--- | Specifiy who the message should go to
-data Recipients a = RAll
-                  | RSome (Set.Set (Addr a))
-                  | ROne (Addr a)
-                  deriving (Show,Eq,Generic)
+sealEnvelope :: Envelope -> NonEmpty ByteString
+sealEnvelope (Envelope (Topic t, msg)) = t :| [msg]
 
-data OutBoundMsg addr msg = OutBoundMsg {
-  _obmTo     :: Recipients addr
-  , _obmBody :: msg
-  } deriving (Show, Eq)
+openEnvelope :: [ByteString] -> Either String Envelope
+openEnvelope [] = Left "Cannot open envelope: Empty list"
+openEnvelope [t,msg] = Right $ Envelope (Topic t,msg)
+openEnvelope e = Left $ "Cannot open envelope: too many elements in list (expected 2, got "
+                        ++ show (length e)
+                        ++ ")\n### Raw Envelope ###"
+                        ++ show e
 
 data RPC = AE'   AppendEntries
          | AER'  AppendEntriesResponse

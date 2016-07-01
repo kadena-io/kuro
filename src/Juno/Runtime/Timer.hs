@@ -18,6 +18,7 @@ getNewElectionTimeout = viewConfig electionTimeoutRange >>= randomRIO
 resetElectionTimer :: Raft ()
 resetElectionTimer = do
   timeout <- getNewElectionTimeout
+  debug $ "Reset Election Timeout: " ++ show (timeout `div` 1000) ++ "ms"
   setTimedEvent (ElectionTimeout $ show (timeout `div` 1000) ++ "ms") timeout
 
 hasElectionTimerLeaderFired :: Raft Bool
@@ -32,6 +33,7 @@ resetElectionTimerLeader = timeSinceLastAER .= 0
 resetHeartbeatTimer :: Raft ()
 resetHeartbeatTimer = do
   timeout <- viewConfig heartbeatTimeout
+  debug $ "Reset Heartbeat Timeout: " ++ show (timeout `div` 1000) ++ "ms"
   setTimedEvent (HeartbeatTimeout $ show (timeout `div` 1000) ++ "ms") timeout
 
 cancelTimer :: Raft ()

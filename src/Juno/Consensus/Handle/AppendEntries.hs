@@ -175,30 +175,32 @@ handle :: AppendEntries -> JT.Raft ()
 handle ae = do
   r <- ask
   s <- get
-  logAtAEsLastLogIdx <- accessLogs $ lookupEntry $ _prevLogIndex ae
-  let ape = AppendEntriesEnv
-              (JT._term s)
-              (JT._currentLeader s)
-              (JT._ignoreLeader s)
-              (logAtAEsLastLogIdx)
-              (JT._quorumSize r)
-  (AppendEntriesOut{..}, l) <- runReaderT (runWriterT (handleAppendEntries ae)) ape
-  ci <- accessLogs $ viewLogState commitIndex
-  unless (ci == _prevLogIndex ae && length l == 1) $ mapM_ debug l
-  applyNewLeader _newLeaderAction
-  case _result of
-    Ignore -> return ()
-    SendUnconvincedResponse{..} -> sendAppendEntriesResponse _responseLeaderId False False
-    ValidLeaderAndTerm{..} -> do
-      resetElectionTimer
-      JT.lazyVote .= Nothing
-      case _validReponse of
-        SendFailureResponse -> sendAppendEntriesResponse _responseLeaderId False True
-        (Commit rMap rle) -> do
-          accessLogs $ updateLogs $ ULReplicate rle
-          logHashChange
-          JT.replayMap %= Map.union rMap
-          myEvidence <- createAppendEntriesResponse True True
-          JT.commitProof %= updateCommitProofMap myEvidence
-          sendAllAppendEntriesResponse
-        DoNothing -> sendAllAppendEntriesResponse
+  -- This `when` fixes a funky bug. If the leader receives an AE from itself it will reset its election timer (which can kill the leader)
+  when (JT._nodeRole s /= Leader) $ do
+    logAtAEsLastLogIdx <- accessLogs $ lookupEntry $ _prevLogIndex ae
+    let ape = AppendEntriesEnv
+                (JT._term s)
+                (JT._currentLeader s)
+                (JT._ignoreLeader s)
+                (logAtAEsLastLogIdx)
+                (JT._quorumSize r)
+    (AppendEntriesOut{..}, l) <- runReaderT (runWriterT (handleAppendEntries ae)) ape
+    ci <- accessLogs $ viewLogState commitIndex
+    unless (ci == _prevLogIndex ae && length l == 1) $ mapM_ debug l
+    applyNewLeader _newLeaderAction
+    case _result of
+      Ignore -> return ()
+      SendUnconvincedResponse{..} -> sendAppendEntriesResponse _responseLeaderId False False
+      ValidLeaderAndTerm{..} -> do
+        resetElectionTimer
+        JT.lazyVote .= Nothing
+        case _validReponse of
+          SendFailureResponse -> sendAppendEntriesResponse _responseLeaderId False True
+          (Commit rMap rle) -> do
+            accessLogs $ updateLogs $ ULReplicate rle
+            logHashChange
+            JT.replayMap %= Map.union rMap
+            myEvidence <- createAppendEntriesResponse True True
+            JT.commitProof %= updateCommitProofMap myEvidence
+            sendAllAppendEntriesResponse
+          DoNothing -> sendAllAppendEntriesResponse

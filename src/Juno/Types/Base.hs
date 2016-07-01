@@ -24,6 +24,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as B
+import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Base16 as B16
 import Data.Serialize (Serialize)
 import qualified Data.Serialize as S
@@ -38,8 +39,15 @@ import Data.Aeson.Types (defaultOptions,Options(..))
 import GHC.Int (Int64)
 import GHC.Generics hiding (from)
 
-newtype Alias = Alias { unAlias :: String }
-  deriving (Show, Read, Eq, Ord, Generic, Serialize, ToJSON, FromJSON)
+newtype Alias = Alias { unAlias :: BSC.ByteString }
+  deriving (Show, Read, Eq, Ord, Generic, Serialize)
+
+instance ToJSON Alias where
+  toJSON = toJSON . decodeUtf8 . unAlias
+instance FromJSON Alias where
+  parseJSON (String s) = do
+    return $ Alias $ encodeUtf8 s
+  parseJSON _ = mzero
 
 data NodeId = NodeId { _host :: !String, _port :: !Word64, _fullAddr :: !String, _alias :: !Alias}
   deriving (Eq,Ord,Read,Show,Generic)

@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE BangPatterns #-}
 
 module Main (main) where
@@ -16,13 +17,14 @@ import qualified Data.Yaml as Y
 import qualified Data.Set as Set
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import qualified Data.ByteString.Char8 as BSC
 
 import Juno.Types
 
 nodes :: [NodeId]
 nodes = iterate (\n@(NodeId h p _ _) -> n {_port = p + 1
                                           , _fullAddr = "tcp://" ++ h ++ ":" ++ show (p+1)
-                                          , _alias = Alias $ "node" ++ show (p+1-10000)})
+                                          , _alias = Alias $ BSC.pack $ "node" ++ show (p+1-10000)})
                     (NodeId "127.0.0.1" 10000 "tcp://127.0.0.1:10000" $ Alias "node0")
 
 makeKeys :: CryptoRandomGen g => Int -> g -> [(PrivateKey,PublicKey)]
@@ -35,7 +37,7 @@ keyMaps :: [(PrivateKey,PublicKey)] -> (Map NodeId PrivateKey, Map NodeId Public
 keyMaps ls = (Map.fromList $ zip nodes (fst <$> ls), Map.fromList $ zip nodes (snd <$> ls))
 
 awsNodes :: [String] -> [NodeId]
-awsNodes = fmap (\h -> (NodeId h 10000 ("tcp://" ++ h ++ ":10000") $ Alias ("tcp://" ++ h ++ ":10000")))
+awsNodes = fmap (\h -> (NodeId h 10000 ("tcp://" ++ h ++ ":10000") $ Alias (BSC.pack h)))
 
 awsKeyMaps :: [NodeId] -> [(PrivateKey, PublicKey)] -> (Map NodeId PrivateKey, Map NodeId PublicKey)
 awsKeyMaps nodes' ls = (Map.fromList $ zip nodes' (fst <$> ls), Map.fromList $ zip nodes' (snd <$> ls))

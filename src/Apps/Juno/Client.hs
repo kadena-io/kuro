@@ -54,21 +54,21 @@ showResult cmdStatusMap' rId pgm@(Just cnt) =
         showResult cmdStatusMap' rId pgm
 
 --  -> OutChan CommandResult
-runREPL :: InChan (RequestId, [(Maybe Alias, CommandEntry)]) -> CommandMVarMap -> Maybe Alias -> IO ()
-runREPL toCommands' cmdStatusMap' alias' = do
+runREPL :: InChan (RequestId, [(Maybe Alias, CommandEntry)]) -> CommandMVarMap -> Maybe Alias -> MVar Bool -> IO ()
+runREPL toCommands' cmdStatusMap' alias' disableTimeouts = do
   cmd <- readPrompt
   case cmd of
-    "" -> runREPL toCommands' cmdStatusMap' alias'
-    v | v == "sleep" -> threadDelay 5000000 >> runREPL toCommands' cmdStatusMap' alias'
+    "" -> runREPL toCommands' cmdStatusMap' alias' disableTimeouts
+    v | v == "sleep" -> threadDelay 5000000 >> runREPL toCommands' cmdStatusMap' alias' disableTimeouts
     _ -> do
       cmd' <- return $ BSC.pack cmd
       case readAlias cmd' of
         Just alias@(Just a') -> do
           putStrLn $ "Encrypting all future commands for: " ++ show (unAlias a')
-          runREPL toCommands' cmdStatusMap' alias
+          runREPL toCommands' cmdStatusMap' alias disableTimeouts
         Just Nothing -> do
           putStrLn "Encryption disabled: all future commands will be public"
-          runREPL toCommands' cmdStatusMap' Nothing
+          runREPL toCommands' cmdStatusMap' Nothing disableTimeouts
         Nothing -> do
           if take 11 cmd == "batch test:"
           then case readMaybe $ drop 11 cmd of
@@ -78,8 +78,8 @@ runREPL toCommands' cmdStatusMap' alias' = do
               --- this is the tracer round for timing purposes
               putStrLn $ "Sending " ++ show n ++ " 'transfer(Acct1->Acct2, 1%1)' transactions batched"
               showResult cmdStatusMap' (rId + RequestId n) (Just n)
-              runREPL toCommands' cmdStatusMap' alias'
-            Nothing -> runREPL toCommands' cmdStatusMap' alias'
+              runREPL toCommands' cmdStatusMap' alias' disableTimeouts
+            Nothing -> runREPL toCommands' cmdStatusMap' alias' disableTimeouts
           else if take 10 cmd == "many test:"
           then do
             case readMaybe $ drop 10 cmd of
@@ -90,16 +90,26 @@ runREPL toCommands' cmdStatusMap' alias' = do
                 --- this is the tracer round for timing purposes
                 putStrLn $ "Sending " ++ show n ++ " 'transfer(Acct1->Acct2, 1%1)' transactions individually"
                 showResult cmdStatusMap' (fst $ last cmds) (Just $ fromIntegral n)
-                runREPL toCommands' cmdStatusMap' alias'
-              Nothing -> runREPL toCommands' cmdStatusMap' alias'
-          else
+                runREPL toCommands' cmdStatusMap' alias' disableTimeouts
+              Nothing -> runREPL toCommands' cmdStatusMap' alias' disableTimeouts
+          else if cmd == "disable timeout"
+            then do
+              swapMVar disableTimeouts False
+              putStrLn "Timeout Disabled"
+              runREPL toCommands' cmdStatusMap' alias' disableTimeouts
+          else if cmd == "enable timeout"
+            then do
+              swapMVar disableTimeouts True
+              putStrLn "Timeout Disabled"
+              runREPL toCommands' cmdStatusMap' alias' disableTimeouts
+          else do
             case readHopper cmd' of
-              Left err -> putStrLn cmd >> putStrLn err >> runREPL toCommands' cmdStatusMap' alias'
+              Left err -> putStrLn cmd >> putStrLn err >> runREPL toCommands' cmdStatusMap' alias' disableTimeouts
               Right _ -> do
                 rId <- liftIO $ setNextCmdRequestId cmdStatusMap'
                 writeChan toCommands' (rId, [(alias', CommandEntry cmd')])
                 showResult cmdStatusMap' rId Nothing
-                runREPL toCommands' cmdStatusMap' alias'
+                runREPL toCommands' cmdStatusMap' alias' disableTimeouts
 
 intervalOfNumerous :: Int64 -> Int64 -> String
 intervalOfNumerous cnt mics = let
@@ -115,12 +125,13 @@ main = do
   -- `toResult` is unused. There seem to be API's that use/block on fromResult.
   -- Either we need to kill this channel full stop or `toResult` needs to be used.
   cmdStatusMap' <- initCommandMap
+  disableTimeouts <- newMVar False
   let -- getEntry :: (IO et)
       getEntries :: IO (RequestId, [(Maybe Alias, CommandEntry)])
       getEntries = readChan fromCommands
       -- applyFn :: et -> IO rt
       applyFn :: Command -> IO CommandResult
       applyFn _x = return $ CommandResult "Failure"
-  void $ CL.fork $ runClient applyFn getEntries cmdStatusMap'
+  void $ CL.fork $ runClient applyFn getEntries cmdStatusMap' disableTimeouts
   threadDelay 100000
-  runREPL toCommands cmdStatusMap' Nothing
+  runREPL toCommands cmdStatusMap' Nothing disableTimeouts

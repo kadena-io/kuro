@@ -182,8 +182,8 @@ resetAwsEnv = do
   awsDashVar "AppliedIndex" "Startup"
   awsDashVar "CommitIndex" "Startup"
 
-runClient :: (Command -> IO CommandResult) -> IO (RequestId, [(Maybe Alias, CommandEntry)]) -> CommandMVarMap -> IO ()
-runClient applyFn getEntries cmdStatusMap' = do
+runClient :: (Command -> IO CommandResult) -> IO (RequestId, [(Maybe Alias, CommandEntry)]) -> CommandMVarMap -> MVar Bool -> IO ()
+runClient applyFn getEntries cmdStatusMap' disableTimeouts = do
   setLineBuffering
   resetAwsEnv
   rconf <- getConfig
@@ -205,7 +205,7 @@ runClient applyFn getEntries cmdStatusMap' = do
                    cmdStatusMap'
                    stubGetApiCommands
   let receiverEnv = simpleReceiverEnv dispatch rconf debugFn'
-  runRaftClient receiverEnv getEntries cmdStatusMap' rconf raftSpec
+  runRaftClient receiverEnv getEntries cmdStatusMap' rconf raftSpec disableTimeouts
 
 -- | sets up and runs both API and raft protocol
 --   shared state between API and protocol: sharedCmdStatusMap

@@ -14,7 +14,7 @@ module Juno.Types.Spec
   , dequeueFromApi ,cmdStatusMap, updateCmdMap
   , RaftEnv(..), cfg, logThread, clusterSize, quorumSize, rs
   , enqueue, enqueueMultiple, dequeue, enqueueLater, killEnqueued
-  , sendMessage, sendMessages
+  , sendMessage, sendMessages, sendAerRvRvrMessage
   , RaftState(..), nodeRole, term, votedFor, lazyVote, currentLeader, ignoreLeader
   , logEntries, commitIndex, commitProof, lastApplied, timerThread, replayMap
   , cYesVotes, cPotentialVotes, lNextIndex, lMatchIndex, lConvinced
@@ -156,6 +156,7 @@ data RaftEnv = RaftEnv
   , _rs               :: RaftSpec
   , _sendMessage      :: OutboundGeneral -> IO ()
   , _sendMessages     :: [OutboundGeneral] -> IO ()
+  , _sendAerRvRvrMessage :: OutboundAerRvRvr -> IO ()
   , _enqueue          :: Event -> IO ()
   , _enqueueMultiple  :: [Event] -> IO ()
   , _enqueueLater     :: Int -> Event -> IO ThreadId
@@ -173,6 +174,7 @@ mkRaftEnv conf' log' cSize qSize rSpec dispatch = RaftEnv
     , _rs = rSpec
     , _sendMessage = sendMsg g'
     , _sendMessages = sendMsgs g'
+    , _sendAerRvRvrMessage = sendAerRvRvrMsg a'
     , _enqueue = writeComm ie' . InternalEvent
     , _enqueueMultiple = mapM_ (writeComm ie' . InternalEvent)
     , _enqueueLater = \t e -> forkIO (threadDelay t >> writeComm ie' (InternalEvent e))
@@ -181,6 +183,7 @@ mkRaftEnv conf' log' cSize qSize rSpec dispatch = RaftEnv
     }
   where
     g' = dispatch ^. outboundGeneral
+    a' = dispatch ^. outboundAerRvRvr
     ie' = dispatch ^. internalEvent
 
 sendMsgs :: OutboundGeneralChannel -> [OutboundGeneral] -> IO ()
@@ -190,6 +193,11 @@ sendMsgs outboxWrite ogs = do
 
 sendMsg :: OutboundGeneralChannel -> OutboundGeneral -> IO ()
 sendMsg outboxWrite og = do
+  writeComm outboxWrite og
+  yield
+
+sendAerRvRvrMsg :: OutboundAerRvRvrChannel -> OutboundAerRvRvr -> IO ()
+sendAerRvRvrMsg outboxWrite og = do
   writeComm outboxWrite og
   yield
 

@@ -12,6 +12,7 @@ module Juno.Runtime.Sender
   , sendResults
   , sendRPC
   , pubRPC
+  , sendAerRvRvr
   ) where
 
 import Control.Lens
@@ -115,6 +116,7 @@ createAppendEntriesResponse success convinced = do
     AER' aer -> return aer
     _ -> error "deep invariant error"
 
+-- this only gets used when a Follower is replying in the negative to the Leader
 sendAppendEntriesResponse :: NodeId -> Bool -> Bool -> Raft ()
 sendAppendEntriesResponse target success convinced = do
   ct <- use term
@@ -124,13 +126,14 @@ sendAppendEntriesResponse target success convinced = do
               (maxIndex' es) (lastLogHash' es)
   debug $ "Sent AppendEntriesResponse: " ++ show ct
 
+-- this is used for distributed evidence + updating the Leader with lNextIndex
 sendAllAppendEntriesResponse :: Raft ()
 sendAllAppendEntriesResponse = do
   ct <- use term
   nid <- viewConfig nodeId
   es <- getLogState
   aer <- return $ createAppendEntriesResponse' True True ct nid (maxIndex' es) (lastLogHash' es)
-  pubRPC aer
+  sendAerRvRvr aer
 
 createRequestVoteResponse :: MonadWriter [String] m => Term -> LogIndex -> NodeId -> NodeId -> Bool -> m RequestVoteResponse
 createRequestVoteResponse term' logIndex' myNodeId' target vote = do
@@ -169,3 +172,13 @@ sendRPCs rpcs = do
   msgs <- return (((\(n,msg) -> (n, rpcToSignedRPC myNodeId pubKey privKey msg)) <$> rpcs ) `using` parList rseq)
   --mapM_ (\(_,r) -> debug $ "Issuing (multi) direct msg: " ++ show (_digType $ _sigDigest r)) msgs
   liftIO $ send $ (\(n,r) -> directMsg n $ encode r) <$> msgs
+
+sendAerRvRvr :: RPC -> Raft ()
+sendAerRvRvr rpc = do
+  send <- view sendAerRvRvrMessage
+  myNodeId <- viewConfig nodeId
+  privKey <- viewConfig myPrivateKey
+  pubKey <- viewConfig myPublicKey
+  sRpc <- return $ rpcToSignedRPC myNodeId pubKey privKey rpc
+  debug $ "Issuing AeRvRvr msg: " ++ show (_digType $ _sigDigest sRpc)
+  liftIO $ send $ aerRvRvrMsg $ encode $ sRpc

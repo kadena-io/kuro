@@ -26,6 +26,9 @@ module Juno.Types.Comms
   , OutboundGeneral(..)
   , OutboundGeneralChannel(..)
   , outboundGeneral, broadcastMsg, directMsg
+  , OutboundAerRvRvr(..)
+  , OutboundAerRvRvrChannel(..)
+  , outboundAerRvRvr, aerRvRvrMsg
   , InternalEvent(..)
   , InternalEventChannel(..)
   , internalEvent
@@ -62,11 +65,17 @@ newtype InboundRVorRVR = InboundRVorRVR { _unInboundRVorRVR :: (ReceivedAt, Sign
 newtype OutboundGeneral = OutboundGeneral { _unOutboundGeneral :: Envelope}
   deriving (Show, Eq, Typeable)
 
+newtype OutboundAerRvRvr = OutboundAerRvRvr { _unOutboundAerRvRvr :: Envelope}
+  deriving (Show, Eq, Typeable)
+
 directMsg :: NodeId -> ByteString -> OutboundGeneral
 directMsg n b = OutboundGeneral $ Envelope (Topic $ unAlias $ _alias n, b)
 
 broadcastMsg :: ByteString -> OutboundGeneral
 broadcastMsg b = OutboundGeneral $ Envelope (Topic $ "all", b)
+
+aerRvRvrMsg :: ByteString -> OutboundAerRvRvr
+aerRvRvrMsg b = OutboundAerRvRvr $ Envelope (Topic $ "all", b)
 
 newtype InternalEvent = InternalEvent { _unInternalEvent :: Event}
   deriving (Show, Typeable)
@@ -81,6 +90,8 @@ newtype InboundGeneralChannel =
   InboundGeneralChannel (NoBlock.InChan InboundGeneral, MVar (NoBlock.Stream InboundGeneral))
 newtype OutboundGeneralChannel =
   OutboundGeneralChannel (Unagi.InChan OutboundGeneral, MVar (Maybe (Unagi.Element OutboundGeneral, IO OutboundGeneral), Unagi.OutChan OutboundGeneral))
+newtype OutboundAerRvRvrChannel =
+  OutboundAerRvRvrChannel (Unagi.InChan OutboundAerRvRvr, MVar (Maybe (Unagi.Element OutboundAerRvRvr, IO OutboundAerRvRvr), Unagi.OutChan OutboundAerRvRvr))
 newtype InternalEventChannel =
   InternalEventChannel (Bounded.InChan InternalEvent, MVar (Maybe (Bounded.Element InternalEvent, IO InternalEvent), Bounded.OutChan InternalEvent))
 
@@ -120,6 +131,12 @@ instance Comms OutboundGeneral OutboundGeneralChannel where
   readComms (OutboundGeneralChannel (_,o)) = readCommsUnagi o
   writeComm (OutboundGeneralChannel (i,_)) = writeCommUnagi i
 
+instance Comms OutboundAerRvRvr OutboundAerRvRvrChannel where
+  initComms = OutboundAerRvRvrChannel <$> initCommsUnagi
+  readComm (OutboundAerRvRvrChannel (_,o)) = readCommUnagi o
+  readComms (OutboundAerRvRvrChannel (_,o)) = readCommsUnagi o
+  writeComm (OutboundAerRvRvrChannel (i,_)) = writeCommUnagi i
+
 instance Comms InternalEvent InternalEventChannel where
   initComms = InternalEventChannel <$> initCommsBounded
   readComm (InternalEventChannel (_,o)) = readCommBounded o
@@ -132,6 +149,7 @@ data Dispatch = Dispatch
   , _inboundRVorRVR  :: InboundRVorRVRChannel
   , _inboundGeneral  :: InboundGeneralChannel
   , _outboundGeneral :: OutboundGeneralChannel
+  , _outboundAerRvRvr :: OutboundAerRvRvrChannel
   , _internalEvent   :: InternalEventChannel
   } deriving (Typeable)
 
@@ -139,6 +157,7 @@ data Dispatch = Dispatch
 initDispatch :: IO Dispatch
 initDispatch = Dispatch
   <$> initComms
+  <*> initComms
   <*> initComms
   <*> initComms
   <*> initComms

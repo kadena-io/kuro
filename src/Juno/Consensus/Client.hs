@@ -20,7 +20,7 @@ import Juno.Util.Util
 import Juno.Runtime.Sender (sendRPC)
 import Juno.Runtime.MessageReceiver
 
-import           Control.Concurrent (modifyMVar_, readMVar)
+import Control.Concurrent (MVar, modifyMVar_, readMVar)
 import qualified Control.Concurrent.Lifted as CL
 
 -- main entry point wired up by Simple.hs
@@ -31,8 +31,9 @@ runRaftClient :: ReceiverEnv
               -> CommandMVarMap
               -> Config
               -> RaftSpec
+              -> MVar Bool
               -> IO ()
-runRaftClient renv getEntries cmdStatusMap' rconf spec@RaftSpec{..} = do
+runRaftClient renv getEntries cmdStatusMap' rconf spec@RaftSpec{..} disableTimeouts = do
   let csize = Set.size $ rconf ^. otherNodes
       qsize = getQuorumSize csize
   -- TODO: do we really need currentRequestId in state any longer, doing this to keep them in sync
@@ -41,7 +42,7 @@ runRaftClient renv getEntries cmdStatusMap' rconf spec@RaftSpec{..} = do
   rconf' <- newIORef rconf
   ls <- initLogState
   runRWS_
-    (raftClient (lift getEntries) cmdStatusMap')
+    (raftClient (lift getEntries) cmdStatusMap' disableTimeouts)
     (mkRaftEnv rconf' ls csize qsize spec (_dispatch renv))
     -- TODO: because UTC can flow backwards, this request ID is problematic:
     initialRaftState {_currentRequestId = rid}-- only use currentLeader and logEntries
@@ -49,14 +50,14 @@ runRaftClient renv getEntries cmdStatusMap' rconf spec@RaftSpec{..} = do
 -- TODO: don't run in raft, own monad stack
 -- StateT ClientState (ReaderT ClientEnv IO)
 -- THREAD: CLIENT MAIN
-raftClient :: Raft (RequestId, [(Maybe Alias, CommandEntry)]) -> CommandMVarMap -> Raft ()
-raftClient getEntries cmdStatusMap' = do
+raftClient :: Raft (RequestId, [(Maybe Alias, CommandEntry)]) -> CommandMVarMap -> MVar Bool -> Raft ()
+raftClient getEntries cmdStatusMap' disableTimeouts = do
   nodes <- viewConfig otherNodes
   when (Set.null nodes) $ error "The client has no nodes to send requests to."
   setCurrentLeader $ Just $ Set.findMin nodes
   void $ CL.fork $ commandGetter getEntries cmdStatusMap' -- THREAD: CLIENT COMMAND REPL?
   pendingRequests .= Map.empty
-  clientHandleEvents cmdStatusMap' -- forever read chan loop
+  clientHandleEvents cmdStatusMap' disableTimeouts -- forever read chan loop
 
 -- get commands with getEntry and put them on the event queue to be sent
 -- THREAD: CLIENT COMMAND
@@ -100,25 +101,27 @@ setNextRequestId rid = do
   use currentRequestId
 
 -- THREAD: CLIENT MAIN. updates state
-clientHandleEvents :: CommandMVarMap -> Raft ()
-clientHandleEvents cmdStatusMap' = forever $ do
+clientHandleEvents :: CommandMVarMap -> MVar Bool -> Raft ()
+clientHandleEvents cmdStatusMap' disableTimeouts = forever $ do
   e <- dequeueEvent -- blocking queue
   case e of
     ERPC (CMDB' cmdb)   -> clientSendCommandBatch cmdb
     ERPC (CMD' cmd)     -> clientSendCommand cmd -- these are commands coming from the commandGetter thread
     ERPC (CMDR' cmdr)   -> clientHandleCommandResponse cmdStatusMap' cmdr
     HeartbeatTimeout _ -> do
-      debug "caught a heartbeat"
-      timeouts <- use numTimeouts
-      if timeouts > 3
-      then do
-        debug "choosing a new leader and resending commands"
-        setLeaderToNext
-        reqs <- use pendingRequests
-        pendingRequests .= Map.empty -- this will reset the timer on resend
-        traverse_ clientSendCommand reqs
-        numTimeouts += 1
-      else resetHeartbeatTimer >> numTimeouts += 1
+      t <- liftIO $ readMVar disableTimeouts
+      when t $ do
+        debug "caught a heartbeat"
+        timeouts <- use numTimeouts
+        if timeouts > 3
+        then do
+          debug "choosing a new leader and resending commands"
+          setLeaderToNext
+          reqs <- use pendingRequests
+          pendingRequests .= Map.empty -- this will reset the timer on resend
+          traverse_ clientSendCommand reqs
+          numTimeouts += 1
+        else resetHeartbeatTimer >> numTimeouts += 1
     _ -> return ()
 
 -- THREAD: CLIENT MAIN. updates state

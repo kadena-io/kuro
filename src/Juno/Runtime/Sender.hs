@@ -21,6 +21,7 @@ import Control.Monad.Writer
 import Data.ByteString (ByteString)
 import Data.Map (Map)
 import qualified Data.Map as Map
+import qualified Data.Sequence as Seq
 import Data.Set (Set)
 
 import qualified Data.Set as Set
@@ -67,9 +68,37 @@ sendAllAppendEntries = do
   vts <- use lConvinced
   yesVotes <- use cYesVotes
   oNodes <- viewConfig otherNodes
-  sendRPCs $ (\target -> (target, createAppendEntries' target lNextIndex' es ct nid vts yesVotes)) <$> Set.toList oNodes
-  resetLastBatchUpdate
-  debug "Sent All AppendEntries"
+  case canBroadcastAE (length oNodes) lNextIndex' es ct nid vts of
+    Nothing -> do -- sorry, can take the short cut
+      sendRPCs $ (\target -> (target, createAppendEntries' target lNextIndex' es ct nid vts yesVotes)) <$> Set.toList oNodes
+      resetLastBatchUpdate
+      debug "Sent All AppendEntries"
+    Just (rpc, ln) -> do -- hell yeah, we can just broadcast
+      pubRPC $ rpc
+      resetLastBatchUpdate
+      debug $ "Broadcast New Log Entries, contained " ++ show ln ++ " log entries"
+
+canBroadcastAE :: Int
+               -> Map NodeId LogIndex
+               -> LogState LogEntry
+               -> Term
+               -> NodeId
+               -> Set NodeId
+               -> Maybe (RPC, Int)
+canBroadcastAE clusterSize' lNextIndex' es ct nid vts =
+  -- we only want to do this if we know that every node is in sync with us (the leader)
+  let
+    everyoneBelieves = Set.size vts == clusterSize'
+    mniList = Map.elems lNextIndex' -- get a list of where everyone is
+    mniSet = Set.fromList $ mniList -- condense every Followers LI into a set
+    inSync = 1 == Set.size mniSet && clusterSize' == length mniList -- if each LI is the same, then the set is a signleton
+    mni = head $ Set.elems mniSet -- totally unsafe but we only call it if we are going to broadcast
+    (pli,plt) = logInfoForNextIndex' (Just mni) es -- same here...
+    newEntriesToReplicate = getEntriesAfter' pli es
+  in
+    if everyoneBelieves && inSync
+    then Just (AE' $ AppendEntries ct nid pli plt newEntriesToReplicate Set.empty NewMsg, Seq.length newEntriesToReplicate)
+    else Nothing
 
 createAppendEntriesResponse' :: Bool -> Bool -> Term -> NodeId -> LogIndex -> ByteString -> RPC
 createAppendEntriesResponse' success convinced ct nid lindex lhash =

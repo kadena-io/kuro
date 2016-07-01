@@ -5,23 +5,23 @@ module Juno.Consensus.Client
   ( runRaftClient
   ) where
 
+import Control.Concurrent (MVar, modifyMVar_, readMVar)
+import qualified Control.Concurrent.Lifted as CL
 import Control.Lens hiding (Index)
 import Control.Monad.RWS
-import Data.IORef
+
 import Data.Foldable (traverse_)
+import Data.IORef
+import qualified Data.ByteString.Char8 as SB8
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Text.Read (readMaybe)
-import qualified Data.ByteString.Char8 as SB8
 
+import Juno.Runtime.MessageReceiver
+import Juno.Runtime.Sender (sendRPC)
 import Juno.Runtime.Timer
 import Juno.Types
 import Juno.Util.Util
-import Juno.Runtime.Sender (sendRPC)
-import Juno.Runtime.MessageReceiver
-
-import Control.Concurrent (MVar, modifyMVar_, readMVar)
-import qualified Control.Concurrent.Lifted as CL
 
 -- main entry point wired up by Simple.hs
 -- getEntry (readChan) useResult (writeChan) replace by
@@ -110,7 +110,7 @@ clientHandleEvents cmdStatusMap' disableTimeouts = forever $ do
     ERPC (CMDR' cmdr)   -> clientHandleCommandResponse cmdStatusMap' cmdr
     HeartbeatTimeout _ -> do
       t <- liftIO $ readMVar disableTimeouts
-      when t $ do
+      when (not t) $ do
         debug "caught a heartbeat"
         timeouts <- use numTimeouts
         if timeouts > 3

@@ -8,10 +8,10 @@
 
 module Juno.Runtime.MessageReceiver
   ( runMessageReceiver
-  , ReceiverEnv(..)
+  , ReceiverEnv(..), dispatch, keySet, debugPrint, restartTurbo
   ) where
 
--- import Control.Concurrent (forkIO)
+import Control.Concurrent (threadDelay, MVar, takeMVar)
 import Control.Lens
 import Control.Monad
 import Control.Monad.Reader
@@ -29,6 +29,7 @@ data ReceiverEnv = ReceiverEnv
   { _dispatch :: Dispatch
   , _keySet :: KeySet
   , _debugPrint :: String -> IO ()
+  , _restartTurbo :: MVar String
   }
 makeLenses ''ReceiverEnv
 
@@ -40,23 +41,40 @@ runMessageReceiver env = void $ foreverRetry (env ^. debugPrint) "MSG_RECEIVER_T
 messageReceiver :: ReaderT ReceiverEnv IO ()
 messageReceiver = do
   env <- ask
+  debug <- view debugPrint
+  void $ liftIO $ foreverRetry debug "RV_AND_RVR_TURBINE" $ runReaderT rvAndRvrTurbine env
+  void $ liftIO $ foreverRetry debug "AER_TURBINE" $ runReaderT aerTurbine env
+  void $ liftIO $ foreverRetry debug "CMD_TURBINE" $ runReaderT cmdTurbine env
+  void $ liftIO $ foreverRetry debug "GENERAL_TURBINE" $ runReaderT generalTurbine env
+  liftIO $ takeMVar (_restartTurbo env) >>= debug . (++) "restartTurbo MVar caught saying: "
+
+generalTurbine :: ReaderT ReceiverEnv IO ()
+generalTurbine = do
   gm' <- view (dispatch.inboundGeneral)
   let gm n = readComms gm' n
-  getCmds' <- view (dispatch.inboundCMD)
-  let getCmds n = readComms getCmds' n
-  getAers' <- view (dispatch.inboundAER)
-  let getAers n = readComms getAers' n
   enqueueEvent' <- view (dispatch.internalEvent)
   let enqueueEvent = writeComm enqueueEvent' . InternalEvent
   debug <- view debugPrint
-  -- KeySet <$> view (cfg.publicKeys) <*> view (cfg.clientPublicKeys)
   ks <- view keySet
-  void $ liftIO $ foreverRetry debug "RV_AND_RVR_MSGRECVER" $ runReaderT rvAndRvrFastPath env
-  liftIO $ forever $ do
-    (alotOfAers, invalidAers) <- toAlotOfAers <$> getAers 2000
-    unless (alotOfAers == mempty) $ enqueueEvent $ AERs alotOfAers
-    mapM_ debug invalidAers
-    gm 50 >>= \s -> runReaderT (sequentialVerify _unInboundGeneral ks s) env
+  forever $ liftIO $ do
+    msgs <- gm 50
+    (aes, noAes) <- return $ partition (\(_,SignedRPC{..}) -> if _digType _sigDigest == AE then True else False) (_unInboundGeneral <$> msgs)
+    (invalid, validNoAes) <- return $ partitionEithers $ parallelVerify id ks noAes
+    unless (null validNoAes) $ mapM_ (liftIO . enqueueEvent . ERPC) validNoAes
+    unless (null invalid) $ mapM_ (liftIO . debug) invalid
+    unless (null aes) $ mapM_ (\(ts,msg) -> case signedRPCtoRPC (Just ts) ks msg of
+              Left err -> liftIO $ debug err
+              Right v -> liftIO $ enqueueEvent $ ERPC v) aes
+
+cmdTurbine :: ReaderT ReceiverEnv IO ()
+cmdTurbine = do
+  getCmds' <- view (dispatch.inboundCMD)
+  let getCmds n = readComms getCmds' n
+  enqueueEvent' <- view (dispatch.internalEvent)
+  let enqueueEvent = writeComm enqueueEvent' . InternalEvent
+  debug <- view debugPrint
+  ks <- view keySet
+  forever $ liftIO $ do
     verifiedCmds <- parallelVerify _unInboundCMD ks <$> getCmds 5000
     (invalidCmds, validCmds) <- return $ partitionEithers verifiedCmds
     mapM_ debug invalidCmds
@@ -65,9 +83,30 @@ messageReceiver = do
     unless (lenCmdBatch == 0) $ do
       enqueueEvent $ ERPC $ CMDB' cmds
       debug $ "AutoBatched " ++ show (length cmds') ++ " Commands"
+      threadDelay 100000 -- 100ms delay
 
-rvAndRvrFastPath :: ReaderT ReceiverEnv IO ()
-rvAndRvrFastPath = do
+aerTurbine :: ReaderT ReceiverEnv IO ()
+aerTurbine = do
+  getAers' <- view (dispatch.inboundAER)
+  let getAers n = readComms getAers' n
+  enqueueEvent' <- view (dispatch.internalEvent)
+  let enqueueEvent = writeComm enqueueEvent' . InternalEvent
+  debug <- view debugPrint
+  forever $ liftIO $ do
+    (alotOfAers, invalidAers) <- toAlotOfAers <$> getAers 2000
+    unless (alotOfAers == mempty) $ enqueueEvent $ AERs alotOfAers
+    mapM_ debug invalidAers
+    threadDelay 10000 -- 10ms delay for AERs
+
+toAlotOfAers :: [InboundAER] -> (AlotOfAERs, [String])
+toAlotOfAers s = (alotOfAers, invalids)
+  where
+    (invalids, decodedAers) = partitionEithers $ uncurry (aerOnlyDecode) . _unInboundAER <$> s
+    mkAlot aer@AppendEntriesResponse{..} = AlotOfAERs $ Map.insert _aerNodeId (Set.singleton aer) Map.empty
+    alotOfAers = mconcat (mkAlot <$> decodedAers)
+
+rvAndRvrTurbine :: ReaderT ReceiverEnv IO ()
+rvAndRvrTurbine = do
   getRvAndRVRs' <- view (dispatch.inboundRVorRVR)
   enqueueEvent <- view (dispatch.internalEvent)
   debug <- view debugPrint
@@ -79,27 +118,6 @@ rvAndRvrFastPath = do
       Right v -> do
         debug $ "Received " ++ show (_digType $ _sigDigest msg)
         writeComm enqueueEvent $ InternalEvent $ ERPC v
-
-toAlotOfAers :: [InboundAER] -> (AlotOfAERs, [String])
-toAlotOfAers s = (alotOfAers, invalids)
-  where
-    (invalids, decodedAers) = partitionEithers $ uncurry (aerOnlyDecode) . _unInboundAER <$> s
-    mkAlot aer@AppendEntriesResponse{..} = AlotOfAERs $ Map.insert _aerNodeId (Set.singleton aer) Map.empty
-    alotOfAers = mconcat (mkAlot <$> decodedAers)
-
-
-sequentialVerify :: (MonadIO m, MonadReader ReceiverEnv m)
-                 => (f -> (ReceivedAt, SignedRPC)) -> KeySet -> [f] -> m ()
-sequentialVerify f ks msgs = do
-  (aes, noAes) <- return $ partition (\(_,SignedRPC{..}) -> if _digType _sigDigest == AE then True else False) (f <$> msgs)
-  (invalid, validNoAes) <- return $ partitionEithers $ parallelVerify id ks noAes
-  enqueueEvent <- view (dispatch.internalEvent)
-  debug <- view debugPrint
-  unless (null validNoAes) $ mapM_ (liftIO . writeComm enqueueEvent . InternalEvent . ERPC) validNoAes
-  unless (null invalid) $ mapM_ (liftIO . debug) invalid
-  unless (null aes) $ mapM_ (\(ts,msg) -> case signedRPCtoRPC (Just ts) ks msg of
-            Left err -> liftIO $ debug err
-            Right v -> liftIO $ writeComm enqueueEvent $ InternalEvent $ ERPC v) aes
 
 parallelVerify :: (f -> (ReceivedAt,SignedRPC)) -> KeySet -> [f] -> [Either String RPC]
 parallelVerify f ks msgs = ((\(ts, msg) -> signedRPCtoRPC (Just ts) ks msg) . f <$> msgs) `using` parList rseq

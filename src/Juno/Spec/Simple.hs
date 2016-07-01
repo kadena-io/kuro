@@ -10,43 +10,39 @@ module Juno.Spec.Simple
   , CommandStatus
   ) where
 
+import Control.AutoUpdate (mkAutoUpdate, defaultUpdateSettings,updateAction,updateFreq)
+-- import Control.Concurrent (forkIO)
+import Control.Concurrent (modifyMVar_, MVar, newEmptyMVar)
+import qualified Control.Concurrent.Chan.Unagi as Unagi
+import qualified Control.Concurrent.Lifted as CL
+import Control.Lens
+import Control.Monad
+import Control.Monad.IO.Class
+
+import Data.Monoid ((<>))
+import Data.Thyme.Calendar (showGregorian)
+import Data.Thyme.Clock (getCurrentTime)
+import Data.Thyme.LocalTime
+import qualified Data.ByteString.Char8 as BSC
+import qualified Data.Map as Map
+import qualified Data.Set as Set
+import qualified Data.Yaml as Y
+
+import System.Console.GetOpt
+import System.Environment
+import System.Exit
+import System.IO (BufferMode(..),stdout,stderr,hSetBuffering)
+import System.Log.FastLogger
+-- import System.Process (system)
+import System.Random
+
 import Juno.Consensus.Server
-import qualified Juno.Runtime.MessageReceiver as RENV
 import Juno.Consensus.Client
 import Juno.Types
 import Juno.Messaging.ZMQ
 import Juno.Monitoring.Server (startMonitoring)
 import Juno.Runtime.Api.ApiServer
-
--- import System.Process (system)
--- import Control.Concurrent (forkIO)
-import System.IO (BufferMode(..),stdout,stderr,hSetBuffering)
-import Control.Lens
-import Control.Monad
-import Control.Concurrent (modifyMVar_, MVar)
-import qualified Control.Concurrent.Lifted as CL
-import qualified Control.Concurrent.Chan.Unagi as Unagi
-
-import qualified Data.ByteString.Char8 as BSC
-import qualified Data.Map as Map
-import qualified Data.Set as Set
-import Data.Monoid ((<>))
-import Data.Thyme.Calendar (showGregorian)
-import Data.Thyme.Clock (getCurrentTime)
-import Data.Thyme.LocalTime
-
-import System.Console.GetOpt
-import System.Environment
-import System.Exit
-import System.Log.FastLogger
-import Control.AutoUpdate (mkAutoUpdate, defaultUpdateSettings,updateAction,updateFreq)
-
-
-import Control.Monad.IO.Class
-
-import qualified Data.Yaml as Y
-
-import System.Random
+import qualified Juno.Runtime.MessageReceiver as RENV
 
 data Options = Options
   {  optConfigFile :: FilePath
@@ -147,11 +143,13 @@ simpleRaftSpec applyFn debugFn pubMetricFn updateMapFn cmdMVarMap getCommands = 
 simpleReceiverEnv :: Dispatch
                   -> Config
                   -> (String -> IO ())
+                  -> MVar String
                   -> RENV.ReceiverEnv
-simpleReceiverEnv dispatch conf debugFn = RENV.ReceiverEnv
+simpleReceiverEnv dispatch conf debugFn restartTurbo' = RENV.ReceiverEnv
   dispatch
   (KeySet (view publicKeys conf) (view clientPublicKeys conf))
   debugFn
+  restartTurbo'
 
 updateCmdMapFn :: MonadIO m => MVar CommandMap -> RequestId -> CommandStatus -> m ()
 updateCmdMapFn cmdMapMvar rid cmdStatus =
@@ -204,7 +202,8 @@ runClient applyFn getEntries cmdStatusMap' disableTimeouts = do
                    updateCmdMapFn
                    cmdStatusMap'
                    stubGetApiCommands
-  let receiverEnv = simpleReceiverEnv dispatch rconf debugFn'
+  restartTurbo <- newEmptyMVar
+  let receiverEnv = simpleReceiverEnv dispatch rconf debugFn' restartTurbo
   runRaftClient receiverEnv getEntries cmdStatusMap' rconf raftSpec disableTimeouts
 
 -- | sets up and runs both API and raft protocol
@@ -239,5 +238,6 @@ runJuno applyFn toCommands getApiCommands sharedCmdStatusMap = do
                    updateCmdMapFn
                    sharedCmdStatusMap
                    getApiCommands
-  let receiverEnv = simpleReceiverEnv dispatch rconf debugFn'
+  restartTurbo <- newEmptyMVar
+  let receiverEnv = simpleReceiverEnv dispatch rconf debugFn' restartTurbo
   runRaftServer receiverEnv rconf raftSpec

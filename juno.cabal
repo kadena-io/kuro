@@ -125,6 +125,7 @@ library
                      , primitive
                      , process
                      , random
+                     , semigroups
                      , snap-core
                      , snap-core-cors
                      , snap-server

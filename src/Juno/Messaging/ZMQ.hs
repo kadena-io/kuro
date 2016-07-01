@@ -18,6 +18,7 @@ import qualified Data.Set as Set
 import System.ZMQ4.Monadic
 import Data.Thyme.Clock
 import Data.Serialize
+import qualified Data.List.NonEmpty as NonEmpty
 
 import Juno.Types
 
@@ -116,7 +117,7 @@ runMsgServer dispatch me addrList debug = void $ forkIO $ forever $ do
       _ <- bind pubSock $ nodeIdToZmqAddr $ me { _port = 5000 + _port me}
       forever $ do
         !msg <- liftIO $! _unOutboundPub <$> readComm pubRead
-        send pubSock [] msg
+        sendMulti pubSock $ NonEmpty.fromList ["all", msg]
 
     liftIO $ threadDelay 100000 -- to be sure that the receive side is up first
 
@@ -128,12 +129,13 @@ runMsgServer dispatch me addrList debug = void $ forkIO $ forever $ do
 
     _zmqSub <- liftM Async.link $ async $ do
       subSocket <- socket Sub
-      subscribe subSocket ""
+      subscribe subSocket "all"
       void $ mapM_ (\addr -> do
           _ <- connect subSocket $ nodeIdToZmqAddr $ addr { _port = 5000 + _port addr }
           liftIO $ debug $ "[ZMQ_SUB] made sub socket for: " ++ (show $ nodeIdToZmqAddr $ addr { _port = 5000 + _port addr })
           ) addrList
       forever $ do
+        _topic <- receive subSocket
         newMsg <- receive subSocket
         ts <- liftIO getCurrentTime
         case decode newMsg of

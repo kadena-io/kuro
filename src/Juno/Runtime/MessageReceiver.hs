@@ -59,9 +59,12 @@ generalTurbine = do
   forever $ liftIO $ do
     msgs <- gm 5
     (aes, noAes) <- return $ partition (\(_,SignedRPC{..}) -> if _digType _sigDigest == AE then True else False) (_unInboundGeneral <$> msgs)
-    unless (null aes) $ mapM_ (\(ts,msg) -> case signedRPCtoRPC (Just ts) ks msg of
-              Left err -> debug err
-              Right v -> (debug "[GENERAL_TURBINE] Enqueued AE") >> enqueueEvent (ERPC v)) aes
+    unless (null aes) $ do
+      debug $ "[GENERAL_TURBINE] About to enqueue " ++ show (length aes) ++ "AE(s)"
+      mapM_ (\(ts,msg) -> case signedRPCtoRPC (Just ts) ks msg of
+        Left err -> debug err
+        Right v -> enqueueEvent (ERPC v)) aes
+      debug $ "[GENERAL_TURBINE] enqueued " ++ show (length aes) ++ "AE(s)"
     (invalid, validNoAes) <- return $ partitionEithers $ parallelVerify id ks noAes
     unless (null validNoAes) $ mapM_ (enqueueEvent . ERPC) validNoAes
     unless (null invalid) $ mapM_ debug invalid
@@ -74,16 +77,39 @@ cmdTurbine = do
   let enqueueEvent = writeComm enqueueEvent' . InternalEvent
   debug <- view debugPrint
   ks <- view keySet
-  forever $ liftIO $ do
-    verifiedCmds <- parallelVerify _unInboundCMD ks <$> getCmds 5000
-    (invalidCmds, validCmds) <- return $ partitionEithers verifiedCmds
-    mapM_ debug invalidCmds
-    cmds@(CommandBatch cmds' _) <- return $ batchCommands validCmds
-    lenCmdBatch <- return $ length cmds'
-    unless (lenCmdBatch == 0) $ do
-      enqueueEvent $ ERPC $ CMDB' cmds
-      debug $ "AutoBatched " ++ show (length cmds') ++ " Commands"
-      threadDelay 100000 -- 100ms delay
+  liftIO $ cmdDynamicTurbine ks getCmds debug enqueueEvent 10000
+
+cmdDynamicTurbine
+  :: Num a =>
+     KeySet
+     -> (a -> IO [InboundCMD])
+     -> (String -> IO ())
+     -> (Event -> IO ())
+     -> Int
+     -> IO b
+cmdDynamicTurbine ks' getCmds' debug' enqueueEvent' timeout = do
+  verifiedCmds <- parallelVerify _unInboundCMD ks' <$> getCmds' 5000
+  (invalidCmds, validCmds) <- return $ partitionEithers verifiedCmds
+  mapM_ debug' invalidCmds
+  cmds@(CommandBatch cmds' _) <- return $ batchCommands validCmds
+  lenCmdBatch <- return $ length cmds'
+  unless (lenCmdBatch == 0) $ do
+    enqueueEvent' $ ERPC $ CMDB' cmds
+    src <- return (Set.fromList $ fmap (\v' -> case v' of
+      CMD' v -> ( unAlias $ _alias $ _cmdClientId v, unAlias $ _alias $ _digNodeId $ _pDig $ _cmdProvenance v )
+      CMDB' v -> ( "CMDB", unAlias $ _alias $ _digNodeId $ _pDig $ _cmdbProvenance v )
+      v -> error $ "deep invariant failure: caught something that wasn't a CMDB/CMD " ++ show v
+      ) validCmds)
+    debug' $ "AutoBatched " ++ show (length cmds') ++ " Commands from " ++ show src
+  threadDelay timeout
+  case lenCmdBatch of
+    l | l > 1000  -> cmdDynamicTurbine ks' getCmds' debug' enqueueEvent' 1000000 -- 1sec
+      | l > 500   -> cmdDynamicTurbine ks' getCmds' debug' enqueueEvent' 500000 -- .5sec
+      | l > 100   -> cmdDynamicTurbine ks' getCmds' debug' enqueueEvent' 100000 -- .1sec
+      | l > 10    -> cmdDynamicTurbine ks' getCmds' debug' enqueueEvent' 50000 -- .05sec
+      | otherwise -> cmdDynamicTurbine ks' getCmds' debug' enqueueEvent' 10000 -- .01sec
+
+
 
 aerTurbine :: ReaderT ReceiverEnv IO ()
 aerTurbine = do

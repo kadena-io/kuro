@@ -14,7 +14,7 @@ import Data.Map as Map
 import Data.Set as Set
 
 import Juno.Consensus.Handle.Types
-import Juno.Runtime.Sender (sendAllAppendEntries)
+import Juno.Runtime.Sender (sendAllAppendEntries, AEBroadcastControl(..))
 import Juno.Runtime.Timer (resetHeartbeatTimer, resetElectionTimerLeader,
                            resetElectionTimer)
 import Juno.Util.Util
@@ -102,7 +102,7 @@ becomeLeader = do
   setLNextIndex =<< Map.fromSet (const $ LogIndex ni) <$> JT.viewConfig JT.otherNodes
   (JT.lMatchIndex .=) =<< Map.fromSet (const startIndex) <$> JT.viewConfig JT.otherNodes
   JT.lConvinced .= Set.empty
-  sendAllAppendEntries
+  _ <-  sendAllAppendEntries SendAERegardless
   resetHeartbeatTimer
   resetElectionTimerLeader
 

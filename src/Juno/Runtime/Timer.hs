@@ -2,7 +2,6 @@ module Juno.Runtime.Timer
   ( resetElectionTimer
   , resetElectionTimerLeader
   , resetHeartbeatTimer
-  , resetLastBatchUpdate
   , hasElectionTimerLeaderFired
   , cancelTimer
   ) where
@@ -49,10 +48,3 @@ setTimedEvent e t = do
   cancelTimer
   tmr <- enqueueEventLater t e -- forks, no state
   timerThread .= Just tmr
-
-resetLastBatchUpdate :: Raft ()
-resetLastBatchUpdate = do
-  curTime <- view (rs.getTimestamp) >>= liftIO
-  --l <- lastEntry <$> use logEntries
-  l <- accessLogs lastEntry
-  lLastBatchUpdate .= (curTime, _leHash <$> l)

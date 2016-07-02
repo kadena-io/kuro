@@ -16,7 +16,7 @@ import Data.Maybe (isNothing, isJust, fromJust)
 
 import Juno.Consensus.Commit (makeCommandResponse')
 import Juno.Consensus.Handle.Types
-import Juno.Runtime.Sender (sendRPC, createAppendEntriesResponse)
+import Juno.Runtime.Sender (sendRPC, sendAerRvRvr, createAppendEntriesResponse, sendAllAppendEntries, AEBroadcastControl(..))
 import Juno.Util.Util (getCmdSigOrInvariantError, accessLogs)
 import qualified Juno.Types as JT
 
@@ -127,15 +127,17 @@ handleSingleCommand cmd = do
                         (JT._replayMap s)
                         (JT._nodeId c)
   case out of
-    UnknownLeader -> return ()
-    AlreadySeen -> return ()
+    UnknownLeader -> return () -- TODO: we should probably respond with something like "availability event"
+    AlreadySeen -> return () -- TODO: we should probably respond with something like "transaction still pending"
     (RetransmitToLeader lid rpc) -> sendRPC lid rpc
     (SendCommandResponse cid rpc) -> sendRPC cid rpc
     (CommitAndPropagate newEntry replayKey) -> do
-               accessLogs $ JT.updateLogs $ ULNew newEntry
-               JT.replayMap %= Map.insert replayKey Nothing
-               myEvidence <- createAppendEntriesResponse True True
-               JT.commitProof %= updateCommitProofMap myEvidence
+      accessLogs $ JT.updateLogs $ ULNew newEntry
+      JT.replayMap %= Map.insert replayKey Nothing
+      myEvidence <- createAppendEntriesResponse True True
+      JT.commitProof %= updateCommitProofMap myEvidence
+      wasSent <- sendAllAppendEntries OnlySendIfFollowersAreInSync
+      when wasSent $ sendAerRvRvr $ AER' myEvidence
 
 handle :: Command -> JT.Raft ()
 handle cmd = handleSingleCommand cmd
@@ -158,8 +160,10 @@ handleBatch cmdb@CommandBatch{..} = do
       JT.replayMap .= updatedReplays
       myEvidence <- createAppendEntriesResponse True True
       JT.commitProof %= updateCommitProofMap myEvidence
+      wasSent <- sendAllAppendEntries OnlySendIfFollowersAreInSync
+      when wasSent $ sendAerRvRvr $ AER' myEvidence
       mapM_ (uncurry sendRPC) serviceAlreadySeen
     IAmFollower BatchProcessing{..} -> do
       when (isJust lid) $ mapM_ (sendRPC (fromJust lid) . CMD') newEntries
       mapM_ (uncurry sendRPC) serviceAlreadySeen
-    IAmCandidate -> return ()
+    IAmCandidate -> return () -- TODO: we should probably respond with something like "availability event"

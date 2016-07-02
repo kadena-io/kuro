@@ -19,7 +19,7 @@ module Juno.Types.Spec
   , logEntries, commitIndex, commitProof, lastApplied, timerThread, replayMap
   , cYesVotes, cPotentialVotes, lNextIndex, lMatchIndex, lConvinced
   , lastCommitTime, numTimeouts, pendingRequests, currentRequestId
-  , timeSinceLastAER, lLastBatchUpdate
+  , timeSinceLastAER
   , initialRaftState
   , Event(..)
   , mkRaftEnv
@@ -31,7 +31,6 @@ import Control.Monad (when)
 import Control.Monad.IO.Class
 import Control.Monad.RWS.Strict (RWST)
 
-import Data.ByteString (ByteString)
 import Data.IORef
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -116,7 +115,6 @@ data RaftState = RaftState
   , _lNextIndex       :: Map NodeId LogIndex
   , _lMatchIndex      :: Map NodeId LogIndex
   , _lConvinced       :: Set NodeId
-  , _lLastBatchUpdate :: (UTCTime, Maybe ByteString)
   -- used for metrics
   , _lastCommitTime   :: Maybe UTCTime
   -- used by clients
@@ -144,7 +142,6 @@ initialRaftState timerTarget' = RaftState
   Map.empty  -- lNextIndex
   Map.empty  -- lMatchIndex
   Set.empty  -- lConvinced
-  (minBound, Nothing)   -- lLastBatchUpdate (when we start up, we want batching to fire immediately)
   Nothing    -- lastCommitTime
   Map.empty  -- pendingRequests
   0          -- nextRequestId

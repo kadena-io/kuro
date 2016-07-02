@@ -145,12 +145,16 @@ updateCommitIndex' = do
   let evidence = reverse $ sortOn _aerIndex $ Map.elems proof
 
   case checkCommitProof qsize ls maxLogIndex evidence of
-    Left 0 -> return False
+    Left 0 -> do
+      debug $ "Commit Proof Checked: no new evidence " ++ show ci
+      return False
     Left n -> if maxLogIndex > fromIntegral ci
               then do
-                    debug $ "Not enough evidence to commit yet, need " ++ show (qsize - n) ++ " more"
-                    return False
-              else return False
+                debug $ "Not enough evidence to commit yet, need " ++ show (qsize - n) ++ " more"
+                return False
+              else do
+                debug $ "Commit Proof Checked: stead state with MaxLogIndex " ++ show maxLogIndex ++ " == CommitIndex " ++ show ci
+                return False
     Right qci -> if qci > ci
                 then do
                   accessLogs $ updateLogs $ ULCommitIdx $ UpdateCommitIndex qci
@@ -158,7 +162,9 @@ updateCommitIndex' = do
                   commitProof %= Map.filter (\a -> qci < _aerIndex a)
                   debug $ "Commit index is now: " ++ show qci
                   return True
-                else return False
+                else do
+                  debug $ "Commit index is " ++ show qci ++ " with evidence for " ++ show ci
+                  return False
 
 checkCommitProof :: Int -> LogState LogEntry -> LogIndex -> [AppendEntriesResponse] -> Either Int LogIndex
 checkCommitProof qsize les maxLogIdx evidence = go 0 evidence

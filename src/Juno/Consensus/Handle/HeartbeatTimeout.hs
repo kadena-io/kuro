@@ -12,7 +12,7 @@ import Control.Monad.State
 import Control.Monad.Writer
 
 import Juno.Consensus.Handle.Types
-import Juno.Runtime.Sender (sendAllAppendEntries)
+import Juno.Runtime.Sender (sendAllAppendEntries, AEBroadcastControl(..))
 import Juno.Runtime.Timer (resetHeartbeatTimer, hasElectionTimerLeaderFired)
 import Juno.Util.Util (debug,enqueueEvent)
 import qualified Juno.Types as JT
@@ -47,7 +47,7 @@ handle msg = do
   mapM_ debug l
   case out of
     IsLeader -> do
-      sendAllAppendEntries
+      _ <- sendAllAppendEntries SendEmptyAEIfOutOfSync
       resetHeartbeatTimer
       hbMicrosecs <- JT.viewConfig JT.heartbeatTimeout
       JT.timeSinceLastAER %= (+ hbMicrosecs)

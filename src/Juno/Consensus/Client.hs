@@ -111,11 +111,12 @@ clientHandleEvents cmdStatusMap' disableTimeouts = forever $ do
     Nothing -> dequeueEvent
     Just v -> return v
   case e of
-    ERPC (CMDB' cmdb)   -> clientSendCommandBatch cmdb
-    ERPC (CMD' cmd)     -> clientSendCommand cmd -- these are commands coming from the commandGetter thread
-    ERPC (CMDR' cmdr)   -> clientHandleCommandResponse cmdStatusMap' cmdr
+    ERPC (CMDB' cmdb)   -> clientSendCommandBatch cmdb disableTimeouts
+    ERPC (CMD' cmd)     -> clientSendCommand cmd disableTimeouts -- these are commands coming from the commandGetter thread
+    ERPC (CMDR' cmdr)   -> clientHandleCommandResponse cmdStatusMap' cmdr disableTimeouts
     HeartbeatTimeout _ -> do
       t <- liftIO $ readMVar disableTimeouts
+      liftIO $ putStrLn $ "[HB_TIMEOUT] caught heartbeat " ++ show t
       when (not t) $ do
         debug "caught a heartbeat"
         timeouts <- use numTimeouts
@@ -123,9 +124,10 @@ clientHandleEvents cmdStatusMap' disableTimeouts = forever $ do
         then do
           debug "choosing a new leader and resending commands"
           setLeaderToNext
+          liftIO $ putStrLn $ "[HB_TIMEOUT] Changing Leader to next " ++ show t
           reqs <- use pendingRequests
           pendingRequests .= Map.empty -- this will reset the timer on resend
-          traverse_ clientSendCommand reqs
+          traverse_ (`clientSendCommand` disableTimeouts) reqs
           numTimeouts += 1
         else resetHeartbeatTimer >> numTimeouts += 1
     _ -> return ()
@@ -150,52 +152,64 @@ setLeaderToNext = do
     Nothing -> setLeaderToFirst
 
 -- THREAD: CLIENT MAIN. updates state
-clientSendCommand :: Command -> Raft ()
-clientSendCommand cmd@Command{..} = do
+clientSendCommand :: Command -> MVar Bool -> Raft ()
+clientSendCommand cmd@Command{..} disableTimeouts = do
   mlid <- use currentLeader
+  disableTimeouts' <- liftIO $ readMVar disableTimeouts
   case mlid of
     Just lid -> do
       sendRPC lid $ CMD' cmd
+      liftIO $ putStrLn $ "Sending Msg to :" ++ show (unAlias $ _alias lid)
       prcount <- fmap Map.size (use pendingRequests)
       -- if this will be our only pending request, start the timer
       -- otherwise, it should already be running
-      when (prcount == 0) resetHeartbeatTimer
+      when (prcount == 0 && not disableTimeouts') resetHeartbeatTimer
       pendingRequests %= Map.insert _cmdRequestId cmd -- TODO should we update CommandMap here?
     Nothing  -> do
       setLeaderToFirst
-      clientSendCommand cmd
+      liftIO $ putStrLn "[SendCommand] Changing Leader to first"
+      clientSendCommand cmd disableTimeouts
 
 -- THREAD: CLIENT MAIN. updates state
-clientSendCommandBatch :: CommandBatch -> Raft ()
-clientSendCommandBatch cmdb@CommandBatch{..} = do
+clientSendCommandBatch :: CommandBatch -> MVar Bool -> Raft ()
+clientSendCommandBatch cmdb@CommandBatch{..} disableTimeouts = do
   mlid <- use currentLeader
+  disableTimeouts' <- liftIO $ readMVar disableTimeouts
   case mlid of
     Just lid -> do
       sendRPC lid $ CMDB' cmdb
+      liftIO $ putStrLn $ "Sending Msg to :" ++ show (unAlias $ _alias lid)
       prcount <- fmap Map.size (use pendingRequests)
       -- if this will be our only pending request, start the timer
       -- otherwise, it should already be running
       let lastCmd = last _cmdbBatch
-      when (prcount == 0) resetHeartbeatTimer
+      when (prcount == 0 && not disableTimeouts') resetHeartbeatTimer
       pendingRequests %= Map.insert (_cmdRequestId lastCmd) lastCmd -- TODO should we update CommandMap here?
     Nothing  -> do
       setLeaderToFirst
-      clientSendCommandBatch cmdb
+      liftIO $ putStrLn "[SendBatch] Changing Leader to first"
+      clientSendCommandBatch cmdb disableTimeouts
 
 -- THREAD: CLIENT MAIN. updates state
 -- Command has been applied
-clientHandleCommandResponse :: CommandMVarMap -> CommandResponse -> Raft ()
-clientHandleCommandResponse cmdStatusMap' CommandResponse{..} = do
+clientHandleCommandResponse :: CommandMVarMap -> CommandResponse -> MVar Bool -> Raft ()
+clientHandleCommandResponse cmdStatusMap' CommandResponse{..} disableTimeouts = do
   prs <- use pendingRequests
+  cLeader <- use currentLeader
+  disableTimeouts' <- liftIO $ readMVar disableTimeouts
   when (Map.member _cmdrRequestId prs) $ do
-    setCurrentLeader $ Just _cmdrLeaderId
-    pendingRequests %= Map.delete _cmdrRequestId
-    -- cmdStatusMap shared with the client, client can poll this map to await applied result
-    liftIO (modifyMVar_ cmdStatusMap' (\(CommandMap rid m) -> return $ CommandMap rid (Map.insert _cmdrRequestId (CmdApplied _cmdrResult _cmdrLatency) m)))
-    numTimeouts .= 0
-    prcount <- fmap Map.size (use pendingRequests)
-    -- if we still have pending requests, reset the timer
-    -- otherwise cancel it
-    if prcount > 0
-      then resetHeartbeatTimer
-      else cancelTimer
+    case (disableTimeouts', cLeader == Just _cmdrLeaderId) of
+      (True, False)  -> liftIO $ putStrLn $ "Timeout is disabled but got a CMDR from: " ++ show (unAlias $ _alias _cmdrLeaderId)
+      _              -> do
+        setCurrentLeader (Just _cmdrLeaderId)
+        liftIO $ putStrLn $ "[CMDR] setting leader to " ++ show (unAlias $ _alias _cmdrLeaderId) ++ " sent from " ++ show (unAlias $ _alias $ _digNodeId $ _pDig $ _cmdrProvenance)
+        pendingRequests %= Map.delete _cmdrRequestId
+        -- cmdStatusMap shared with the client, client can poll this map to await applied result
+        liftIO (modifyMVar_ cmdStatusMap' (\(CommandMap rid m) -> return $ CommandMap rid (Map.insert _cmdrRequestId (CmdApplied _cmdrResult _cmdrLatency) m)))
+        numTimeouts .= 0
+        prcount <- fmap Map.size (use pendingRequests)
+        -- if we still have pending requests, reset the timer
+        -- otherwise cancel it
+        if prcount > 0
+          then resetHeartbeatTimer
+          else cancelTimer

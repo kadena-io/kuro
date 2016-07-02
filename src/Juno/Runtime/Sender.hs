@@ -1,9 +1,11 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module Juno.Runtime.Sender
-  ( sendAppendEntries
+  ( AEBroadcastControl(..)
+  , sendAppendEntries
   , sendAppendEntriesResponse
   , createRequestVoteResponse
   , sendAllAppendEntries
@@ -31,7 +33,26 @@ import Data.Serialize
 
 import Juno.Util.Util
 import Juno.Types
-import Juno.Runtime.Timer (resetLastBatchUpdate)
+
+
+-- | This is useful for when we hit a heartbeat event but followers are out of sync.
+-- Again, AE is overloaded as a Heartbeat msg as well but redundant AE's that involve crypto are wasteful/kill followers.
+-- Instead we use an empty AE to elicit a AER, which we then service (as Leader of course)
+createEmptyAppendEntries' :: NodeId
+                   -> Map NodeId LogIndex
+                   -> LogState LogEntry
+                   -> Term
+                   -> NodeId
+                   -> Set NodeId
+                   -> Set RequestVoteResponse
+                   -> RPC
+createEmptyAppendEntries' target lNextIndex' es ct nid vts yesVotes =
+  let
+    mni = Map.lookup target lNextIndex'
+    (pli,plt) = logInfoForNextIndex' mni es
+    vts' = if Set.member target vts then Set.empty else yesVotes
+  in
+    AE' $ AppendEntries ct nid pli plt Seq.empty vts' NewMsg
 
 createAppendEntries' :: NodeId
                    -> Map NodeId LogIndex
@@ -58,11 +79,17 @@ sendAppendEntries target = do
   vts <- use lConvinced
   yesVotes <- use cYesVotes
   sendRPC target $ createAppendEntries' target lNextIndex' es ct nid vts yesVotes
-  resetLastBatchUpdate
   debug $ "sendAppendEntries: " ++ show ct
 
-sendAllAppendEntries :: Raft ()
-sendAllAppendEntries = do
+data AEBroadcastControl =
+  SendAERegardless |
+  OnlySendIfFollowersAreInSync |
+  SendEmptyAEIfOutOfSync
+  deriving (Show, Eq)
+
+-- | Send all append entries is only needed in special circumstances. Either we have a Heartbeat event or we are getting a quick win in with CMD's
+sendAllAppendEntries :: AEBroadcastControl -> Raft Bool
+sendAllAppendEntries sendIfOutOfSync = do
   lNextIndex' <- use lNextIndex
   es <- getLogState
   ct <- use term
@@ -70,15 +97,36 @@ sendAllAppendEntries = do
   vts <- use lConvinced
   yesVotes <- use cYesVotes
   oNodes <- viewConfig otherNodes
-  case canBroadcastAE (length oNodes) lNextIndex' es ct nid vts of
-    Nothing -> do -- sorry, can take the short cut
+  case (canBroadcastAE (length oNodes) lNextIndex' es ct nid vts, sendIfOutOfSync) of
+    (BackStreet, SendAERegardless) -> do
+      -- We can't take the short cut but the AE (which is overloaded as a heartbeat grr...) still need to be sent
+      -- This usually takes place when we hit a heartbeat timeout
       sendRPCs $ (\target -> (target, createAppendEntries' target lNextIndex' es ct nid vts yesVotes)) <$> Set.toList oNodes
-      resetLastBatchUpdate
       debug "Sent All AppendEntries"
-    Just (rpc, ln) -> do -- hell yeah, we can just broadcast
-      pubRPC $ rpc
-      resetLastBatchUpdate
+      return True
+    (BackStreet, OnlySendIfFollowersAreInSync) -> do
+      -- We can't just spam AE's to the followers because they can get clogged with overlapping/redundant AE's. This eventually trips an election.
+      -- TODO: figure out how an out of date follower can precache LEs that it can't add to it's log yet (withough tripping an election)
+      debug "Followers are out of sync, cannot issue broadcast AE"
+      return False
+    (BackStreet, SendEmptyAEIfOutOfSync) -> do
+      -- This is a straight up heartbeat but Raft doesn't have that RPC because... that would be too confusing?
+      -- Instead, we send an Empty AE here. This should only happen when a heartbeat event is encountered but followers are out of sync
+      -- TODO: track time since last contact with every node. If some node goes down/partitions we don't want that to ruin our lovely
+      --       broadcast here (which it will currently). If a node is out of date for longer than a max election timeout
+      --       (though +1 heartbeat may make more sense) then don't count it towards the "InSync" measurement
+      sendRPCs $ (\target -> (target, createEmptyAppendEntries' target lNextIndex' es ct nid vts yesVotes)) <$> Set.toList oNodes
+      debug "Followers are out of sync, cannot issue broadcast AE"
+      return False
+    (InSync (ae, ln), _) -> do
+      -- Hell yeah, we can just broadcast. We don't care about the Broadcast control if we know we can broadcast.
+      -- This saves us a lot of time when node count grows.
+      pubRPC $ ae
       debug $ "Broadcast New Log Entries, contained " ++ show ln ++ " log entries"
+      return True
+
+-- I've been on a coding bender for 6 straight 12hr days
+data InSync = InSync (RPC, Int) | BackStreet deriving (Show, Eq)
 
 canBroadcastAE :: Int
                -> Map NodeId LogIndex
@@ -86,7 +134,7 @@ canBroadcastAE :: Int
                -> Term
                -> NodeId
                -> Set NodeId
-               -> Maybe (RPC, Int)
+               -> InSync
 canBroadcastAE clusterSize' lNextIndex' es ct nid vts =
   -- we only want to do this if we know that every node is in sync with us (the leader)
   let
@@ -99,8 +147,9 @@ canBroadcastAE clusterSize' lNextIndex' es ct nid vts =
     newEntriesToReplicate = getEntriesAfter' pli es
   in
     if everyoneBelieves && inSync
-    then Just (AE' $ AppendEntries ct nid pli plt newEntriesToReplicate Set.empty NewMsg, Seq.length newEntriesToReplicate)
-    else Nothing
+    then InSync (AE' $ AppendEntries ct nid pli plt newEntriesToReplicate Set.empty NewMsg, Seq.length newEntriesToReplicate)
+    else BackStreet
+{-# INLINE canBroadcastAE #-}
 
 createAppendEntriesResponse' :: Bool -> Bool -> Term -> NodeId -> LogIndex -> ByteString -> RPC
 createAppendEntriesResponse' success convinced ct nid lindex lhash =
@@ -141,7 +190,9 @@ createRequestVoteResponse term' logIndex' myNodeId' target vote = do
   return $ RequestVoteResponse term' logIndex' myNodeId' vote target NewMsg
 
 sendResults :: [(NodeId, CommandResponse)] -> Raft ()
-sendResults results = sendRPCs $ second CMDR' <$> results
+sendResults results = do
+  !res <- return $! second CMDR' <$> results
+  sendRPCs res
 
 pubRPC :: RPC -> Raft ()
 pubRPC rpc = do
@@ -160,8 +211,8 @@ sendRPC target rpc = do
   privKey <- viewConfig myPrivateKey
   pubKey <- viewConfig myPublicKey
   sRpc <- return $ rpcToSignedRPC myNodeId pubKey privKey rpc
-  debug $ "Issuing direct msg: " ++ show (_digType $ _sigDigest sRpc)
-  liftIO $ send $ directMsg target $ encode $ sRpc
+  debug $ "Issuing direct msg: " ++ show (_digType $ _sigDigest sRpc) ++ " to " ++ show (unAlias $ _alias target)
+  liftIO $! send $! directMsg target $ encode $ sRpc
 
 sendRPCs :: [(NodeId, RPC)] -> Raft ()
 sendRPCs rpcs = do
@@ -171,7 +222,7 @@ sendRPCs rpcs = do
   pubKey <- viewConfig myPublicKey
   msgs <- return (((\(n,msg) -> (n, rpcToSignedRPC myNodeId pubKey privKey msg)) <$> rpcs ) `using` parList rseq)
   --mapM_ (\(_,r) -> debug $ "Issuing (multi) direct msg: " ++ show (_digType $ _sigDigest r)) msgs
-  liftIO $ send $ (\(n,r) -> directMsg n $ encode r) <$> msgs
+  liftIO $! send $! (\(n,r) -> directMsg n $ encode r) <$> msgs
 
 sendAerRvRvr :: RPC -> Raft ()
 sendAerRvRvr rpc = do
@@ -181,4 +232,4 @@ sendAerRvRvr rpc = do
   pubKey <- viewConfig myPublicKey
   sRpc <- return $ rpcToSignedRPC myNodeId pubKey privKey rpc
   debug $ "Issuing AeRvRvr msg: " ++ show (_digType $ _sigDigest sRpc)
-  liftIO $ send $ aerRvRvrMsg $ encode $ sRpc
+  liftIO $! send $! aerRvRvrMsg $ encode $ sRpc

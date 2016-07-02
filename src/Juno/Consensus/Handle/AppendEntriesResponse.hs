@@ -11,21 +11,22 @@ module Juno.Consensus.Handle.AppendEntriesResponse
 where
 
 import Control.Lens hiding (Index)
-import Control.Parallel.Strategies
 import Control.Monad.Reader
 import Control.Monad.State (get)
 import Control.Monad.Writer.Strict
+import Control.Parallel.Strategies
+
 import Data.Maybe
-import Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 
 import Juno.Consensus.Commit (doCommit)
 import Juno.Consensus.Handle.Types
-
+import Juno.Runtime.Sender (sendAppendEntries)
 import Juno.Runtime.Timer (resetElectionTimerLeader)
-import Juno.Util.Util (debug, updateLNextIndex)
+import Juno.Util.Util (debug, updateLNextIndex, accessLogs)
 import qualified Juno.Types as JT
 
 data AEResponseEnv = AEResponseEnv {
@@ -103,30 +104,36 @@ updateCommitProofMap aerNew m = Map.alter go nid m
                      else Just aerOld
 
 handle :: AppendEntriesResponse -> JT.Raft ()
-handle ae = do
+handle aer = do
   s <- get
   let ape = AEResponseEnv
               (JT._nodeRole s)
               (JT._term s)
               (JT._commitProof s)
-  (AEResponseOut{..}, l) <- runReaderT (runWriterT (handleAEResponse ae)) ape
+  (AEResponseOut{..}, l) <- runReaderT (runWriterT (handleAEResponse aer)) ape
   mapM_ debug l
   JT.commitProof .= _stateMergeCommitProof
   doCommit
   case _leaderState of
     NotLeader -> return ()
     DoNothing -> resetElectionTimerLeader
-    StatelessSendAE{..} ->
+    StatelessSendAE{..} -> do
+      sendAppendEntries $ _aerNodeId aer
       resetElectionTimerLeader
     Unconvinced{..} -> do
       JT.lConvinced %= Set.delete _deleteConvinced
+      sendAppendEntries $ _aerNodeId aer
       resetElectionTimerLeader
     ConvincedAndSuccessful{..} -> do
       updateLNextIndex $ Map.insert _incrementNextIndexNode $ _incrementNextIndexLogIndex + 1
       JT.lConvinced %= Set.insert _insertConvinced
+      myLatestIndex <- accessLogs $ JT.viewLogState JT.lastLogIndex
+      -- If the commit was a success but we have more, chase the response with an update
+      when (myLatestIndex > _incrementNextIndexLogIndex) (sendAppendEntries $ _aerNodeId aer)
       resetElectionTimerLeader
     ConvincedAndUnsuccessful{..} -> do
       updateLNextIndex $ Map.insert _sendAENodeId _setLaggingLogIndex
+      sendAppendEntries $ _aerNodeId aer
       resetElectionTimerLeader
 
 handleAlotOfAers :: AlotOfAERs -> JT.Raft ()

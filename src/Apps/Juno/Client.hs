@@ -95,12 +95,14 @@ runREPL toCommands' cmdStatusMap' alias' disableTimeouts = do
           else if cmd == "disable timeout"
             then do
               swapMVar disableTimeouts False
-              putStrLn "Timeout Disabled"
+              t <- readMVar disableTimeouts
+              putStrLn $ "disableTimeouts: " ++ show t
               runREPL toCommands' cmdStatusMap' alias' disableTimeouts
           else if cmd == "enable timeout"
             then do
               swapMVar disableTimeouts True
-              putStrLn "Timeout Disabled"
+              t <- readMVar disableTimeouts
+              putStrLn $ "disableTimeouts: " ++ show t
               runREPL toCommands' cmdStatusMap' alias' disableTimeouts
           else do
             case readHopper cmd' of

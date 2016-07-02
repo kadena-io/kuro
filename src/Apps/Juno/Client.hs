@@ -94,13 +94,13 @@ runREPL toCommands' cmdStatusMap' alias' disableTimeouts = do
               Nothing -> runREPL toCommands' cmdStatusMap' alias' disableTimeouts
           else if cmd == "disable timeout"
             then do
-              swapMVar disableTimeouts False
+              swapMVar disableTimeouts True
               t <- readMVar disableTimeouts
               putStrLn $ "disableTimeouts: " ++ show t
               runREPL toCommands' cmdStatusMap' alias' disableTimeouts
           else if cmd == "enable timeout"
             then do
-              swapMVar disableTimeouts True
+              swapMVar disableTimeouts False
               t <- readMVar disableTimeouts
               putStrLn $ "disableTimeouts: " ++ show t
               runREPL toCommands' cmdStatusMap' alias' disableTimeouts

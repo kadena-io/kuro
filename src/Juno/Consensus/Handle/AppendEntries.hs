@@ -195,7 +195,6 @@ handle ae = do
         return ()
       SendUnconvincedResponse{..} -> sendAppendEntriesResponse _responseLeaderId False False
       ValidLeaderAndTerm{..} -> do
-        resetElectionTimer
         JT.lazyVote .= Nothing
         case _validReponse of
           SendFailureResponse -> sendAppendEntriesResponse _responseLeaderId False True
@@ -207,3 +206,6 @@ handle ae = do
             JT.commitProof %= updateCommitProofMap myEvidence
             sendAllAppendEntriesResponse
           DoNothing -> sendAllAppendEntriesResponse
+        -- This NEEDS to be last, otherwise we can have an election fire when we are are transmitting proof/accessing the logs
+        -- It's rare but under load and given enough time, this will happen.
+        resetElectionTimer

@@ -33,7 +33,7 @@ handleEvents = forever $ do
     AERs alotOfAers    -> PureAppendEntriesResponse.handleAlotOfAers alotOfAers
     ElectionTimeout s  -> PureElectionTimeout.handle s
     HeartbeatTimeout s -> PureHeartbeatTimeout.handle s
-    Tock               -> debug "Tock"
+    Tick tock'         -> liftIO (pprintTock tock' "handleEvents") >>= debug
 
 handleRPC :: RPC -> Raft ()
 handleRPC rpc = case rpc of

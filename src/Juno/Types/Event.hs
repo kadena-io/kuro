@@ -1,13 +1,21 @@
+{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module Juno.Types.Event
   ( Event(..)
+  , Tock(..)
   ) where
 
+import Data.Thyme.Clock (UTCTime)
+
 import Juno.Types.Message
+
+data Tock = Tock {_tockTargetDelay :: Int, _tockStartTime :: UTCTime}
+  deriving (Show, Eq)
 
 data Event = ERPC RPC
            | AERs AlotOfAERs
            | ElectionTimeout String
            | HeartbeatTimeout String
-           | Tock -- used initially for the timer system to work (it uses a blocking channel read so on idle nothing happens)
+           | Tick Tock
   deriving (Show)

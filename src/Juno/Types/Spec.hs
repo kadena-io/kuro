@@ -186,7 +186,6 @@ mkRaftEnv conf' log' cSize qSize rSpec dispatch timerTarget' = RaftEnv
                                      threadDelay t
                                      b <- tryPutMVar timerTarget' e
                                      when (not b) (putStrLn "Failed to update timer MVar")
-                                     writeComm ie' (InternalEvent Tock)
                                      ) -- TODO: what if it's already taken?
     , _killEnqueued = killThread
     , _dequeue = _unInternalEvent <$> readComm ie'

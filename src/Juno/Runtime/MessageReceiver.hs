@@ -64,14 +64,13 @@ generalTurbine = do
     (aes, noAes) <- return $ partition (\(_,SignedRPC{..}) -> if _digType _sigDigest == AE then True else False) (_unInboundGeneral <$> msgs)
     unless (null aes) $ do
       l <- return $ show (length aes)
-      debug $ "[GENERAL_TURBINE] About to enqueue " ++ l ++ "AE(s)"
       mapM_ (\(ts,msg) -> case signedRPCtoRPC (Just ts) ks msg of
         Left err -> debug err
         Right v -> do
           t' <- getCurrentTime
           debug $ "[GENERAL_TURBINE] enqueued 1 of " ++ l ++ "AE(s) taking "
                 ++ show (view microseconds $ t' .-. (_unReceivedAt ts))
-                ++ " since it was received"
+                ++ "mics since it was received"
           enqueueEvent (ERPC v)
             ) aes
     (invalid, validNoAes) <- return $ partitionEithers $ parallelVerify id ks noAes

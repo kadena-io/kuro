@@ -28,7 +28,7 @@ runRaftServer renv rconf spec = do
   ls <- initLogState
   -- This helps for testing, we'll send tocks every second to inflate the logs when we see weird pauses right before an election
   -- forever (writeComm (_internalEvent $ _dispatch renv) (InternalEvent $ Tock $ t) >> threadDelay 1000000)
-  void $ forkIO $ foreverTickDebugWriteDelay (renv ^. RENV.debugPrint) (_internalEvent $ _dispatch renv) 1000000 (InternalEvent . Tick)
+  void $ forkIO $ foreverTickDebugWriteDelay (renv ^. RENV.debugPrint) "InternalEvent" (_internalEvent $ _dispatch renv) 1000000 (InternalEvent . Tick)
   runRWS_
     raft
     (mkRaftEnv rconf' ls csize qsize spec (_dispatch renv) timerTarget')

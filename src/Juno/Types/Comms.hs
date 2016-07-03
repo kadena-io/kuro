@@ -63,7 +63,7 @@ import Juno.Types.Message
 pprintTock :: Tock -> String -> IO String
 pprintTock Tock{..} channelName = do
   t' <- getCurrentTime
-  delay <- return $! (fromIntegral $ view microseconds $ t' .-. _tockStartTime)
+  (delay :: Int) <- return $! (fromIntegral $ view microseconds $ t' .-. _tockStartTime)
   return $! "[" ++ channelName ++ "] Tock delayed by " ++ show delay ++ "mics"
 
 createTock :: Int -> IO Tock
@@ -80,7 +80,7 @@ foreverTick comm delay mkTock = forever $ do
   _ <- fireTick comm delay mkTock
   threadDelay delay
 
-foreverTickDebugWriteDelay :: Comms a b => (String -> IO ()) -> b -> Int -> (Tock -> a) -> IO ()
+foreverTickDebugWriteDelay :: Comms a b => (String -> IO ()) -> String -> b -> Int -> (Tock -> a) -> IO ()
 foreverTickDebugWriteDelay debug' channel comm delay mkTock = forever $ do
   !st <- fireTick comm delay mkTock
   !t' <- getCurrentTime

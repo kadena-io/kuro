@@ -44,7 +44,8 @@ instance WireFormat Command where
   fromWire !ts !ks s@(SignedRPC !dig !bdy) =
     case verifySignedRPC ks s of
       Left !err -> Left err
-      Right () -> if _digType dig /= CMD
+      Right () ->
+        if _digType dig /= CMD
         then error $ "Invariant Failure: attempting to decode " ++ show (_digType dig) ++ " with CMDWire instance"
         else case S.decode bdy of
             Left !err -> Left $! "Failure to decode CMDWire: " ++ err

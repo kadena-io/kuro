@@ -22,6 +22,9 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Serialize as S
 import qualified Data.Set as Set
 
+import Data.AffineSpace ((.-.))
+import Data.Thyme.Clock (microseconds, getCurrentTime)
+
 import Juno.Util.Combinator (foreverRetry)
 import Juno.Types hiding (debugPrint, nodeId)
 
@@ -60,11 +63,17 @@ generalTurbine = do
     msgs <- gm 5
     (aes, noAes) <- return $ partition (\(_,SignedRPC{..}) -> if _digType _sigDigest == AE then True else False) (_unInboundGeneral <$> msgs)
     unless (null aes) $ do
-      debug $ "[GENERAL_TURBINE] About to enqueue " ++ show (length aes) ++ "AE(s)"
+      l <- return $ show (length aes)
+      debug $ "[GENERAL_TURBINE] About to enqueue " ++ l ++ "AE(s)"
       mapM_ (\(ts,msg) -> case signedRPCtoRPC (Just ts) ks msg of
         Left err -> debug err
-        Right v -> enqueueEvent (ERPC v)) aes
-      debug $ "[GENERAL_TURBINE] enqueued " ++ show (length aes) ++ "AE(s)"
+        Right v -> do
+          t' <- getCurrentTime
+          debug $ "[GENERAL_TURBINE] enqueued 1 of " ++ l ++ "AE(s) taking "
+                ++ show (view microseconds $ t' .-. (_unReceivedAt ts))
+                ++ " since it was received"
+          enqueueEvent (ERPC v)
+            ) aes
     (invalid, validNoAes) <- return $ partitionEithers $ parallelVerify id ks noAes
     unless (null validNoAes) $ mapM_ (enqueueEvent . ERPC) validNoAes
     unless (null invalid) $ mapM_ debug invalid

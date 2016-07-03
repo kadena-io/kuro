@@ -116,7 +116,7 @@ clientHandleEvents cmdStatusMap' disableTimeouts = forever $ do
     ERPC (CMDR' cmdr)   -> clientHandleCommandResponse cmdStatusMap' cmdr disableTimeouts
     HeartbeatTimeout _ -> do
       t <- liftIO $ readMVar disableTimeouts
-      liftIO $ putStrLn $ "[HB_TIMEOUT] caught heartbeat " ++ show t
+      debug $ "[HB_TIMEOUT] caught heartbeat " ++ show t
       when (not t) $ do
         debug "caught a heartbeat"
         timeouts <- use numTimeouts
@@ -124,7 +124,7 @@ clientHandleEvents cmdStatusMap' disableTimeouts = forever $ do
         then do
           debug "choosing a new leader and resending commands"
           setLeaderToNext
-          liftIO $ putStrLn $ "[HB_TIMEOUT] Changing Leader to next " ++ show t
+          debug $ "[HB_TIMEOUT] Changing Leader to next " ++ show t
           reqs <- use pendingRequests
           pendingRequests .= Map.empty -- this will reset the timer on resend
           traverse_ (`clientSendCommand` disableTimeouts) reqs
@@ -159,7 +159,7 @@ clientSendCommand cmd@Command{..} disableTimeouts = do
   case mlid of
     Just lid -> do
       sendRPC lid $ CMD' cmd
-      liftIO $ putStrLn $ "Sending Msg to :" ++ show (unAlias $ _alias lid)
+      debug $ "Sending Msg to :" ++ show (unAlias $ _alias lid)
       prcount <- fmap Map.size (use pendingRequests)
       -- if this will be our only pending request, start the timer
       -- otherwise, it should already be running
@@ -178,7 +178,7 @@ clientSendCommandBatch cmdb@CommandBatch{..} disableTimeouts = do
   case mlid of
     Just lid -> do
       sendRPC lid $ CMDB' cmdb
-      liftIO $ putStrLn $ "Sending Msg to :" ++ show (unAlias $ _alias lid)
+      debug $ "Sending Msg to :" ++ show (unAlias $ _alias lid)
       prcount <- fmap Map.size (use pendingRequests)
       -- if this will be our only pending request, start the timer
       -- otherwise, it should already be running
@@ -199,10 +199,10 @@ clientHandleCommandResponse cmdStatusMap' CommandResponse{..} disableTimeouts = 
   disableTimeouts' <- liftIO $ readMVar disableTimeouts
   when (Map.member _cmdrRequestId prs) $ do
     case (disableTimeouts', cLeader == Just _cmdrLeaderId) of
-      (True, False)  -> liftIO $ putStrLn $ "Timeout is disabled but got a CMDR from: " ++ show (unAlias $ _alias _cmdrLeaderId)
+      (True, False)  -> debug $ "Timeout is disabled but got a CMDR from: " ++ show (unAlias $ _alias _cmdrLeaderId)
       _              -> do
         setCurrentLeader (Just _cmdrLeaderId)
-        liftIO $ putStrLn $ "[CMDR] setting leader to " ++ show (unAlias $ _alias _cmdrLeaderId) ++ " sent from " ++ show (unAlias $ _alias $ _digNodeId $ _pDig $ _cmdrProvenance)
+        debug $ "[CMDR] setting leader to " ++ show (unAlias $ _alias _cmdrLeaderId) ++ " sent from " ++ show (unAlias $ _alias $ _digNodeId $ _pDig $ _cmdrProvenance)
         pendingRequests %= Map.delete _cmdrRequestId
         -- cmdStatusMap shared with the client, client can poll this map to await applied result
         liftIO (modifyMVar_ cmdStatusMap' (\(CommandMap rid m) -> return $ CommandMap rid (Map.insert _cmdrRequestId (CmdApplied _cmdrResult _cmdrLatency) m)))

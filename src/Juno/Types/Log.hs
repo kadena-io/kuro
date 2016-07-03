@@ -185,19 +185,26 @@ toReplicateLogEntries prevLogIndex les = do
             ++ ") should be -1 the head entry's ("
             ++ show minLogIdx
             ++ ")"
+  else if minLogIdx > maxLogIdx
+  then Left $ "Min"
+            ++ show prevLogIndex
+            ++ "> Max"
+            ++ show minLogIdx
+            ++ " where Length was "
+            ++ show (Seq.length les)
   else if fromIntegral (maxLogIdx - minLogIdx + 1) /= Seq.length les && maxLogIdx /= startIndex && minLogIdx /= startIndex
-       then Left $ "HeadLogIdx - TailLogIdx + 1 != length les: "
-                 ++ show maxLogIdx
-                 ++ " - "
-                 ++ show minLogIdx
-                 ++ " + 1 != "
-                 ++ show (Seq.length les)
-       else -- TODO: add a protection in here to check that Seq's LogIndexs are
-            -- strictly increasing by 1 from right to left
-            return $ ReplicateLogEntries { _rleMinLogIdx = minLogIdx
-                                   , _rleMaxLogIdx = maxLogIdx
-                                   , _rlePrvLogIdx = prevLogIndex
-                                   , _rleEntries   = les }
+  then Left $ "HeadLogIdx - TailLogIdx + 1 != length les: "
+            ++ show maxLogIdx
+            ++ " - "
+            ++ show minLogIdx
+            ++ " + 1 != "
+            ++ show (Seq.length les)
+  else -- TODO: add a protection in here to check that Seq's LogIndexs are
+    -- strictly increasing by 1 from right to left
+    return $ ReplicateLogEntries { _rleMinLogIdx = minLogIdx
+                                 , _rleMaxLogIdx = maxLogIdx
+                                 , _rlePrvLogIdx = prevLogIndex
+                                 , _rleEntries   = les }
 
 data LogState a = LogState
   { _logEntries       :: !(Log a)
@@ -268,7 +275,7 @@ instance LogApi (LogState LogEntry) where
   lastLogTerm' ls = maybe startTerm _leTerm $ lastEntry' ls
 
   getEntriesAfter pli ref = readIORef ref >>= return . getEntriesAfter' pli
-  getEntriesAfter' pli = Seq.take 8000 . Seq.drop (fromIntegral $ pli + 1) . viewLogSeq
+  getEntriesAfter' pli = Seq.take 5000 . Seq.drop (fromIntegral $ pli + 1) . viewLogSeq
 
   updateLogs (ULNew nle) ref = atomicModifyIORef' ref
                                  (\ls -> (appendLogEntry' nle ls, ()))

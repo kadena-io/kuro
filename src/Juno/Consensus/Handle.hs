@@ -33,7 +33,7 @@ handleEvents = forever $ do
     AERs alotOfAers    -> PureAppendEntriesResponse.handleAlotOfAers alotOfAers
     ElectionTimeout s  -> PureElectionTimeout.handle s
     HeartbeatTimeout s -> PureHeartbeatTimeout.handle s
-    Tock               -> return ()
+    Tock               -> debug "Tock"
 
 handleRPC :: RPC -> Raft ()
 handleRPC rpc = case rpc of

@@ -191,6 +191,8 @@ createRequestVoteResponse term' logIndex' myNodeId' target vote = do
 
 sendResults :: [(NodeId, CommandResponse)] -> Raft ()
 sendResults results = do
+  role' <- use nodeRole
+  when (role' /= Leader) $ mapM_ (debug . (++) "Follower responding to commands! : " . show) results
   !res <- return $! second CMDR' <$> results
   sendRPCs res
 
@@ -231,5 +233,11 @@ sendAerRvRvr rpc = do
   privKey <- viewConfig myPrivateKey
   pubKey <- viewConfig myPublicKey
   sRpc <- return $ rpcToSignedRPC myNodeId pubKey privKey rpc
-  debug $ "Issuing AeRvRvr msg: " ++ show (_digType $ _sigDigest sRpc)
+  debug $ "Broadcast only msg sent: "
+        ++ show (_digType $ _sigDigest sRpc)
+        ++ (case rpc of
+              AER' v -> " for " ++ show (_aerIndex v, _aerTerm v, _aerWasVerified v)
+              RV' v -> " for " ++ show (_rvTerm v, _rvLastLogIndex v)
+              RVR' v -> " for " ++ show (_rvrTerm v, _voteGranted v)
+              _ -> "")
   liftIO $! send $! aerRvRvrMsg $ encode $ sRpc

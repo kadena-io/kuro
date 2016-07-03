@@ -151,12 +151,8 @@ appendLogEntries pli newEs
           foldl (\m LogEntry{_leCommand = c@Command{..}} ->
                   Map.insert (_cmdClientId, getCmdSigOrInvariantError "appendLogEntries" c) Nothing m)
           Map.empty newEs
-        if pli /= _rleMaxLogIdx rle
-          then do
-            tell ["replicated LogEntry(s): " ++ (show $ _rleMinLogIdx rle) ++ " through " ++ (show $ _rleMaxLogIdx rle)]
-            return $ Commit replay rle
-          else
-            return $ Commit replay rle
+        tell ["replicated LogEntry(s): " ++ (show $ _rleMinLogIdx rle) ++ " through " ++ (show $ _rleMaxLogIdx rle)]
+        return $ Commit replay rle
 
 applyNewLeader :: CheckForNewLeaderOut -> JT.Raft ()
 applyNewLeader LeaderUnchanged = return ()
@@ -175,7 +171,9 @@ handle :: AppendEntries -> JT.Raft ()
 handle ae = do
   r <- ask
   s <- get
-  -- This `when` fixes a funky bug. If the leader receives an AE from itself it will reset its election timer (which can kill the leader)
+  -- This `when` fixes a funky bug. If the leader receives an AE from itself it will reset its election timer (which can kill the leader).
+  -- Ignoring this is safe because if we have an out of touch leader they will step down after 2x maxElectionTimeouts if it receives no valid AER
+  -- TODO: change this behavior to be if it hasn't heard from a quorum in 2x maxElectionTimeouts
   when (JT._nodeRole s /= Leader) $ do
     logAtAEsLastLogIdx <- accessLogs $ lookupEntry $ _prevLogIndex ae
     let ape = AppendEntriesEnv
@@ -189,7 +187,12 @@ handle ae = do
     unless (ci == _prevLogIndex ae && length l == 1) $ mapM_ debug l
     applyNewLeader _newLeaderAction
     case _result of
-      Ignore -> return ()
+      Ignore -> do
+        debug $ "Ignoring AE from "
+              ++ show (JT.unAlias $ _alias $ _digNodeId $ _pDig $ _aeProvenance ae )
+              ++ " for " ++ show (_prevLogIndex $ ae)
+              ++ " with " ++ show (Seq.length $ _aeEntries ae) ++ " entries."
+        return ()
       SendUnconvincedResponse{..} -> sendAppendEntriesResponse _responseLeaderId False False
       ValidLeaderAndTerm{..} -> do
         resetElectionTimer

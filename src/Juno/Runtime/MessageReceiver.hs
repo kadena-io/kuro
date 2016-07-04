@@ -62,20 +62,33 @@ generalTurbine = do
   forever $ liftIO $ do
     msgs <- gm 5
     (aes, noAes) <- return $ partition (\(_,SignedRPC{..}) -> if _digType _sigDigest == AE then True else False) (_unInboundGeneral <$> msgs)
+    prunedAes <- return $ pruneRedundantAEs aes
+    when (length aes - length prunedAes /= 0) $ debug $ "[GENERAL_TURBINE] pruned " ++ show (length aes - length prunedAes) ++ " redundant AE(s)"
     unless (null aes) $ do
       l <- return $ show (length aes)
       mapM_ (\(ts,msg) -> case signedRPCtoRPC (Just ts) ks msg of
         Left err -> debug err
         Right v -> do
           t' <- getCurrentTime
-          debug $ "[GENERAL_TURBINE] enqueued 1 of " ++ l ++ "AE(s) taking "
+          debug $ "[GENERAL_TURBINE] enqueued 1 of " ++ l ++ " AE(s) taking "
                 ++ show (view microseconds $ t' .-. (_unReceivedAt ts))
                 ++ "mics since it was received"
           enqueueEvent (ERPC v)
-            ) aes
+            ) prunedAes
     (invalid, validNoAes) <- return $ partitionEithers $ parallelVerify id ks noAes
     unless (null validNoAes) $ mapM_ (enqueueEvent . ERPC) validNoAes
     unless (null invalid) $ mapM_ debug invalid
+
+-- just a quick hack until we get better logic for sending AE's.
+-- The idea is that the leader may send us the same AE a few times and as they are an expensive operation we'd prefer to avoid redundant crypto
+-- TODO: figure out if there's a way for the leader to optimize traffic without risking elections
+pruneRedundantAEs :: [(ReceivedAt, SignedRPC)] -> [(ReceivedAt, SignedRPC)]
+pruneRedundantAEs m = go m Set.empty
+  where
+    getSig = _digSig . _sigDigest . snd
+    go [] _ = []
+    go [ae] s = if Set.member (getSig ae) s then [] else [ae]
+    go (ae:aes) s = if Set.member (getSig ae) s then go aes (Set.insert (getSig ae) s) else ae : go aes (Set.insert (getSig ae) s)
 
 cmdTurbine :: ReaderT ReceiverEnv IO ()
 cmdTurbine = do

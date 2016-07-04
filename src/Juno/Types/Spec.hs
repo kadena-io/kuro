@@ -27,7 +27,7 @@ module Juno.Types.Spec
 
 import Control.Concurrent (MVar, ThreadId, killThread, yield, forkIO, threadDelay, tryPutMVar, tryTakeMVar)
 import Control.Lens hiding (Index, (|>))
-import Control.Monad (when)
+import Control.Monad (when,void)
 import Control.Monad.IO.Class
 import Control.Monad.RWS.Strict (RWST)
 
@@ -178,15 +178,16 @@ mkRaftEnv conf' log' cSize qSize rSpec dispatch timerTarget' = RaftEnv
     , _sendAerRvRvrMessage = sendAerRvRvrMsg a'
     , _enqueue = writeComm ie' . InternalEvent
     , _enqueueMultiple = mapM_ (writeComm ie' . InternalEvent)
-    , _enqueueLater = \t e -> forkIO (do
-                                     -- We want to clear it the instance that we reset the timer.
-                                     -- Not doing this can cause a bug when there's an AE being processed when the thread fires, causing a needless election.
-                                     -- As there is a single producer for this mvar + the consumer is single threaded + fires this function this is safe.
-                                     _ <- tryTakeMVar timerTarget'
-                                     threadDelay t
-                                     b <- tryPutMVar timerTarget' e
-                                     when (not b) (putStrLn "Failed to update timer MVar")
-                                     ) -- TODO: what if it's already taken?
+    , _enqueueLater = \t e -> do
+        void $ tryTakeMVar timerTarget'
+        -- We want to clear it the instance that we reset the timer.
+        -- Not doing this can cause a bug when there's an AE being processed when the thread fires, causing a needless election.
+        -- As there is a single producer for this mvar + the consumer is single threaded + fires this function this is safe.
+        forkIO $ do
+          threadDelay t
+          b <- tryPutMVar timerTarget' e
+          when (not b) (putStrLn "Failed to update timer MVar")
+          -- TODO: what if it's already taken?
     , _killEnqueued = killThread
     , _dequeue = _unInternalEvent <$> readComm ie'
     }

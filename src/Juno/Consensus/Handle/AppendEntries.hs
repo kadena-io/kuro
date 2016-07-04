@@ -95,7 +95,11 @@ handleAppendEntries ae@AppendEntries{..} = do
             else sendAppendEntriesResponse _leaderId True True
           --}
     _ | not ignoreLeader' && _aeTerm >= currentTerm' -> do -- see TODO about setTerm
-      tell ["sending unconvinced response"]
+      tell ["sending unconvinced response for AE received from "
+           ++ show (JT.unAlias $ _alias $ _digNodeId $ _pDig $ _aeProvenance)
+           ++ " for " ++ show (_aeTerm, _prevLogIndex)
+           ++ " with " ++ show (Seq.length $ _aeEntries)
+           ++ " entries; my term is " ++ show currentTerm']
       return $ AppendEntriesOut nlo $ SendUnconvincedResponse _leaderId
     _ -> return $ AppendEntriesOut nlo Ignore
 

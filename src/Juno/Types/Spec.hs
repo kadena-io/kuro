@@ -17,7 +17,7 @@ module Juno.Types.Spec
   , sendMessage, sendMessages, sendAerRvRvrMessage
   , RaftState(..), nodeRole, term, votedFor, lazyVote, currentLeader, ignoreLeader
   , logEntries, commitIndex, commitProof, lastApplied, timerThread, replayMap
-  , cYesVotes, cPotentialVotes, lNextIndex, lMatchIndex, lConvinced
+  , cYesVotes, cPotentialVotes, lNextIndex, lConvinced
   , lastCommitTime, numTimeouts, pendingRequests, currentRequestId
   , timeSinceLastAER
   , initialRaftState
@@ -113,7 +113,6 @@ data RaftState = RaftState
   , _cYesVotes        :: Set RequestVoteResponse
   , _cPotentialVotes  :: Set NodeId
   , _lNextIndex       :: Map NodeId LogIndex
-  , _lMatchIndex      :: Map NodeId LogIndex
   , _lConvinced       :: Set NodeId
   -- used for metrics
   , _lastCommitTime   :: Maybe UTCTime
@@ -140,7 +139,6 @@ initialRaftState timerTarget' = RaftState
   Set.empty  -- cYesVotes
   Set.empty  -- cPotentialVotes
   Map.empty  -- lNextIndex
-  Map.empty  -- lMatchIndex
   Set.empty  -- lConvinced
   Nothing    -- lastCommitTime
   Map.empty  -- pendingRequests

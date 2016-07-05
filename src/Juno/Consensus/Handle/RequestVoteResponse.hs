@@ -100,7 +100,6 @@ becomeLeader = do
   setCurrentLeader . Just =<< JT.viewConfig JT.nodeId
   ni <- accessLogs $ JT.entryCount
   setLNextIndex =<< Map.fromSet (const $ LogIndex ni) <$> JT.viewConfig JT.otherNodes
-  (JT.lMatchIndex .=) =<< Map.fromSet (const startIndex) <$> JT.viewConfig JT.otherNodes
   JT.lConvinced .= Set.empty
   _ <-  sendAllAppendEntries SendAERegardless
   resetHeartbeatTimer

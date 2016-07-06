@@ -1,3 +1,4 @@
+{-# LANGUAGE ImpredicativeTypes #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TupleSections #-}
@@ -67,12 +68,12 @@ serviceRequests = do
       BroadcastRVR{..} -> sendRequestVoteResponse _srCandidate _srLastLogIndex _srVote
       SendCommandResults{..} -> sendResults _srResults
       ForwardCommandToLeader{..} -> mapM_ (sendRPC _srFor . CMD') _srCommands
-      UpdateState' (UpdateState su) -> updateState su
+      UpdateState' su -> updateState su
 
-updateState :: forall a b . [(ASetter SenderServiceState SenderServiceState a b, b)] -> SenderService ()
+updateState :: [UpdateState] -> SenderService ()
 updateState [] = return ()
-updateState [(l,b)] = assign l b
-updateState ((l,b):xs) = do
+updateState [(Updates (l,b))] = assign l b
+updateState ((Updates (l,b)):xs) = do
   assign l b
   updateState xs
 

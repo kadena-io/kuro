@@ -1,3 +1,4 @@
+{-# LANGUAGE ImpredicativeTypes #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE BangPatterns #-}
@@ -14,7 +15,7 @@
 module Juno.Types.Sender
   ( SenderServiceChannel(..)
   , ServiceRequest(..)
-  , UpdateState(..)
+  , Update(..)
   , AEBroadcastControl(..)
   , SenderService
   , SenderServiceState(..), myNodeId, currentLeader, currentTerm, myPublicKey
@@ -32,6 +33,7 @@ import qualified Control.Concurrent.Chan.Unagi.NoBlocking as NoBlock
 import Data.Map (Map)
 import Data.Set (Set)
 import Data.IORef
+
 
 import Juno.Types.Log
 import Juno.Types.Base
@@ -80,17 +82,17 @@ data ServiceRequest =
     ForwardCommandToLeader
     { _srFor :: !NodeId
     , _srCommands :: [Command]} |
-    UpdateState' UpdateState
+    UpdateState [Update]
     deriving (Eq, Show)
 
-newtype UpdateState = UpdateState
-  { _updates :: forall a b . [(ASetter SenderServiceState SenderServiceState a b, b)]}
+data Update where
+  Update :: forall a . Lens' SenderServiceState a -> a -> Update
 
-instance Eq UpdateState where
+instance Eq Update where
   (==) _ _ = False
 
-instance Show UpdateState where
-  show (UpdateState _) = "<state updates>"
+instance Show Update where
+  show (Update _ _) = "<state updates>"
 
 data SenderServiceState = SenderServiceState
   { _myNodeId :: !NodeId

@@ -4,7 +4,8 @@
 {-# LANGUAGE RecordWildCards #-}
 
 module Juno.Consensus.Handle.AppendEntries
-  (handle)
+  (handle
+  ,createAppendEntriesResponse)
 where
 
 import Control.Lens hiding (Index)
@@ -20,7 +21,8 @@ import qualified Data.Set as Set
 
 import Juno.Consensus.Handle.Types
 import Juno.Consensus.Handle.AppendEntriesResponse (updateCommitProofMap)
-import Juno.Runtime.Sender (sendAllAppendEntriesResponse, sendAppendEntriesResponse, createAppendEntriesResponse)
+import qualified Juno.Types.Sender as Sender
+import Juno.Runtime.Sender (createAppendEntriesResponse')
 import Juno.Runtime.Timer (resetElectionTimer)
 import Juno.Util.Util
 import qualified Juno.Types as JT
@@ -197,19 +199,30 @@ handle ae = do
               ++ " for " ++ show (_prevLogIndex $ ae)
               ++ " with " ++ show (Seq.length $ _aeEntries ae) ++ " entries."
         return ()
-      SendUnconvincedResponse{..} -> sendAppendEntriesResponse _responseLeaderId False False
+      SendUnconvincedResponse{..} -> enqueueRequest $ Sender.SingleAER _responseLeaderId False False
       ValidLeaderAndTerm{..} -> do
         JT.lazyVote .= Nothing
         case _validReponse of
-          SendFailureResponse -> sendAppendEntriesResponse _responseLeaderId False True
+          SendFailureResponse -> enqueueRequest $ Sender.SingleAER _responseLeaderId False True
           (Commit rMap rle) -> do
             accessLogs $ updateLogs $ ULReplicate rle
             logHashChange
             JT.replayMap %= Map.union rMap
             myEvidence <- createAppendEntriesResponse True True
             JT.commitProof %= updateCommitProofMap myEvidence
-            sendAllAppendEntriesResponse
-          DoNothing -> sendAllAppendEntriesResponse
+            -- TODO: we can be smarter here and fill in the details the AER needs about the logs without needing to hit that thread
+            enqueueRequest Sender.BroadcastAER
+          DoNothing -> enqueueRequest Sender.BroadcastAER
         -- This NEEDS to be last, otherwise we can have an election fire when we are are transmitting proof/accessing the logs
         -- It's rare but under load and given enough time, this will happen.
         resetElectionTimer
+
+createAppendEntriesResponse :: Bool -> Bool -> JT.Raft AppendEntriesResponse
+createAppendEntriesResponse success convinced = do
+  ct <- use JT.term
+  myNodeId' <- JT.viewConfig JT.nodeId
+  es <- getLogState
+  case createAppendEntriesResponse' success convinced ct myNodeId'
+           (maxIndex' es) (lastLogHash' es) of
+    AER' aer -> return aer
+    _ -> error "deep invariant error: crtl-f for createAppendEntriesResponse"

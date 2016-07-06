@@ -12,35 +12,37 @@
 
 module Juno.Types.Comms
   ( Comms(..)
-  , Dispatch(..), initDispatch
   , InboundAER(..)
   , InboundAERChannel(..)
-  , inboundAER
   , InboundCMD(..)
-  , inboundCMD
   , InboundRVorRVR(..)
   , InboundCMDChannel(..)
-  , inboundRVorRVR
   , InboundRVorRVRChannel(..)
   , InboundGeneral(..)
   , InboundGeneralChannel(..)
-  , inboundGeneral
   , OutboundGeneral(..)
   , OutboundGeneralChannel(..)
-  , outboundGeneral, broadcastMsg, directMsg
+  , broadcastMsg, directMsg
   , OutboundAerRvRvr(..)
   , OutboundAerRvRvrChannel(..)
-  , outboundAerRvRvr, aerRvRvrMsg
+  , aerRvRvrMsg
   , InternalEvent(..)
   , InternalEventChannel(..)
-  , internalEvent
-  , pprintTock
-  , createTock
-  , foreverTick
-  , foreverTickDebugWriteDelay
+  -- for construction of chans elsewhere
+  , initCommsBounded
+  , initCommsNoBlock
+  , initCommsUnagi
+  , readCommBounded
+  , readCommNoBlock
+  , readCommUnagi
+  , readCommsBounded
+  , readCommsNoBlock
+  , readCommsUnagi
+  , writeCommBounded
+  , writeCommNoBlock
+  , writeCommUnagi
   ) where
 
-import Control.Lens
 import Control.Monad
 import Control.Concurrent (threadDelay, takeMVar, putMVar, newMVar, MVar)
 import Data.ByteString (ByteString)
@@ -50,43 +52,11 @@ import qualified Control.Concurrent.Chan.Unagi as Unagi
 import qualified Control.Concurrent.Chan.Unagi.NoBlocking as NoBlock
 
 import Data.Typeable
-import Data.AffineSpace ((.-.))
-import Data.Thyme.Clock (UTCTime, microseconds, getCurrentTime)
 
 import Juno.Types.Base
 import Juno.Types.Event
 import Juno.Types.Message.Signed
 import Juno.Types.Message
-
-
--- Tocks are useful for seeing how backed up things are
-pprintTock :: Tock -> String -> IO String
-pprintTock Tock{..} channelName = do
-  t' <- getCurrentTime
-  (delay :: Int) <- return $! (fromIntegral $ view microseconds $ t' .-. _tockStartTime)
-  return $! "[" ++ channelName ++ "] Tock delayed by " ++ show delay ++ "mics"
-
-createTock :: Int -> IO Tock
-createTock delay = Tock <$> pure delay <*> getCurrentTime
-
-fireTick :: (Comms a b) => b -> Int -> (Tock -> a) -> IO UTCTime
-fireTick comm delay mkTock = do
-  !t@(Tock _ st) <- createTock delay
-  writeComm comm $ mkTock t
-  return st
-
-foreverTick :: Comms a b => b -> Int -> (Tock -> a) -> IO ()
-foreverTick comm delay mkTock = forever $ do
-  _ <- fireTick comm delay mkTock
-  threadDelay delay
-
-foreverTickDebugWriteDelay :: Comms a b => (String -> IO ()) -> String -> b -> Int -> (Tock -> a) -> IO ()
-foreverTickDebugWriteDelay debug' channel comm delay mkTock = forever $ do
-  !st <- fireTick comm delay mkTock
-  !t' <- getCurrentTime
-  !(writeDelay :: Int) <- return $! (fromIntegral $ view microseconds $ t' .-. st)
-  debug' $ "[" ++ channel ++ "] writing Tock to channel took " ++ show writeDelay ++ "mics"
-  threadDelay delay
 
 newtype InboundAER = InboundAER { _unInboundAER :: (ReceivedAt, SignedRPC)}
   deriving (Show, Eq, Typeable)
@@ -180,27 +150,6 @@ instance Comms InternalEvent InternalEventChannel where
   readComm (InternalEventChannel (_,o)) = readCommBounded o
   readComms (InternalEventChannel (_,o)) = readCommsBounded o
   writeComm (InternalEventChannel (i,_)) = writeCommBounded i
-
-data Dispatch = Dispatch
-  { _inboundAER      :: InboundAERChannel
-  , _inboundCMD      :: InboundCMDChannel
-  , _inboundRVorRVR  :: InboundRVorRVRChannel
-  , _inboundGeneral  :: InboundGeneralChannel
-  , _outboundGeneral :: OutboundGeneralChannel
-  , _outboundAerRvRvr :: OutboundAerRvRvrChannel
-  , _internalEvent   :: InternalEventChannel
-  } deriving (Typeable)
-
-
-initDispatch :: IO Dispatch
-initDispatch = Dispatch
-  <$> initComms
-  <*> initComms
-  <*> initComms
-  <*> initComms
-  <*> initComms
-  <*> initComms
-  <*> initComms
 
 -- Implementations for each type of chan that we use
 initCommsBounded :: IO (Bounded.InChan a, MVar (Maybe a1, Bounded.OutChan a))
@@ -345,5 +294,3 @@ readStream m strm cnt'
       case s of
         NoBlock.Next a strm' -> liftM (a:) (readStream m strm' (cnt'-1))
         NoBlock.Pending -> putMVar m strm >> return []
-
-makeLenses ''Dispatch

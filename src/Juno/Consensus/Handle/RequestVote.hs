@@ -12,8 +12,8 @@ import Control.Monad.Reader
 import Control.Monad.Writer.Strict
 import Control.Monad.State (get)
 
-import Juno.Util.Util (debug, getLogState)
-import Juno.Runtime.Sender (sendAerRvRvr,createRequestVoteResponse)
+import Juno.Util.Util (debug, getLogState, enqueueRequest)
+import qualified Juno.Types.Sender as Sender
 import qualified Juno.Types as JT
 
 import Juno.Consensus.Handle.Types
@@ -26,14 +26,14 @@ data RequestVoteEnv = RequestVoteEnv {
   , _currentLeader    :: Maybe NodeId
   , _ignoreLeader     :: Bool
   , _logEntries       :: LogState LogEntry
--- New Constructors
-  , _myNodeId :: NodeId
   }
 makeLenses ''RequestVoteEnv
 
 data RequestVoteOut = NoAction
                     | UpdateLazyVote { _stateCastLazyVote :: (Term, NodeId, LogIndex) }
-                    | VoteForRPCSender { _returnMsgs :: (NodeId, RequestVoteResponse) }
+                    | ReplyToRPCSender { _targetNode :: NodeId
+                                       , _lastLogIndex :: LogIndex
+                                       , _vote :: Bool }
 
 handleRequestVote :: (MonadWriter [String] m, MonadReader RequestVoteEnv m) => RequestVote -> m RequestVoteOut
 handleRequestVote RequestVote{..} = do
@@ -53,25 +53,21 @@ handleRequestVote RequestVote{..} = do
     _      | _rvTerm < term' -> do
       -- this is an old candidate
       tell ["this is for an old term"]
-      m <- createRequestVoteResponse' _rvCandidateId lli False
-      return $ VoteForRPCSender m
+      return $ ReplyToRPCSender _rvCandidateId lli False
 
     Just c | c == _rvCandidateId && _rvTerm == term' -> do
       -- already voted for this candidate in this term
       tell ["already voted for this candidate"]
-      m <- createRequestVoteResponse' _rvCandidateId lli True
-      return $ VoteForRPCSender m
+      return $ ReplyToRPCSender _rvCandidateId lli True
 
     Just _ | _rvTerm == term' -> do
       -- already voted for a different candidate in this term
       tell ["already voted for a different candidate"]
-      m <- createRequestVoteResponse' _rvCandidateId lli False
-      return $ VoteForRPCSender m
+      return $ ReplyToRPCSender _rvCandidateId lli False
 
     _ | _rvLastLogIndex < lli -> do
       tell ["Candidate has an out of date log, so vote no immediately"]
-      m <- createRequestVoteResponse' _rvCandidateId lli False
-      return $ VoteForRPCSender m
+      return $ ReplyToRPCSender _rvCandidateId lli False
 
     _ | (_rvLastLogTerm, _rvLastLogIndex) >= (llt, lli) -> do
       lv <- view lazyVote
@@ -87,19 +83,17 @@ handleRequestVote RequestVote{..} = do
           return $ UpdateLazyVote (_rvTerm, _rvCandidateId, lli)
     _ -> do
       tell ["haven't voted, but my log is better than this candidate's"]
-      m <- createRequestVoteResponse' _rvCandidateId lli False
-      return $ VoteForRPCSender m
+      return $ ReplyToRPCSender _rvCandidateId lli False
 
-createRequestVoteResponse' :: (MonadWriter [String] m, MonadReader RequestVoteEnv m) => NodeId -> LogIndex -> Bool -> m (NodeId, RequestVoteResponse)
-createRequestVoteResponse' target lastLogIndex' vote = do
-  term' <- view term
-  myNodeId' <- view myNodeId
-  (target,) <$> createRequestVoteResponse term' lastLogIndex' myNodeId' target vote
+--createRequestVoteResponse' :: (MonadWriter [String] m, MonadReader RequestVoteEnv m) => NodeId -> LogIndex -> Bool -> m (NodeId, RequestVoteResponse)
+--createRequestVoteResponse' target lastLogIndex' vote = do
+--  term' <- view term
+--  myNodeId' <- view myNodeId
+--  (target,) <$> createRequestVoteResponse term' lastLogIndex' myNodeId' target vote
 
 
 handle :: RequestVote -> JT.Raft ()
 handle rv = do
-  r <- JT.readConfig
   s <- get
   ls <- getLogState
   let rve = RequestVoteEnv
@@ -109,10 +103,9 @@ handle rv = do
               (JT._currentLeader s)
               (JT._ignoreLeader s)
               (ls)
-              (JT._nodeId r)
   (rvo, l) <- runReaderT (runWriterT (handleRequestVote rv)) rve
   mapM_ debug l
   case rvo of
     NoAction -> return ()
     UpdateLazyVote stateUpdate -> JT.lazyVote .= Just stateUpdate
-    VoteForRPCSender (_targetNode, rpc) -> sendAerRvRvr $ JT.RVR' rpc
+    ReplyToRPCSender{..} -> enqueueRequest $ Sender.BroadcastRVR _targetNode _lastLogIndex _vote

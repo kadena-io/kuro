@@ -14,7 +14,7 @@ module Juno.Types.Spec
   , dequeueFromApi ,cmdStatusMap, updateCmdMap
   , RaftEnv(..), cfg, logThread, clusterSize, quorumSize, rs
   , enqueue, enqueueMultiple, dequeue, enqueueLater, killEnqueued
-  , sendMessage, sendMessages, sendAerRvRvrMessage
+  , sendMessage
   , RaftState(..), nodeRole, term, votedFor, lazyVote, currentLeader, ignoreLeader
   , logEntries, commitIndex, commitProof, lastApplied, timerThread, replayMap
   , cYesVotes, cPotentialVotes, lNextIndex, lConvinced
@@ -48,6 +48,8 @@ import Juno.Types.Log
 import Juno.Types.Message
 import Juno.Types.Metric
 import Juno.Types.Comms
+import Juno.Types.Dispatch
+import Juno.Types.Sender (SenderServiceChannel, ServiceRequest)
 
 -- | A structure containing all the implementation details for running
 -- the raft protocol.
@@ -153,9 +155,7 @@ data RaftEnv = RaftEnv
   , _clusterSize      :: Int
   , _quorumSize       :: Int
   , _rs               :: RaftSpec
-  , _sendMessage      :: OutboundGeneral -> IO ()
-  , _sendMessages     :: [OutboundGeneral] -> IO ()
-  , _sendAerRvRvrMessage :: OutboundAerRvRvr -> IO ()
+  , _sendMessage      :: ServiceRequest -> IO ()
   , _enqueue          :: Event -> IO ()
   , _enqueueMultiple  :: [Event] -> IO ()
   , _enqueueLater     :: Int -> Event -> IO ThreadId
@@ -172,8 +172,6 @@ mkRaftEnv conf' log' cSize qSize rSpec dispatch timerTarget' = RaftEnv
     , _quorumSize = qSize
     , _rs = rSpec
     , _sendMessage = sendMsg g'
-    , _sendMessages = sendMsgs g'
-    , _sendAerRvRvrMessage = sendAerRvRvrMsg a'
     , _enqueue = writeComm ie' . InternalEvent
     , _enqueueMultiple = mapM_ (writeComm ie' . InternalEvent)
     , _enqueueLater = \t e -> do
@@ -190,22 +188,11 @@ mkRaftEnv conf' log' cSize qSize rSpec dispatch timerTarget' = RaftEnv
     , _dequeue = _unInternalEvent <$> readComm ie'
     }
   where
-    g' = dispatch ^. outboundGeneral
-    a' = dispatch ^. outboundAerRvRvr
+    g' = dispatch ^. senderService
     ie' = dispatch ^. internalEvent
 
-sendMsgs :: OutboundGeneralChannel -> [OutboundGeneral] -> IO ()
-sendMsgs outboxWrite ogs = do
-  mapM_ (writeComm outboxWrite) ogs
-  yield
-
-sendMsg :: OutboundGeneralChannel -> OutboundGeneral -> IO ()
+sendMsg :: SenderServiceChannel -> ServiceRequest -> IO ()
 sendMsg outboxWrite og = do
-  writeComm outboxWrite og
-  yield
-
-sendAerRvRvrMsg :: OutboundAerRvRvrChannel -> OutboundAerRvRvr -> IO ()
-sendAerRvRvrMsg outboxWrite og = do
   writeComm outboxWrite og
   yield
 

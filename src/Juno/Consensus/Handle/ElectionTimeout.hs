@@ -1,4 +1,5 @@
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TemplateHaskell #-}
 
@@ -11,10 +12,11 @@ import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer
 
+import Data.Set (Set)
 import qualified Data.Set as Set
 
 import Juno.Consensus.Handle.Types
-import Juno.Runtime.Sender (createRequestVoteResponse,sendAerRvRvr)
+import qualified Juno.Types.Sender as Sender
 import Juno.Runtime.Timer (resetElectionTimer, hasElectionTimerLeaderFired)
 import Juno.Types.Log hiding (logEntries)
 import Juno.Util.Combinator ((^$))
@@ -38,21 +40,24 @@ makeLenses ''ElectionTimeoutEnv
 data ElectionTimeoutOut =
     AlreadyLeader |
     VoteForLazyCandidate {
-      _lazyTerm :: Term
+      _newTerm :: Term
     , _lazyCandidate :: NodeId
-    , _lazyResponse :: RequestVoteResponse
+    , _lastLogIndex :: LogIndex
+    , _myLazyVote :: Bool
     } |
     AbdicateAndLazyVote {
-      _lazyTerm :: Term
+      _newTerm :: Term
     , _lazyCandidate :: NodeId
-    , _lazyResponse :: RequestVoteResponse
+    , _lastLogIndex :: LogIndex
+    , _myLazyVote :: Bool
     } |
     BecomeCandidate {
       _newTerm :: Term
     , _newRole :: Role
     , _myNodeId :: NodeId -- just to be explicit, obviously it's us
-    , _selfYesVote :: RequestVoteResponse
+    , _lastLogIndex :: LogIndex
     , _potentialVotes :: Set.Set NodeId
+    , _yesVotes :: Set RequestVoteResponse
     }
 
 handleElectionTimeout :: (MonadReader ElectionTimeoutEnv m, MonadWriter [String] m) => String -> m ElectionTimeoutOut
@@ -66,8 +71,7 @@ handleElectionTimeout s = do
     case lv of
       Just (lazyTerm, lazyCandidate, lastLogIndex') -> do
         me <- view nodeId
-        lazyResp <- createRequestVoteResponse lazyTerm lastLogIndex' me lazyCandidate True
-        return $ VoteForLazyCandidate lazyTerm lazyCandidate lazyResp
+        return $ VoteForLazyCandidate lazyTerm lazyCandidate lastLogIndex' True
       Nothing -> becomeCandidate
   else if r == Leader && leaderWithoutFollowers'
        then do
@@ -75,8 +79,7 @@ handleElectionTimeout s = do
             case lv of
               Just (lazyTerm, lazyCandidate, lastLogIndex') -> do
                 me <- view nodeId
-                lazyResp <- createRequestVoteResponse lazyTerm lastLogIndex' me lazyCandidate True
-                return $ AbdicateAndLazyVote lazyTerm lazyCandidate lazyResp
+                return $ AbdicateAndLazyVote lazyTerm lazyCandidate lastLogIndex' True
               Nothing -> becomeCandidate
        else return AlreadyLeader
 
@@ -87,11 +90,16 @@ becomeCandidate = do
   newTerm <- (+1) <$> view term
   me <- view nodeId
   es <- view logEntries
-  selfVote <- createRequestVoteResponse newTerm (maxIndex' es) me me True
+  selfVote <- return $ createRequestVoteResponse me me newTerm (maxIndex' es) True
   provenance <- selfVoteProvenance selfVote
   potentials <- view otherNodes
-  return $ BecomeCandidate newTerm Candidate me
-             (selfVote {_rvrProvenance = provenance}) potentials
+  return $ BecomeCandidate
+    { _newTerm = newTerm
+    , _newRole = Candidate
+    , _myNodeId = me
+    , _lastLogIndex = maxIndex' es
+    , _potentialVotes = potentials
+    , _yesVotes = Set.singleton (selfVote {_rvrProvenance = provenance})}
 
 -- we need to actually sign this one now, or else we'll end up signing it every time we transmit it as evidence (i.e. every AE)
 selfVoteProvenance :: (MonadReader ElectionTimeoutEnv m, MonadWriter [String] m) => RequestVoteResponse -> m Provenance
@@ -123,25 +131,35 @@ handle msg = do
   case out of
     AlreadyLeader -> return ()
     -- this is for handling the leader w/o followers case only
-    AbdicateAndLazyVote {..} -> setRole Follower >> castLazyVote _lazyTerm _lazyCandidate _lazyResponse
-    VoteForLazyCandidate {..} -> castLazyVote _lazyTerm _lazyCandidate _lazyResponse
+    AbdicateAndLazyVote {..} -> do
+      setRole Follower
+      enqueueRequest $ Sender.UpdateState' $ Sender.UpdateState
+        [(Sender.nodeRole, Follower)]
+      castLazyVote _newTerm _lazyCandidate _lastLogIndex
+    VoteForLazyCandidate {..} -> castLazyVote _newTerm _lazyCandidate _lastLogIndex
     BecomeCandidate {..} -> do
                setRole _newRole
                setTerm _newTerm
                setVotedFor (Just _myNodeId)
-               JT.cYesVotes .= Set.singleton _selfYesVote
+               selfYesVote <- return $ createRequestVoteResponse _myNodeId _myNodeId _newTerm _lastLogIndex True
+               JT.cYesVotes .= Set.singleton selfYesVote
                JT.cPotentialVotes.= _potentialVotes
+               enqueueRequest $ Sender.UpdateState' $ Sender.UpdateState
+                 [ (Sender.nodeRole, _newRole)
+                 , (Sender.currentTerm, _newTerm)
+                 , (Sender.yesVotes, Set.singleton selfYesVote)
+                 ]
+               enqueueRequest $ Sender.BroadcastRV
                resetElectionTimer
-               sendAllRequestVotes
 
-castLazyVote :: Term -> NodeId -> RequestVoteResponse -> JT.Raft ()
-castLazyVote lazyTerm' lazyCandidate' lazyResponse' = do
+castLazyVote :: Term -> NodeId -> LogIndex -> JT.Raft ()
+castLazyVote lazyTerm' lazyCandidate' lazyLastLogIndex' = do
   setTerm lazyTerm'
   setVotedFor (Just lazyCandidate')
   JT.lazyVote .= Nothing
   JT.ignoreLeader .= False
   setCurrentLeader Nothing
-  sendAerRvRvr (RVR' lazyResponse')
+  enqueueRequest $ Sender.BroadcastRVR lazyCandidate' lazyLastLogIndex' True
   -- TODO: we need to verify that this is correct. It seems that a RVR (so a vote) is sent every time an election timeout fires.
   -- However, should that be the case? I think so, as you shouldn't vote for multiple people in the same election. Still though...
   resetElectionTimer
@@ -152,11 +170,6 @@ setVotedFor mvote = do
   void $ JT.rs.JT.writeVotedFor ^$ mvote
   JT.votedFor .= mvote
 
--- uses state, but does not update
-sendAllRequestVotes :: JT.Raft ()
-sendAllRequestVotes = do
-  ct <- use JT.term
-  nid <- JT.viewConfig JT.nodeId
-  ls <- getLogState
-  debug $ "sendRequestVote: " ++ show ct
-  sendAerRvRvr $ RV' $ RequestVote ct nid (maxIndex' ls) (lastLogTerm' ls) NewMsg
+createRequestVoteResponse :: NodeId -> NodeId -> Term -> LogIndex -> Bool -> RequestVoteResponse
+createRequestVoteResponse me' target' term' logIndex' vote =
+  RequestVoteResponse term' logIndex' me' vote target' NewMsg

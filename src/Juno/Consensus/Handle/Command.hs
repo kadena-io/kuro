@@ -15,9 +15,10 @@ import qualified Data.Map as Map
 import Data.Maybe (isNothing, isJust, fromJust)
 
 import Juno.Consensus.Commit (makeCommandResponse')
+import Juno.Consensus.Handle.AppendEntries (createAppendEntriesResponse)
 import Juno.Consensus.Handle.Types
-import Juno.Runtime.Sender (sendRPC, sendAerRvRvr, createAppendEntriesResponse, sendAllAppendEntries, AEBroadcastControl(..))
-import Juno.Util.Util (getCmdSigOrInvariantError, accessLogs)
+import qualified Juno.Types.Sender as Sender
+import Juno.Util.Util (getCmdSigOrInvariantError, accessLogs, enqueueRequest)
 import qualified Juno.Types as JT
 
 import Juno.Consensus.Handle.AppendEntriesResponse (updateCommitProofMap)
@@ -33,9 +34,7 @@ makeLenses ''CommandEnv
 
 data CommandOut =
     UnknownLeader |
-    RetransmitToLeader {
-      _leaderId :: NodeId
-    , _cmd :: RPC } |
+    RetransmitToLeader { _leaderId :: NodeId } |
     CommitAndPropagate {
       _newEntry :: NewLogEntries
     , _replayKey :: (NodeId, Signature)
@@ -43,12 +42,12 @@ data CommandOut =
     AlreadySeen |
     SendCommandResponse {
       _clientId :: NodeId
-    , _signedReponse :: RPC
+    , _commandReponse :: CommandResponse
     }
 
 data BatchProcessing = BatchProcessing
   { newEntries :: ![Command]
-  , serviceAlreadySeen :: ![(NodeId, RPC)]
+  , serviceAlreadySeen :: ![(NodeId, CommandResponse)]
   , updatedReplays :: (Map.Map (NodeId, Signature) (Maybe CommandResult))
   } deriving (Show, Eq)
 
@@ -70,7 +69,7 @@ handleCommand cmd@Command{..} = do
   case (Map.lookup (_cmdClientId, cmdSig) replays, r, mlid) of
     (Just (Just result), _, _) -> do
       cmdr <- return $ makeCommandResponse' nid mlid cmd result
-      return . SendCommandResponse _cmdClientId . CMDR' $ cmdr 1
+      return . SendCommandResponse _cmdClientId $ cmdr 1
       -- we have already committed this request, so send the result to the client
     (Just Nothing, _, _) ->
       -- we have already seen this request, but have not yet committed it
@@ -83,7 +82,7 @@ handleCommand cmd@Command{..} = do
     (_, _, Just lid) ->
       -- we're not the leader, but we know who the leader is, so forward this
       -- command (don't sign it ourselves, as it comes from the client)
-      return $ RetransmitToLeader lid (CMD' cmd)
+      return $ RetransmitToLeader lid
     (_, _, Nothing) ->
       -- we're not the leader, and we don't know who the leader is, so can't do
       -- anything
@@ -97,7 +96,7 @@ filterBatch nid mlid replays cs = go cs (BatchProcessing [] [] replays)
     go [] bp = bp { newEntries = reverse $ newEntries bp }
     go (cmd@Command{..}:cmds) bp = case (Map.lookup (_cmdClientId, cmdSig cmd) replays) of
       Just (Just result) -> go cmds bp {
-        serviceAlreadySeen = (_cmdClientId, CMDR' $ makeCommandResponse' nid mlid cmd result 1) : (serviceAlreadySeen bp) }
+        serviceAlreadySeen = (_cmdClientId, makeCommandResponse' nid mlid cmd result 1) : (serviceAlreadySeen bp) }
       -- We drop the command if the message is pending application or we don't know who to forward to
       Just Nothing       -> go cmds bp
       _ | isNothing mlid -> go cmds bp
@@ -129,15 +128,17 @@ handleSingleCommand cmd = do
   case out of
     UnknownLeader -> return () -- TODO: we should probably respond with something like "availability event"
     AlreadySeen -> return () -- TODO: we should probably respond with something like "transaction still pending"
-    (RetransmitToLeader lid rpc) -> sendRPC lid rpc
-    (SendCommandResponse cid rpc) -> sendRPC cid rpc
+    (RetransmitToLeader lid) -> enqueueRequest $ Sender.ForwardCommandToLeader lid [cmd]
+    (SendCommandResponse cid res) -> enqueueRequest $ Sender.SendCommandResults [(cid,res)]
     (CommitAndPropagate newEntry replayKey) -> do
       accessLogs $ JT.updateLogs $ ULNew newEntry
       JT.replayMap %= Map.insert replayKey Nothing
       myEvidence <- createAppendEntriesResponse True True
       JT.commitProof %= updateCommitProofMap myEvidence
-      wasSent <- sendAllAppendEntries OnlySendIfFollowersAreInSync
-      when wasSent $ sendAerRvRvr $ AER' myEvidence
+      lNextIndex' <- use JT.lNextIndex
+      lConvinced' <- use JT.lConvinced
+      enqueueRequest $ Sender.BroadcastAE Sender.OnlySendIfFollowersAreInSync lNextIndex' lConvinced'
+      enqueueRequest $ Sender.BroadcastAER
 
 handle :: Command -> JT.Raft ()
 handle cmd = handleSingleCommand cmd
@@ -160,10 +161,13 @@ handleBatch cmdb@CommandBatch{..} = do
       JT.replayMap .= updatedReplays
       myEvidence <- createAppendEntriesResponse True True
       JT.commitProof %= updateCommitProofMap myEvidence
-      wasSent <- sendAllAppendEntries OnlySendIfFollowersAreInSync
-      when wasSent $ sendAerRvRvr $ AER' myEvidence
-      mapM_ (uncurry sendRPC) serviceAlreadySeen
+      lNextIndex' <- use JT.lNextIndex
+      lConvinced' <- use JT.lConvinced
+      unless (null newEntries) $ do
+        enqueueRequest $ Sender.BroadcastAE Sender.OnlySendIfFollowersAreInSync lNextIndex' lConvinced'
+        enqueueRequest $ Sender.BroadcastAER
+      unless (null serviceAlreadySeen) $ enqueueRequest $ Sender.SendCommandResults serviceAlreadySeen
     IAmFollower BatchProcessing{..} -> do
-      when (isJust lid) $ mapM_ (sendRPC (fromJust lid) . CMD') newEntries
-      mapM_ (uncurry sendRPC) serviceAlreadySeen
+      when (isJust lid) $ enqueueRequest $ Sender.ForwardCommandToLeader (fromJust lid) newEntries
+      unless (null serviceAlreadySeen) $ enqueueRequest $ Sender.SendCommandResults serviceAlreadySeen
     IAmCandidate -> return () -- TODO: we should probably respond with something like "availability event"

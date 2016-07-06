@@ -23,7 +23,7 @@ import Data.Foldable (toList)
 
 import Juno.Types hiding (valid)
 import Juno.Util.Util
-import Juno.Runtime.Sender (sendResults)
+import qualified Juno.Types.Sender as Sender
 
 -- THREAD: SERVER MAIN.
 doCommit :: Raft ()
@@ -49,7 +49,7 @@ applyLogEntries = do
         then if r == Leader
             then do
               debug $ "Applied and Responded to " ++ show (length results) ++ " CMD(s)"
-              sendResults $! toList results
+              enqueueRequest $! Sender.SendCommandResults $! toList results
             else debug $ "Applied " ++ show (length results) ++ " CMD(s)"
         else debug "Applied log entries but did not send results?"
 
@@ -135,7 +135,10 @@ logCommitChange before after
 updateCommitIndex' :: Raft Bool
 updateCommitIndex' = do
   proof <- use commitProof
-  qsize <- view quorumSize
+  -- We don't need a quorum of AER's, but quorum-1 because we check against our own logs (thus assumes +1 at the start)
+  -- TODO: test this idea out
+  --qsize <- view quorumSize >>= \n -> return $ n - 1
+  qsize <- view quorumSize >>= \n -> return $ n - 1
 
   ls <- getLogState
   ci <- return $ ls ^. commitIndex

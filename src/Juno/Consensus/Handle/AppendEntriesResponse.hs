@@ -24,9 +24,9 @@ import qualified Data.Map.Strict as Map
 
 import Juno.Consensus.Commit (doCommit)
 import Juno.Consensus.Handle.Types
-import Juno.Runtime.Sender (sendAppendEntries)
+import qualified Juno.Types.Sender as Sender
 import Juno.Runtime.Timer (resetElectionTimerLeader)
-import Juno.Util.Util (debug, updateLNextIndex, accessLogs)
+import Juno.Util.Util (debug, updateLNextIndex, accessLogs, enqueueRequest)
 import qualified Juno.Types as JT
 
 data AEResponseEnv = AEResponseEnv {
@@ -52,8 +52,9 @@ data LeaderState =
   ConvincedAndUnsuccessful -- sends AE after
     { _sendAENodeId :: NodeId
     , _setLaggingLogIndex :: LogIndex } |
-  ConvincedAndSuccessful -- does not send AE after
-    { _incrementNextIndexNode :: NodeId
+  ConvincedAndSuccessful -- may send AE after
+    { _sendAENodeId :: NodeId
+    , _incrementNextIndexNode :: NodeId
     , _incrementNextIndexLogIndex :: LogIndex
     , _insertConvinced :: NodeId}
 
@@ -74,7 +75,7 @@ handleAEResponse aer@AppendEntriesResponse{..} = do
         (NotConvinced, _, OldRequestTerm) -> AEResponseOut mcp $ Unconvinced _aerNodeId _aerNodeId
         (NotConvinced, _, CurrentRequestTerm) -> AEResponseOut mcp $ Unconvinced _aerNodeId _aerNodeId
         (Convinced, Failure, CurrentRequestTerm) -> AEResponseOut mcp $ ConvincedAndUnsuccessful _aerNodeId _aerIndex
-        (Convinced, Success, CurrentRequestTerm) -> AEResponseOut mcp $ ConvincedAndSuccessful _aerNodeId _aerIndex _aerNodeId
+        (Convinced, Success, CurrentRequestTerm) -> AEResponseOut mcp $ ConvincedAndSuccessful _aerNodeId _aerNodeId _aerIndex _aerNodeId
         -- The next two case are underspecified currently and they should not occur as
         -- they imply that a follow is ahead of us but the current code sends an AER anyway
         (NotConvinced, _, _) -> AEResponseOut mcp $ StatelessSendAE _aerNodeId
@@ -118,22 +119,25 @@ handle aer = do
     NotLeader -> return ()
     DoNothing -> resetElectionTimerLeader
     StatelessSendAE{..} -> do
-      sendAppendEntries $ _aerNodeId aer
+      lNextIndex' <- use JT.lNextIndex >>= return . Map.lookup _sendAENodeId
+      enqueueRequest $! Sender.SingleAE _sendAENodeId lNextIndex' True
       resetElectionTimerLeader
     Unconvinced{..} -> do
       JT.lConvinced %= Set.delete _deleteConvinced
-      sendAppendEntries $ _aerNodeId aer
+      lNextIndex' <- use JT.lNextIndex >>= return . Map.lookup _sendAENodeId
+      enqueueRequest $! Sender.SingleAE _sendAENodeId lNextIndex' False
       resetElectionTimerLeader
     ConvincedAndSuccessful{..} -> do
       updateLNextIndex $ Map.insert _incrementNextIndexNode $ _incrementNextIndexLogIndex + 1
       JT.lConvinced %= Set.insert _insertConvinced
       myLatestIndex <- accessLogs $ JT.viewLogState JT.lastLogIndex
       -- If the commit was a success but we have more, chase the response with an update
-      when (myLatestIndex > _incrementNextIndexLogIndex) (sendAppendEntries $ _aerNodeId aer)
+      when (myLatestIndex > _incrementNextIndexLogIndex) $ do
+        enqueueRequest $! Sender.SingleAE _sendAENodeId (Just $ _incrementNextIndexLogIndex + 1) True
       resetElectionTimerLeader
     ConvincedAndUnsuccessful{..} -> do
       updateLNextIndex $ Map.insert _sendAENodeId _setLaggingLogIndex
-      sendAppendEntries $ _aerNodeId aer
+      enqueueRequest $! Sender.SingleAE _sendAENodeId (Just _setLaggingLogIndex) True
       resetElectionTimerLeader
 
 handleAlotOfAers :: AlotOfAERs -> JT.Raft ()

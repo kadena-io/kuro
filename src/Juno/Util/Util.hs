@@ -23,19 +23,24 @@ module Juno.Util.Util
   , setLNextIndex
   , getCmdSigOrInvariantError
   , getRevSigOrInvariantError
+  , enqueueRequest
   ) where
 
-import Juno.Types
-import Juno.Util.Combinator
 
 import Control.Lens
-import Data.Sequence (Seq)
 import Control.Monad.RWS.Strict
 import qualified Control.Concurrent.Lifted as CL
+
 import Data.IORef
+import qualified System.Random as R
+
+import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import qualified Data.Map.Strict as Map
-import qualified System.Random as R
+
+import Juno.Types
+import qualified Juno.Types.Sender as Sender
+import Juno.Util.Combinator
 
 seqIndex :: Seq a -> Int -> Maybe a
 seqIndex s i =
@@ -68,6 +73,11 @@ randomRIO rng = view (rs.random) >>= \f -> liftIO $ f rng -- R.randomRIO
 
 runRWS_ :: MonadIO m => RWST r w s m a -> r -> s -> m ()
 runRWS_ ma r s = void $ runRWST ma r s
+
+enqueueRequest :: Sender.ServiceRequest -> Raft ()
+enqueueRequest s = do
+  sendMsg <- view sendMessage
+  liftIO $ sendMsg s
 
 -- no state update
 enqueueEvent :: Event -> Raft ()

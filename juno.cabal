@@ -65,6 +65,7 @@ library
                      , Juno.Types.Command
                      , Juno.Types.Comms
                      , Juno.Types.Config
+                     , Juno.Types.Dispatch
                      , Juno.Types.Event
                      , Juno.Types.Log
                      , Juno.Types.Message
@@ -77,6 +78,7 @@ library
                      , Juno.Types.Message.RVR
                      , Juno.Types.Message.REV
                      , Juno.Types.Metric
+                     , Juno.Types.Sender
                      , Juno.Types.Spec
                      , Juno.Util.Combinator
                      , Juno.Util.Util

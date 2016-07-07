@@ -12,11 +12,11 @@ module Juno.Types.Spec
   , viewConfig, readConfig, timerTarget
   -- for API <-> Juno communication
   , dequeueFromApi ,cmdStatusMap, updateCmdMap
-  , RaftEnv(..), cfg, logThread, clusterSize, quorumSize, rs
+  , RaftEnv(..), cfg, enqueueLogQuery, clusterSize, quorumSize, rs
   , enqueue, enqueueMultiple, dequeue, enqueueLater, killEnqueued
   , sendMessage, clientSendMsg
   , RaftState(..), nodeRole, term, votedFor, lazyVote, currentLeader, ignoreLeader
-  , logEntries, commitIndex, commitProof, lastApplied, timerThread, replayMap
+  , commitProof, timerThread, replayMap
   , cYesVotes, cPotentialVotes, lNextIndex, lConvinced
   , lastCommitTime, numTimeouts, pendingRequests, currentRequestId
   , timeSinceLastAER
@@ -44,12 +44,12 @@ import Juno.Types.Base
 import Juno.Types.Command
 import Juno.Types.Config
 import Juno.Types.Event
-import Juno.Types.Log
 import Juno.Types.Message
 import Juno.Types.Metric
 import Juno.Types.Comms
 import Juno.Types.Dispatch
-import Juno.Types.Sender (SenderServiceChannel, ServiceRequest')
+import Juno.Types.Service.Sender (SenderServiceChannel, ServiceRequest')
+import Juno.Types.Service.Log (QueryApi(..))
 
 -- | A structure containing all the implementation details for running
 -- the raft protocol.
@@ -101,7 +101,7 @@ data RaftSpec = RaftSpec
 makeLenses (''RaftSpec)
 
 data RaftState = RaftState
-  { _nodeRole             :: Role
+  { _nodeRole         :: Role
   , _term             :: Term
   , _votedFor         :: Maybe NodeId
   , _lazyVote         :: Maybe (Term, NodeId, LogIndex)
@@ -151,7 +151,7 @@ type Raft = RWST (RaftEnv) () RaftState IO
 
 data RaftEnv = RaftEnv
   { _cfg              :: IORef Config
-  , _logThread        :: IORef (LogState LogEntry)
+  , _enqueueLogQuery  :: QueryApi -> IO ()
   , _clusterSize      :: Int
   , _quorumSize       :: Int
   , _rs               :: RaftSpec
@@ -165,10 +165,10 @@ data RaftEnv = RaftEnv
   }
 makeLenses ''RaftEnv
 
-mkRaftEnv :: IORef Config -> IORef (LogState LogEntry) -> Int -> Int -> RaftSpec -> Dispatch -> MVar Event -> RaftEnv
-mkRaftEnv conf' log' cSize qSize rSpec dispatch timerTarget' = RaftEnv
+mkRaftEnv :: IORef Config -> Int -> Int -> RaftSpec -> Dispatch -> MVar Event -> RaftEnv
+mkRaftEnv conf' cSize qSize rSpec dispatch timerTarget' = RaftEnv
     { _cfg = conf'
-    , _logThread = log'
+    , _enqueueLogQuery = writeComm ls'
     , _clusterSize = cSize
     , _quorumSize = qSize
     , _rs = rSpec
@@ -192,6 +192,7 @@ mkRaftEnv conf' log' cSize qSize rSpec dispatch timerTarget' = RaftEnv
   where
     g' = dispatch ^. senderService
     cog' = dispatch ^. outboundGeneral
+    ls' = dispatch ^. logService
     ie' = dispatch ^. internalEvent
 
 sendMsg :: SenderServiceChannel -> ServiceRequest' -> IO ()

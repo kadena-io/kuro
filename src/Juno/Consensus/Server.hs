@@ -15,8 +15,7 @@ import Juno.Consensus.Api (apiReceiver)
 import Juno.Consensus.Handle
 import Juno.Runtime.MessageReceiver
 import qualified Juno.Runtime.MessageReceiver as RENV
-import qualified Juno.Types.Sender as Sender
-import Juno.Runtime.Sender (runSenderService)
+import qualified Juno.Service.Sender as Sender
 import Juno.Runtime.Timer
 import Juno.Types
 import Juno.Util.Util
@@ -29,7 +28,7 @@ runRaftServer renv rconf spec = do
   rconf' <- newIORef rconf
   timerTarget' <- newEmptyMVar
   ls <- initLogState
-  void $ forkIO $ runSenderService (_dispatch renv) rconf (RENV._debugPrint renv) ls
+  void $ forkIO $ Sender.runSenderService (_dispatch renv) rconf (RENV._debugPrint renv) ls
   -- This helps for testing, we'll send tocks every second to inflate the logs when we see weird pauses right before an election
   -- forever (writeComm (_internalEvent $ _dispatch renv) (InternalEvent $ Tock $ t) >> threadDelay 1000000)
   void $ forkIO $ foreverTick (_internalEvent $ _dispatch renv) 1000000 (InternalEvent . Tick)

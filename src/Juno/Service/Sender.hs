@@ -5,10 +5,11 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RecordWildCards #-}
 
-module Juno.Runtime.Sender
+module Juno.Service.Sender
   ( runSenderService
   , createAppendEntriesResponse' -- we need this for AER Evidence
   , willBroadcastAE
+  , module X --re-export the types to make things straight forward
   ) where
 
 import Control.Lens
@@ -29,7 +30,7 @@ import qualified Data.Sequence as Seq
 import Data.Serialize
 
 import qualified Juno.Types as JT
-import Juno.Types.Sender
+import Juno.Types.Sender as X
 import Juno.Types hiding ( logThread, debugPrint, RaftState(..), Config(..)
   , Raft, RaftSpec(..), nodeId, sendMessage, outboundGeneral, outboundAerRvRvr
   , myPublicKey, myPrivateKey, otherNodes, nodeRole, term, Event(..))

@@ -23,7 +23,7 @@ import Data.Foldable (toList)
 
 import Juno.Types hiding (valid)
 import Juno.Util.Util
-import qualified Juno.Types.Sender as Sender
+import qualified Juno.Service.Sender as Sender
 
 -- THREAD: SERVER MAIN.
 doCommit :: Raft ()

@@ -21,8 +21,8 @@ import qualified Data.Set as Set
 
 import Juno.Consensus.Handle.Types
 import Juno.Consensus.Handle.AppendEntriesResponse (updateCommitProofMap)
-import qualified Juno.Types.Sender as Sender
-import Juno.Runtime.Sender (createAppendEntriesResponse')
+import qualified Juno.Service.Sender as Sender
+import Juno.Service.Sender (createAppendEntriesResponse')
 import Juno.Runtime.Timer (resetElectionTimer)
 import Juno.Util.Util
 import qualified Juno.Types as JT

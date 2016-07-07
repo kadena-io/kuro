@@ -39,7 +39,7 @@ import qualified Data.Sequence as Seq
 import qualified Data.Map.Strict as Map
 
 import Juno.Types
-import qualified Juno.Types.Sender as Sender
+import qualified Juno.Types.Service.Sender as Sender
 import Juno.Util.Combinator
 
 seqIndex :: Seq a -> Int -> Maybe a

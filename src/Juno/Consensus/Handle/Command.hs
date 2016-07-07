@@ -17,8 +17,7 @@ import Data.Maybe (isNothing, isJust, fromJust)
 import Juno.Consensus.Commit (makeCommandResponse')
 import Juno.Consensus.Handle.AppendEntries (createAppendEntriesResponse)
 import Juno.Consensus.Handle.Types
-import qualified Juno.Runtime.Sender as Sender
-import qualified Juno.Types.Sender as Sender
+import qualified Juno.Service.Sender as Sender
 import Juno.Util.Util (getCmdSigOrInvariantError, accessLogs, enqueueRequest)
 import Juno.Runtime.Timer (resetHeartbeatTimer)
 import qualified Juno.Types as JT

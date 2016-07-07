@@ -12,7 +12,7 @@ import Control.Monad.State
 import Control.Monad.Writer
 
 import Juno.Consensus.Handle.Types
-import qualified Juno.Types.Sender as Sender
+import qualified Juno.Service.Sender as Sender
 import Juno.Runtime.Timer (resetHeartbeatTimer, hasElectionTimerLeaderFired)
 import Juno.Util.Util (debug,enqueueEvent, enqueueRequest)
 import qualified Juno.Types as JT

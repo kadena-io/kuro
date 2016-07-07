@@ -14,7 +14,7 @@ import Data.Map as Map
 import Data.Set as Set
 
 import Juno.Consensus.Handle.Types
-import qualified Juno.Types.Sender as Sender
+import qualified Juno.Service.Sender as Sender
 import Juno.Runtime.Timer (resetHeartbeatTimer, resetElectionTimerLeader,
                            resetElectionTimer)
 import Juno.Util.Util

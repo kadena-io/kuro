@@ -57,8 +57,9 @@ library
                      , Juno.Runtime.Api.ApiServer
                      , Juno.Runtime.MessageReceiver
                      , Juno.Runtime.Role
-                     , Juno.Runtime.Sender
                      , Juno.Runtime.Timer
+                     , Juno.Service.Log
+                     , Juno.Service.Sender
                      , Juno.Spec.Simple
                      , Juno.Types
                      , Juno.Types.Base
@@ -78,7 +79,8 @@ library
                      , Juno.Types.Message.RVR
                      , Juno.Types.Message.REV
                      , Juno.Types.Metric
-                     , Juno.Types.Sender
+                     , Juno.Types.Service.Sender
+                     , Juno.Types.Service.Log
                      , Juno.Types.Spec
                      , Juno.Util.Combinator
                      , Juno.Util.Util

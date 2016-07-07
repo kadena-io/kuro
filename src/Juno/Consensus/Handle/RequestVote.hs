@@ -13,7 +13,7 @@ import Control.Monad.Writer.Strict
 import Control.Monad.State (get)
 
 import Juno.Util.Util (debug, getLogState, enqueueRequest)
-import qualified Juno.Types.Sender as Sender
+import qualified Juno.Service.Sender as Sender
 import qualified Juno.Types as JT
 
 import Juno.Consensus.Handle.Types

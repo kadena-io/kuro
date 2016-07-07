@@ -12,7 +12,7 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Juno.Types.Sender
+module Juno.Types.Service.Sender
   ( SenderServiceChannel(..)
   , ServiceRequest'(..)
   , ServiceRequest(..)
@@ -22,7 +22,7 @@ module Juno.Types.Sender
   , SenderService
   , ServiceEnv(..), myNodeId, currentLeader, currentTerm, myPublicKey
   , myPrivateKey, yesVotes, debugPrint, serviceRequestChan, outboundGeneral, outboundAerRvRvr
-  , logThread, otherNodes, nodeRole
+  , logService, otherNodes, nodeRole
   ) where
 
 import Control.Lens
@@ -34,12 +34,11 @@ import qualified Control.Concurrent.Chan.Unagi as Unagi
 
 import Data.Map (Map)
 import Data.Set (Set)
-import Data.IORef
 
-import Juno.Types.Log
 import Juno.Types.Base
 import Juno.Types.Message
 import Juno.Types.Comms
+import Juno.Types.Service.Log (LogServiceChannel)
 
 data ServiceRequest' =
   ServiceRequest'
@@ -117,7 +116,7 @@ data ServiceEnv = ServiceEnv
   , _outboundGeneral :: OutboundGeneralChannel
   , _outboundAerRvRvr :: OutboundAerRvRvrChannel
   -- Log Storage
-  , _logThread :: IORef (LogState LogEntry)
+  , _logService :: LogServiceChannel
   }
 makeLenses ''ServiceEnv
 

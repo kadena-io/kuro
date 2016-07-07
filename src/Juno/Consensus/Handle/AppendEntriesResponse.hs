@@ -24,7 +24,7 @@ import qualified Data.Map.Strict as Map
 
 import Juno.Consensus.Commit (doCommit)
 import Juno.Consensus.Handle.Types
-import qualified Juno.Types.Sender as Sender
+import qualified Juno.Service.Sender as Sender
 import Juno.Runtime.Timer (resetElectionTimerLeader)
 import Juno.Util.Util (debug, updateLNextIndex, accessLogs, enqueueRequest)
 import qualified Juno.Types as JT

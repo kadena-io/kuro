@@ -3,6 +3,7 @@ module Juno.Consensus.Server
   ) where
 
 import Control.Concurrent (newEmptyMVar, forkIO)
+--import Control.Concurrent.Async
 import qualified Control.Concurrent.Lifted as CL
 import Control.Lens
 import Control.Monad
@@ -14,6 +15,8 @@ import Juno.Consensus.Api (apiReceiver)
 import Juno.Consensus.Handle
 import Juno.Runtime.MessageReceiver
 import qualified Juno.Runtime.MessageReceiver as RENV
+import qualified Juno.Types.Sender as Sender
+import Juno.Runtime.Sender (runSenderService)
 import Juno.Runtime.Timer
 import Juno.Types
 import Juno.Util.Util
@@ -26,9 +29,11 @@ runRaftServer renv rconf spec = do
   rconf' <- newIORef rconf
   timerTarget' <- newEmptyMVar
   ls <- initLogState
+  void $ forkIO $ runSenderService (_dispatch renv) rconf (RENV._debugPrint renv) ls
   -- This helps for testing, we'll send tocks every second to inflate the logs when we see weird pauses right before an election
   -- forever (writeComm (_internalEvent $ _dispatch renv) (InternalEvent $ Tock $ t) >> threadDelay 1000000)
-  void $ forkIO $ foreverTickDebugWriteDelay (renv ^. RENV.debugPrint) "InternalEvent" (_internalEvent $ _dispatch renv) 1000000 (InternalEvent . Tick)
+  void $ forkIO $ foreverTick (_internalEvent $ _dispatch renv) 1000000 (InternalEvent . Tick)
+  void $ forkIO $ foreverTick (_senderService $ _dispatch renv) 1000000 (Sender.Tick)
   runRWS_
     raft
     (mkRaftEnv rconf' ls csize qsize spec (_dispatch renv) timerTarget')

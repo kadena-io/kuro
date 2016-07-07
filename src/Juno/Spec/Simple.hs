@@ -78,14 +78,11 @@ getConfig = do
           return $ apiPort .~ apiPort' $ conf'
     (_,_,errs)     -> mapM_ putStrLn errs >> exitFailure
 
-showDebug' :: TimedFastLogger -> String -> IO ()
-showDebug' fs m = fs (\t -> (toLogStr t) <> " " <> (toLogStr $ BSC.pack $ m) <> "\n")
+showDebug :: TimedFastLogger -> String -> IO ()
+showDebug fs m = fs (\t -> (toLogStr t) <> " " <> (toLogStr $ BSC.pack $ m) <> "\n")
 
-showDebug :: TimedFastLogger -> NodeId -> String -> IO ()
-showDebug fs _ msg = showDebug' fs msg
-
-noDebug :: NodeId -> String -> IO ()
-noDebug _ _ = return ()
+noDebug :: String -> IO ()
+noDebug _ = return ()
 
 getSysLogTime :: IO (FormattedTime)
 getSysLogTime = do
@@ -102,7 +99,7 @@ initSysLog :: IO (TimedFastLogger)
 initSysLog = fst <$> newTimedFastLogger (join timeCache) (LogStdout defaultBufSize)
 
 simpleRaftSpec :: (Command -> IO CommandResult)
-               -> (NodeId -> String -> IO ())
+               -> (String -> IO ())
                -> (Metric -> IO ())
                -> (MVar CommandMap -> RequestId -> CommandStatus -> IO ())
                -> CommandMVarMap
@@ -187,12 +184,11 @@ runClient applyFn getEntries cmdStatusMap' disableTimeouts = do
   rconf <- getConfig
   fs <- initSysLog
   let debugFn = if (rconf ^. enableDebug) then showDebug fs else noDebug
-  let debugFn' = if (rconf ^. enableDebug) then showDebug' fs else (\_ -> return ())
   pubMetric <- startMonitoring rconf
   dispatch <- initDispatch
   me <- return $ rconf ^. nodeId
   oNodes <- return $ Set.toList $ Set.delete me $ Set.union (rconf ^. otherNodes) (Map.keysSet $ rconf ^. clientPublicKeys)
-  runMsgServer dispatch me oNodes debugFn' -- ZMQ
+  runMsgServer dispatch me oNodes debugFn -- ZMQ
   -- STUBs mocking
   (_, stubGetApiCommands) <- Unagi.newChan
   let raftSpec = simpleRaftSpec
@@ -203,7 +199,7 @@ runClient applyFn getEntries cmdStatusMap' disableTimeouts = do
                    cmdStatusMap'
                    stubGetApiCommands
   restartTurbo <- newEmptyMVar
-  let receiverEnv = simpleReceiverEnv dispatch rconf debugFn' restartTurbo
+  let receiverEnv = simpleReceiverEnv dispatch rconf debugFn restartTurbo
   runRaftClient receiverEnv getEntries cmdStatusMap' rconf raftSpec disableTimeouts
 
 -- | sets up and runs both API and raft protocol
@@ -226,11 +222,10 @@ runJuno applyFn toCommands getApiCommands sharedCmdStatusMap = do
 
   fs <- initSysLog
   let debugFn = if (rconf ^. enableDebug) then showDebug fs else noDebug
-  let debugFn' = if (rconf ^. enableDebug) then showDebug' fs else (\_ -> return ())
 
   -- each node has its own snap monitoring server
   pubMetric <- startMonitoring rconf
-  runMsgServer dispatch me oNodes debugFn' -- ZMQ
+  runMsgServer dispatch me oNodes debugFn -- ZMQ
   let raftSpec = simpleRaftSpec
                    (liftIO . applyFn)
                    (debugFn)
@@ -239,5 +234,5 @@ runJuno applyFn toCommands getApiCommands sharedCmdStatusMap = do
                    sharedCmdStatusMap
                    getApiCommands
   restartTurbo <- newEmptyMVar
-  let receiverEnv = simpleReceiverEnv dispatch rconf debugFn' restartTurbo
+  let receiverEnv = simpleReceiverEnv dispatch rconf debugFn restartTurbo
   runRaftServer receiverEnv rconf raftSpec

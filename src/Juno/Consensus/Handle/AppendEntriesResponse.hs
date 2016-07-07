@@ -117,7 +117,7 @@ handle aer = do
   doCommit
   case _leaderState of
     NotLeader -> return ()
-    DoNothing -> resetElectionTimerLeader
+    DoNothing -> return ()
     StatelessSendAE{..} -> do
       lNextIndex' <- use JT.lNextIndex >>= return . Map.lookup _sendAENodeId
       enqueueRequest $! Sender.SingleAE _sendAENodeId lNextIndex' True
@@ -126,7 +126,6 @@ handle aer = do
       JT.lConvinced %= Set.delete _deleteConvinced
       lNextIndex' <- use JT.lNextIndex >>= return . Map.lookup _sendAENodeId
       enqueueRequest $! Sender.SingleAE _sendAENodeId lNextIndex' False
-      resetElectionTimerLeader
     ConvincedAndSuccessful{..} -> do
       updateLNextIndex $ Map.insert _incrementNextIndexNode $ _incrementNextIndexLogIndex + 1
       JT.lConvinced %= Set.insert _insertConvinced

@@ -177,45 +177,44 @@ handle :: AppendEntries -> JT.Raft ()
 handle ae = do
   r <- ask
   s <- get
-  -- This `when` fixes a funky bug. If the leader receives an AE from itself it will reset its election timer (which can kill the leader).
-  -- Ignoring this is safe because if we have an out of touch leader they will step down after 2x maxElectionTimeouts if it receives no valid AER
-  -- TODO: change this behavior to be if it hasn't heard from a quorum in 2x maxElectionTimeouts
-  when (JT._nodeRole s /= Leader) $ do
-    logAtAEsLastLogIdx <- accessLogs $ lookupEntry $ _prevLogIndex ae
-    let ape = AppendEntriesEnv
-                (JT._term s)
-                (JT._currentLeader s)
-                (JT._ignoreLeader s)
-                (logAtAEsLastLogIdx)
-                (JT._quorumSize r)
-    (AppendEntriesOut{..}, l) <- runReaderT (runWriterT (handleAppendEntries ae)) ape
-    ci <- accessLogs $ viewLogState commitIndex
-    unless (ci == _prevLogIndex ae && length l == 1) $ mapM_ debug l
-    applyNewLeader _newLeaderAction
-    case _result of
-      Ignore -> do
-        debug $ "Ignoring AE from "
-              ++ show (JT.unAlias $ _alias $ _digNodeId $ _pDig $ _aeProvenance ae )
-              ++ " for " ++ show (_prevLogIndex $ ae)
-              ++ " with " ++ show (Seq.length $ _aeEntries ae) ++ " entries."
-        return ()
-      SendUnconvincedResponse{..} -> enqueueRequest $ Sender.SingleAER _responseLeaderId False False
-      ValidLeaderAndTerm{..} -> do
-        JT.lazyVote .= Nothing
-        case _validReponse of
-          SendFailureResponse -> enqueueRequest $ Sender.SingleAER _responseLeaderId False True
-          (Commit rMap rle) -> do
-            accessLogs $ updateLogs $ ULReplicate rle
-            logHashChange
-            JT.replayMap %= Map.union rMap
-            myEvidence <- createAppendEntriesResponse True True
-            JT.commitProof %= updateCommitProofMap myEvidence
-            -- TODO: we can be smarter here and fill in the details the AER needs about the logs without needing to hit that thread
-            enqueueRequest Sender.BroadcastAER
-          DoNothing -> enqueueRequest Sender.BroadcastAER
-        -- This NEEDS to be last, otherwise we can have an election fire when we are are transmitting proof/accessing the logs
-        -- It's rare but under load and given enough time, this will happen.
-        resetElectionTimer
+  logAtAEsLastLogIdx <- accessLogs $ lookupEntry $ _prevLogIndex ae
+  let ape = AppendEntriesEnv
+              (JT._term s)
+              (JT._currentLeader s)
+              (JT._ignoreLeader s)
+              (logAtAEsLastLogIdx)
+              (JT._quorumSize r)
+  (AppendEntriesOut{..}, l) <- runReaderT (runWriterT (handleAppendEntries ae)) ape
+  ci <- accessLogs $ viewLogState commitIndex
+  unless (ci == _prevLogIndex ae && length l == 1) $ mapM_ debug l
+  applyNewLeader _newLeaderAction
+  case _result of
+    Ignore -> do
+      debug $ "Ignoring AE from "
+            ++ show (JT.unAlias $ _alias $ _digNodeId $ _pDig $ _aeProvenance ae )
+            ++ " for " ++ show (_prevLogIndex $ ae)
+            ++ " with " ++ show (Seq.length $ _aeEntries ae) ++ " entries."
+      return ()
+    SendUnconvincedResponse{..} -> enqueueRequest $ Sender.SingleAER _responseLeaderId False False
+    ValidLeaderAndTerm{..} -> do
+      JT.lazyVote .= Nothing
+      case _validReponse of
+        SendFailureResponse -> enqueueRequest $ Sender.SingleAER _responseLeaderId False True
+        (Commit rMap rle) -> do
+          accessLogs $ updateLogs $ ULReplicate rle
+          logHashChange
+          JT.replayMap %= Map.union rMap
+          myEvidence <- createAppendEntriesResponse True True
+          JT.commitProof %= updateCommitProofMap myEvidence
+          -- TODO: we can be smarter here and fill in the details the AER needs about the logs without needing to hit that thread
+          enqueueRequest Sender.BroadcastAER
+        DoNothing -> enqueueRequest Sender.BroadcastAER
+      -- This NEEDS to be last, otherwise we can have an election fire when we are are transmitting proof/accessing the logs
+      -- It's rare but under load and given enough time, this will happen.
+      when (JT._nodeRole s /= Leader) resetElectionTimer
+      -- This `when` fixes a funky bug. If the leader receives an AE from itself it will reset its election timer (which can kill the leader).
+      -- Ignoring this is safe because if we have an out of touch leader they will step down after 2x maxElectionTimeouts if it receives no valid AER
+      -- TODO: change this behavior to be if it hasn't heard from a quorum in 2x maxElectionTimeouts
 
 createAppendEntriesResponse :: Bool -> Bool -> JT.Raft AppendEntriesResponse
 createAppendEntriesResponse success convinced = do

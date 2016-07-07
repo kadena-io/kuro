@@ -18,7 +18,7 @@ import Control.Concurrent (takeMVar, putMVar, modifyMVar_)
 import Juno.Types
 import Juno.Util.Util
 import Juno.Runtime.Timer
-import Juno.Runtime.Sender (sendRPC)
+import Juno.Consensus.Client (clientSendRPC)
 
 
 -- TODO do we need all this? can we just enqueueEvent directly?
@@ -84,7 +84,7 @@ clientSendCommandBatch' cmdb@CommandBatch{..} = do
   mlid <- use currentLeader
   case mlid of
     Just lid -> do
-      sendRPC lid $ CMDB' cmdb
+      clientSendRPC lid $ CMDB' cmdb
       prcount <- fmap Map.size (use pendingRequests)
       -- if this will be our only pending request, start the timer
       -- otherwise, it should already be running

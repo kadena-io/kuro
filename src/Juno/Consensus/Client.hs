@@ -3,6 +3,7 @@
 
 module Juno.Consensus.Client
   ( runRaftClient
+  , clientSendRPC
   ) where
 
 import Control.Concurrent (MVar, modifyMVar_, readMVar, newEmptyMVar, tryTakeMVar)
@@ -12,13 +13,13 @@ import Control.Monad.RWS
 
 import Data.Foldable (traverse_)
 import Data.IORef
+import Data.Serialize
 import Text.Read (readMaybe)
 import qualified Data.ByteString.Char8 as SB8
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
 import Juno.Runtime.MessageReceiver
-import Juno.Runtime.Sender (sendRPC)
 import Juno.Runtime.Timer
 import Juno.Types
 import Juno.Util.Util
@@ -69,9 +70,10 @@ commandGetter getEntries cmdStatusMap' = do
     (rid@(RequestId _), cmdEntries) <- getEntries
     -- support for special REPL command "> batch test:5000", runs hardcoded batch job
     cmds' <- case cmdEntries of
-               (alias,CommandEntry cmd):[] | SB8.take 11 cmd == "batch test:" -> do
-                                          let missiles = take (batchSize cmd) $ repeat $ hardcodedTransfers nid alias
-                                          liftIO $ sequence $ missiles
+               (alias,CommandEntry cmd):[]
+                 | SB8.take 11 cmd == "batch test:" -> do
+                     let missiles = take (batchSize cmd) $ repeat $ hardcodedTransfers nid alias
+                     liftIO $ sequence $ missiles
                _ -> liftIO $ sequence $ fmap (nextRid nid) cmdEntries
     -- set current requestId in Raft to the value associated with this request.
     rid' <- setNextRequestId rid
@@ -158,7 +160,7 @@ clientSendCommand cmd@Command{..} disableTimeouts = do
   disableTimeouts' <- liftIO $ readMVar disableTimeouts
   case mlid of
     Just lid -> do
-      sendRPC lid $ CMD' cmd
+      clientSendRPC lid $ CMD' cmd
       debug $ "Sending Msg to :" ++ show (unAlias $ _alias lid)
       prcount <- fmap Map.size (use pendingRequests)
       -- if this will be our only pending request, start the timer
@@ -177,7 +179,7 @@ clientSendCommandBatch cmdb@CommandBatch{..} disableTimeouts = do
   disableTimeouts' <- liftIO $ readMVar disableTimeouts
   case mlid of
     Just lid -> do
-      sendRPC lid $ CMDB' cmdb
+      clientSendRPC lid $ CMDB' cmdb
       debug $ "Sending Msg to :" ++ show (unAlias $ _alias lid)
       prcount <- fmap Map.size (use pendingRequests)
       -- if this will be our only pending request, start the timer
@@ -213,3 +215,13 @@ clientHandleCommandResponse cmdStatusMap' CommandResponse{..} disableTimeouts = 
         if prcount > 0
           then resetHeartbeatTimer
           else cancelTimer
+
+clientSendRPC :: NodeId -> RPC -> Raft ()
+clientSendRPC target rpc = do
+  send <- view clientSendMsg
+  myNodeId' <- viewConfig nodeId
+  privKey <- viewConfig myPrivateKey
+  pubKey <- viewConfig myPublicKey
+  sRpc <- return $ rpcToSignedRPC myNodeId' pubKey privKey rpc
+  debug $ "Issuing direct msg: " ++ show (_digType $ _sigDigest sRpc) ++ " to " ++ show (unAlias $ _alias target)
+  liftIO $! send $! directMsg target $ encode $ sRpc

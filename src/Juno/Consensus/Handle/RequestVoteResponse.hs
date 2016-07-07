@@ -21,7 +21,8 @@ import Juno.Util.Util
 import qualified Juno.Types as JT
 
 data RequestVoteResponseEnv = RequestVoteResponseEnv {
-      _nodeRole :: Role
+      _myNodeId :: NodeId
+    , _nodeRole :: Role
     , _term :: Term
     , _lastLogIndex :: LogIndex
     , _cYesVotes :: Set.Set RequestVoteResponse
@@ -39,11 +40,12 @@ data RequestVoteResponseOut =
 handleRequestVoteResponse :: (MonadReader RequestVoteResponseEnv m, MonadWriter [String] m) =>
                              RequestVoteResponse -> m RequestVoteResponseOut
 handleRequestVoteResponse rvr@RequestVoteResponse{..} = do
-  tell ["got a requestVoteResponse RPC for " ++ show _rvrTerm ++ ": " ++ show _voteGranted]
+  tell ["got a requestVoteResponse RPC for " ++ show (_rvrTerm, _rvrCandidateId) ++ ": " ++ show _voteGranted]
   r <- view nodeRole
   ct <- view term
+  myNodeId' <- view myNodeId
   curLog <- view lastLogIndex
-  if r == Candidate && ct == _rvrTerm
+  if r == Candidate && ct == _rvrTerm && _rvrCandidateId == myNodeId'
   then
     if _voteGranted
     then Set.insert rvr <$> view cYesVotes >>= checkElection
@@ -55,7 +57,6 @@ handleRequestVoteResponse rvr@RequestVoteResponse{..} = do
                   ++ show (ct,curLog) ++ " vs " ++ show (_rvrTerm, _rvrCurLogIndex)]
             return RevertToFollower
        else tell ["Taking no action on RVR"] >> return NoAction
-
 
 
 -- count the yes votes and become leader if you have reached a quorum
@@ -75,8 +76,10 @@ handle m = do
   r <- ask
   s <- get
   mni <- accessLogs $ JT.maxIndex
+  myNodeId' <- JT.viewConfig JT.nodeId
   (o,l) <- runReaderT (runWriterT (handleRequestVoteResponse m))
            (RequestVoteResponseEnv
+            (myNodeId')
             (JT._nodeRole s)
             (JT._term s)
             (mni)

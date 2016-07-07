@@ -8,13 +8,14 @@
 module Juno.Runtime.Sender
   ( runSenderService
   , createAppendEntriesResponse' -- we need this for AER Evidence
+  , willBroadcastAE
   ) where
 
 import Control.Lens
 import Control.Arrow (second)
 import Control.Parallel.Strategies
 
-import Control.Monad.Trans.State.Strict
+import Control.Monad.Trans.Reader
 import Control.Monad
 import Control.Monad.IO.Class
 
@@ -29,13 +30,14 @@ import Data.Serialize
 
 import qualified Juno.Types as JT
 import Juno.Types.Sender
-import Juno.Types hiding ( logThread, debugPrint, RaftState, Raft, RaftSpec, nodeId, sendMessage, outboundGeneral, outboundAerRvRvr
-                         , myPublicKey, myPrivateKey, otherNodes, nodeRole, term)
+import Juno.Types hiding ( logThread, debugPrint, RaftState(..), Config(..)
+  , Raft, RaftSpec(..), nodeId, sendMessage, outboundGeneral, outboundAerRvRvr
+  , myPublicKey, myPrivateKey, otherNodes, nodeRole, term, Event(..))
 
 
-runSenderService :: Dispatch -> Config -> (String -> IO ()) -> IORef (LogState LogEntry) -> IO ()
+runSenderService :: Dispatch -> JT.Config -> (String -> IO ()) -> IORef (LogState LogEntry) -> IO ()
 runSenderService dispatch conf debugFn logRef = do
-  s <- return $ SenderServiceState
+  s <- return $ ServiceEnv
     { _myNodeId = conf ^. JT.nodeId
     , _nodeRole = Follower
     , _otherNodes = conf ^. JT.otherNodes
@@ -52,44 +54,51 @@ runSenderService dispatch conf debugFn logRef = do
     -- Log Storage
     , _logThread = logRef
     }
-  void $ liftIO $ runStateT serviceRequests s
+  void $ liftIO $ runReaderT serviceRequests s
+
+updateEnv :: StateSnapshot -> ServiceEnv -> ServiceEnv
+updateEnv StateSnapshot{..} s = s
+  { _myNodeId = _newNodeId
+  , _nodeRole = _newRole
+  , _otherNodes = _newOtherNodes
+  , _currentLeader = _newLeader
+  , _currentTerm = _newTerm
+  , _myPublicKey = _newPublicKey
+  , _myPrivateKey = _newPrivateKey
+  , _yesVotes = _newYesVotes
+  }
 
 serviceRequests :: SenderService ()
 serviceRequests = do
-  rrc <- use serviceRequestChan
+  rrc <- view serviceRequestChan
+  debug "Begin"
   forever $ do
-    m <- liftIO $ readComm rrc
-    case m of
-      SingleAE{..} -> sendAppendEntries _srFor _srNextIndex _srFollowsLeader
-      BroadcastAE{..} -> sendAllAppendEntries _srlNextIndex _srConvincedNodes _srAeBoardcastControl
-      SingleAER{..} -> sendAppendEntriesResponse _srFor _srSuccess _srConvinced
-      BroadcastAER -> sendAllAppendEntriesResponse
-      BroadcastRV -> sendAllRequestVotes
-      BroadcastRVR{..} -> sendRequestVoteResponse _srCandidate _srLastLogIndex _srVote
-      SendCommandResults{..} -> sendResults _srResults
-      ForwardCommandToLeader{..} -> mapM_ (sendRPC _srFor . CMD') _srCommands
-      UpdateState' su -> updateState su
-
-updateState :: [UpdateState] -> SenderService ()
-updateState [] = return ()
-updateState [(Updates (l,b))] = assign l b
-updateState ((Updates (l,b)):xs) = do
-  assign l b
-  updateState xs
+    sr <- liftIO $ readComm rrc
+    case sr of
+      (ServiceRequest' ss m) -> local (updateEnv ss) $ case m of
+          SingleAE{..} -> sendAppendEntries _srFor _srNextIndex _srFollowsLeader
+          BroadcastAE{..} -> sendAllAppendEntries _srlNextIndex _srConvincedNodes _srAeBoardcastControl
+          SingleAER{..} -> sendAppendEntriesResponse _srFor _srSuccess _srConvinced
+          BroadcastAER -> sendAllAppendEntriesResponse
+          BroadcastRV -> sendAllRequestVotes
+          BroadcastRVR{..} -> sendRequestVoteResponse _srCandidate _srLastLogIndex _srVote
+          SendCommandResults{..} -> sendResults _srResults
+          ForwardCommandToLeader{..} -> mapM_ (sendRPC _srFor . CMD') _srCommands
+      Tick t -> liftIO (pprintTock t "serviceRequests") >>= debug
 
 getLogState :: SenderService (LogState LogEntry)
-getLogState = use logThread >>= liftIO . readIORef
+getLogState = view logThread >>= liftIO . readIORef
 
 debug :: String -> SenderService ()
 debug s = do
-  dbg <- use debugPrint
+  dbg <- view debugPrint
   liftIO $ dbg $ "[SenderService] " ++ s
 
--- uses state, but does not update
+-- views state, but does not update
 sendAllRequestVotes :: SenderService ()
 sendAllRequestVotes = do
-  ct <- use currentTerm
-  nid <- use myNodeId
+  ct <- view currentTerm
+  nid <- view myNodeId
   ls <- getLogState
   debug $ "sendRequestVote: " ++ show ct
   pubRPC $ RV' $ RequestVote ct nid (maxIndex' ls) (lastLogTerm' ls) NewMsg
@@ -133,9 +142,9 @@ sendAppendEntries :: NodeId -> Maybe LogIndex -> Bool -> SenderService ()
 sendAppendEntries target lNextIndex' isConvinced = do
   es <- getLogState
   (pli,plt) <- return $ logInfoForNextIndex' lNextIndex' es
-  vts' <- if isConvinced then return $ Set.empty else use yesVotes
-  ct <- use currentTerm
-  myNodeId' <- use myNodeId
+  vts' <- if isConvinced then return $ Set.empty else view yesVotes
+  ct <- view currentTerm
+  myNodeId' <- view myNodeId
   sendRPC target $ AE' $ AppendEntries ct myNodeId' pli plt (getEntriesAfter' pli es) vts' NewMsg
 --   createAppendEntries' target lNextIndex' es ct myNodeId' lConvinced' yesVotes'
   debug $ "sendAppendEntries: " ++ show ct
@@ -144,10 +153,10 @@ sendAppendEntries target lNextIndex' isConvinced = do
 sendAllAppendEntries :: Map NodeId LogIndex -> Set NodeId -> AEBroadcastControl -> SenderService ()
 sendAllAppendEntries lNextIndex' lConvinced' sendIfOutOfSync = do
   es <- getLogState
-  ct <- use currentTerm
-  myNodeId' <- use myNodeId
-  yesVotes' <- use yesVotes
-  oNodes <- use otherNodes
+  ct <- view currentTerm
+  myNodeId' <- view myNodeId
+  yesVotes' <- view yesVotes
+  oNodes <- view otherNodes
   case (canBroadcastAE (length oNodes) lNextIndex' es ct myNodeId' lConvinced', sendIfOutOfSync) of
     (BackStreet, SendAERegardless) -> do
       -- We can't take the short cut but the AE (which is overloaded as a heartbeat grr...) still need to be sent
@@ -174,6 +183,20 @@ sendAllAppendEntries lNextIndex' lConvinced' sendIfOutOfSync = do
 
 -- I've been on a coding bender for 6 straight 12hr days
 data InSync = InSync (RPC, Int) | BackStreet deriving (Show, Eq)
+
+willBroadcastAE :: Int
+                -> Map NodeId LogIndex
+                -> Set NodeId
+                -> Bool
+willBroadcastAE clusterSize' lNextIndex' vts =
+  -- we only want to do this if we know that every node is in sync with us (the leader)
+  let
+    everyoneBelieves = Set.size vts == clusterSize'
+    mniList = Map.elems lNextIndex' -- get a list of where everyone is
+    mniSet = Set.fromList $ mniList -- condense every Followers LI into a set
+    inSync = 1 == Set.size mniSet && clusterSize' == length mniList -- if each LI is the same, then the set is a signleton
+  in
+    everyoneBelieves && inSync
 
 canBroadcastAE :: Int
                -> Map NodeId LogIndex
@@ -205,8 +228,8 @@ createAppendEntriesResponse' success convinced ct myNodeId' lindex lhash =
 -- this only gets used when a Follower is replying in the negative to the Leader
 sendAppendEntriesResponse :: NodeId -> Bool -> Bool -> SenderService ()
 sendAppendEntriesResponse target success convinced = do
-  ct <- use currentTerm
-  myNodeId' <- use myNodeId
+  ct <- view currentTerm
+  myNodeId' <- view myNodeId
   es <- getLogState
   sendRPC target $ createAppendEntriesResponse' success convinced ct myNodeId'
               (maxIndex' es) (lastLogHash' es)
@@ -215,61 +238,62 @@ sendAppendEntriesResponse target success convinced = do
 -- this is used for distributed evidence + updating the Leader with lNextIndex
 sendAllAppendEntriesResponse :: SenderService ()
 sendAllAppendEntriesResponse = do
-  ct <- use currentTerm
-  myNodeId' <- use myNodeId
+  ct <- view currentTerm
+  myNodeId' <- view myNodeId
   es <- getLogState
   aer <- return $ createAppendEntriesResponse' True True ct myNodeId' (maxIndex' es) (lastLogHash' es)
   sendAerRvRvr aer
 
 sendRequestVoteResponse :: NodeId -> LogIndex -> Bool -> SenderService ()
 sendRequestVoteResponse target logIndex' vote = do
-  term' <- use currentTerm
-  myNodeId' <- use myNodeId
+  term' <- view currentTerm
+  myNodeId' <- view myNodeId
   sendAerRvRvr $! RVR' $! RequestVoteResponse term' logIndex' myNodeId' vote target NewMsg
 
 sendResults :: [(NodeId, CommandResponse)] -> SenderService ()
 sendResults results = do
-  role' <- use nodeRole
+  role' <- view nodeRole
   when (role' /= Leader) $ mapM_ (debug . (++) "Follower responding to commands! : " . show) results
+  debug $ "###====>    Sending " ++ show (length results) ++ " results"
   !res <- return $! second CMDR' <$> results
   sendRPCs res
 
 pubRPC :: RPC -> SenderService ()
 pubRPC rpc = do
-  oChan <- use outboundGeneral
-  myNodeId' <- use myNodeId
-  privKey <- use myPrivateKey
-  pubKey <- use myPublicKey
+  oChan <- view outboundGeneral
+  myNodeId' <- view myNodeId
+  privKey <- view myPrivateKey
+  pubKey <- view myPublicKey
   sRpc <- return $ rpcToSignedRPC myNodeId' pubKey privKey rpc
   debug $ "Issuing broadcast msg: " ++ show (_digType $ _sigDigest sRpc)
   liftIO $ writeComm oChan $ broadcastMsg $ encode $ sRpc
 
 sendRPC :: NodeId -> RPC -> SenderService ()
 sendRPC target rpc = do
-  oChan <- use outboundGeneral
-  myNodeId' <- use myNodeId
-  privKey <- use myPrivateKey
-  pubKey <- use myPublicKey
+  oChan <- view outboundGeneral
+  myNodeId' <- view myNodeId
+  privKey <- view myPrivateKey
+  pubKey <- view myPublicKey
   sRpc <- return $ rpcToSignedRPC myNodeId' pubKey privKey rpc
   debug $ "Issuing direct msg: " ++ show (_digType $ _sigDigest sRpc) ++ " to " ++ show (unAlias $ _alias target)
   liftIO $! writeComm oChan $! directMsg target $ encode $ sRpc
 
 sendRPCs :: [(NodeId, RPC)] -> SenderService ()
 sendRPCs rpcs = do
-  oChan <- use outboundGeneral
-  myNodeId' <- use myNodeId
-  privKey <- use myPrivateKey
-  pubKey <- use myPublicKey
+  oChan <- view outboundGeneral
+  myNodeId' <- view myNodeId
+  privKey <- view myPrivateKey
+  pubKey <- view myPublicKey
   msgs <- return (((\(n,msg) -> (n, rpcToSignedRPC myNodeId' pubKey privKey msg)) <$> rpcs ) `using` parList rseq)
   --mapM_ (\(_,r) -> debug $ "Issuing (multi) direct msg: " ++ show (_digType $ _sigDigest r)) msgs
   liftIO $ mapM_ (writeComm oChan) $! (\(n,r) -> directMsg n $ encode r) <$> msgs
 
 sendAerRvRvr :: RPC -> SenderService ()
 sendAerRvRvr rpc = do
-  send <- undefined -- use sendAerRvRvrMessage
-  myNodeId' <- use myNodeId
-  privKey <- use myPrivateKey
-  pubKey <- use myPublicKey
+  oChan <- view outboundAerRvRvr
+  myNodeId' <- view myNodeId
+  privKey <- view myPrivateKey
+  pubKey <- view myPublicKey
   sRpc <- return $ rpcToSignedRPC myNodeId' pubKey privKey rpc
   debug $ "Broadcast only msg sent: "
         ++ show (_digType $ _sigDigest sRpc)
@@ -278,4 +302,4 @@ sendAerRvRvr rpc = do
               RV' v -> " for " ++ show (_rvTerm v, _rvLastLogIndex v)
               RVR' v -> " for " ++ show (_rvrTerm v, _voteGranted v)
               _ -> "")
-  liftIO $! send $! aerRvRvrMsg $ encode $ sRpc
+  liftIO $! writeComm oChan $! aerRvRvrMsg $ encode $ sRpc

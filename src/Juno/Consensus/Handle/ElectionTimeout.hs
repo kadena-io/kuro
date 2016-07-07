@@ -140,11 +140,6 @@ handle msg = do
                selfYesVote <- return $ createRequestVoteResponse _myNodeId _myNodeId _newTerm _lastLogIndex True
                JT.cYesVotes .= Set.singleton selfYesVote
                JT.cPotentialVotes.= _potentialVotes
-               enqueueRequest $ Sender.UpdateState $
-                 [ Sender.Update Sender.nodeRole _newRole
-                 , Sender.Update Sender.currentTerm _newTerm
-                 , Sender.Update Sender.yesVotes (Set.singleton selfYesVote)
-                 ]
                enqueueRequest $ Sender.BroadcastRV
                resetElectionTimer
 
@@ -155,11 +150,6 @@ castLazyVote lazyTerm' lazyCandidate' lazyLastLogIndex' = do
   JT.lazyVote .= Nothing
   JT.ignoreLeader .= False
   setCurrentLeader Nothing
-  enqueueRequest $ Sender.UpdateState $
-    [ Sender.Update Sender.nodeRole Follower
-    , Sender.Update Sender.currentTerm lazyTerm'
-    , Sender.Update Sender.currentLeader Nothing
-    ]
   enqueueRequest $ Sender.BroadcastRVR lazyCandidate' lazyLastLogIndex' True
   -- TODO: we need to verify that this is correct. It seems that a RVR (so a vote) is sent every time an election timeout fires.
   -- However, should that be the case? I think so, as you shouldn't vote for multiple people in the same election. Still though...

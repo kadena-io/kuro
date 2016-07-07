@@ -275,7 +275,7 @@ instance LogApi (LogState LogEntry) where
   lastLogTerm' ls = maybe startTerm _leTerm $ lastEntry' ls
 
   getEntriesAfter pli ref = readIORef ref >>= return . getEntriesAfter' pli
-  getEntriesAfter' pli = Seq.take 5000 . Seq.drop (fromIntegral $ pli + 1) . viewLogSeq
+  getEntriesAfter' pli = Seq.take 8000 . Seq.drop (fromIntegral $ pli + 1) . viewLogSeq
 
   updateLogs (ULNew nle) ref = atomicModifyIORef' ref
                                  (\ls -> (appendLogEntry' nle ls, ()))

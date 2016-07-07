@@ -60,13 +60,12 @@ getLogState = view logThread >>= liftIO . readIORef
 debug :: String -> Raft ()
 debug s = do
   dbg <- view (rs.debugPrint)
-  nid <- viewConfig nodeId
   role' <- use nodeRole
   dontDebugFollower' <- viewConfig dontDebugFollower
   case role' of
-    Leader -> liftIO $ dbg nid $ "\ESC[0;34m[LEADER]\ESC[0m: " ++ s
-    Follower -> liftIO $ when (not dontDebugFollower') $ dbg nid $ "\ESC[0;32m[FOLLOWER]\ESC[0m: " ++ s
-    Candidate -> liftIO $ dbg nid $ "\ESC[1;33m[CANDIDATE]\ESC[0m: " ++ s
+    Leader -> liftIO $ dbg $ "\ESC[0;34m[LEADER]\ESC[0m: " ++ s
+    Follower -> liftIO $ when (not dontDebugFollower') $ dbg $ "\ESC[0;32m[FOLLOWER]\ESC[0m: " ++ s
+    Candidate -> liftIO $ dbg $ "\ESC[1;33m[CANDIDATE]\ESC[0m: " ++ s
 
 randomRIO :: R.Random a => (a,a) -> Raft a
 randomRIO rng = view (rs.random) >>= \f -> liftIO $ f rng -- R.randomRIO
@@ -77,7 +76,19 @@ runRWS_ ma r s = void $ runRWST ma r s
 enqueueRequest :: Sender.ServiceRequest -> Raft ()
 enqueueRequest s = do
   sendMsg <- view sendMessage
-  liftIO $ sendMsg s
+  conf <- readConfig
+  st <- get
+  ss <- return $ Sender.StateSnapshot
+    { Sender._newNodeId = conf ^. nodeId
+    , Sender._newRole = st ^. nodeRole
+    , Sender._newOtherNodes = conf ^. otherNodes
+    , Sender._newLeader = st ^. currentLeader
+    , Sender._newTerm = st ^. term
+    , Sender._newPublicKey = conf ^. myPublicKey
+    , Sender._newPrivateKey = conf ^. myPrivateKey
+    , Sender._newYesVotes = st ^. cYesVotes
+    }
+  liftIO $ sendMsg $ Sender.ServiceRequest' ss s
 
 -- no state update
 enqueueEvent :: Event -> Raft ()

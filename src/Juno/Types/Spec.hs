@@ -14,7 +14,7 @@ module Juno.Types.Spec
   , dequeueFromApi ,cmdStatusMap, updateCmdMap
   , RaftEnv(..), cfg, logThread, clusterSize, quorumSize, rs
   , enqueue, enqueueMultiple, dequeue, enqueueLater, killEnqueued
-  , sendMessage
+  , sendMessage, clientSendMsg
   , RaftState(..), nodeRole, term, votedFor, lazyVote, currentLeader, ignoreLeader
   , logEntries, commitIndex, commitProof, lastApplied, timerThread, replayMap
   , cYesVotes, cPotentialVotes, lNextIndex, lConvinced
@@ -49,7 +49,7 @@ import Juno.Types.Message
 import Juno.Types.Metric
 import Juno.Types.Comms
 import Juno.Types.Dispatch
-import Juno.Types.Sender (SenderServiceChannel, ServiceRequest)
+import Juno.Types.Sender (SenderServiceChannel, ServiceRequest')
 
 -- | A structure containing all the implementation details for running
 -- the raft protocol.
@@ -82,7 +82,7 @@ data RaftSpec = RaftSpec
   , _applyLogEntry    :: Command -> IO CommandResult
 
     -- ^ Function to log a debug message (no newline).
-  , _debugPrint       :: NodeId -> String -> IO ()
+  , _debugPrint       :: String -> IO ()
 
   , _publishMetric    :: Metric -> IO ()
 
@@ -155,12 +155,13 @@ data RaftEnv = RaftEnv
   , _clusterSize      :: Int
   , _quorumSize       :: Int
   , _rs               :: RaftSpec
-  , _sendMessage      :: ServiceRequest -> IO ()
+  , _sendMessage      :: ServiceRequest' -> IO ()
   , _enqueue          :: Event -> IO ()
   , _enqueueMultiple  :: [Event] -> IO ()
   , _enqueueLater     :: Int -> Event -> IO ThreadId
   , _killEnqueued     :: ThreadId -> IO ()
   , _dequeue          :: IO Event
+  , _clientSendMsg    :: OutboundGeneral -> IO ()
   }
 makeLenses ''RaftEnv
 
@@ -186,12 +187,14 @@ mkRaftEnv conf' log' cSize qSize rSpec dispatch timerTarget' = RaftEnv
           -- TODO: what if it's already taken?
     , _killEnqueued = killThread
     , _dequeue = _unInternalEvent <$> readComm ie'
+    , _clientSendMsg = writeComm cog'
     }
   where
     g' = dispatch ^. senderService
+    cog' = dispatch ^. outboundGeneral
     ie' = dispatch ^. internalEvent
 
-sendMsg :: SenderServiceChannel -> ServiceRequest -> IO ()
+sendMsg :: SenderServiceChannel -> ServiceRequest' -> IO ()
 sendMsg outboxWrite og = do
   writeComm outboxWrite og
   yield

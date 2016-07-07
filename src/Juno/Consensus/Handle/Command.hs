@@ -17,8 +17,10 @@ import Data.Maybe (isNothing, isJust, fromJust)
 import Juno.Consensus.Commit (makeCommandResponse')
 import Juno.Consensus.Handle.AppendEntries (createAppendEntriesResponse)
 import Juno.Consensus.Handle.Types
+import qualified Juno.Runtime.Sender as Sender
 import qualified Juno.Types.Sender as Sender
 import Juno.Util.Util (getCmdSigOrInvariantError, accessLogs, enqueueRequest)
+import Juno.Runtime.Timer (resetHeartbeatTimer)
 import qualified Juno.Types as JT
 
 import Juno.Consensus.Handle.AppendEntriesResponse (updateCommitProofMap)
@@ -139,6 +141,8 @@ handleSingleCommand cmd = do
       lConvinced' <- use JT.lConvinced
       enqueueRequest $ Sender.BroadcastAE Sender.OnlySendIfFollowersAreInSync lNextIndex' lConvinced'
       enqueueRequest $ Sender.BroadcastAER
+      quorumSize' <- view JT.quorumSize
+      when (Sender.willBroadcastAE quorumSize' lNextIndex' lConvinced') resetHeartbeatTimer
 
 handle :: Command -> JT.Raft ()
 handle cmd = handleSingleCommand cmd
@@ -167,6 +171,8 @@ handleBatch cmdb@CommandBatch{..} = do
         enqueueRequest $ Sender.BroadcastAE Sender.OnlySendIfFollowersAreInSync lNextIndex' lConvinced'
         enqueueRequest $ Sender.BroadcastAER
       unless (null serviceAlreadySeen) $ enqueueRequest $ Sender.SendCommandResults serviceAlreadySeen
+      quorumSize' <- view JT.quorumSize
+      when (Sender.willBroadcastAE quorumSize' lNextIndex' lConvinced') resetHeartbeatTimer
     IAmFollower BatchProcessing{..} -> do
       when (isJust lid) $ enqueueRequest $ Sender.ForwardCommandToLeader (fromJust lid) newEntries
       unless (null serviceAlreadySeen) $ enqueueRequest $ Sender.SendCommandResults serviceAlreadySeen

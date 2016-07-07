@@ -11,7 +11,14 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Juno.Types.Comms
-  ( Comms(..)
+  -- Ticks are useful
+  ( Tock(..)
+  , pprintTock
+  , createTock
+  , foreverTick
+  , foreverTickDebugWriteDelay
+  -- Comm Channels
+  , Comms(..)
   , InboundAER(..)
   , InboundAERChannel(..)
   , InboundCMD(..)
@@ -44,6 +51,7 @@ module Juno.Types.Comms
   ) where
 
 import Control.Monad
+import Control.Lens
 import Control.Concurrent (threadDelay, takeMVar, putMVar, newMVar, MVar)
 import Data.ByteString (ByteString)
 
@@ -52,11 +60,42 @@ import qualified Control.Concurrent.Chan.Unagi as Unagi
 import qualified Control.Concurrent.Chan.Unagi.NoBlocking as NoBlock
 
 import Data.Typeable
+import Data.AffineSpace ((.-.))
+import Data.Thyme.Clock (UTCTime, microseconds, getCurrentTime)
 
 import Juno.Types.Base
 import Juno.Types.Event
 import Juno.Types.Message.Signed
 import Juno.Types.Message
+
+-- Tocks are useful for seeing how backed up things are
+pprintTock :: Tock -> String -> IO String
+pprintTock Tock{..} channelName = do
+  t' <- getCurrentTime
+  (delay :: Int) <- return $! (fromIntegral $ view microseconds $ t' .-. _tockStartTime)
+  return $! "[" ++ channelName ++ "] Tock delayed by " ++ show delay ++ "mics"
+
+createTock :: Int -> IO Tock
+createTock delay = Tock <$> pure delay <*> getCurrentTime
+
+fireTick :: (Comms a b) => b -> Int -> (Tock -> a) -> IO UTCTime
+fireTick comm delay mkTock = do
+  !t@(Tock _ st) <- createTock delay
+  writeComm comm $ mkTock t
+  return st
+
+foreverTick :: Comms a b => b -> Int -> (Tock -> a) -> IO ()
+foreverTick comm delay mkTock = forever $ do
+  _ <- fireTick comm delay mkTock
+  threadDelay delay
+
+foreverTickDebugWriteDelay :: Comms a b => (String -> IO ()) -> String -> b -> Int -> (Tock -> a) -> IO ()
+foreverTickDebugWriteDelay debug' channel comm delay mkTock = forever $ do
+  !st <- fireTick comm delay mkTock
+  !t' <- getCurrentTime
+  !(writeDelay :: Int) <- return $! (fromIntegral $ view microseconds $ t' .-. st)
+  debug' $ "[" ++ channel ++ "] writing Tock to channel took " ++ show writeDelay ++ "mics"
+  threadDelay delay
 
 newtype InboundAER = InboundAER { _unInboundAER :: (ReceivedAt, SignedRPC)}
   deriving (Show, Eq, Typeable)

@@ -11,16 +11,21 @@ import Control.Lens
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer
-import qualified Data.Map as Map
+
+
+import qualified Data.Map.Strict as Map
+import qualified Data.Set as Set
 import Data.Maybe (isNothing, isJust, fromJust)
 
 import Juno.Consensus.Commit (makeCommandResponse')
 import Juno.Consensus.Handle.AppendEntries (createAppendEntriesResponse)
 import Juno.Consensus.Handle.Types
-import qualified Juno.Service.Sender as Sender
-import Juno.Util.Util (getCmdSigOrInvariantError, accessLogs, enqueueRequest)
+import Juno.Util.Util (getCmdSigOrInvariantError, queryLogs, updateLogs, enqueueRequest)
 import Juno.Runtime.Timer (resetHeartbeatTimer)
 import qualified Juno.Types as JT
+
+import qualified Juno.Service.Sender as Sender
+import qualified Juno.Service.Log as Log
 
 import Juno.Consensus.Handle.AppendEntriesResponse (updateCommitProofMap)
 
@@ -132,9 +137,12 @@ handleSingleCommand cmd = do
     (RetransmitToLeader lid) -> enqueueRequest $ Sender.ForwardCommandToLeader lid [cmd]
     (SendCommandResponse cid res) -> enqueueRequest $ Sender.SendCommandResults [(cid,res)]
     (CommitAndPropagate newEntry replayKey) -> do
-      accessLogs $ JT.updateLogs $ ULNew newEntry
+      updateLogs $ ULNew newEntry
       JT.replayMap %= Map.insert replayKey Nothing
-      myEvidence <- createAppendEntriesResponse True True
+      newMv <- queryLogs $ Set.fromList [Log.GetMaxIndex,Log.GetLastLogHash]
+      newMaxIndex' <- return $ Log.hasQueryResult Log.MaxIndex newMv
+      newLastLogHash' <- return $ Log.hasQueryResult Log.LastLogHash newMv
+      myEvidence <- createAppendEntriesResponse True True newMaxIndex' newLastLogHash'
       JT.commitProof %= updateCommitProofMap myEvidence
       lNextIndex' <- use JT.lNextIndex
       lConvinced' <- use JT.lConvinced
@@ -160,9 +168,12 @@ handleBatch cmdb@CommandBatch{..} = do
                         (JT._nodeId c)
   case out of
     IAmLeader BatchProcessing{..} -> do
-      accessLogs $ JT.updateLogs $ ULNew $ NewLogEntries (JT._term s) newEntries
+      updateLogs $ ULNew $ NewLogEntries (JT._term s) newEntries
       JT.replayMap .= updatedReplays
-      myEvidence <- createAppendEntriesResponse True True
+      newMv <- queryLogs $ Set.fromList [Log.GetMaxIndex,Log.GetLastLogHash]
+      newMaxIndex' <- return $ Log.hasQueryResult Log.MaxIndex newMv
+      newLastLogHash' <- return $ Log.hasQueryResult Log.LastLogHash newMv
+      myEvidence <- createAppendEntriesResponse True True newMaxIndex' newLastLogHash'
       JT.commitProof %= updateCommitProofMap myEvidence
       lNextIndex' <- use JT.lNextIndex
       lConvinced' <- use JT.lConvinced

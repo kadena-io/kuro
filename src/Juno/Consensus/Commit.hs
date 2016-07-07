@@ -16,18 +16,16 @@ import Data.Int (Int64)
 import Data.Thyme.Clock (UTCTime, microseconds)
 
 import qualified Data.ByteString.Char8 as BSC
-import qualified Data.Sequence as Seq
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
-import Data.Map (Map)
-import qualified Data.Map as Map
-
 import Data.Foldable (toList)
 
 import Juno.Types hiding (valid)
 import Juno.Util.Util
 import qualified Juno.Service.Sender as Sender
 import qualified Juno.Service.Log as Log
-import qualified Juno.Types.Log as Log
+
 
 -- THREAD: SERVER MAIN.
 doCommit :: Raft ()

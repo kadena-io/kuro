@@ -32,7 +32,7 @@ handleEvents = forever $ do
     ERPC rpc           -> handleRPC rpc
     AERs alotOfAers    -> PureAppendEntriesResponse.handleAlotOfAers alotOfAers
     ElectionTimeout s  -> PureElectionTimeout.handle s
-    HeartbeatTimeout s -> PureHeartbeatTimeout.handle sLastLogIndex
+    HeartbeatTimeout s -> PureHeartbeatTimeout.handle s
     Tick tock'         -> liftIO (pprintTock tock' "handleEvents") >>= debug
 
 handleRPC :: RPC -> Raft ()

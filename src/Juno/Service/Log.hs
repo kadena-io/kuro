@@ -1,6 +1,6 @@
 
 module Juno.Service.Log
-  ( initLogThread
+  ( runLogService
   , module X)
   where
 
@@ -15,8 +15,8 @@ import qualified Data.Map.Strict as Map
 import Juno.Types.Comms
 import Juno.Types.Service.Log as X
 
-initLogThread :: LogServiceChannel -> (String -> IO()) -> IO ()
-initLogThread lsc dbg = do
+runLogService :: LogServiceChannel -> (String -> IO()) -> IO ()
+runLogService lsc dbg = do
   env <- return $ LogEnv lsc dbg
   void $ runRWST handle env initLogState
 

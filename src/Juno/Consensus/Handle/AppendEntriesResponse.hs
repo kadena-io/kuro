@@ -25,13 +25,14 @@ import qualified Data.Map.Strict as Map
 import Juno.Consensus.Commit (doCommit)
 import Juno.Consensus.Handle.Types
 import qualified Juno.Service.Sender as Sender
+import qualified Juno.Service.Log as Log
 import Juno.Runtime.Timer (resetElectionTimerLeader)
-import Juno.Util.Util (debug, updateLNextIndex, accessLogs, enqueueRequest)
+import Juno.Util.Util (debug, updateLNextIndex, queryLogs, enqueueRequest)
 import qualified Juno.Types as JT
 
 data AEResponseEnv = AEResponseEnv {
 -- Old Constructors
-    _nodeRole             :: Role
+    _nodeRole         :: Role
   , _term             :: Term
   , _commitProof      :: Map NodeId AppendEntriesResponse
   }
@@ -127,15 +128,18 @@ handle aer = do
       lNextIndex' <- use JT.lNextIndex >>= return . Map.lookup _sendAENodeId
       enqueueRequest $! Sender.SingleAE _sendAENodeId lNextIndex' False
     ConvincedAndSuccessful{..} -> do
-      updateLNextIndex $ Map.insert _incrementNextIndexNode $ _incrementNextIndexLogIndex + 1
+      mv <- queryLogs $ Set.fromList [Log.GetLastLogIndex, Log.GetCommitIndex]
+      ci <- return $ Log.hasQueryResult Log.CommitIndex mv
+      myLatestIndex <- return $ Log.hasQueryResult Log.LastLogIndex mv
+      updateLNextIndex ci $ Map.insert _incrementNextIndexNode $ _incrementNextIndexLogIndex + 1
       JT.lConvinced %= Set.insert _insertConvinced
-      myLatestIndex <- accessLogs $ JT.viewLogState JT.lastLogIndex
       -- If the commit was a success but we have more, chase the response with an update
       when (myLatestIndex > _incrementNextIndexLogIndex) $ do
         enqueueRequest $! Sender.SingleAE _sendAENodeId (Just $ _incrementNextIndexLogIndex + 1) True
       resetElectionTimerLeader
     ConvincedAndUnsuccessful{..} -> do
-      updateLNextIndex $ Map.insert _sendAENodeId _setLaggingLogIndex
+      ci <- Log.hasQueryResult Log.CommitIndex <$> (queryLogs $ Set.singleton Log.GetCommitIndex)
+      updateLNextIndex ci $ Map.insert _sendAENodeId _setLaggingLogIndex
       enqueueRequest $! Sender.SingleAE _sendAENodeId (Just _setLaggingLogIndex) True
       resetElectionTimerLeader
 

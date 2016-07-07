@@ -42,10 +42,9 @@ runRaftClient renv getEntries cmdStatusMap' rconf spec@RaftSpec{..} disableTimeo
   void $ runMessageReceiver renv -- THREAD: CLIENT MESSAGE RECEIVER
   rconf' <- newIORef rconf
   timerTarget' <- newEmptyMVar
-  ls <- initLogState
   runRWS_
     (raftClient (lift getEntries) cmdStatusMap' disableTimeouts)
-    (mkRaftEnv rconf' ls csize qsize spec (_dispatch renv) timerTarget')
+    (mkRaftEnv rconf' csize qsize spec (_dispatch renv) timerTarget')
     -- TODO: because UTC can flow backwards, this request ID is problematic:
     (initialRaftState timerTarget') {_currentRequestId = rid} -- only use currentLeader and logEntries
 

@@ -12,21 +12,26 @@ import Control.Lens hiding (Index)
 import Control.Monad.Reader
 import Control.Monad.State (get)
 import Control.Monad.Writer.Strict
-import Data.Map (Map)
+
+import Data.ByteString (ByteString)
+
+import Data.Map.Strict (Map)
+import qualified Data.Map as Map
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import Data.Set (Set)
-import qualified Data.Map as Map
 import qualified Data.Set as Set
 
 import Juno.Consensus.Handle.Types
 import Juno.Consensus.Handle.AppendEntriesResponse (updateCommitProofMap)
-import qualified Juno.Service.Sender as Sender
 import Juno.Service.Sender (createAppendEntriesResponse')
 import Juno.Runtime.Timer (resetElectionTimer)
 import Juno.Util.Util
 import qualified Juno.Types as JT
-import Juno.Types.Log
+
+
+import qualified Juno.Service.Sender as Sender
+import qualified Juno.Service.Log as Log
 
 data AppendEntriesEnv = AppendEntriesEnv {
 -- Old Constructors
@@ -168,16 +173,17 @@ applyNewLeader NewLeaderConfirmed{..} = do
   setCurrentLeader $ Just _stateCurrentLeader
   setRole _stateRole
 
-logHashChange :: JT.Raft ()
-logHashChange = do
-  mLastHash <- accessLogs $ lastLogHash
+logHashChange :: ByteString -> JT.Raft ()
+logHashChange mLastHash = do
   logMetric $ JT.MetricHash mLastHash
 
 handle :: AppendEntries -> JT.Raft ()
 handle ae = do
   r <- ask
   s <- get
-  logAtAEsLastLogIdx <- accessLogs $ lookupEntry $ _prevLogIndex ae
+  mv <- queryLogs $ Set.fromList [Log.GetSomeEntry (_prevLogIndex ae),Log.GetCommitIndex]
+  logAtAEsLastLogIdx <- return $ Log.hasQueryResult (Log.SomeEntry $ _prevLogIndex ae) mv
+  commitIndex' <- return $ Log.hasQueryResult Log.CommitIndex mv
   let ape = AppendEntriesEnv
               (JT._term s)
               (JT._currentLeader s)
@@ -185,8 +191,7 @@ handle ae = do
               (logAtAEsLastLogIdx)
               (JT._quorumSize r)
   (AppendEntriesOut{..}, l) <- runReaderT (runWriterT (handleAppendEntries ae)) ape
-  ci <- accessLogs $ viewLogState commitIndex
-  unless (ci == _prevLogIndex ae && length l == 1) $ mapM_ debug l
+  unless (commitIndex' == _prevLogIndex ae && length l == 1) $ mapM_ debug l
   applyNewLeader _newLeaderAction
   case _result of
     Ignore -> do
@@ -201,10 +206,13 @@ handle ae = do
       case _validReponse of
         SendFailureResponse -> enqueueRequest $ Sender.SingleAER _responseLeaderId False True
         (Commit rMap rle) -> do
-          accessLogs $ updateLogs $ ULReplicate rle
-          logHashChange
+          updateLogs $ Log.ULReplicate rle
+          newMv <- queryLogs $ Set.fromList [Log.GetMaxIndex,Log.GetLastLogHash]
+          newMaxIndex' <- return $ Log.hasQueryResult Log.MaxIndex newMv
+          newLastLogHash' <- return $ Log.hasQueryResult Log.LastLogHash newMv
+          logHashChange newLastLogHash'
           JT.replayMap %= Map.union rMap
-          myEvidence <- createAppendEntriesResponse True True
+          myEvidence <- createAppendEntriesResponse True True newMaxIndex' newLastLogHash'
           JT.commitProof %= updateCommitProofMap myEvidence
           -- TODO: we can be smarter here and fill in the details the AER needs about the logs without needing to hit that thread
           enqueueRequest Sender.BroadcastAER
@@ -216,12 +224,10 @@ handle ae = do
       -- Ignoring this is safe because if we have an out of touch leader they will step down after 2x maxElectionTimeouts if it receives no valid AER
       -- TODO: change this behavior to be if it hasn't heard from a quorum in 2x maxElectionTimeouts
 
-createAppendEntriesResponse :: Bool -> Bool -> JT.Raft AppendEntriesResponse
-createAppendEntriesResponse success convinced = do
+createAppendEntriesResponse :: Bool -> Bool -> LogIndex -> ByteString -> JT.Raft AppendEntriesResponse
+createAppendEntriesResponse success convinced maxIndex' lastLogHash' = do
   ct <- use JT.term
   myNodeId' <- JT.viewConfig JT.nodeId
-  es <- getLogState
-  case createAppendEntriesResponse' success convinced ct myNodeId'
-           (maxIndex' es) (lastLogHash' es) of
+  case createAppendEntriesResponse' success convinced ct myNodeId' maxIndex' lastLogHash' of
     AER' aer -> return aer
     _ -> error "deep invariant error: crtl-f for createAppendEntriesResponse"

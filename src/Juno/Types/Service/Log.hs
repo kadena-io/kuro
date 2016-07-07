@@ -28,6 +28,8 @@ module Juno.Types.Service.Log
   , TakenEntries(..), LogInfoForNextIndex(..) , LastLogHash(..), LastLogTerm(..)
   , EntriesAfter(..), InfoAndEntriesAfter(..)
   , LastApplied(..), LastLogIndex(..), NextLogIndex(..), CommitIndex(..)
+  , UnappliedEntries(..)
+  , module X
   ) where
 
 
@@ -50,7 +52,8 @@ import Data.Serialize hiding (get)
 import GHC.Generics
 
 import Juno.Types.Base
-import Juno.Types.Log as X
+import Juno.Types.Log
+import qualified Juno.Types.Log as X
 import Juno.Types.Comms
 import Juno.Types.Message.Signed
 import Juno.Types.Message.CMD
@@ -75,6 +78,8 @@ class LogApi a where
   -- | called by leaders sending appendEntries.
   -- given a replica's nextIndex, get the index and term to send as
   -- prevLog(Index/Term)
+  -- | get every entry that hasn't been applied yet (betweek LastApplied and CommitIndex)
+  getUnappliedEntries :: a -> Maybe (Seq LogEntry)
   logInfoForNextIndex :: Maybe LogIndex -> a -> (LogIndex,Term)
   -- | Latest hash or empty
   lastLogHash :: a -> ByteString
@@ -146,6 +151,12 @@ instance LogApi (LogState LogEntry) where
       | otherwise  -> Just v
   {-# INLINE takeEntries #-}
 
+  getUnappliedEntries ls =
+    let ci = commitIndex ls
+        la = lastApplied ls
+    in fmap (Seq.drop (fromIntegral $ la + 1)) $ takeEntries (ci + 1) ls
+  {-# INLINE getUnappliedEntries #-}
+
   logInfoForNextIndex Nothing          _  = (startIndex, startTerm)
   logInfoForNextIndex (Just myNextIdx) ls = let pli = myNextIdx - 1 in
     case lookupEntry pli ls of
@@ -167,6 +178,7 @@ instance LogApi (LogState LogEntry) where
   updateLogs (ULNew nle) ls = appendLogEntry nle ls
   updateLogs (ULReplicate ReplicateLogEntries{..}) ls = addLogEntriesAt _rlePrvLogIdx _rleEntries ls
   updateLogs (ULCommitIdx UpdateCommitIndex{..}) ls = ls {_lsCommitIndex = _uci}
+  updateLogs (UpdateLastApplied li) ls = ls {_lsLastApplied = li}
   {-# INLINE updateLogs  #-}
 
 
@@ -237,6 +249,7 @@ data AtomicQuery =
   GetEntryCount |
   GetSomeEntry LogIndex |
   TakeEntries LogIndex |
+  GetUnappliedEntries |
   GetLogInfoForNextIndex (Maybe LogIndex) |
   GetLastLogHash |
   GetLastLogTerm |
@@ -255,6 +268,7 @@ data QueryResult =
   QrEntryCount Int |
   QrSomeEntry (Maybe LogEntry) |
   QrTakenEntries (Maybe (Seq LogEntry)) |
+  QrUnappliedEntries (Maybe (Seq LogEntry)) |
   QrLogInfoForNextIndex (LogIndex,Term) |
   QrLastLogHash ByteString |
   QrLastLogTerm Term |
@@ -272,6 +286,7 @@ data MaxIndex = MaxIndex deriving (Eq,Show)
 data EntryCount = EntryCount deriving (Eq,Show)
 data SomeEntry = SomeEntry LogIndex deriving (Eq,Show)
 data TakenEntries = TakenEntries LogIndex deriving (Eq,Show)
+data UnappliedEntries = UnappliedEntries deriving (Eq,Show)
 data LogInfoForNextIndex = LogInfoForNextIndex (Maybe LogIndex) deriving (Eq,Show)
 data LastLogHash = LastLogHash deriving (Eq,Show)
 data LastLogTerm = LastLogTerm deriving (Eq,Show)
@@ -290,6 +305,7 @@ evalQuery GetCommitIndex a = QrCommitIndex $! commitIndex a
 evalQuery GetFirstEntry a = QrFirstEntry $! firstEntry a
 evalQuery GetLastEntry a = QrLastEntry $! lastEntry a
 evalQuery GetMaxIndex a = QrMaxIndex $! maxIndex a
+evalQuery GetUnappliedEntries a = QrUnappliedEntries $! getUnappliedEntries a
 evalQuery GetEntryCount a = QrEntryCount $! entryCount a
 evalQuery (GetSomeEntry li) a = QrSomeEntry $! lookupEntry li a
 evalQuery (TakeEntries li) a = QrTakenEntries $! takeEntries li a
@@ -358,6 +374,12 @@ instance HasQueryResult SomeEntry (Maybe LogEntry) where
   hasQueryResult (SomeEntry li) m = case Map.lookup (GetSomeEntry li) m of
     Just (QrSomeEntry v) -> v
     _ -> error "Invariant Error: hasQueryResult SomeEntry failed to find SomeEntry"
+  {-# INLINE hasQueryResult #-}
+
+instance HasQueryResult UnappliedEntries (Maybe (Seq LogEntry)) where
+  hasQueryResult UnappliedEntries m = case Map.lookup GetUnappliedEntries m of
+    Just (QrUnappliedEntries v) -> v
+    _ -> error "Invariant Error: hasQueryResult TakenEntries failed to find TakenEntries"
   {-# INLINE hasQueryResult #-}
 
 instance HasQueryResult TakenEntries (Maybe (Seq LogEntry)) where

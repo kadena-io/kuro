@@ -17,6 +17,8 @@ import Data.Thyme.Clock (UTCTime, microseconds)
 
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.Sequence as Seq
+import qualified Data.Set as Set
+import Data.Map (Map)
 import qualified Data.Map as Map
 
 import Data.Foldable (toList)
@@ -25,6 +27,7 @@ import Juno.Types hiding (valid)
 import Juno.Util.Util
 import qualified Juno.Service.Sender as Sender
 import qualified Juno.Service.Log as Log
+import qualified Juno.Types.Log as Log
 
 -- THREAD: SERVER MAIN.
 doCommit :: Raft ()
@@ -34,18 +37,17 @@ doCommit = do
 
 applyLogEntries :: Raft ()
 applyLogEntries = do
-  ls <- getLogState
-  la <- return $ ls ^. lastApplied
-  ci <- return $ ls ^. commitIndex
+  mv <- queryLogs $ Set.fromList [Log.GetUnappliedEntries, Log.GetCommitIndex]
+  unappliedEntries' <- return $ Log.hasQueryResult Log.UnappliedEntries mv
+  commitIndex' <- return $ Log.hasQueryResult Log.CommitIndex mv
   now <- view (rs.getTimestamp) >>= liftIO
-  leToApply' <- return $ fmap (Seq.drop (fromIntegral $ la + 1)) $ takeEntries' (ci + 1) $ ls
-  case leToApply' of
+  case unappliedEntries' of
     Nothing -> debug $ "No new entries to apply"
     Just leToApply -> do
       results <- mapM (applyCommand now . _leCommand) leToApply
       r <- use nodeRole
-      accessLogs $ updateLogState (\ls' -> ls' {_lastApplied = ci})
-      logMetric $ MetricAppliedIndex ci
+      updateLogs $ Log.UpdateLastApplied commitIndex'
+      logMetric $ MetricAppliedIndex commitIndex'
       if not (null results)
         then if r == Leader
             then do
@@ -141,14 +143,13 @@ updateCommitIndex' = do
   --qsize <- view quorumSize >>= \n -> return $ n - 1
   qsize <- view quorumSize >>= \n -> return $ n - 1
 
-  ls <- getLogState
-  ci <- return $ ls ^. commitIndex
+  evidence <- return $! reverse $ sortOn _aerIndex $ Map.elems proof
 
-  let maxLogIndex = maxIndex' ls
+  mv <- queryLogs $ Set.fromList $ (Log.GetCommitIndex):(Log.GetMaxIndex):((\aer -> Log.GetSomeEntry $ _aerIndex aer) <$> evidence)
+  ci <- return $ Log.hasQueryResult Log.CommitIndex mv
+  maxLogIndex <- return $ Log.hasQueryResult Log.MaxIndex mv
 
-  let evidence = reverse $ sortOn _aerIndex $ Map.elems proof
-
-  case checkCommitProof qsize ls maxLogIndex evidence of
+  case checkCommitProof qsize mv maxLogIndex evidence of
     Left 0 -> do
       debug $ "Commit Proof Checked: no new evidence " ++ show ci
       return False
@@ -161,7 +162,7 @@ updateCommitIndex' = do
                 return False
     Right qci -> if qci > ci
                 then do
-                  accessLogs $ updateLogs $ ULCommitIdx $ UpdateCommitIndex qci
+                  updateLogs $ ULCommitIdx $ UpdateCommitIndex qci
                   logCommitChange ci qci
                   commitProof %= Map.filter (\a -> qci < _aerIndex a)
                   debug $ "Commit index is now: " ++ show qci
@@ -170,13 +171,13 @@ updateCommitIndex' = do
                   debug $ "Commit index is " ++ show qci ++ " with evidence for " ++ show ci
                   return False
 
-checkCommitProof :: Int -> LogState LogEntry -> LogIndex -> [AppendEntriesResponse] -> Either Int LogIndex
-checkCommitProof qsize les maxLogIdx evidence = go 0 evidence
+checkCommitProof :: Int -> Map Log.AtomicQuery Log.QueryResult  -> LogIndex -> [AppendEntriesResponse] -> Either Int LogIndex
+checkCommitProof qsize mv maxLogIdx evidence = go 0 evidence
   where
     go n [] = Left n
     go n (ev:evs) = if _aerIndex ev > maxLogIdx
                     then go n evs
-                    else if Just (_aerHash ev) == (_leHash <$> lookupEntry' (_aerIndex ev) les)
+                    else if Just (_aerHash ev) == (_leHash <$> Log.hasQueryResult (Log.SomeEntry (_aerIndex ev)) mv)
                          then if (n+1) >= qsize
                               then Right $ _aerIndex ev
                               else go (n+1) evs

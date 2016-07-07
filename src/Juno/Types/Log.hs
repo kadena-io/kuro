@@ -176,5 +176,6 @@ makeLenses ''UpdateCommitIndex
 data UpdateLogs =
   ULReplicate ReplicateLogEntries |
   ULNew NewLogEntries |
-  ULCommitIdx UpdateCommitIndex
+  ULCommitIdx UpdateCommitIndex |
+  UpdateLastApplied LogIndex
   deriving (Show, Eq, Generic)

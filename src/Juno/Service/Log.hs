@@ -7,6 +7,8 @@ import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Trans.RWS.Strict
 
+import qualified Data.Map.Strict as Map
+
 import Juno.Types.Comms
 import Juno.Types.Service.Log
 
@@ -31,7 +33,7 @@ handle = do
 runQuery :: QueryApi -> LogThread ()
 runQuery (Query aq mv) = do
   a' <- get
-  qr <- return ((`evalQuery` a') <$> aq)
+  qr <- return $ Map.fromSet (`evalQuery` a') aq
   liftIO $ putMVar mv qr
 runQuery (Update ul) = modify (\a' -> updateLogs ul a')
 runQuery (Tick t) = do

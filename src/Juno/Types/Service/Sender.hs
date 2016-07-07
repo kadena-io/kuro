@@ -17,7 +17,7 @@ module Juno.Types.Service.Sender
   , ServiceRequest'(..)
   , ServiceRequest(..)
   , StateSnapshot(..), newNodeId, newRole, newOtherNodes, newLeader, newTerm, newPublicKey
-  , newPrivateKey, newYesVotes
+  , newPrivateKey, newYesVotes, aeReplicationLogLimit
   , AEBroadcastControl(..)
   , SenderService
   , ServiceEnv(..), myNodeId, currentLeader, currentTerm, myPublicKey
@@ -111,6 +111,7 @@ data ServiceEnv = ServiceEnv
   , _myPrivateKey :: !PrivateKey
   , _yesVotes :: !(Set RequestVoteResponse)
   , _debugPrint :: (String -> IO ())
+  , _aeReplicationLogLimit :: Int
   -- Comm Channels
   , _serviceRequestChan :: SenderServiceChannel
   , _outboundGeneral :: OutboundGeneralChannel

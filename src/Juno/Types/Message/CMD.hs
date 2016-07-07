@@ -27,7 +27,7 @@ data Command = Command
   , _cmdEncryptGroup :: !(Maybe Alias)
   , _cmdProvenance :: !Provenance
   }
-  deriving (Show, Eq, Generic)
+  deriving (Show, Eq, Ord, Generic)
 makeLenses ''Command
 
 data CMDWire = CMDWire !(CommandEntry, NodeId, RequestId, Maybe Alias)

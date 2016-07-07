@@ -50,7 +50,7 @@ data LogEntry = LogEntry
   , _leCommand :: !Command
   , _leHash    :: !ByteString
   }
-  deriving (Show, Eq, Generic)
+  deriving (Show, Eq, Ord, Generic)
 makeLenses ''LogEntry
 
 newtype Log a = Log { _lEntries :: Seq a }

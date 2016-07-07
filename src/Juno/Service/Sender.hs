@@ -13,6 +13,7 @@ module Juno.Service.Sender
   ) where
 
 import Control.Lens
+import Control.Concurrent
 import Control.Arrow (second)
 import Control.Parallel.Strategies
 
@@ -21,23 +22,23 @@ import Control.Monad
 import Control.Monad.IO.Class
 
 import Data.ByteString (ByteString)
-import Data.IORef
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
+import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import Data.Serialize
 
 import qualified Juno.Types as JT
-import Juno.Types.Sender as X
-import Juno.Types hiding ( logThread, debugPrint, RaftState(..), Config(..)
+import Juno.Types.Service.Sender as X
+import qualified Juno.Types.Service.Log as Log
+import Juno.Types hiding (debugPrint, RaftState(..), Config(..)
   , Raft, RaftSpec(..), nodeId, sendMessage, outboundGeneral, outboundAerRvRvr
-  , myPublicKey, myPrivateKey, otherNodes, nodeRole, term, Event(..))
+  , myPublicKey, myPrivateKey, otherNodes, nodeRole, term, Event(..), logService)
 
-
-runSenderService :: Dispatch -> JT.Config -> (String -> IO ()) -> IORef (LogState LogEntry) -> IO ()
-runSenderService dispatch conf debugFn logRef = do
+runSenderService :: Dispatch -> JT.Config -> (String -> IO ()) -> IO ()
+runSenderService dispatch conf debugFn = do
   s <- return $ ServiceEnv
     { _myNodeId = conf ^. JT.nodeId
     , _nodeRole = Follower
@@ -48,12 +49,13 @@ runSenderService dispatch conf debugFn logRef = do
     , _myPrivateKey = conf ^. JT.myPrivateKey
     , _yesVotes = Set.empty
     , _debugPrint = debugFn
+    , _aeReplicationLogLimit = 5000
     -- Comm Channels
     , _serviceRequestChan = dispatch ^. senderService
     , _outboundGeneral = dispatch ^. JT.outboundGeneral
     , _outboundAerRvRvr = dispatch ^. JT.outboundAerRvRvr
     -- Log Storage
-    , _logThread = logRef
+    , _logService = dispatch ^. JT.logService
     }
   void $ liftIO $ runReaderT serviceRequests s
 
@@ -87,8 +89,12 @@ serviceRequests = do
           ForwardCommandToLeader{..} -> mapM_ (sendRPC _srFor . CMD') _srCommands
       Tick t -> liftIO (pprintTock t "serviceRequests") >>= debug
 
-getLogState :: SenderService (LogState LogEntry)
-getLogState = view logThread >>= liftIO . readIORef
+queryLogs :: Set Log.AtomicQuery -> SenderService (Map Log.AtomicQuery Log.QueryResult)
+queryLogs q = do
+  ls <- view logService
+  mv <- liftIO newEmptyMVar
+  liftIO . writeComm ls $ Log.Query q mv
+  liftIO $ takeMVar mv
 
 debug :: String -> SenderService ()
 debug s = do
@@ -100,69 +106,88 @@ sendAllRequestVotes :: SenderService ()
 sendAllRequestVotes = do
   ct <- view currentTerm
   nid <- view myNodeId
-  ls <- getLogState
+  mv <- queryLogs $ Set.fromList [Log.GetMaxIndex, Log.GetLastLogTerm]
+  lastLogIndex' <- return $ Log.hasQueryResult Log.MaxIndex mv
+  lastLogTerm' <- return $ Log.hasQueryResult Log.LastLogTerm mv
   debug $ "sendRequestVote: " ++ show ct
-  pubRPC $ RV' $ RequestVote ct nid (maxIndex' ls) (lastLogTerm' ls) NewMsg
+  pubRPC $ RV' $ RequestVote ct nid lastLogIndex' lastLogTerm' NewMsg
 
 -- | This is useful for when we hit a heartbeat event but followers are out of sync.
 -- Again, AE is overloaded as a Heartbeat msg as well but redundant AE's that involve crypto are wasteful/kill followers.
 -- Instead we use an empty AE to elicit a AER, which we then service (as Leader of course)
+--createEmptyAppendEntries' :: NodeId
+--                   -> Map NodeId LogIndex
+--                   -> LogState LogEntry
+--                   -> Term
+--                   -> NodeId
+--                   -> Set NodeId
+--                   -> Set RequestVoteResponse
+--                   -> RPC
+--createEmptyAppendEntries' target lNextIndex' es ct myNodeId' vts yesVotes' =
+--  let
+--    mni = Map.lookup target lNextIndex'
+--    (pli,plt) = logInfoForNextIndex' mni es
+--    vts' = if Set.member target vts then Set.empty else yesVotes'
+--  in
+--    AE' $ AppendEntries ct myNodeId' pli plt Seq.empty vts' NewMsg
 createEmptyAppendEntries' :: NodeId
-                   -> Map NodeId LogIndex
-                   -> LogState LogEntry
-                   -> Term
-                   -> NodeId
-                   -> Set NodeId
-                   -> Set RequestVoteResponse
-                   -> RPC
-createEmptyAppendEntries' target lNextIndex' es ct myNodeId' vts yesVotes' =
+                          -> (LogIndex, Term)
+                          -> Term
+                          -> NodeId
+                          -> Set NodeId
+                          -> Set RequestVoteResponse
+                          -> RPC
+createEmptyAppendEntries' target (pli, plt) ct myNodeId' vts yesVotes' =
   let
-    mni = Map.lookup target lNextIndex'
-    (pli,plt) = logInfoForNextIndex' mni es
     vts' = if Set.member target vts then Set.empty else yesVotes'
   in
     AE' $ AppendEntries ct myNodeId' pli plt Seq.empty vts' NewMsg
 
 createAppendEntries' :: NodeId
-                   -> Map NodeId LogIndex
-                   -> LogState LogEntry
-                   -> Term
-                   -> NodeId
-                   -> Set NodeId
-                   -> Set RequestVoteResponse
-                   -> RPC
-createAppendEntries' target lNextIndex' es ct myNodeId' vts yesVotes' =
+                     -> (LogIndex, Term, Seq LogEntry)
+                     -> Term
+                     -> NodeId
+                     -> Set NodeId
+                     -> Set RequestVoteResponse
+                     -> RPC
+createAppendEntries' target (pli, plt, es) ct myNodeId' vts yesVotes' =
   let
-    mni = Map.lookup target lNextIndex'
-    (pli,plt) = logInfoForNextIndex' mni es
     vts' = if Set.member target vts then Set.empty else yesVotes'
   in
-    AE' $ AppendEntries ct myNodeId' pli plt (getEntriesAfter' pli es) vts' NewMsg
+    AE' $ AppendEntries ct myNodeId' pli plt es vts' NewMsg
 
 sendAppendEntries :: NodeId -> Maybe LogIndex -> Bool -> SenderService ()
 sendAppendEntries target lNextIndex' isConvinced = do
-  es <- getLogState
-  (pli,plt) <- return $ logInfoForNextIndex' lNextIndex' es
+  limit' <- view aeReplicationLogLimit
+  mv <- queryLogs $ Set.singleton $ Log.GetInfoAndEntriesAfter lNextIndex' limit'
+  (pli,plt,es) <- return $ Log.hasQueryResult (Log.InfoAndEntriesAfter lNextIndex' limit') mv
   vts' <- if isConvinced then return $ Set.empty else view yesVotes
   ct <- view currentTerm
   myNodeId' <- view myNodeId
-  sendRPC target $ AE' $ AppendEntries ct myNodeId' pli plt (getEntriesAfter' pli es) vts' NewMsg
+  sendRPC target $ AE' $ AppendEntries ct myNodeId' pli plt es vts' NewMsg
 --   createAppendEntries' target lNextIndex' es ct myNodeId' lConvinced' yesVotes'
   debug $ "sendAppendEntries: " ++ show ct
 
 -- | Send all append entries is only needed in special circumstances. Either we have a Heartbeat event or we are getting a quick win in with CMD's
 sendAllAppendEntries :: Map NodeId LogIndex -> Set NodeId -> AEBroadcastControl -> SenderService ()
 sendAllAppendEntries lNextIndex' lConvinced' sendIfOutOfSync = do
-  es <- getLogState
   ct <- view currentTerm
   myNodeId' <- view myNodeId
   yesVotes' <- view yesVotes
   oNodes <- view otherNodes
-  case (canBroadcastAE (length oNodes) lNextIndex' es ct myNodeId' lConvinced', sendIfOutOfSync) of
+  limit' <- view aeReplicationLogLimit
+  inSync' <- canBroadcastAE (length oNodes) lNextIndex' ct myNodeId' lConvinced'
+  case (inSync', sendIfOutOfSync) of
     (BackStreet, SendAERegardless) -> do
       -- We can't take the short cut but the AE (which is overloaded as a heartbeat grr...) still need to be sent
       -- This usually takes place when we hit a heartbeat timeout
-      sendRPCs $ (\target -> (target, createAppendEntries' target lNextIndex' es ct myNodeId' lConvinced' yesVotes')) <$> Set.toList oNodes
+      mv <- queryLogs $ Set.map (\n -> Log.GetInfoAndEntriesAfter (Map.lookup n lNextIndex') limit') oNodes
+      sendRPCs $ (\target ->
+                    ( target
+                    , createAppendEntries' target
+                      (Log.hasQueryResult (Log.InfoAndEntriesAfter (Map.lookup target lNextIndex') limit') mv)
+                      ct myNodeId' lConvinced' yesVotes')
+                 ) <$> Set.toList oNodes
       debug "Sent All AppendEntries"
     (BackStreet, OnlySendIfFollowersAreInSync) -> do
       -- We can't just spam AE's to the followers because they can get clogged with overlapping/redundant AE's. This eventually trips an election.
@@ -174,7 +199,13 @@ sendAllAppendEntries lNextIndex' lConvinced' sendIfOutOfSync = do
       -- TODO: track time since last contact with every node. If some node goes down/partitions we don't want that to ruin our lovely
       --       broadcast here (which it will currently). If a node is out of date for longer than a max election timeout
       --       (though +1 heartbeat may make more sense) then don't count it towards the "InSync" measurement
-      sendRPCs $ (\target -> (target, createEmptyAppendEntries' target lNextIndex' es ct myNodeId' lConvinced' yesVotes')) <$> Set.toList oNodes
+      mv <- queryLogs $ Set.map (\n -> Log.GetLogInfoForNextIndex (Map.lookup n lNextIndex')) oNodes
+      sendRPCs $ (\target ->
+                    ( target
+                    , createEmptyAppendEntries' target
+                      (Log.hasQueryResult (Log.LogInfoForNextIndex (Map.lookup target lNextIndex')) mv)
+                      ct myNodeId' lConvinced' yesVotes')
+                 ) <$> Set.toList oNodes
       debug "Followers are out of sync, cannot issue broadcast AE"
     (InSync (ae, ln), _) -> do
       -- Hell yeah, we can just broadcast. We don't care about the Broadcast control if we know we can broadcast.
@@ -201,12 +232,11 @@ willBroadcastAE clusterSize' lNextIndex' vts =
 
 canBroadcastAE :: Int
                -> Map NodeId LogIndex
-               -> LogState LogEntry
                -> Term
                -> NodeId
                -> Set NodeId
-               -> InSync
-canBroadcastAE clusterSize' lNextIndex' es ct myNodeId' vts =
+               -> SenderService InSync
+canBroadcastAE clusterSize' lNextIndex' ct myNodeId' vts =
   -- we only want to do this if we know that every node is in sync with us (the leader)
   let
     everyoneBelieves = Set.size vts == clusterSize'
@@ -214,12 +244,14 @@ canBroadcastAE clusterSize' lNextIndex' es ct myNodeId' vts =
     mniSet = Set.fromList $ mniList -- condense every Followers LI into a set
     inSync = 1 == Set.size mniSet && clusterSize' == length mniList -- if each LI is the same, then the set is a signleton
     mni = head $ Set.elems mniSet -- totally unsafe but we only call it if we are going to broadcast
-    (pli,plt) = logInfoForNextIndex' (Just mni) es -- same here...
-    newEntriesToReplicate = getEntriesAfter' pli es
   in
     if everyoneBelieves && inSync
-    then InSync (AE' $ AppendEntries ct myNodeId' pli plt newEntriesToReplicate Set.empty NewMsg, Seq.length newEntriesToReplicate)
-    else BackStreet
+    then do
+      limit' <- view aeReplicationLogLimit
+      mv <- queryLogs $ Set.singleton $ Log.GetInfoAndEntriesAfter (Just mni) limit'
+      (pli,plt, es) <- return $ Log.hasQueryResult (Log.InfoAndEntriesAfter (Just mni) limit') mv
+      return $ InSync (AE' $ AppendEntries ct myNodeId' pli plt es Set.empty NewMsg, Seq.length es)
+    else return BackStreet
 {-# INLINE canBroadcastAE #-}
 
 createAppendEntriesResponse' :: Bool -> Bool -> Term -> NodeId -> LogIndex -> ByteString -> RPC
@@ -231,9 +263,10 @@ sendAppendEntriesResponse :: NodeId -> Bool -> Bool -> SenderService ()
 sendAppendEntriesResponse target success convinced = do
   ct <- view currentTerm
   myNodeId' <- view myNodeId
-  es <- getLogState
-  sendRPC target $ createAppendEntriesResponse' success convinced ct myNodeId'
-              (maxIndex' es) (lastLogHash' es)
+  mv <- queryLogs $ Set.fromList [Log.GetMaxIndex, Log.GetLastLogHash]
+  maxIndex' <- return $ Log.hasQueryResult Log.MaxIndex mv
+  lastLogHash' <- return $ Log.hasQueryResult Log.LastLogHash mv
+  sendRPC target $ createAppendEntriesResponse' success convinced ct myNodeId' maxIndex' lastLogHash'
   debug $ "Sent AppendEntriesResponse: " ++ show ct
 
 -- this is used for distributed evidence + updating the Leader with lNextIndex
@@ -241,8 +274,10 @@ sendAllAppendEntriesResponse :: SenderService ()
 sendAllAppendEntriesResponse = do
   ct <- view currentTerm
   myNodeId' <- view myNodeId
-  es <- getLogState
-  aer <- return $ createAppendEntriesResponse' True True ct myNodeId' (maxIndex' es) (lastLogHash' es)
+  mv <- queryLogs $ Set.fromList [Log.GetMaxIndex, Log.GetLastLogHash]
+  maxIndex' <- return $ Log.hasQueryResult Log.MaxIndex mv
+  lastLogHash' <- return $ Log.hasQueryResult Log.LastLogHash mv
+  aer <- return $ createAppendEntriesResponse' True True ct myNodeId' maxIndex' lastLogHash'
   sendAerRvRvr aer
 
 sendRequestVoteResponse :: NodeId -> LogIndex -> Bool -> SenderService ()

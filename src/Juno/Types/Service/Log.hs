@@ -24,6 +24,9 @@ module Juno.Types.Service.Log
   , HasQueryResult(..)
   , LogThread
   , LogServiceChannel(..)
+  , FirstEntry(..), LastEntry(..), MaxIndex(..), EntryCount(..), SomeEntry(..)
+  , TakenEntries(..), LogInfoForNextIndex(..) , LastLogHash(..), LastLogTerm(..)
+  , EntriesAfter(..), InfoAndEntriesAfter(..)
   ) where
 
 
@@ -36,6 +39,9 @@ import Codec.Digest.SHA
 
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
+import Data.Set (Set)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as B
 import Data.Serialize hiding (get)
@@ -102,20 +108,26 @@ instance LogApi (LogState LogEntry) where
   firstEntry ls = case viewLogs ls of
     (e :< _) -> Just e
     _        -> Nothing
+  {-# INLINE firstEntry #-}
 
   lastEntry ls = case viewLogs ls of
     (_ :> e) -> Just e
     _        -> Nothing
+  {-# INLINE lastEntry #-}
 
   maxIndex ls = maybe startIndex _leLogIndex (lastEntry ls)
+  {-# INLINE maxIndex #-}
 
   entryCount ls = fromIntegral . Seq.length . viewLogSeq $ ls
+  {-# INLINE entryCount #-}
 
   lookupEntry i = firstOf (ix i) . viewLogs
+  {-# INLINE lookupEntry #-}
 
   takeEntries t ls = case Seq.take (fromIntegral t) $ viewLogSeq ls of
     v | Seq.null v -> Nothing
       | otherwise  -> Just v
+  {-# INLINE takeEntries #-}
 
   logInfoForNextIndex Nothing          _  = (startIndex, startTerm)
   logInfoForNextIndex (Just myNextIdx) ls = let pli = myNextIdx - 1 in
@@ -124,16 +136,21 @@ instance LogApi (LogState LogEntry) where
           -- this shouldn't happen, because nextIndex - 1 should always be at
           -- most our last entry
           Nothing -> (startIndex, startTerm)
+  {-# INLINE logInfoForNextIndex #-}
 
   lastLogHash = maybe mempty _leHash . lastEntry
+  {-# INLINE lastLogHash #-}
 
   lastLogTerm ls = maybe startTerm _leTerm $ lastEntry ls
+  {-# INLINE lastLogTerm #-}
 
   getEntriesAfter pli cnt = Seq.take cnt . Seq.drop (fromIntegral $ pli + 1) . viewLogSeq
+  {-# INLINE getEntriesAfter #-}
 
   updateLogs (ULNew nle) ls = appendLogEntry nle ls
   updateLogs (ULReplicate ReplicateLogEntries{..}) ls = addLogEntriesAt _rlePrvLogIdx _rleEntries ls
   updateLogs (ULCommitIdx UpdateCommitIndex{..}) ls = ls {_commitIndex = _uci}
+  {-# INLINE updateLogs  #-}
 
 
 addLogEntriesAt :: LogIndex -> Seq LogEntry -> LogState LogEntry -> LogState LogEntry
@@ -149,6 +166,7 @@ addLogEntriesAt pli newLEs ls =
         , _lastLogIndex = lastIdx
         , _nextLogIndex = lastIdx + 1
         }
+{-# INLINE addLogEntriesAt #-}
 
 -- Since the only node to ever append a log entry is the Leader we can start keeping the logs in sync here
 -- TODO: this needs to handle picking the right LogIndex
@@ -166,6 +184,7 @@ appendLogEntry NewLogEntries{..} ls = case lastEntry ls of
         lastIdx' = maybe (ls ^. lastLogIndex) _leLogIndex $ seqTail nle
       in ls' { _lastLogIndex = lastIdx'
              , _nextLogIndex = lastIdx' + 1 }
+{-# INLINE appendLogEntry #-}
 
 newEntriesToLog :: Term -> ByteString -> LogIndex -> [Command] -> Seq LogEntry
 newEntriesToLog ct prevHash idx cmds = Seq.fromList $ go prevHash idx cmds
@@ -183,6 +202,7 @@ updateLogHashesFromIndex i ls =
     Just _ -> updateLogHashesFromIndex (succ i) $
               over (lEntries) (Seq.adjust (hashLogEntry (firstOf (ix (i - 1)) ls)) (fromIntegral i)) ls
     Nothing -> ls
+{-# INLINE updateLogHashesFromIndex #-}
 
 hashNewEntry :: ByteString -> Term -> LogIndex -> Command -> ByteString
 hashNewEntry prevHash leTerm' leLogIndex' cmd = hash SHA256 (encode $ LEWire (leTerm', leLogIndex', sigCmd cmd, prevHash))
@@ -191,19 +211,21 @@ hashNewEntry prevHash leTerm' leLogIndex' cmd = hash SHA256 (encode $ LEWire (le
       SignedRPC dig bdy
     sigCmd Command{ _cmdProvenance = NewMsg } =
       error "Invariant Failure: for a command to be in a log entry, it needs to have been received!"
+{-# INLINE hashNewEntry #-}
 
 data AtomicQuery =
   GetFirstEntry |
   GetLastEntry |
   GetMaxIndex |
   GetEntryCount |
-  GetEntry LogIndex |
+  GetSomeEntry LogIndex |
   TakeEntries LogIndex |
   GetLogInfoForNextIndex (Maybe LogIndex) |
   GetLastLogHash |
   GetLastLogTerm |
-  GetEntriesAfter LogIndex Int
-  deriving (Eq, Show)
+  GetEntriesAfter LogIndex Int |
+  GetInfoAndEntriesAfter (Maybe LogIndex) Int
+  deriving (Eq, Ord, Show)
 
 data QueryResult =
   QrFirstEntry (Maybe LogEntry) |
@@ -215,88 +237,110 @@ data QueryResult =
   QrLogInfoForNextIndex (LogIndex,Term) |
   QrLastLogHash ByteString |
   QrLastLogTerm Term |
-  QrEntriesAfter (Seq LogEntry)
-  deriving (Eq, Show)
+  QrEntriesAfter (Seq LogEntry) |
+  QrInfoAndEntriesAfter (LogIndex, Term, Seq LogEntry)
+  deriving (Eq, Ord, Show)
 
 data FirstEntry = FirstEntry deriving (Eq,Show)
 data LastEntry = LastEntry deriving (Eq,Show)
 data MaxIndex = MaxIndex deriving (Eq,Show)
 data EntryCount = EntryCount deriving (Eq,Show)
-data SomeEntry = SomeEntry deriving (Eq,Show)
-data TakenEntries = TakenEntries deriving (Eq,Show)
-data LogInfoForNextIndex = LogInfoForNextIndex deriving (Eq,Show)
+data SomeEntry = SomeEntry LogIndex deriving (Eq,Show)
+data TakenEntries = TakenEntries LogIndex deriving (Eq,Show)
+data LogInfoForNextIndex = LogInfoForNextIndex (Maybe LogIndex) deriving (Eq,Show)
 data LastLogHash = LastLogHash deriving (Eq,Show)
 data LastLogTerm = LastLogTerm deriving (Eq,Show)
-data EntriesAfter = EntriesAfter deriving (Eq,Show)
+data EntriesAfter = EntriesAfter LogIndex Int deriving (Eq,Show)
+data InfoAndEntriesAfter = InfoAndEntriesAfter (Maybe LogIndex) Int deriving (Eq,Show)
 
 evalQuery :: LogApi a => AtomicQuery -> a -> QueryResult
-evalQuery GetFirstEntry a = QrFirstEntry $ firstEntry a
-evalQuery GetLastEntry a = QrLastEntry $ lastEntry a
-evalQuery GetMaxIndex a = QrMaxIndex $ maxIndex a
-evalQuery GetEntryCount a = QrEntryCount $ entryCount a
-evalQuery (GetEntry li) a = QrSomeEntry $ lookupEntry li a
-evalQuery (TakeEntries li) a = QrTakenEntries $ takeEntries li a
-evalQuery (GetLogInfoForNextIndex mli) a = QrLogInfoForNextIndex $ logInfoForNextIndex mli a
-evalQuery GetLastLogHash a = QrLastLogHash $ lastLogHash a
-evalQuery GetLastLogTerm a = QrLastLogTerm $ lastLogTerm a
-evalQuery (GetEntriesAfter li cnt) a = QrEntriesAfter $ getEntriesAfter li cnt a
+evalQuery GetFirstEntry a = QrFirstEntry $! firstEntry a
+evalQuery GetLastEntry a = QrLastEntry $! lastEntry a
+evalQuery GetMaxIndex a = QrMaxIndex $! maxIndex a
+evalQuery GetEntryCount a = QrEntryCount $! entryCount a
+evalQuery (GetSomeEntry li) a = QrSomeEntry $! lookupEntry li a
+evalQuery (TakeEntries li) a = QrTakenEntries $! takeEntries li a
+evalQuery (GetLogInfoForNextIndex mli) a = QrLogInfoForNextIndex $! logInfoForNextIndex mli a
+evalQuery GetLastLogHash a = QrLastLogHash $! lastLogHash a
+evalQuery GetLastLogTerm a = QrLastLogTerm $! lastLogTerm a
+evalQuery (GetEntriesAfter li cnt) a = QrEntriesAfter $! getEntriesAfter li cnt a
+evalQuery (GetInfoAndEntriesAfter mli cnt) a =
+  let (pli, plt) = logInfoForNextIndex mli a
+      es = getEntriesAfter pli cnt a
+  in QrInfoAndEntriesAfter $! (pli, plt, es)
 {-# INLINE evalQuery #-}
 
 class HasQueryResult a b | a -> b where
-  hasQueryResult :: a -> [QueryResult] -> b
+  hasQueryResult :: a -> Map AtomicQuery QueryResult -> b
 
 instance HasQueryResult FirstEntry (Maybe LogEntry) where
-  hasQueryResult FirstEntry [] = error "Invariant Error: hasQueryResult FirstEntry failed to find FirstEntry"
-  hasQueryResult FirstEntry (QrFirstEntry v:_) = v
-  hasQueryResult FirstEntry (_:qrs) = hasQueryResult FirstEntry qrs
+  hasQueryResult FirstEntry m = case Map.lookup GetFirstEntry m of
+    Just (QrFirstEntry v)  -> v
+    _ -> error "Invariant Error: hasQueryResult FirstEntry failed to find FirstEntry"
+  {-# INLINE hasQueryResult #-}
 
 instance HasQueryResult LastEntry (Maybe LogEntry) where
-  hasQueryResult LastEntry [] = error "Invariant Error: hasQueryResult LastEntry failed to find LastEntry"
-  hasQueryResult LastEntry (QrLastEntry v:_) = v
-  hasQueryResult LastEntry (_:qrs) = hasQueryResult LastEntry qrs
+  hasQueryResult LastEntry m = case Map.lookup GetLastEntry m of
+    Just (QrLastEntry v) -> v
+    _ -> error "Invariant Error: hasQueryResult LastEntry failed to find LastEntry"
+  {-# INLINE hasQueryResult #-}
 
 instance HasQueryResult MaxIndex LogIndex where
-  hasQueryResult MaxIndex [] = error "Invariant Error: hasQueryResult MaxIndex failed to find MaxIndex"
-  hasQueryResult MaxIndex (QrMaxIndex v:_) = v
-  hasQueryResult MaxIndex (_:qrs) = hasQueryResult MaxIndex qrs
+  hasQueryResult MaxIndex m = case Map.lookup GetMaxIndex m of
+    Just (QrMaxIndex v) -> v
+    _ -> error "Invariant Error: hasQueryResult MaxIndex failed to find MaxIndex"
+  {-# INLINE hasQueryResult #-}
 
 instance HasQueryResult EntryCount Int where
-  hasQueryResult EntryCount [] = error "Invariant Error: hasQueryResult EntryCount failed to find EntryCount"
-  hasQueryResult EntryCount (QrEntryCount v:_) = v
-  hasQueryResult EntryCount (_:qrs) = hasQueryResult EntryCount qrs
+  hasQueryResult EntryCount m = case Map.lookup GetEntryCount m of
+    Just (QrEntryCount v) -> v
+    _ -> error "Invariant Error: hasQueryResult EntryCount failed to find EntryCount"
+  {-# INLINE hasQueryResult #-}
 
 instance HasQueryResult SomeEntry (Maybe LogEntry) where
-  hasQueryResult SomeEntry [] = error "Invariant Error: hasQueryResult SomeEntry failed to find SomeEntry"
-  hasQueryResult SomeEntry (QrSomeEntry v:_) = v
-  hasQueryResult SomeEntry (_:qrs) = hasQueryResult SomeEntry qrs
+  hasQueryResult (SomeEntry li) m = case Map.lookup (GetSomeEntry li) m of
+    Just (QrSomeEntry v) -> v
+    _ -> error "Invariant Error: hasQueryResult SomeEntry failed to find SomeEntry"
+  {-# INLINE hasQueryResult #-}
 
 instance HasQueryResult TakenEntries (Maybe (Seq LogEntry)) where
-  hasQueryResult TakenEntries [] = error "Invariant Error: hasQueryResult TakenEntries failed to find TakenEntries"
-  hasQueryResult TakenEntries (QrTakenEntries v:_) = v
-  hasQueryResult TakenEntries (_:qrs) = hasQueryResult TakenEntries qrs
+  hasQueryResult (TakenEntries li) m = case Map.lookup (TakeEntries li) m of
+    Just (QrTakenEntries v) -> v
+    _ -> error "Invariant Error: hasQueryResult TakenEntries failed to find TakenEntries"
+  {-# INLINE hasQueryResult #-}
 
 instance HasQueryResult LogInfoForNextIndex (LogIndex,Term) where
-  hasQueryResult LogInfoForNextIndex [] = error "Invariant Error: hasQueryResult LogInfoForNextIndex failed to find LogInfoForNextIndex"
-  hasQueryResult LogInfoForNextIndex (QrLogInfoForNextIndex v:_) = v
-  hasQueryResult LogInfoForNextIndex (_:qrs) = hasQueryResult LogInfoForNextIndex qrs
+  hasQueryResult (LogInfoForNextIndex mli) m = case Map.lookup (GetLogInfoForNextIndex mli) m of
+    Just (QrLogInfoForNextIndex v) -> v
+    _ -> error "Invariant Error: hasQueryResult LogInfoForNextIndex failed to find LogInfoForNextIndex"
+  {-# INLINE hasQueryResult #-}
 
 instance HasQueryResult LastLogHash ByteString where
-  hasQueryResult LastLogHash [] = error "Invariant Error: hasQueryResult LastLogHash failed to find LastLogHash"
-  hasQueryResult LastLogHash (QrLastLogHash v:_) = v
-  hasQueryResult LastLogHash (_:qrs) = hasQueryResult LastLogHash qrs
+  hasQueryResult LastLogHash m = case Map.lookup GetLastLogHash m of
+    Just (QrLastLogHash v) -> v
+    _ -> error "Invariant Error: hasQueryResult LastLogHash failed to find LastLogHash"
+  {-# INLINE hasQueryResult #-}
 
 instance HasQueryResult LastLogTerm Term where
-  hasQueryResult LastLogTerm [] = error "Invariant Error: hasQueryResult LastLogTerm failed to find LastLogTerm"
-  hasQueryResult LastLogTerm (QrLastLogTerm v:_) = v
-  hasQueryResult LastLogTerm (_:qrs) = hasQueryResult LastLogTerm qrs
+  hasQueryResult LastLogTerm m = case Map.lookup GetLastLogTerm m of
+    Just (QrLastLogTerm v) -> v
+    _ -> error "Invariant Error: hasQueryResult LastLogTerm failed to find LastLogTerm"
+  {-# INLINE hasQueryResult #-}
 
 instance HasQueryResult EntriesAfter (Seq LogEntry) where
-  hasQueryResult EntriesAfter [] = error "Invariant Error: hasQueryResult EntriesAfter failed to find EntriesAfter"
-  hasQueryResult EntriesAfter (QrEntriesAfter v:_) = v
-  hasQueryResult EntriesAfter (_:qrs) = hasQueryResult EntriesAfter qrs
+  hasQueryResult (EntriesAfter li cnt) m = case Map.lookup (GetEntriesAfter li cnt) m of
+    Just (QrEntriesAfter v) -> v
+    _ -> error "Invariant Error: hasQueryResult EntriesAfter failed to find EntriesAfter"
+  {-# INLINE hasQueryResult #-}
+
+instance HasQueryResult InfoAndEntriesAfter (LogIndex, Term, Seq LogEntry) where
+  hasQueryResult (InfoAndEntriesAfter mli cnt) m = case Map.lookup (GetInfoAndEntriesAfter mli cnt) m of
+    Just (QrInfoAndEntriesAfter v) -> v
+    _ -> error "Invariant Error: hasQueryResult InfoAndEntriesAfter failed to find InfoAndEntriesAfter"
+  {-# INLINE hasQueryResult #-}
 
 data QueryApi =
-  Query [AtomicQuery] (MVar [QueryResult]) |
+  Query (Set AtomicQuery) (MVar (Map AtomicQuery QueryResult)) |
   Update UpdateLogs |
   Tick Tock
   deriving (Eq)

@@ -12,7 +12,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 
 module Juno.Types.Service.Log
-  ( LogState(..), logEntries, lastApplied, lastLogIndex, nextLogIndex, commitIndex
+  ( LogState(..), lsLogEntries, lsLastApplied, lsLastLogIndex, lsNextLogIndex, lsCommitIndex
   , LogApi(..)
   , initLogState
   , UpdateLogs(..)
@@ -27,6 +27,7 @@ module Juno.Types.Service.Log
   , FirstEntry(..), LastEntry(..), MaxIndex(..), EntryCount(..), SomeEntry(..)
   , TakenEntries(..), LogInfoForNextIndex(..) , LastLogHash(..), LastLogTerm(..)
   , EntriesAfter(..), InfoAndEntriesAfter(..)
+  , LastApplied(..), LastLogIndex(..), NextLogIndex(..), CommitIndex(..)
   ) where
 
 
@@ -55,6 +56,10 @@ import Juno.Types.Message.Signed
 import Juno.Types.Message.CMD
 
 class LogApi a where
+  lastApplied :: a -> LogIndex
+  lastLogIndex :: a -> LogIndex
+  nextLogIndex :: a -> LogIndex
+  commitIndex :: a -> LogIndex
   -- | Get the first entry
   firstEntry :: a -> Maybe LogEntry
   -- | Get last entry.
@@ -81,30 +86,42 @@ class LogApi a where
   updateLogs :: UpdateLogs -> a -> a
 
 data LogState a = LogState
-  { _logEntries       :: !(Log a)
-  , _lastApplied      :: !LogIndex
-  , _lastLogIndex     :: !LogIndex
-  , _nextLogIndex     :: !LogIndex
-  , _commitIndex      :: !LogIndex
+  { _lsLogEntries       :: !(Log a)
+  , _lsLastApplied      :: !LogIndex
+  , _lsLastLogIndex     :: !LogIndex
+  , _lsNextLogIndex     :: !LogIndex
+  , _lsCommitIndex      :: !LogIndex
   } deriving (Show, Eq, Generic)
 makeLenses ''LogState
 
 viewLogSeq :: LogState LogEntry -> Seq LogEntry
-viewLogSeq = view (logEntries.lEntries)
+viewLogSeq = view (lsLogEntries.lEntries)
 
 viewLogs :: LogState LogEntry -> Log LogEntry
-viewLogs = view logEntries
+viewLogs = view lsLogEntries
 
 initLogState :: LogState LogEntry
 initLogState = LogState
-  { _logEntries = mempty
-  , _lastApplied = startIndex
-  , _lastLogIndex = startIndex
-  , _nextLogIndex = startIndex + 1
-  , _commitIndex = startIndex
+  { _lsLogEntries = mempty
+  , _lsLastApplied = startIndex
+  , _lsLastLogIndex = startIndex
+  , _lsNextLogIndex = startIndex + 1
+  , _lsCommitIndex = startIndex
   }
 
 instance LogApi (LogState LogEntry) where
+  lastApplied a = view lsLastApplied a
+  {-# INLINE lastApplied #-}
+
+  lastLogIndex a = view lsLastLogIndex a
+  {-# INLINE lastLogIndex #-}
+
+  nextLogIndex a = view lsNextLogIndex a
+  {-# INLINE nextLogIndex #-}
+
+  commitIndex a = view lsCommitIndex a
+  {-# INLINE commitIndex #-}
+
   firstEntry ls = case viewLogs ls of
     (e :< _) -> Just e
     _        -> Nothing
@@ -149,7 +166,7 @@ instance LogApi (LogState LogEntry) where
 
   updateLogs (ULNew nle) ls = appendLogEntry nle ls
   updateLogs (ULReplicate ReplicateLogEntries{..}) ls = addLogEntriesAt _rlePrvLogIdx _rleEntries ls
-  updateLogs (ULCommitIdx UpdateCommitIndex{..}) ls = ls {_commitIndex = _uci}
+  updateLogs (ULCommitIdx UpdateCommitIndex{..}) ls = ls {_lsCommitIndex = _uci}
   {-# INLINE updateLogs  #-}
 
 
@@ -158,13 +175,13 @@ addLogEntriesAt pli newLEs ls =
   let ls' = updateLogHashesFromIndex (pli + 1)
                 . over (lEntries) ((Seq.>< newLEs)
                 . Seq.take (fromIntegral pli + 1))
-                $ _logEntries ls
+                $ _lsLogEntries ls
       lastIdx = case ls' ^. lEntries of
         (_ :> e) -> _leLogIndex e
         _        -> startIndex
-  in ls { _logEntries = ls'
-        , _lastLogIndex = lastIdx
-        , _nextLogIndex = lastIdx + 1
+  in ls { _lsLogEntries = ls'
+        , _lsLastLogIndex = lastIdx
+        , _lsNextLogIndex = lastIdx + 1
         }
 {-# INLINE addLogEntriesAt #-}
 
@@ -173,17 +190,17 @@ addLogEntriesAt pli newLEs ls =
 appendLogEntry :: NewLogEntries -> LogState LogEntry -> LogState LogEntry
 appendLogEntry NewLogEntries{..} ls = case lastEntry ls of
     Just ple -> let
-        nle = newEntriesToLog (_nleTerm) (_leHash ple) (ls ^. nextLogIndex) _nleEntries
-        ls' = ls { _logEntries = Log $ (Seq.><) (viewLogSeq ls) nle }
-        lastIdx' = maybe (ls ^. lastLogIndex) _leLogIndex $ seqTail nle
-      in ls' { _lastLogIndex = lastIdx'
-             , _nextLogIndex = lastIdx' + 1 }
+        nle = newEntriesToLog (_nleTerm) (_leHash ple) (ls ^. lsNextLogIndex) _nleEntries
+        ls' = ls { _lsLogEntries = Log $ (Seq.><) (viewLogSeq ls) nle }
+        lastIdx' = maybe (ls ^. lsLastLogIndex) _leLogIndex $ seqTail nle
+      in ls' { _lsLastLogIndex = lastIdx'
+             , _lsNextLogIndex = lastIdx' + 1 }
     Nothing -> let
-        nle = newEntriesToLog (_nleTerm) (B.empty) (ls ^. nextLogIndex) _nleEntries
-        ls' = ls { _logEntries = Log nle }
-        lastIdx' = maybe (ls ^. lastLogIndex) _leLogIndex $ seqTail nle
-      in ls' { _lastLogIndex = lastIdx'
-             , _nextLogIndex = lastIdx' + 1 }
+        nle = newEntriesToLog (_nleTerm) (B.empty) (ls ^. lsNextLogIndex) _nleEntries
+        ls' = ls { _lsLogEntries = Log nle }
+        lastIdx' = maybe (ls ^. lsLastLogIndex) _leLogIndex $ seqTail nle
+      in ls' { _lsLastLogIndex = lastIdx'
+             , _lsNextLogIndex = lastIdx' + 1 }
 {-# INLINE appendLogEntry #-}
 
 newEntriesToLog :: Term -> ByteString -> LogIndex -> [Command] -> Seq LogEntry
@@ -224,7 +241,11 @@ data AtomicQuery =
   GetLastLogHash |
   GetLastLogTerm |
   GetEntriesAfter LogIndex Int |
-  GetInfoAndEntriesAfter (Maybe LogIndex) Int
+  GetInfoAndEntriesAfter (Maybe LogIndex) Int |
+  GetLastApplied |
+  GetLastLogIndex |
+  GetNextLogIndex |
+  GetCommitIndex
   deriving (Eq, Ord, Show)
 
 data QueryResult =
@@ -238,7 +259,11 @@ data QueryResult =
   QrLastLogHash ByteString |
   QrLastLogTerm Term |
   QrEntriesAfter (Seq LogEntry) |
-  QrInfoAndEntriesAfter (LogIndex, Term, Seq LogEntry)
+  QrInfoAndEntriesAfter (LogIndex, Term, Seq LogEntry) |
+  QrLastApplied LogIndex |
+  QrLastLogIndex LogIndex |
+  QrNextLogIndex LogIndex |
+  QrCommitIndex LogIndex
   deriving (Eq, Ord, Show)
 
 data FirstEntry = FirstEntry deriving (Eq,Show)
@@ -252,8 +277,16 @@ data LastLogHash = LastLogHash deriving (Eq,Show)
 data LastLogTerm = LastLogTerm deriving (Eq,Show)
 data EntriesAfter = EntriesAfter LogIndex Int deriving (Eq,Show)
 data InfoAndEntriesAfter = InfoAndEntriesAfter (Maybe LogIndex) Int deriving (Eq,Show)
+data LastApplied = LastApplied deriving (Eq,Show)
+data LastLogIndex = LastLogIndex deriving (Eq,Show)
+data NextLogIndex = NextLogIndex deriving (Eq,Show)
+data CommitIndex = CommitIndex deriving (Eq,Show)
 
 evalQuery :: LogApi a => AtomicQuery -> a -> QueryResult
+evalQuery GetLastApplied a = QrLastApplied $! lastApplied a
+evalQuery GetLastLogIndex a = QrLastLogIndex $! lastLogIndex a
+evalQuery GetNextLogIndex a = QrNextLogIndex $! nextLogIndex a
+evalQuery GetCommitIndex a = QrCommitIndex $! commitIndex a
 evalQuery GetFirstEntry a = QrFirstEntry $! firstEntry a
 evalQuery GetLastEntry a = QrLastEntry $! lastEntry a
 evalQuery GetMaxIndex a = QrMaxIndex $! maxIndex a
@@ -272,6 +305,30 @@ evalQuery (GetInfoAndEntriesAfter mli cnt) a =
 
 class HasQueryResult a b | a -> b where
   hasQueryResult :: a -> Map AtomicQuery QueryResult -> b
+
+instance HasQueryResult LastApplied LogIndex where
+  hasQueryResult LastApplied m = case Map.lookup GetLastApplied m of
+    Just (QrLastApplied v)  -> v
+    _ -> error "Invariant Error: hasQueryResult LastApplied failed to find LastApplied"
+  {-# INLINE hasQueryResult #-}
+
+instance HasQueryResult LastLogIndex LogIndex where
+  hasQueryResult LastLogIndex m = case Map.lookup GetLastLogIndex m of
+    Just (QrLastLogIndex v)  -> v
+    _ -> error "Invariant Error: hasQueryResult LastLogIndex failed to find LastLogIndex"
+  {-# INLINE hasQueryResult #-}
+
+instance HasQueryResult NextLogIndex LogIndex where
+  hasQueryResult NextLogIndex m = case Map.lookup GetNextLogIndex m of
+    Just (QrNextLogIndex v)  -> v
+    _ -> error "Invariant Error: hasQueryResult NextLogIndex failed to find NextLogIndex"
+  {-# INLINE hasQueryResult #-}
+
+instance HasQueryResult CommitIndex LogIndex where
+  hasQueryResult CommitIndex m = case Map.lookup GetCommitIndex m of
+    Just (QrCommitIndex v)  -> v
+    _ -> error "Invariant Error: hasQueryResult CommitIndex failed to find CommitIndex"
+  {-# INLINE hasQueryResult #-}
 
 instance HasQueryResult FirstEntry (Maybe LogEntry) where
   hasQueryResult FirstEntry m = case Map.lookup GetFirstEntry m of

@@ -18,8 +18,8 @@ import qualified Data.Set as Set
 
 import Juno.Consensus.Handle.Types
 import qualified Juno.Service.Sender as Sender
+import qualified Juno.Service.Log as Log
 import Juno.Runtime.Timer (resetElectionTimer, hasElectionTimerLeaderFired)
-import Juno.Types.Log hiding (logEntries)
 import Juno.Util.Combinator ((^$))
 import Juno.Util.Util
 
@@ -31,10 +31,10 @@ data ElectionTimeoutEnv = ElectionTimeoutEnv {
     , _lazyVote :: Maybe (Term,NodeId,LogIndex)
     , _nodeId :: NodeId
     , _otherNodes :: Set.Set NodeId
-    , _logEntries :: LogState LogEntry
     , _leaderWithoutFollowers :: Bool
     , _myPrivateKey :: PrivateKey
     , _myPublicKey :: PublicKey
+    , _maxIndex :: LogIndex
     }
 makeLenses ''ElectionTimeoutEnv
 
@@ -88,15 +88,15 @@ becomeCandidate = do
   tell ["becoming candidate"]
   newTerm <- (+1) <$> view term
   me <- view nodeId
-  es <- view logEntries
-  selfVote <- return $ createRequestVoteResponse me me newTerm (maxIndex' es) True
+  maxIndex' <- view maxIndex
+  selfVote <- return $ createRequestVoteResponse me me newTerm maxIndex' True
   provenance <- selfVoteProvenance selfVote
   potentials <- view otherNodes
   return $ BecomeCandidate
     { _newTerm = newTerm
     , _newRole = Candidate
     , _myNodeId = me
-    , _lastLogIndex = maxIndex' es
+    , _lastLogIndex = maxIndex'
     , _potentialVotes = potentials
     , _yesVotes = Set.singleton (selfVote {_rvrProvenance = provenance})}
 
@@ -114,7 +114,7 @@ handle msg = do
   c <- JT.readConfig
   s <- get
   leaderWithoutFollowers' <- hasElectionTimerLeaderFired
-  ls <- getLogState
+  maxIndex' <- Log.hasQueryResult Log.MaxIndex <$> (queryLogs $ Set.singleton Log.GetMaxIndex)
   (out,l) <- runReaderT (runWriterT (handleElectionTimeout msg)) $
              ElectionTimeoutEnv
              (JT._nodeRole s)
@@ -122,10 +122,10 @@ handle msg = do
              (JT._lazyVote s)
              (JT._nodeId c)
              (JT._otherNodes c)
-             (ls)
              leaderWithoutFollowers'
              (JT._myPrivateKey c)
              (JT._myPublicKey c)
+             (maxIndex')
   mapM_ debug l
   case out of
     AlreadyLeader -> return ()

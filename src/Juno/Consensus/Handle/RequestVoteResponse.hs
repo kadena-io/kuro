@@ -15,6 +15,7 @@ import Data.Set as Set
 
 import Juno.Consensus.Handle.Types
 import qualified Juno.Service.Sender as Sender
+import qualified Juno.Service.Log as Log
 import Juno.Runtime.Timer (resetHeartbeatTimer, resetElectionTimerLeader,
                            resetElectionTimer)
 import Juno.Util.Util
@@ -75,7 +76,7 @@ handle :: RequestVoteResponse -> JT.Raft ()
 handle m = do
   r <- ask
   s <- get
-  mni <- accessLogs $ JT.maxIndex
+  mni <- Log.hasQueryResult Log.MaxIndex <$> (queryLogs $ Set.fromList [Log.GetMaxIndex])
   myNodeId' <- JT.viewConfig JT.nodeId
   (o,l) <- runReaderT (runWriterT (handleRequestVoteResponse m))
            (RequestVoteResponseEnv
@@ -101,9 +102,11 @@ becomeLeader :: JT.Raft ()
 becomeLeader = do
   setRole Leader
   setCurrentLeader . Just =<< JT.viewConfig JT.nodeId
-  ni <- accessLogs $ JT.entryCount
+  mv <- queryLogs $ Set.fromList [Log.GetEntryCount, Log.GetCommitIndex]
+  ni <- return $ Log.hasQueryResult Log.EntryCount mv
+  ci <- return $ Log.hasQueryResult Log.CommitIndex mv
   lNextIndex' <- Map.fromSet (const $ LogIndex ni) <$> JT.viewConfig JT.otherNodes
-  setLNextIndex lNextIndex'
+  setLNextIndex ci lNextIndex'
   JT.lConvinced .= Set.empty
   enqueueRequest $ Sender.BroadcastAE Sender.SendAERegardless lNextIndex' Set.empty
   resetHeartbeatTimer
@@ -114,7 +117,8 @@ revertToLastQuorumState = do
   setRole Follower
   setCurrentLeader Nothing
   JT.ignoreLeader .= False
-  (accessLogs $ JT.lastEntry) >>= setTerm . maybe JT.startTerm JT._leTerm
+  lastEntry' <- Log.hasQueryResult Log.LastEntry <$> (queryLogs $ Set.singleton Log.GetLastEntry)
+  setTerm . maybe JT.startTerm JT._leTerm $ lastEntry'
   JT.votedFor .= Nothing
   JT.cYesVotes .= Set.empty
   JT.cPotentialVotes .= Set.empty

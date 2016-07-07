@@ -1,5 +1,8 @@
 
-module Juno.Service.Log where
+module Juno.Service.Log
+  ( initLogThread
+  , module X)
+  where
 
 import Control.Lens hiding (Index, (|>))
 import Control.Concurrent (putMVar)
@@ -10,7 +13,7 @@ import Control.Monad.Trans.RWS.Strict
 import qualified Data.Map.Strict as Map
 
 import Juno.Types.Comms
-import Juno.Types.Service.Log
+import Juno.Types.Service.Log as X
 
 initLogThread :: LogServiceChannel -> (String -> IO()) -> IO ()
 initLogThread lsc dbg = do

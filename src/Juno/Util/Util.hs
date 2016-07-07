@@ -6,8 +6,8 @@
 module Juno.Util.Util
   ( seqIndex
   , getQuorumSize
-  , accessLogs
-  , getLogState
+  , queryLogs
+  , updateLogs
   , debug
   , randomRIO
   , runRWS_
@@ -26,20 +26,22 @@ module Juno.Util.Util
   , enqueueRequest
   ) where
 
-
 import Control.Lens
 import Control.Monad.RWS.Strict
+import Control.Concurrent (takeMVar, newEmptyMVar)
 import qualified Control.Concurrent.Lifted as CL
 
-import Data.IORef
-import qualified System.Random as R
-
+import Data.Set (Set)
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
+import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+
+import qualified System.Random as R
 
 import Juno.Types
 import qualified Juno.Types.Service.Sender as Sender
+import qualified Juno.Service.Log as Log
 import Juno.Util.Combinator
 
 seqIndex :: Seq a -> Int -> Maybe a
@@ -51,11 +53,17 @@ seqIndex s i =
 getQuorumSize :: Int -> Int
 getQuorumSize n = 1 + floor (fromIntegral n / 2 :: Float)
 
-accessLogs :: (IORef (LogState LogEntry) -> IO b) -> Raft b
-accessLogs cmd = view logThread >>= liftIO . cmd
+queryLogs :: Set Log.AtomicQuery -> Raft (Map Log.AtomicQuery Log.QueryResult)
+queryLogs q = do
+  enqueueLogQuery' <- view enqueueLogQuery
+  mv <- liftIO newEmptyMVar
+  liftIO . enqueueLogQuery' $ Log.Query q mv
+  liftIO $ takeMVar mv
 
-getLogState :: Raft (LogState LogEntry)
-getLogState = view logThread >>= liftIO . readIORef
+updateLogs :: UpdateLogs -> Raft ()
+updateLogs q = do
+  enqueueLogQuery' <- view enqueueLogQuery
+  liftIO . enqueueLogQuery' $ Log.Update q
 
 debug :: String -> Raft ()
 debug s = do
@@ -132,22 +140,23 @@ setCurrentLeader mNode = do
   currentLeader .= mNode
   logMetric $ MetricCurrentLeader mNode
 
-updateLNextIndex :: (Map.Map NodeId LogIndex -> Map.Map NodeId LogIndex)
+updateLNextIndex :: LogIndex
+                 -> (Map.Map NodeId LogIndex -> Map.Map NodeId LogIndex)
                  -> Raft ()
-updateLNextIndex f = do
+updateLNextIndex myCommitIndex f = do
   lNextIndex %= f
   lni <- use lNextIndex
-  ci <- accessLogs $ viewLogState commitIndex
-  logMetric $ MetricAvailableSize $ availSize lni ci
+  logMetric $ MetricAvailableSize $ availSize lni myCommitIndex
 
   where
     -- | The number of nodes at most one behind the commit index
     availSize lni ci = let oneBehind = pred ci
                        in succ $ Map.size $ Map.filter (>= oneBehind) lni
 
-setLNextIndex :: Map.Map NodeId LogIndex
+setLNextIndex :: LogIndex
+              -> Map.Map NodeId LogIndex
               -> Raft ()
-setLNextIndex = updateLNextIndex . const
+setLNextIndex myCommitIndex = updateLNextIndex myCommitIndex . const
 
 getCmdSigOrInvariantError :: String -> Command -> Signature
 getCmdSigOrInvariantError where' s@Command{..} = case _cmdProvenance of

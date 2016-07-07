@@ -28,7 +28,6 @@ module Juno.Consensus.Handle.Types (
   , PrivateKey, PublicKey, Signature(..)
   , ReceivedAt(..)
   , Log(..)
-  , LogState(..)
   , ReplicateLogEntries(..), rleMinLogIdx, rleMaxLogIdx, rlePrvLogIdx, rleEntries
   , toReplicateLogEntries
   , NewLogEntries(..), nleTerm, nleEntries

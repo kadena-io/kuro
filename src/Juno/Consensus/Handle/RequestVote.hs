@@ -12,8 +12,11 @@ import Control.Monad.Reader
 import Control.Monad.Writer.Strict
 import Control.Monad.State (get)
 
-import Juno.Util.Util (debug, getLogState, enqueueRequest)
+import qualified Data.Set as Set
+
+import Juno.Util.Util (debug, enqueueRequest, queryLogs)
 import qualified Juno.Service.Sender as Sender
+import qualified Juno.Service.Log as Log
 import qualified Juno.Types as JT
 
 import Juno.Consensus.Handle.Types
@@ -25,7 +28,8 @@ data RequestVoteEnv = RequestVoteEnv {
   , _lazyVote         :: Maybe (Term, NodeId, LogIndex)
   , _currentLeader    :: Maybe NodeId
   , _ignoreLeader     :: Bool
-  , _logEntries       :: LogState LogEntry
+  , _lastLogIndexIn   :: LogIndex
+  , _lastTerm         :: Term
   }
 makeLenses ''RequestVoteEnv
 
@@ -39,12 +43,11 @@ handleRequestVote :: (MonadWriter [String] m, MonadReader RequestVoteEnv m) => R
 handleRequestVote RequestVote{..} = do
   tell ["got a requestVote RPC for " ++ show _rvTerm]
   votedFor' <- view votedFor
-  logEntries' <- view logEntries
   term' <- view term
   currentLeader' <- view currentLeader
   ignoreLeader' <- view ignoreLeader
-  let lli = JT.maxIndex' logEntries'
-      llt = JT.lastLogTerm' logEntries'
+  lli <- view lastLogIndexIn
+  llt <- view lastTerm
   case votedFor' of
     _      | ignoreLeader' && currentLeader' == Just _rvCandidateId -> return NoAction
       -- don't respond to a candidate if they were leader and a client
@@ -95,14 +98,15 @@ handleRequestVote RequestVote{..} = do
 handle :: RequestVote -> JT.Raft ()
 handle rv = do
   s <- get
-  ls <- getLogState
+  mv <- queryLogs $ Set.fromList [Log.GetMaxIndex, Log.GetLastLogTerm]
   let rve = RequestVoteEnv
               (JT._term s)
               (JT._votedFor s)
               (JT._lazyVote s)
               (JT._currentLeader s)
               (JT._ignoreLeader s)
-              (ls)
+              (Log.hasQueryResult Log.MaxIndex mv)
+              (Log.hasQueryResult Log.LastLogTerm mv)
   (rvo, l) <- runReaderT (runWriterT (handleRequestVote rv)) rve
   mapM_ debug l
   case rvo of

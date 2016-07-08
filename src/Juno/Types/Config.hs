@@ -7,6 +7,7 @@ module Juno.Types.Config
   ( Config(..), otherNodes, nodeId, electionTimeoutRange, heartbeatTimeout
   , enableDebug, publicKeys, clientPublicKeys, myPrivateKey, clientTimeoutLimit
   , myPublicKey, batchTimeDelta, dontDebugFollower, apiPort, myEncryptionKey
+  , logSqlitePath
   , KeySet(..), ksClient, ksCluster
   ) where
 
@@ -39,6 +40,7 @@ data Config = Config
   , _clientTimeoutLimit   :: !Int
   , _dontDebugFollower    :: !Bool
   , _apiPort              :: !Int
+  , _logSqlitePath        :: !FilePath
   }
   deriving (Show, Generic)
 makeLenses ''Config

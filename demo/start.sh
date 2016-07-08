@@ -1,4 +1,5 @@
 #!/bin/sh
+rm ./log/*.sqlite
 tmux new-window
 tmux split-window -h
 tmux send-keys 'stack exec -- junoserver +RTS -N4 -T -RTS -c conf/10000-cluster.yaml --apiPort 8000' C-m

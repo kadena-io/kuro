@@ -20,7 +20,7 @@ module Juno.Types.Service.Log
   , QueryResult(..)
   , QueryApi(..)
   , evalQuery
-  , LogEnv(..), logQueryChannel, debugPrint
+  , LogEnv(..), logQueryChannel, debugPrint, dbConn
   , HasQueryResult(..)
   , LogThread
   , LogServiceChannel(..)
@@ -48,6 +48,8 @@ import Data.Set (Set)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as B
 import Data.Serialize hiding (get)
+
+import Database.SQLite.Simple (Connection(..))
 
 import GHC.Generics
 
@@ -435,7 +437,8 @@ instance Comms QueryApi LogServiceChannel where
 
 data LogEnv = LogEnv
   { _logQueryChannel :: LogServiceChannel
-  , _debugPrint :: (String -> IO ()) }
+  , _debugPrint :: (String -> IO ())
+  , _dbConn :: Connection }
 makeLenses ''LogEnv
 
 type LogThread = RWST LogEnv () (LogState LogEntry) IO

@@ -69,7 +69,7 @@ newtype LogIndex = LogIndex Int
 startIndex :: LogIndex
 startIndex = LogIndex (-1)
 
-newtype RequestId = RequestId Int64
+newtype RequestId = RequestId {_unRequestId :: Int64}
   deriving (Show, Read, Eq, Ord, Enum, Num, Generic, Serialize)
 
 startRequestId :: RequestId

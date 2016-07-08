@@ -13,11 +13,13 @@ import Control.Monad.Trans.RWS.Strict
 import qualified Data.Map.Strict as Map
 
 import Juno.Types.Comms
+import Juno.Persistence.SQLite
 import Juno.Types.Service.Log as X
 
-runLogService :: LogServiceChannel -> (String -> IO()) -> IO ()
-runLogService lsc dbg = do
-  env <- return $ LogEnv lsc dbg
+runLogService :: LogServiceChannel -> (String -> IO()) -> FilePath -> IO ()
+runLogService lsc dbg dbPath = do
+  dbConn' <- createDB dbPath
+  env <- return $ LogEnv lsc dbg dbConn'
   void $ runRWST handle env initLogState
 
 debug :: String -> LogThread ()
@@ -38,7 +40,14 @@ runQuery (Query aq mv) = do
   a' <- get
   qr <- return $ Map.fromSet (`evalQuery` a') aq
   liftIO $ putMVar mv qr
-runQuery (Update ul) = modify (\a' -> updateLogs ul a')
+runQuery (Update ul) = do
+  modify (\a' -> updateLogs ul a')
+  toPersist <- getUnappliedEntries <$> get
+  case toPersist of
+    Just logs -> do
+      dbConn' <- view dbConn
+      liftIO $ insertSeqLogEntry dbConn' logs
+    Nothing -> return ()
 runQuery (Tick t) = do
   t' <- liftIO $ pprintTock t "runQuery"
   debug t'

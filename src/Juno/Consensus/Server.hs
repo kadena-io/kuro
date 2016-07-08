@@ -29,7 +29,7 @@ runRaftServer renv rconf spec = do
   void $ runMessageReceiver renv
   rconf' <- newIORef rconf
   timerTarget' <- newEmptyMVar
-  void $ forkIO $ Log.runLogService (_logService $ _dispatch renv) (RENV._debugPrint renv)
+  void $ forkIO $ Log.runLogService (_logService $ _dispatch renv) (RENV._debugPrint renv) (rconf ^. logSqlitePath)
   void $ forkIO $ Sender.runSenderService (_dispatch renv) rconf (RENV._debugPrint renv)
   -- This helps for testing, we'll send tocks every second to inflate the logs when we see weird pauses right before an election
   -- forever (writeComm (_internalEvent $ _dispatch renv) (InternalEvent $ Tock $ t) >> threadDelay 1000000)

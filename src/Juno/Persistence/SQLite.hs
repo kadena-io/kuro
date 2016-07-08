@@ -3,19 +3,27 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module Juno.Persistence.SQLite where
+module Juno.Persistence.SQLite
+  ( createDB
+  , insertSeqLogEntry
+  , selectAllLogEntries
+  , selectAllLogEntriesAfter
+  , selectLastLogEntry
+  , selectLogEntriesInclusiveSection
+  ) where
 
-import Control.Concurrent.Chan.Unagi
+import Data.Typeable
+import Data.Set
+import Data.Sequence (Seq)
+import qualified Data.Sequence as Seq
+import Data.Serialize
+import Data.ByteString hiding (concat, length, head)
+import qualified Data.Text as T
+
 import Database.SQLite.Simple
 import Database.SQLite.Simple.Ok
 import Database.SQLite.Simple.ToField
 import Database.SQLite.Simple.FromField
-import Data.Typeable
-import Data.Set
-import Data.Serialize
-import Data.Sequence
-import Data.ByteString hiding (concat)
-import qualified Data.Text as T
 
 import Juno.Types
 
@@ -76,56 +84,52 @@ instance FromField Provenance where
       Left err -> returnError ConversionFailed f ("Couldn't deserialize sequence: " ++ err)
       Right v -> Ok v
 
-instance ToRow AppendEntries where
-  toRow AppendEntries{..} = [toField _aeTerm
-                            ,toField _leaderId
-                            ,toField _prevLogIndex
-                            ,toField _prevLogTerm
-                            ,toField _aeEntries
-                            ,toField _aeQuorumVotes
-                            ,toField _aeProvenance ]
+instance ToRow LogEntry where
+  toRow LogEntry{..} = [toField _leLogIndex
+                       ,toField _leTerm
+                       ,toField _leHash
+                       ,toField $ unCommandEntry $ _cmdEntry _leCommand
+                       ,toField $ _cmdClientId _leCommand
+                       ,toField $ _unRequestId $ _cmdRequestId _leCommand
+                       ,toField $ unAlias <$> _cmdEncryptGroup _leCommand
+                       ,toField $ _cmdProvenance _leCommand
+                       ]
 
-
-
-instance FromRow AppendEntries where
-    fromRow = AppendEntries <$> field <*> field <*> field <*> field <*> field <*> field <*> field
+instance FromRow LogEntry where
+  fromRow = do
+    leLogIndex' <- field
+    leTerm' <- field
+    leHash' <- field
+    cmdEntry' <- field
+    cmdClientId' <- field
+    cmdRequestId' <- field
+    cmdEncryptGroup' <- field
+    cmdProvenance' <- field
+    return $ LogEntry
+      { _leTerm = leTerm'
+      , _leLogIndex = leLogIndex'
+      , _leCommand = Command
+        { _cmdEntry = CommandEntry cmdEntry'
+        , _cmdClientId = cmdClientId'
+        , _cmdRequestId = RequestId cmdRequestId'
+        , _cmdEncryptGroup = Alias <$> cmdEncryptGroup'
+        , _cmdProvenance = cmdProvenance'
+        }
+      , _leHash = leHash'
+      }
 
 sqlDbSchema :: Query
 sqlDbSchema = Query $ T.pack $ concat
-    ["CREATE TABLE IF NOT EXISTS 'main'.'appendEntries' "
-    ,"( 'term' INTEGER PRIMARY KEY  NOT NULL  UNIQUE"
-    ,", 'leader_id' TEXT"
-    ,", 'prev_log_index' INTEGER"
-    ,", 'prev_log_term' INTEGER"
-    ,", 'entries' BLOB"
-    ,", 'quorum_votes' BLOB"
-    ,", 'sig' BLOB"
+    ["CREATE TABLE IF NOT EXISTS 'main'.'logEntry' "
+    ,"( 'logIndex' INTEGER PRIMARY KEY NOT NULL UNIQUE"
+    ,", 'term' INTEGER"
+    ,", 'hash' TEXT"
+    ,", 'commandEntry' TEXT"
+    ,", 'clientId' TEXT"
+    ,", 'requestId' INTEGER"
+    ,", 'encryptGroup' TEXT"
+    ,", 'provenance' TEXT"
     ,")"]
-
-sqlInsertAE :: Query
-sqlInsertAE = Query $ T.pack $ concat
-    ["INSERT INTO 'main'.'appendEntries' "
-    ,"( 'term'"
-    ," 'leader_id'"
-    ," 'prev_log_index'"
-    ," 'pref_log_term'"
-    ," 'entries'"
-    ," 'quorum_votes'"
-    ," 'sig')"
-    ," VALUES (?,?,?,?,?,?,?)"]
-
-sqlSelectAllAE :: Query
-sqlSelectAllAE = Query $ T.pack $ concat
-    ["SELECT term, leader_id, prev_log_index, prev_log_term, entries, quorum_votes, sig"
-    ,"FROM 'main'.'appendEntries'"
-    ,"ORDER BY term ASC"]
-
-sqlSelectLastAE :: Query
-sqlSelectLastAE = Query $ T.pack $ concat
-    ["SELECT term, leader_id, prev_log_index, prev_log_term, entries, quorum_votes, sig"
-    ,"FROM 'main'.'appendEntries'"
-    ,"ORDER BY term DESC"
-    ,"LIMIT 1"]
 
 createDB :: FilePath -> IO Connection
 createDB f = do
@@ -133,12 +137,63 @@ createDB f = do
   execute_ conn sqlDbSchema
   return conn
 
-insertAppendEntries :: Connection -> AppendEntries -> IO ()
-insertAppendEntries conn ae = execute conn sqlInsertAE ae
+sqlInsertLogEntry :: Query
+sqlInsertLogEntry = Query $ T.pack $ concat
+    ["INSERT INTO 'main'.'logEntry' "
+    ,"( 'logIndex'"
+    ,", 'term'"
+    ,", 'hash'"
+    ,", 'commandEntry'"
+    ,", 'clientId'"
+    ,", 'requestId'"
+    ,", 'encryptGroup'"
+    ,", 'provenance'"
+    ,") VALUES (?,?,?,?,?,?,?,?)"]
 
-persistenceThread :: OutChan (Either String AppendEntries) -> Connection -> IO ()
-persistenceThread toDB conn = do
-  ae <- readChan toDB
-  case ae of
-    Right ae' -> withTransaction conn $ insertAppendEntries conn ae' >> persistenceThread toDB conn
-    Left _ -> close conn
+insertSeqLogEntry :: Connection -> Seq LogEntry -> IO ()
+insertSeqLogEntry conn les = withTransaction conn $ mapM_ (execute conn sqlInsertLogEntry) les
+
+sqlSelectAllLogEntries :: Query
+sqlSelectAllLogEntries = Query $ T.pack $ concat
+  ["SELECT 'logIndex','term','hash','commandEntry','clientId','requestId','encryptGroup','provenance'"
+  ,"FROM 'main'.'logEntry'"
+  ,"ORDER BY logIndex ASC"]
+
+selectAllLogEntries :: Connection -> IO (Seq LogEntry)
+selectAllLogEntries conn = Seq.fromList <$> query_ conn sqlSelectAllLogEntries
+
+sqlSelectLastLogEntry :: Query
+sqlSelectLastLogEntry = Query $ T.pack $ concat
+  ["SELECT 'logIndex','term','hash','commandEntry','clientId','requestId','encryptGroup','provenance'"
+  ,"FROM 'main'.'logEntry'"
+  ,"ORDER BY logIndex DESC"
+  ,"LIMIT 1"]
+
+selectLastLogEntry :: Connection -> IO (Maybe LogEntry)
+selectLastLogEntry conn = do
+  res <- query_ conn sqlSelectLastLogEntry
+  case res of
+    [r] -> return $ Just r
+    [] -> return $ Nothing
+    err -> error $ "invariant failure: selectLastLogEntry returned more than one result\n" ++ show err
+
+sqlSelectAllLogEntryAfter :: LogIndex -> Query
+sqlSelectAllLogEntryAfter (LogIndex li) = Query $ T.pack $ concat
+  ["SELECT 'logIndex','term','hash','commandEntry','clientId','requestId','encryptGroup','provenance'"
+  ,"FROM 'main'.'logEntry'"
+  ,"ORDER BY logIndex ASC"
+  ,"WHERE logIndex > " ++ show li]
+
+selectAllLogEntriesAfter :: LogIndex -> Connection -> IO (Seq LogEntry)
+selectAllLogEntriesAfter li conn = Seq.fromList <$> query_ conn (sqlSelectAllLogEntryAfter li)
+
+sqlSelectLogEntryeInclusiveSection :: LogIndex -> LogIndex -> Query
+sqlSelectLogEntryeInclusiveSection (LogIndex liFrom) (LogIndex liTo) = Query $ T.pack $ concat
+  ["SELECT 'logIndex','term','hash','commandEntry','clientId','requestId','encryptGroup','provenance'"
+  ,"FROM 'main'.'logEntry'"
+  ,"ORDER BY logIndex ASC"
+  ,"WHERE logIndex >= " ++ show liFrom
+  ,"AND logIndex <= " ++ show liTo]
+
+selectLogEntriesInclusiveSection :: LogIndex -> LogIndex -> Connection -> IO (Seq LogEntry)
+selectLogEntriesInclusiveSection liFrom liTo conn = Seq.fromList <$> query_ conn (sqlSelectLogEntryeInclusiveSection liFrom liTo)

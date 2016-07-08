@@ -25,6 +25,8 @@ import Database.SQLite.Simple.Ok
 import Database.SQLite.Simple.ToField
 import Database.SQLite.Simple.FromField
 
+import qualified Data.Aeson as Aeson
+
 import Juno.Types
 
 -- These live here as orphans, and not in Types, because trying to Serialize these things should be a type level error
@@ -36,12 +38,12 @@ instance Serialize LogEntry
 instance Serialize RequestVoteResponse
 
 instance ToField NodeId where
-  toField n = toField $ encode n
+  toField n = toField $ Aeson.encode n
 instance FromField NodeId where
   fromField f = do
     s :: ByteString <- fromField f
-    case decode s of
-      Left err -> returnError ConversionFailed f ("Couldn't deserialize sequence: " ++ err)
+    case Aeson.eitherDecodeStrict s of
+      Left err -> returnError ConversionFailed f ("Couldn't deserialize NodeId: " ++ err)
       Right n -> Ok n
 
 instance ToField LogIndex where
@@ -49,30 +51,27 @@ instance ToField LogIndex where
 instance FromField LogIndex where
   fromField a = LogIndex <$> fromField a
 
-instance ToField LogEntry where
-  toField LogEntry{..} = toField $ encode (_leTerm, _leCommand, _leHash)
-
 instance ToField Term where
   toField (Term a) = toField a
 instance FromField Term where
   fromField a = Term <$> fromField a
 
-instance Serialize a => ToField (Seq a) where
-  toField s = toField $ encode s
-instance (Typeable a, Serialize a) => FromField (Seq a) where
+instance (Aeson.ToJSON a, Serialize a) => ToField (Seq a) where
+  toField s = toField $ Aeson.encode s
+instance (Aeson.FromJSON a, Typeable a, Serialize a) => FromField (Seq a) where
   fromField f = do
     s :: ByteString <- fromField f
-    case decode s of
-      Left err -> returnError ConversionFailed f ("Couldn't deserialize sequence: " ++ err)
+    case Aeson.eitherDecodeStrict s of
+      Left err -> returnError ConversionFailed f ("Couldn't deserialize Seq a: " ++ err)
       Right v -> Ok v
 
-instance (Ord a, Serialize a) => ToField (Set a) where
-  toField s = toField $ encode s
-instance (Ord a, Typeable a, Serialize a) => FromField (Set a) where
+instance (Aeson.ToJSON a, Ord a, Serialize a) => ToField (Set a) where
+  toField s = toField $ Aeson.encode s
+instance (Aeson.FromJSON a, Ord a, Typeable a, Serialize a) => FromField (Set a) where
   fromField f = do
     s :: ByteString <- fromField f
-    case decode s of
-      Left err -> returnError ConversionFailed f ("Couldn't deserialize sequence: " ++ err)
+    case Aeson.eitherDecodeStrict s of
+      Left err -> returnError ConversionFailed f ("Couldn't deserialize Set: " ++ err)
       Right v -> Ok v
 
 instance ToField Provenance where
@@ -81,17 +80,32 @@ instance FromField Provenance where
   fromField f = do
     s :: ByteString <- fromField f
     case decode s of
-      Left err -> returnError ConversionFailed f ("Couldn't deserialize sequence: " ++ err)
+      Left err -> returnError ConversionFailed f ("Couldn't deserialize Provenance: " ++ err)
       Right v -> Ok v
+
+instance ToField CommandEntry where
+  toField (CommandEntry e) = toField e
+instance FromField CommandEntry where
+  fromField f = CommandEntry <$> fromField f
+
+instance ToField RequestId where
+  toField (RequestId rid) = toField rid
+instance FromField RequestId where
+  fromField f = RequestId <$> fromField f
+
+instance ToField Alias where
+  toField (Alias a) = toField a
+instance FromField Alias where
+  fromField f = Alias <$> fromField f
 
 instance ToRow LogEntry where
   toRow LogEntry{..} = [toField _leLogIndex
                        ,toField _leTerm
                        ,toField _leHash
-                       ,toField $ unCommandEntry $ _cmdEntry _leCommand
+                       ,toField $ _cmdEntry _leCommand
                        ,toField $ _cmdClientId _leCommand
-                       ,toField $ _unRequestId $ _cmdRequestId _leCommand
-                       ,toField $ unAlias <$> _cmdEncryptGroup _leCommand
+                       ,toField $ _cmdRequestId _leCommand
+                       ,toField $ _cmdEncryptGroup _leCommand
                        ,toField $ _cmdProvenance _leCommand
                        ]
 
@@ -109,10 +123,10 @@ instance FromRow LogEntry where
       { _leTerm = leTerm'
       , _leLogIndex = leLogIndex'
       , _leCommand = Command
-        { _cmdEntry = CommandEntry cmdEntry'
+        { _cmdEntry = cmdEntry'
         , _cmdClientId = cmdClientId'
-        , _cmdRequestId = RequestId cmdRequestId'
-        , _cmdEncryptGroup = Alias <$> cmdEncryptGroup'
+        , _cmdRequestId = cmdRequestId'
+        , _cmdEncryptGroup = cmdEncryptGroup'
         , _cmdProvenance = cmdProvenance'
         }
       , _leHash = leHash'
@@ -155,19 +169,19 @@ insertSeqLogEntry conn les = withTransaction conn $ mapM_ (execute conn sqlInser
 
 sqlSelectAllLogEntries :: Query
 sqlSelectAllLogEntries = Query $ T.pack $ concat
-  ["SELECT 'logIndex','term','hash','commandEntry','clientId','requestId','encryptGroup','provenance'"
-  ,"FROM 'main'.'logEntry'"
-  ,"ORDER BY logIndex ASC"]
+  ["SELECT logIndex,term,hash,commandEntry,clientId,requestId,encryptGroup,provenance"
+  ," FROM 'main'.'logEntry'"
+  ," ORDER BY logIndex ASC"]
 
 selectAllLogEntries :: Connection -> IO (Seq LogEntry)
 selectAllLogEntries conn = Seq.fromList <$> query_ conn sqlSelectAllLogEntries
 
 sqlSelectLastLogEntry :: Query
 sqlSelectLastLogEntry = Query $ T.pack $ concat
-  ["SELECT 'logIndex','term','hash','commandEntry','clientId','requestId','encryptGroup','provenance'"
-  ,"FROM 'main'.'logEntry'"
-  ,"ORDER BY logIndex DESC"
-  ,"LIMIT 1"]
+  ["SELECT logIndex,term,hash,commandEntry,clientId,requestId,encryptGroup,provenance"
+  ," FROM 'main'.'logEntry'"
+  ," ORDER BY logIndex DESC"
+  ," LIMIT 1"]
 
 selectLastLogEntry :: Connection -> IO (Maybe LogEntry)
 selectLastLogEntry conn = do
@@ -179,21 +193,21 @@ selectLastLogEntry conn = do
 
 sqlSelectAllLogEntryAfter :: LogIndex -> Query
 sqlSelectAllLogEntryAfter (LogIndex li) = Query $ T.pack $ concat
-  ["SELECT 'logIndex','term','hash','commandEntry','clientId','requestId','encryptGroup','provenance'"
-  ,"FROM 'main'.'logEntry'"
-  ,"ORDER BY logIndex ASC"
-  ,"WHERE logIndex > " ++ show li]
+  ["SELECT logIndex,term,hash,commandEntry,clientId,requestId,encryptGroup,provenance"
+  ," FROM 'main'.'logEntry'"
+  ," ORDER BY logIndex ASC"
+  ," WHERE logIndex > " ++ show li]
 
 selectAllLogEntriesAfter :: LogIndex -> Connection -> IO (Seq LogEntry)
 selectAllLogEntriesAfter li conn = Seq.fromList <$> query_ conn (sqlSelectAllLogEntryAfter li)
 
 sqlSelectLogEntryeInclusiveSection :: LogIndex -> LogIndex -> Query
 sqlSelectLogEntryeInclusiveSection (LogIndex liFrom) (LogIndex liTo) = Query $ T.pack $ concat
-  ["SELECT 'logIndex','term','hash','commandEntry','clientId','requestId','encryptGroup','provenance'"
-  ,"FROM 'main'.'logEntry'"
-  ,"ORDER BY logIndex ASC"
-  ,"WHERE logIndex >= " ++ show liFrom
-  ,"AND logIndex <= " ++ show liTo]
+  ["SELECT logIndex,term,hash,commandEntry,clientId,requestId,encryptGroup,provenance"
+  ," FROM 'main'.'logEntry'"
+  ," ORDER BY logIndex ASC"
+  ," WHERE logIndex >= " ++ show liFrom
+  ," AND logIndex <= " ++ show liTo]
 
 selectLogEntriesInclusiveSection :: LogIndex -> LogIndex -> Connection -> IO (Seq LogEntry)
 selectLogEntriesInclusiveSection liFrom liTo conn = Seq.fromList <$> query_ conn (sqlSelectLogEntryeInclusiveSection liFrom liTo)

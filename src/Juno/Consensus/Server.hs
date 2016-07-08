@@ -13,6 +13,7 @@ import Data.IORef
 
 import Juno.Consensus.Api (apiReceiver)
 import Juno.Consensus.Handle
+import Juno.Consensus.Commit (applyLogEntries)
 import Juno.Runtime.MessageReceiver
 import qualified Juno.Runtime.MessageReceiver as RENV
 import Juno.Runtime.Timer
@@ -44,6 +45,10 @@ runRaftServer renv rconf spec = do
 -- THREAD: SERVER MAIN
 raft :: Raft ()
 raft = do
+  debug "Launch Sequence: syncing logs from disk"
+  applyLogEntries -- This is for us replaying from disk, it will sync state before we launch
+  la <- Log.hasQueryResult Log.LastApplied <$> (queryLogs $ Set.singleton Log.GetLastApplied)
+  when (startIndex /= la) $ debug $ "Launch Sequence: disk sync replayed, Commit Index now " ++ show la
   logStaticMetrics
   void $ CL.fork apiReceiver     -- THREAD: waits for cmds from API, signs and sends to leader.
   resetElectionTimer

@@ -3,6 +3,7 @@
 
 module Juno.Consensus.Commit
   (doCommit
+  ,applyLogEntries
   ,makeCommandResponse
   ,makeCommandResponse')
 where

@@ -13,6 +13,7 @@
 
 module Juno.Types.Service.Log
   ( LogState(..), lsLogEntries, lsLastApplied, lsLastLogIndex, lsNextLogIndex, lsCommitIndex
+  , lsLastPersisted, lsLastLogTerm
   , LogApi(..)
   , initLogState
   , UpdateLogs(..)
@@ -61,6 +62,7 @@ import Juno.Types.Message.Signed
 import Juno.Types.Message.CMD
 
 class LogApi a where
+  lastPersisted :: a -> LogIndex
   lastApplied :: a -> LogIndex
   lastLogIndex :: a -> LogIndex
   nextLogIndex :: a -> LogIndex
@@ -82,6 +84,7 @@ class LogApi a where
   -- prevLog(Index/Term)
   -- | get every entry that hasn't been applied yet (betweek LastApplied and CommitIndex)
   getUnappliedEntries :: a -> Maybe (Seq LogEntry)
+  getUnpersisted      :: a -> Maybe (Seq LogEntry)
   logInfoForNextIndex :: Maybe LogIndex -> a -> (LogIndex,Term)
   -- | Latest hash or empty
   lastLogHash :: a -> ByteString
@@ -98,6 +101,8 @@ data LogState a = LogState
   , _lsLastLogIndex     :: !LogIndex
   , _lsNextLogIndex     :: !LogIndex
   , _lsCommitIndex      :: !LogIndex
+  , _lsLastPersisted    :: !LogIndex
+  , _lsLastLogTerm      :: !Term
   } deriving (Show, Eq, Generic)
 makeLenses ''LogState
 
@@ -114,9 +119,14 @@ initLogState = LogState
   , _lsLastLogIndex = startIndex
   , _lsNextLogIndex = startIndex + 1
   , _lsCommitIndex = startIndex
+  , _lsLastPersisted = startIndex
+  , _lsLastLogTerm = startTerm
   }
 
 instance LogApi (LogState LogEntry) where
+  lastPersisted a = view lsLastPersisted a
+  {-# INLINE lastPersisted #-}
+
   lastApplied a = view lsLastApplied a
   {-# INLINE lastApplied #-}
 
@@ -156,8 +166,18 @@ instance LogApi (LogState LogEntry) where
   getUnappliedEntries ls =
     let ci = commitIndex ls
         la = lastApplied ls
-    in fmap (Seq.drop (fromIntegral $ la + 1)) $ takeEntries (ci + 1) ls
+    in if la < ci
+       then fmap (Seq.drop (fromIntegral $ la + 1)) $ takeEntries (ci + 1) ls
+       else Nothing
   {-# INLINE getUnappliedEntries #-}
+
+  getUnpersisted ls =
+    let la = lastApplied ls
+        lp = lastPersisted ls
+    in if lp < la
+       then fmap (Seq.drop (fromIntegral $ lp + 1)) $ takeEntries (la + 1) ls
+       else Nothing
+  {-# INLINE getUnpersisted #-}
 
   logInfoForNextIndex Nothing          _  = (startIndex, startTerm)
   logInfoForNextIndex (Just myNextIdx) ls = let pli = myNextIdx - 1 in
@@ -171,7 +191,7 @@ instance LogApi (LogState LogEntry) where
   lastLogHash = maybe mempty _leHash . lastEntry
   {-# INLINE lastLogHash #-}
 
-  lastLogTerm ls = maybe startTerm _leTerm $ lastEntry ls
+  lastLogTerm ls = view lsLastLogTerm ls
   {-# INLINE lastLogTerm #-}
 
   getEntriesAfter pli cnt = Seq.take cnt . Seq.drop (fromIntegral $ pli + 1) . viewLogSeq
@@ -190,12 +210,13 @@ addLogEntriesAt pli newLEs ls =
                 . over (lEntries) ((Seq.>< newLEs)
                 . Seq.take (fromIntegral pli + 1))
                 $ _lsLogEntries ls
-      lastIdx = case ls' ^. lEntries of
-        (_ :> e) -> _leLogIndex e
-        _        -> startIndex
+      (lastIdx',lastTerm') = case ls' ^. lEntries of
+        (_ :> e) -> (_leLogIndex e, _leTerm e)
+        _        -> (ls ^. lsLastLogIndex, ls ^. lsLastLogTerm)
   in ls { _lsLogEntries = ls'
-        , _lsLastLogIndex = lastIdx
-        , _lsNextLogIndex = lastIdx + 1
+        , _lsLastLogIndex = lastIdx'
+        , _lsNextLogIndex = lastIdx' + 1
+        , _lsLastLogTerm = lastTerm'
         }
 {-# INLINE addLogEntriesAt #-}
 
@@ -207,14 +228,18 @@ appendLogEntry NewLogEntries{..} ls = case lastEntry ls of
         nle = newEntriesToLog (_nleTerm) (_leHash ple) (ls ^. lsNextLogIndex) _nleEntries
         ls' = ls { _lsLogEntries = Log $ (Seq.><) (viewLogSeq ls) nle }
         lastIdx' = maybe (ls ^. lsLastLogIndex) _leLogIndex $ seqTail nle
+        lastTerm' = maybe (ls ^. lsLastLogTerm) _leTerm $ seqTail nle
       in ls' { _lsLastLogIndex = lastIdx'
-             , _lsNextLogIndex = lastIdx' + 1 }
+             , _lsNextLogIndex = lastIdx' + 1
+             , _lsLastLogTerm  = lastTerm' }
     Nothing -> let
         nle = newEntriesToLog (_nleTerm) (B.empty) (ls ^. lsNextLogIndex) _nleEntries
         ls' = ls { _lsLogEntries = Log nle }
         lastIdx' = maybe (ls ^. lsLastLogIndex) _leLogIndex $ seqTail nle
+        lastTerm' = maybe (ls ^. lsLastLogTerm) _leTerm $ seqTail nle
       in ls' { _lsLastLogIndex = lastIdx'
-             , _lsNextLogIndex = lastIdx' + 1 }
+             , _lsNextLogIndex = lastIdx' + 1
+             , _lsLastLogTerm  = lastTerm' }
 {-# INLINE appendLogEntry #-}
 
 newEntriesToLog :: Term -> ByteString -> LogIndex -> [Command] -> Seq LogEntry

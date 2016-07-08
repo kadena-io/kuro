@@ -11,16 +11,21 @@ import Control.Monad.IO.Class
 import Control.Monad.Trans.RWS.Strict
 
 import qualified Data.Map.Strict as Map
+import Data.Maybe (fromJust)
+
+import Database.SQLite.Simple (Connection(..))
 
 import Juno.Types.Comms
 import Juno.Persistence.SQLite
 import Juno.Types.Service.Log as X
+import Juno.Types (startIndex)
 
 runLogService :: LogServiceChannel -> (String -> IO()) -> FilePath -> IO ()
 runLogService lsc dbg dbPath = do
   dbConn' <- createDB dbPath
   env <- return $ LogEnv lsc dbg dbConn'
-  void $ runRWST handle env initLogState
+  initLogState' <- syncLogsFromDisk dbConn'
+  void $ runRWST handle env initLogState'
 
 debug :: String -> LogThread ()
 debug s = do
@@ -42,12 +47,30 @@ runQuery (Query aq mv) = do
   liftIO $ putMVar mv qr
 runQuery (Update ul) = do
   modify (\a' -> updateLogs ul a')
-  toPersist <- getUnappliedEntries <$> get
+  toPersist <- getUnpersisted <$> get
   case toPersist of
     Just logs -> do
       dbConn' <- view dbConn
       liftIO $ insertSeqLogEntry dbConn' logs
+      lsLastPersisted .= (_leLogIndex $ fromJust $ seqTail logs)
     Nothing -> return ()
 runQuery (Tick t) = do
   t' <- liftIO $ pprintTock t "runQuery"
   debug t'
+
+
+syncLogsFromDisk :: Connection -> IO (LogState LogEntry)
+syncLogsFromDisk conn = do
+  logs <- selectAllLogEntries conn
+  lastLog' <- return $ seqTail logs
+  case lastLog' of
+    Just log' -> return $ LogState
+      { _lsLogEntries = Log logs
+      , _lsLastApplied = startIndex
+      , _lsLastLogIndex = _leLogIndex log'
+      , _lsNextLogIndex = (_leLogIndex log') + 1
+      , _lsCommitIndex = _leLogIndex log'
+      , _lsLastPersisted = _leLogIndex log'
+      , _lsLastLogTerm = _leTerm log'
+      }
+    Nothing -> return $ initLogState

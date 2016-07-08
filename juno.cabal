@@ -86,8 +86,7 @@ library
                      , Juno.Util.Util
                      , Schwifty.Swift.M105.Types
                      , Schwifty.Swift.M105.Parser
-  build-depends:       SHA2
-                     , aeson
+  build-depends:       aeson
                      , aeson-pretty
                      , ansi-wl-pprint
                      , array
@@ -97,6 +96,7 @@ library
                      , base < 5
                      , base16-bytestring
                      , base64-bytestring >= 1.0.0.1 && < 1.1
+                     , blake2
                      , bound
                      , bytestring
                      , cereal >= 0.4.1.1

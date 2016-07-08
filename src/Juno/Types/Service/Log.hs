@@ -39,7 +39,6 @@ import Control.Lens hiding (Index, (|>))
 import Control.Concurrent (MVar)
 import qualified Control.Concurrent.Chan.Unagi as Unagi
 import Control.Monad.Trans.RWS.Strict
-import Codec.Digest.SHA
 
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
@@ -261,7 +260,7 @@ updateLogHashesFromIndex i ls =
 {-# INLINE updateLogHashesFromIndex #-}
 
 hashNewEntry :: ByteString -> Term -> LogIndex -> Command -> ByteString
-hashNewEntry prevHash leTerm' leLogIndex' cmd = hash SHA256 (encode $ LEWire (leTerm', leLogIndex', sigCmd cmd, prevHash))
+hashNewEntry prevHash leTerm' leLogIndex' cmd = hash (encode $ LEWire (leTerm', leLogIndex', sigCmd cmd, prevHash))
   where
     sigCmd Command{ _cmdProvenance = ReceivedMsg{ _pDig = dig, _pOrig = bdy }} =
       SignedRPC dig bdy

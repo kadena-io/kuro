@@ -22,7 +22,7 @@ import Juno.Types (startIndex)
 
 runLogService :: LogServiceChannel -> (String -> IO()) -> FilePath -> IO ()
 runLogService lsc dbg dbPath = do
-  dbConn' <- return Nothing -- if null dbPath then Just <$> createDB dbPath else return Nothing
+  dbConn' <- if null dbPath then Just <$> createDB dbPath else return Nothing
   env <- return $ LogEnv lsc dbg dbConn'
   initLogState' <- case dbConn' of
     Just conn' -> syncLogsFromDisk conn'

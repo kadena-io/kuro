@@ -23,15 +23,18 @@ module Juno.Types.Log
   , hashLogEntry
   , seqHead
   , seqTail
+  , hash
   ) where
 
 import Control.Parallel.Strategies
 import Control.Lens hiding (Index, (|>))
 import qualified Control.Lens as Lens
 
-import Codec.Digest.SHA
+import qualified Crypto.Hash.BLAKE2.BLAKE2bp as BLAKE
+
 import Data.Sequence (Seq, (|>))
 import qualified Data.Sequence as Seq
+import qualified Data.ByteString as B
 import Data.ByteString (ByteString)
 import Data.Serialize hiding (get)
 import Data.Foldable
@@ -43,6 +46,10 @@ import Juno.Types.Base
 import Juno.Types.Config
 import Juno.Types.Message.Signed
 import Juno.Types.Message.CMD
+
+hash :: ByteString -> ByteString
+hash = BLAKE.hash 32 B.empty
+{-# INLINE hash #-}
 
 data LogEntry = LogEntry
   { _leTerm    :: !Term
@@ -104,9 +111,10 @@ encodeLEWire nid pubKey privKey les =
 -- TODO: This uses the old decode encode trick and should be changed...
 hashLogEntry :: Maybe LogEntry -> LogEntry -> LogEntry
 hashLogEntry (Just LogEntry{ _leHash = prevHash }) le@LogEntry{..} =
-  le { _leHash = hash SHA256 (encode $ LEWire (_leTerm, _leLogIndex, getCmdSignedRPC le, prevHash))}
+  le { _leHash = hash (encode $ LEWire (_leTerm, _leLogIndex, getCmdSignedRPC le, prevHash))}
 hashLogEntry Nothing le@LogEntry{..} =
-  le { _leHash = hash SHA256 (encode $ LEWire (_leTerm, _leLogIndex, getCmdSignedRPC le, mempty))}
+  le { _leHash = hash (encode $ LEWire (_leTerm, _leLogIndex, getCmdSignedRPC le, mempty))}
+{-# INLINE hashLogEntry #-}
 
 getCmdSignedRPC :: LogEntry -> SignedRPC
 getCmdSignedRPC LogEntry{ _leCommand = Command{ _cmdProvenance = ReceivedMsg{ _pDig = dig, _pOrig = bdy }}} =
@@ -126,11 +134,13 @@ seqHead :: Seq a -> Maybe a
 seqHead s = case Seq.viewl s of
   (e Seq.:< _) -> Just e
   _            -> Nothing
+{-# INLINE seqHead #-}
 
 seqTail :: Seq a -> Maybe a
 seqTail s = case Seq.viewr s of
   (_ Seq.:> e) -> Just e
   _        -> Nothing
+{-# INLINE seqTail #-}
 
 toReplicateLogEntries :: LogIndex -> Seq LogEntry -> Either String ReplicateLogEntries
 toReplicateLogEntries prevLogIndex les = do

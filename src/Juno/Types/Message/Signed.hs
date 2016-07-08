@@ -66,22 +66,21 @@ class WireFormat a where
 
 -- | Based on the MsgType in the SignedRPC's Digest, we know which set of keys are needed to validate the message
 verifySignedRPC :: KeySet -> SignedRPC -> Either String ()
-verifySignedRPC _ _ = Right ()
---verifySignedRPC !KeySet{..} s@(SignedRPC !Digest{..} !bdy)
---  | _digType == CMD || _digType == REV || _digType == CMDB =
---      case Map.lookup _digNodeId _ksClient of
---        Nothing -> Left $! "PubKey not found for NodeId: " ++ show _digNodeId
---        Just !key
---          | key /= _digPubkey -> Left $! "Public key in storage doesn't match digest's key for msg: " ++ show s
---          | otherwise -> if not $ valid bdy key _digSig
---                         then Left $! "Unable to verify SignedRPC sig: " ++ show s
---                         else Right ()
---  | otherwise =
---      case Map.lookup _digNodeId _ksCluster of
---        Nothing -> Left $! "PubKey not found for NodeId: " ++ show _digNodeId
---        Just !key
---          | key /= _digPubkey -> Left $! "Public key in storage doesn't match digest's key for msg: " ++ show s
---          | otherwise -> if not $ valid bdy key _digSig
---                         then Left $! "Unable to verify SignedRPC sig: " ++ show s
---                         else Right ()
+verifySignedRPC !KeySet{..} s@(SignedRPC !Digest{..} !bdy)
+  | _digType == CMD || _digType == REV || _digType == CMDB =
+      case Map.lookup _digNodeId _ksClient of
+        Nothing -> Left $! "PubKey not found for NodeId: " ++ show _digNodeId
+        Just !key
+          | key /= _digPubkey -> Left $! "Public key in storage doesn't match digest's key for msg: " ++ show s
+          | otherwise -> if not $ valid bdy key _digSig
+                         then Left $! "Unable to verify SignedRPC sig: " ++ show s
+                         else Right ()
+  | otherwise =
+      case Map.lookup _digNodeId _ksCluster of
+        Nothing -> Left $! "PubKey not found for NodeId: " ++ show _digNodeId
+        Just !key
+          | key /= _digPubkey -> Left $! "Public key in storage doesn't match digest's key for msg: " ++ show s
+          | otherwise -> if not $ valid bdy key _digSig
+                         then Left $! "Unable to verify SignedRPC sig: " ++ show s
+                         else Right ()
 {-# INLINE verifySignedRPC #-}

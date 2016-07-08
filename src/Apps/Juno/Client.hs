@@ -33,6 +33,12 @@ flushStr str = putStr str >> hFlush stdout
 readPrompt :: IO String
 readPrompt = flushStr prompt >> getLine
 
+showTestingResult :: CommandMVarMap -> Maybe Int64 -> IO ()
+showTestingResult s p = do
+  threadDelay 1000000 >> do
+    (CommandMap _ m) <- readMVar s
+    showResult s (fst $ Map.findMax m) p
+
 -- should we poll here till we get a result?
 showResult :: CommandMVarMap -> RequestId -> Maybe Int64 -> IO ()
 showResult cmdStatusMap' rId Nothing =
@@ -77,7 +83,7 @@ runREPL toCommands' cmdStatusMap' alias' disableTimeouts = do
               writeChan toCommands' (rId, [(alias', CommandEntry cmd')])
               --- this is the tracer round for timing purposes
               putStrLn $ "Sending " ++ show n ++ " 'transfer(Acct1->Acct2, 1%1)' transactions batched"
-              showResult cmdStatusMap' (rId + RequestId n) (Just n)
+              showTestingResult cmdStatusMap' (Just n)
               runREPL toCommands' cmdStatusMap' alias' disableTimeouts
             Nothing -> runREPL toCommands' cmdStatusMap' alias' disableTimeouts
           else if take 10 cmd == "many test:"
@@ -89,7 +95,7 @@ runREPL toCommands' cmdStatusMap' alias' disableTimeouts = do
                 writeList2Chan toCommands' cmds
                 --- this is the tracer round for timing purposes
                 putStrLn $ "Sending " ++ show n ++ " 'transfer(Acct1->Acct2, 1%1)' transactions individually"
-                showResult cmdStatusMap' (fst $ last cmds) (Just $ fromIntegral n)
+                showTestingResult cmdStatusMap' (Just $ fromIntegral n)
                 runREPL toCommands' cmdStatusMap' alias' disableTimeouts
               Nothing -> runREPL toCommands' cmdStatusMap' alias' disableTimeouts
           else if cmd == "disable timeout"

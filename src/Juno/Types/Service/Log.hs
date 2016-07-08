@@ -463,7 +463,7 @@ instance Comms QueryApi LogServiceChannel where
 data LogEnv = LogEnv
   { _logQueryChannel :: LogServiceChannel
   , _debugPrint :: (String -> IO ())
-  , _dbConn :: Connection }
+  , _dbConn :: Maybe Connection }
 makeLenses ''LogEnv
 
 type LogThread = RWST LogEnv () (LogState LogEntry) IO

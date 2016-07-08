@@ -49,7 +49,7 @@ runSenderService dispatch conf debugFn = do
     , _myPrivateKey = conf ^. JT.myPrivateKey
     , _yesVotes = Set.empty
     , _debugPrint = debugFn
-    , _aeReplicationLogLimit = 5000
+    , _aeReplicationLogLimit = 30000
     -- Comm Channels
     , _serviceRequestChan = dispatch ^. senderService
     , _outboundGeneral = dispatch ^. JT.outboundGeneral

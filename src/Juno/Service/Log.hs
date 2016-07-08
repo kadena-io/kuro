@@ -22,9 +22,11 @@ import Juno.Types (startIndex)
 
 runLogService :: LogServiceChannel -> (String -> IO()) -> FilePath -> IO ()
 runLogService lsc dbg dbPath = do
-  dbConn' <- createDB dbPath
+  dbConn' <- return Nothing -- if null dbPath then Just <$> createDB dbPath else return Nothing
   env <- return $ LogEnv lsc dbg dbConn'
-  initLogState' <- syncLogsFromDisk dbConn'
+  initLogState' <- case dbConn' of
+    Just conn' -> syncLogsFromDisk conn'
+    Nothing -> return $ initLogState
   void $ runRWST handle env initLogState'
 
 debug :: String -> LogThread ()
@@ -51,13 +53,14 @@ runQuery (Update ul) = do
   case toPersist of
     Just logs -> do
       dbConn' <- view dbConn
-      liftIO $ insertSeqLogEntry dbConn' logs
       lsLastPersisted .= (_leLogIndex $ fromJust $ seqTail logs)
+      case dbConn' of
+        Just conn -> liftIO $ insertSeqLogEntry conn logs
+        Nothing ->  return ()
     Nothing -> return ()
 runQuery (Tick t) = do
   t' <- liftIO $ pprintTock t "runQuery"
   debug t'
-
 
 syncLogsFromDisk :: Connection -> IO (LogState LogEntry)
 syncLogsFromDisk conn = do

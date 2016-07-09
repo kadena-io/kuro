@@ -22,7 +22,13 @@ import Juno.Types (startIndex)
 
 runLogService :: LogServiceChannel -> (String -> IO()) -> FilePath -> IO ()
 runLogService lsc dbg dbPath = do
-  dbConn' <- if null dbPath then Just <$> createDB dbPath else return Nothing
+  dbConn' <- if not (null dbPath)
+    then do
+      dbg $ "[LogThread] Database Connection Opened: " ++ dbPath
+      Just <$> createDB dbPath
+    else do
+      dbg "[LogThread] Persistence Disabled"
+      return Nothing
   env <- return $ LogEnv lsc dbg dbConn'
   initLogState' <- case dbConn' of
     Just conn' -> syncLogsFromDisk conn'

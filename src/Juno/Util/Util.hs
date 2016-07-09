@@ -24,8 +24,11 @@ module Juno.Util.Util
   , getCmdSigOrInvariantError
   , getRevSigOrInvariantError
   , enqueueRequest
+  , awsDashVar
   ) where
 
+
+import Control.Concurrent (forkIO)
 import Control.Lens
 import Control.Monad.RWS.Strict
 import Control.Concurrent (takeMVar, newEmptyMVar)
@@ -38,11 +41,21 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 
 import qualified System.Random as R
+import System.Process (system)
 
 import Juno.Types
 import qualified Juno.Types.Service.Sender as Sender
 import qualified Juno.Service.Log as Log
 import Juno.Util.Combinator
+
+awsDashVar :: Bool -> String -> String -> IO ()
+awsDashVar False _ _ = return ()
+awsDashVar True  k v = void $ forkIO $ void $ system $
+  "aws ec2 create-tags --resources `ec2-metadata --instance-id | sed 's/^.*: //g'` --tags Key="
+  ++ k
+  ++ ",Value="
+  ++ v
+  ++ " >/dev/null"
 
 seqIndex :: Seq a -> Int -> Maybe a
 seqIndex s i =

@@ -39,6 +39,7 @@ import System.Random
 import Juno.Consensus.Server
 import Juno.Consensus.Client
 import Juno.Types
+import Juno.Util.Util (awsDashVar)
 import Juno.Messaging.ZMQ
 import Juno.Monitoring.Server (startMonitoring)
 import Juno.Runtime.Api.ApiServer
@@ -47,10 +48,11 @@ import qualified Juno.Runtime.MessageReceiver as RENV
 data Options = Options
   {  optConfigFile :: FilePath
    , optApiPort :: Int
+   , optDisablePersistence :: Bool
   } deriving Show
 
 defaultOptions :: Options
-defaultOptions = Options { optConfigFile = "", optApiPort = 8000 }
+defaultOptions = Options { optConfigFile = "", optApiPort = -1, optDisablePersistence = False}
 
 options :: [OptDescr (Options -> Options)]
 options =
@@ -62,6 +64,10 @@ options =
            ["apiPort"]
            (ReqArg (\p opts -> opts { optApiPort = read p }) "API_PORT")
            "Api Port"
+  , Option ['d']
+           ["disablePersistence"]
+           (OptArg (\_ opts -> opts { optDisablePersistence = True }) "DISABLE_PERSISTENCE" )
+            "Disable Persistence"
   ]
 
 getConfig :: IO Config
@@ -73,9 +79,10 @@ getConfig = do
       conf <- Y.decodeFileEither $ optConfigFile opts
       case conf of
         Left err -> putStrLn (Y.prettyPrintParseException err) >> exitFailure
-        Right conf' -> do
-          let apiPort' = optApiPort opts
-          return $ apiPort .~ apiPort' $ conf'
+        Right conf' -> return $ conf'
+          { _apiPort = if optApiPort opts == -1 then conf' ^. apiPort else optApiPort opts
+          , _logSqlitePath = if optDisablePersistence opts then "" else conf' ^. logSqlitePath
+          }
     (_,_,errs)     -> mapM_ putStrLn errs >> exitFailure
 
 showDebug :: TimedFastLogger -> String -> IO ()
@@ -161,27 +168,18 @@ setLineBuffering = do
   hSetBuffering stdout LineBuffering
   hSetBuffering stderr LineBuffering
 
-awsDashVar :: String -> String -> IO ()
-awsDashVar _ _ = return ()
---awsDashVar k v = void $ forkIO $ void $ system $
---  "aws ec2 create-tags --resources `ec2-metadata --instance-id | sed 's/^.*: //g'` --tags Key="
---  ++ k
---  ++ ",Value="
---  ++ v
---  ++ " >/dev/null"
-
-resetAwsEnv :: IO ()
-resetAwsEnv = do
-  awsDashVar "Role" "Startup"
-  awsDashVar "Term" "Startup"
-  awsDashVar "AppliedIndex" "Startup"
-  awsDashVar "CommitIndex" "Startup"
+resetAwsEnv :: Bool -> IO ()
+resetAwsEnv awsEnabled = do
+  awsDashVar awsEnabled "Role" "Startup"
+  awsDashVar awsEnabled "Term" "Startup"
+  awsDashVar awsEnabled "AppliedIndex" "Startup"
+  awsDashVar awsEnabled "CommitIndex" "Startup"
 
 runClient :: (Command -> IO CommandResult) -> IO (RequestId, [(Maybe Alias, CommandEntry)]) -> CommandMVarMap -> MVar Bool -> IO ()
 runClient applyFn getEntries cmdStatusMap' disableTimeouts = do
   setLineBuffering
-  resetAwsEnv
   rconf <- getConfig
+  resetAwsEnv (rconf ^. enableAwsIntegration)
   fs <- initSysLog
   let debugFn = if (rconf ^. enableDebug) then showDebug fs else noDebug
   pubMetric <- startMonitoring rconf
@@ -210,8 +208,8 @@ runJuno :: (Command -> IO CommandResult) -> Unagi.InChan (RequestId, [(Maybe Ali
         -> Unagi.OutChan (RequestId, [(Maybe Alias, CommandEntry)]) -> CommandMVarMap -> IO ()
 runJuno applyFn toCommands getApiCommands sharedCmdStatusMap = do
   setLineBuffering
-  resetAwsEnv
   rconf <- getConfig
+  resetAwsEnv (rconf ^. enableAwsIntegration)
   me <- return $ rconf ^. nodeId
   oNodes <- return $ Set.toList $ Set.delete me $ Set.union (rconf ^. otherNodes) (Map.keysSet $ rconf ^. clientPublicKeys)
   dispatch <- initDispatch

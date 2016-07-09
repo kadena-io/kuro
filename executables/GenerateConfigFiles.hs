@@ -64,8 +64,14 @@ mainAws clustersFile clientsFile = do
   clientKeyMaps <- return $ awsKeyMaps clientIds clientKeys
   clusterConfs <- return (createClusterConfig True clusterKeyMaps (snd clientKeyMaps) <$> clusterIds)
   clientConfs <- return (createClientConfig True (snd clusterKeyMaps) clientKeyMaps <$> clientIds)
-  mapM_ (\c' -> Y.encodeFile ("aws-conf" </> (_host $ _nodeId c') ++ "-cluster-aws.yaml") c') clusterConfs
-  mapM_ (\c' -> Y.encodeFile ("aws-conf" </> (_host $ _nodeId c') ++ "-client-aws.yaml") c') clientConfs
+  mapM_ (\c' -> Y.encodeFile
+          ("aws-conf" </> (_host $ _nodeId c') ++ "-cluster-aws.yaml")
+          (c' { _enableAwsIntegration = True })
+        ) clusterConfs
+  mapM_ (\c' -> Y.encodeFile
+          ("aws-conf" </> (_host $ _nodeId c') ++ "-client-aws.yaml")
+          c'
+        ) clientConfs
 
 mainLocal :: IO ()
 mainLocal = do
@@ -110,6 +116,7 @@ createClusterConfig debugFollower (privMap, pubMap) clientPubMap nid = Config
   , _dontDebugFollower    = not debugFollower
   , _apiPort              = 8000
   , _logSqlitePath        = "./log/" ++ BSC.unpack (unAlias $ _alias nid) ++ ".sqlite"
+  , _enableAwsIntegration = False
   }
 
 createClientConfig :: Bool -> Map NodeId PublicKey -> (Map NodeId PrivateKey, Map NodeId PublicKey) -> NodeId -> Config
@@ -129,4 +136,5 @@ createClientConfig debugFollower clusterPubMap (privMap, pubMap) nid = Config
   , _dontDebugFollower    = not debugFollower
   , _apiPort              = 8000
   , _logSqlitePath        = "./log/" ++ BSC.unpack (unAlias $ _alias nid) ++ ".sqlite"
+  , _enableAwsIntegration = False
   }

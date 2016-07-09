@@ -5,10 +5,6 @@ module Juno.Monitoring.Server
   ( startMonitoring
   ) where
 
--- import System.Process (system)
-
--- import Control.Monad (void)
--- import Control.Concurrent (forkIO)
 import Control.Lens ((^.), to)
 import Data.Text.Encoding (decodeUtf8)
 
@@ -18,7 +14,8 @@ import qualified System.Metrics.Label as Label
 import qualified System.Metrics.Gauge as Gauge
 import qualified System.Metrics.Distribution as Dist
 
-import Juno.Types (Config, nodeId, Metric(..), LogIndex(..), Term(..), NodeId(..), _port)
+import Juno.Util.Util (awsDashVar)
+import Juno.Types (Config, nodeId, Metric(..), LogIndex(..), Term(..), NodeId(..), _port, enableAwsIntegration)
 import Juno.Monitoring.EkgMonitor (Server, forkServer, getLabel, getGauge, getDistribution)
 
 -- TODO: possibly switch to 'newStore' API. this allows us to use groups.
@@ -28,18 +25,11 @@ startApi config = forkServer "localhost" port
   where
     port = 80 + fromIntegral (config ^. nodeId . to _port)
 
-awsDashVar :: String -> String -> IO ()
-awsDashVar _  _ = return ()
---awsDashVar k v = void $ forkIO $ void $ system $
---  "aws ec2 create-tags --resources `ec2-metadata --instance-id | sed 's/^.*: //g'` --tags Key="
---  ++ k
---  ++ ",Value="
---  ++ v
---  ++ " >/dev/null"
-
 startMonitoring :: Config -> IO (Metric -> IO ())
 startMonitoring config = do
   ekg <- startApi config
+
+  let awsDashVar' = awsDashVar (config ^. enableAwsIntegration)
 
   -- Consensus
   termGauge <- getGauge "juno.consensus.term" ekg
@@ -63,10 +53,10 @@ startMonitoring config = do
     -- Consensus
     MetricTerm (Term t) -> do
       Gauge.set termGauge $ fromIntegral t
-      awsDashVar "Term" $ show t
+      awsDashVar' "Term" $ show t
     MetricCommitIndex (LogIndex idx) -> do
       Gauge.set commitIndexGauge $ fromIntegral idx
-      awsDashVar "CommitIndex" $ show idx
+      awsDashVar' "CommitIndex" $ show idx
     MetricCommitPeriod p ->
       Dist.add commitPeriodDist p
     MetricCurrentLeader mNode ->
@@ -82,10 +72,10 @@ startMonitoring config = do
       Gauge.set portGauge $ fromIntegral port
     MetricRole role -> do
       Label.set roleLabel $ T.pack $ show role
-      awsDashVar "Role" $ show role
+      awsDashVar' "Role" $ show role
     MetricAppliedIndex (LogIndex idx) -> do
       Gauge.set appliedIndexGauge $ fromIntegral idx
-      awsDashVar "AppliedIndex" $ show idx
+      awsDashVar' "AppliedIndex" $ show idx
     MetricApplyLatency l ->
       Dist.add applyLatencyDist l
     -- Cluster

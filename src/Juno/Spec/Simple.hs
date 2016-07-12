@@ -114,20 +114,8 @@ simpleRaftSpec :: (Command -> IO CommandResult)
                -> RaftSpec
 simpleRaftSpec applyFn debugFn pubMetricFn updateMapFn cmdMVarMap getCommands = RaftSpec
     {
-      -- TODO don't read log entries
-      _readLogEntry    = return . const Nothing
-      -- TODO don't write log entries
-    , _writeLogEntry   = \_ _ -> return ()
-      -- TODO always read startTerm
-    , _readTermNumber  = return startTerm
-      -- TODO don't write term numbers
-    , _writeTermNumber = return . const ()
-      -- TODO never voted for anyone
-    , _readVotedFor    = return Nothing
-      -- TODO don't record votes
-    , _writeVotedFor   = return . const ()
       -- apply log entries to the state machine, given by caller
-    , _applyLogEntry   = applyFn
+      _applyLogEntry   = applyFn
       -- use the debug function given by the caller
     , _debugPrint      = debugFn
       -- publish a 'Metric' to EKG

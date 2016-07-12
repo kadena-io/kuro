@@ -6,9 +6,7 @@
 module Juno.Types.Spec
   ( Raft
   , RaftSpec(..)
-  , readLogEntry, writeLogEntry, readTermNumber, writeTermNumber
-  , readVotedFor, writeVotedFor, applyLogEntry
-  , debugPrint, publishMetric, getTimestamp, random
+  , applyLogEntry , debugPrint, publishMetric, getTimestamp, random
   , viewConfig, readConfig, timerTarget
   -- for API <-> Juno communication
   , dequeueFromApi ,cmdStatusMap, updateCmdMap
@@ -51,35 +49,10 @@ import Juno.Types.Dispatch
 import Juno.Types.Service.Sender (SenderServiceChannel, ServiceRequest')
 import Juno.Types.Service.Log (QueryApi(..))
 
--- | A structure containing all the implementation details for running
--- the raft protocol.
--- Types:
--- nt -- "node type", ie identifier (host/port, topic, subject)
--- et -- "entry type", serialized format for submissions into Raft
--- rt -- "return type", serialized format for "results" or "responses"
--- mt -- "message type", serialized format for sending over wire
 data RaftSpec = RaftSpec
   {
-    -- ^ Function to get a log entry from persistent storage.
-    _readLogEntry     :: LogIndex -> IO (Maybe CommandEntry)
-
-    -- ^ Function to write a log entry to persistent storage.
-  , _writeLogEntry    :: LogIndex -> (Term,CommandEntry) -> IO ()
-
-    -- ^ Function to get the term number from persistent storage.
-  , _readTermNumber   :: IO Term
-
-    -- ^ Function to write the term number to persistent storage.
-  , _writeTermNumber  :: Term -> IO ()
-
-    -- ^ Function to read the node voted for from persistent storage.
-  , _readVotedFor     :: IO (Maybe NodeId)
-
-    -- ^ Function to write the node voted for to persistent storage.
-  , _writeVotedFor    :: Maybe NodeId -> IO ()
-
     -- ^ Function to apply a log entry to the state machine.
-  , _applyLogEntry    :: Command -> IO CommandResult
+    _applyLogEntry    :: Command -> IO CommandResult
 
     -- ^ Function to log a debug message (no newline).
   , _debugPrint       :: String -> IO ()

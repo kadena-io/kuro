@@ -20,7 +20,6 @@ import Juno.Consensus.Handle.Types
 import qualified Juno.Service.Sender as Sender
 import qualified Juno.Service.Log as Log
 import Juno.Runtime.Timer (resetElectionTimer, hasElectionTimerLeaderFired)
-import Juno.Util.Combinator ((^$))
 import Juno.Util.Util
 
 import qualified Juno.Types as JT
@@ -158,7 +157,6 @@ castLazyVote lazyTerm' lazyCandidate' lazyLastLogIndex' = do
 -- THREAD: SERVER MAIN. updates state
 setVotedFor :: Maybe NodeId -> JT.Raft ()
 setVotedFor mvote = do
-  void $ JT.rs.JT.writeVotedFor ^$ mvote
   JT.votedFor .= mvote
 
 createRequestVoteResponse :: NodeId -> NodeId -> Term -> LogIndex -> Bool -> RequestVoteResponse

@@ -46,7 +46,6 @@ import System.Process (system)
 import Juno.Types
 import qualified Juno.Types.Service.Sender as Sender
 import qualified Juno.Service.Log as Log
-import Juno.Util.Combinator
 
 awsDashVar :: Bool -> String -> String -> IO ()
 awsDashVar False _ _ = return ()
@@ -139,7 +138,6 @@ logStaticMetrics = do
 
 setTerm :: Term -> Raft ()
 setTerm t = do
-  void $ rs.writeTermNumber ^$ t
   term .= t
   logMetric $ MetricTerm t
 

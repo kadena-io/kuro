@@ -48,6 +48,11 @@ module Juno.Types.Comms
   , writeCommBounded
   , writeCommNoBlock
   , writeCommUnagi
+  -- used for wiring up mock interfaces to ZMQ
+  , TestRigInput(..)
+  , TestRigInputChannel(..)
+  , TestRigOutput(..)
+  , TestRigOutputChannel(..)
   ) where
 
 import Control.Monad
@@ -115,6 +120,12 @@ newtype OutboundGeneral = OutboundGeneral { _unOutboundGeneral :: Envelope}
 newtype OutboundAerRvRvr = OutboundAerRvRvr { _unOutboundAerRvRvr :: Envelope}
   deriving (Show, Eq, Typeable)
 
+newtype TestRigInput = TestRigInput {_unTestRigInput :: [ByteString] }
+  deriving (Show, Eq, Typeable)
+
+newtype TestRigOutput = TestRigOutput {_unTestRigOutput :: Envelope }
+  deriving (Show, Eq, Typeable)
+
 directMsg :: NodeId -> ByteString -> OutboundGeneral
 directMsg n b = OutboundGeneral $ Envelope (Topic $ unAlias $ _alias n, b)
 
@@ -141,6 +152,10 @@ newtype OutboundAerRvRvrChannel =
   OutboundAerRvRvrChannel (Unagi.InChan OutboundAerRvRvr, MVar (Maybe (Unagi.Element OutboundAerRvRvr, IO OutboundAerRvRvr), Unagi.OutChan OutboundAerRvRvr))
 newtype InternalEventChannel =
   InternalEventChannel (Bounded.InChan InternalEvent, MVar (Maybe (Bounded.Element InternalEvent, IO InternalEvent), Bounded.OutChan InternalEvent))
+newtype TestRigInputChannel =
+  TestRigInputChannel (Unagi.InChan TestRigInput, MVar (Maybe (Unagi.Element TestRigInput, IO TestRigInput), Unagi.OutChan TestRigInput))
+newtype TestRigOutputChannel =
+  TestRigOutputChannel (Unagi.InChan TestRigOutput, MVar (Maybe (Unagi.Element TestRigOutput, IO TestRigOutput), Unagi.OutChan TestRigOutput))
 
 class Comms f c | c -> f where
   initComms :: IO c
@@ -189,6 +204,18 @@ instance Comms InternalEvent InternalEventChannel where
   readComm (InternalEventChannel (_,o)) = readCommBounded o
   readComms (InternalEventChannel (_,o)) = readCommsBounded o
   writeComm (InternalEventChannel (i,_)) = writeCommBounded i
+
+instance Comms TestRigInput TestRigInputChannel where
+  initComms = TestRigInputChannel <$> initCommsUnagi
+  readComm (TestRigInputChannel (_,o)) = readCommUnagi o
+  readComms (TestRigInputChannel (_,o)) = readCommsUnagi o
+  writeComm (TestRigInputChannel (i,_)) = writeCommUnagi i
+
+instance Comms TestRigOutput TestRigOutputChannel where
+  initComms = TestRigOutputChannel <$> initCommsUnagi
+  readComm (TestRigOutputChannel (_,o)) = readCommUnagi o
+  readComms (TestRigOutputChannel (_,o)) = readCommsUnagi o
+  writeComm (TestRigOutputChannel (i,_)) = writeCommUnagi i
 
 -- Implementations for each type of chan that we use
 initCommsBounded :: IO (Bounded.InChan a, MVar (Maybe a1, Bounded.OutChan a))

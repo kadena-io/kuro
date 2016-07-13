@@ -25,6 +25,7 @@ library
                      , Apps.Juno.JsonTypes
                      , Apps.Juno.ApiDemoHandler
                      , Apps.Juno.ApiHandlers
+                     , Apps.AERTest
                      , Apps.Juno.Ledger
                      , Apps.Juno.Parser
                      , Apps.Juno.Repl
@@ -49,6 +50,7 @@ library
                      , Juno.Hoplite.Transmatic
                      , Juno.Hoplite.Types
                      , Juno.Messaging.ZMQ
+                     , Juno.Messaging.TestRig
                      , Juno.Monitoring.EkgJson
                      , Juno.Monitoring.EkgMonitor
                      , Juno.Monitoring.EkgSnap
@@ -61,6 +63,7 @@ library
                      , Juno.Service.Log
                      , Juno.Service.Sender
                      , Juno.Spec.Simple
+                     , Juno.Spec.TestRig
                      , Juno.Types
                      , Juno.Types.Base
                      , Juno.Types.Command

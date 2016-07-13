@@ -1,5 +1,6 @@
 module Juno.Consensus.Server
   ( runRaftServer
+  , runPrimedRaftServer
   ) where
 
 import Control.Concurrent (newEmptyMVar, forkIO)
@@ -23,13 +24,13 @@ import Juno.Util.Util
 import qualified Juno.Service.Sender as Sender
 import qualified Juno.Service.Log as Log
 
-runRaftServer :: ReceiverEnv -> Config -> RaftSpec -> IO ()
-runRaftServer renv rconf spec = do
+runPrimedRaftServer :: ReceiverEnv -> Config -> RaftSpec -> RaftState -> IO ()
+runPrimedRaftServer renv rconf spec rstate = do
   let csize = 1 + Set.size (rconf ^. otherNodes)
       qsize = getQuorumSize csize
   void $ runMessageReceiver renv
   rconf' <- newIORef rconf
-  timerTarget' <- newEmptyMVar
+  timerTarget' <- return $ (rstate ^. timerTarget)
   void $ forkIO $ Log.runLogService (_logService $ _dispatch renv) (RENV._debugPrint renv) (rconf ^. logSqlitePath)
   void $ forkIO $ Sender.runSenderService (_dispatch renv) rconf (RENV._debugPrint renv)
   -- This helps for testing, we'll send tocks every second to inflate the logs when we see weird pauses right before an election
@@ -40,7 +41,12 @@ runRaftServer renv rconf spec = do
   runRWS_
     raft
     (mkRaftEnv rconf' csize qsize spec (_dispatch renv) timerTarget')
-    (initialRaftState timerTarget')
+    rstate
+
+runRaftServer :: ReceiverEnv -> Config -> RaftSpec -> IO ()
+runRaftServer renv rconf spec = do
+  timerTarget' <- newEmptyMVar
+  runPrimedRaftServer renv rconf spec (initialRaftState timerTarget')
 
 -- THREAD: SERVER MAIN
 raft :: Raft ()

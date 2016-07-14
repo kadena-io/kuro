@@ -123,6 +123,7 @@ library
                      , megaparsec >= 4.2.0 && < 4.3
                      , monad-control
                      , monad-loops
+                     , monad-par
                      , mtl
                      , mtl-compat
                      , network

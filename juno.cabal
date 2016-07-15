@@ -83,6 +83,7 @@ library
                      , Juno.Types.Message.RVR
                      , Juno.Types.Message.REV
                      , Juno.Types.Metric
+                     , Juno.Types.Service.Evidence
                      , Juno.Types.Service.Sender
                      , Juno.Types.Service.Log
                      , Juno.Types.Spec

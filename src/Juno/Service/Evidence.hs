@@ -1,144 +1,98 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module Juno.Service.Evidence where
+module Juno.Service.Evidence
+  ( startProcessor
+  , initEvidenceEnv
+  , module X
+  ) where
 
+import Control.Concurrent (MVar, readMVar, newEmptyMVar, takeMVar, swapMVar)
 import Control.Lens hiding (Index)
+import Control.Monad
+import Control.Monad.IO.Class
+import Control.Monad.Trans.Reader
 import Control.Monad.Trans.State.Strict
 
-import Data.ByteString (ByteString)
-
-import Data.Sequence (Seq)
-import qualified Data.Sequence as Seq
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
 
+import Juno.Types.Dispatch (Dispatch)
+import Juno.Types.Service.Evidence as X
+import qualified Juno.Types.Dispatch as Dispatch
+import qualified Juno.Types.Service.Log as Log
 
-
-import Juno.Types hiding (quorumSize)
-
-data EvidenceCache = EvidenceCache
-  { minLogIdx :: !LogIndex
-  , maxLogIdx :: !LogIndex
-  , lastLogTerm :: !Term
-  , hashes :: !(Seq ByteString)
-  } deriving (Show)
-
-data EvidenceState = EvidenceState
-  { _esQuorumSize :: Int
-  , _esNodeStates :: !(Map NodeId LogIndex)
-  , _esUnconvincedNodes :: !(Set NodeId)
-  , _esPartialEvidence :: !(Map LogIndex Int)
-  , _esCommitIndex :: !LogIndex
-  , _esFutureEvidence :: ![AppendEntriesResponse]
-  , _esMismatchNodes :: !(Set NodeId)
-  } deriving (Show)
-makeLenses ''EvidenceState
-
-initEvidenceState :: Int -> Set NodeId -> LogIndex -> EvidenceState
-initEvidenceState quorumSize' otherNodes' commidIndex' = EvidenceState
-  { _esQuorumSize = quorumSize'
-  , _esNodeStates = Map.fromSet (\_ -> commidIndex') otherNodes'
-  , _esUnconvincedNodes = otherNodes'
-  , _esPartialEvidence = Map.empty
-  , _esCommitIndex = commidIndex'
-  , _esFutureEvidence = []
-  , _esMismatchNodes = Set.empty
+initEvidenceEnv :: Dispatch -> (String -> IO ()) -> MVar Config -> MVar EvidenceState -> MVar EvidenceCache -> EvidenceEnv
+initEvidenceEnv dispatch debugFn' mConfig' mPubStateTo' mEvCache' = EvidenceEnv
+  { _logService = dispatch ^. Dispatch.logService
+  , _evidence = dispatch ^. Dispatch.evidence
+  , _mConfig = mConfig'
+  , _mPubStateTo = mPubStateTo'
+  , _mEvCache = mEvCache'
+  , _debugFn = debugFn'
   }
 
-type EvidenceProcessor = State EvidenceState
+rebuildState :: Maybe EvidenceState -> EvidenceProcEnv (EvidenceState)
+rebuildState es = do
+  conf' <- view mConfig >>= liftIO . readMVar
+  otherNodes' <- return $ _otherNodes conf'
+  mv <- queryLogs $ Set.singleton Log.GetCommitIndex
+  commitIndex' <- return $ Log.hasQueryResult Log.CommitIndex mv
+  newEs <- return $! initEvidenceState otherNodes' commitIndex'
+  case es of
+    Just es' -> return $! es'
+        { _esQuorumSize = _esQuorumSize newEs
+        }
+    Nothing -> return $! newEs
 
--- | Result of the evidence check
--- NB: there are some optimizations that can be done, but I choose not to because they complicate matters and I think
--- this system will be used to optimize messaging in the future (e.g. don't send AER's to nodes who agree with you).
--- For that, we'll need to check crypto anyway
-data Result =
-  Unconvinced
-  -- * Sender does not believe in leader.
-    { _rNodeId :: !NodeId
-    , _rLogIndex :: !LogIndex }|
-  Unsuccessful
-  -- * Sender believes in leader but failed to replicate. This usually this occurs when a follower is catching up
-  -- * and an AE was sent with a PrevLogIndex > LastLogIndex
-    { _rNodeId :: !NodeId
-    , _rLogIndex :: !LogIndex }|
-  FutureEvidence
-  -- * Evidence is for some future log entry that we don't have access too
-    { _rAER :: !AppendEntriesResponse }|
-  Successful
-  -- * Replication occurred and the incremental hash matches our own
-    { _rNodeId :: !NodeId
-    , _rLogIndex :: !LogIndex }|
-  SuccessfulButOld
-  -- * Replication occurred and the incremental hash matches our own
-    { _rNodeId :: !NodeId
-    , _rLogIndex :: !LogIndex }|
-  MisMatch
-  -- * Sender was successful BUT incremental hash doesn't match our own
-  -- NB: this is a big deal as something went seriously wrong BUT it's the sender's problem and not ours
-    { _rNodeId :: !NodeId
-    , _rLogIndex :: !LogIndex }
-  deriving (Show, Eq)
+runEvidenceProcessor :: EvidenceState -> EvidenceProcEnv (EvidenceState)
+runEvidenceProcessor es = do
+  newEv <- view evidence >>= liftIO . readComm
+  case newEv of
+    VerifiedAER aers -> do
+      esPub <- view mPubStateTo
+      ec <- view mEvCache >>= liftIO . readMVar
+      (res, newEs) <- return $! runState (processEvidence aers ec) es
+      liftIO $ void $ swapMVar esPub newEs
+      case res of
+        Left i -> do
+          debug $ "Evidence still required " ++ (show i) ++ " of " ++ show (1 + _esQuorumSize newEs)
+          runEvidenceProcessor newEs
+        Right li -> do
+          updateLogs $ Log.ULCommitIdx $ Log.UpdateCommitIndex li
+          debug $ "CommitIndex = " ++ (show li)
+          runEvidenceProcessor newEs
+    Tick tock -> do
+      liftIO (pprintTock tock "runEvidenceProcessor") >>= debug
+      runEvidenceProcessor es
+    Bounce -> return es
 
+startProcessor :: EvidenceEnv -> IO ()
+startProcessor ev = do
+  startingEs <- runReaderT (rebuildState Nothing) ev
+  runReaderT (foreverRunProcessor startingEs) ev
 
-checkEvidence :: EvidenceCache -> EvidenceState -> AppendEntriesResponse -> Result
-checkEvidence ec es aer@(AppendEntriesResponse{..}) =
-  if not _aerConvinced
-    then Unconvinced _aerNodeId _aerIndex
-  else if not _aerSuccess
-    then Unsuccessful _aerNodeId _aerIndex
-  else if _aerIndex < _esCommitIndex es
-    -- this one is interesting. We are going to make it the responsibility of the follower to identify that they have a bad incremental hash
-    -- and prune all of their uncommitted logs.
-    then SuccessfulButOld _aerNodeId _aerIndex
-  else if _aerIndex > maxLogIdx ec
-    then FutureEvidence aer
-  else if Seq.index (hashes ec) (fromIntegral $ _aerIndex - (minLogIdx ec)) == _aerHash
-    then Successful _aerNodeId _aerIndex
-    else MisMatch _aerNodeId _aerIndex
-{-# INLINE checkEvidence #-}
+foreverRunProcessor :: EvidenceState -> EvidenceProcEnv ()
+foreverRunProcessor es = runEvidenceProcessor es >>= rebuildState . Just >>= foreverRunProcessor
 
-processResult :: Result -> EvidenceProcessor ()
-processResult Unconvinced{..} = do
-  esUnconvincedNodes %= Set.insert _rNodeId
-  esNodeStates %= Map.insert _rNodeId _rLogIndex
-processResult Unsuccessful{..} = do
-  esUnconvincedNodes %= Set.delete _rNodeId
-  esNodeStates %= Map.insert _rNodeId _rLogIndex
-processResult FutureEvidence{..} = do
-  esFutureEvidence %= (:) _rAER
-processResult Successful{..} = do
-  esUnconvincedNodes %= Set.delete _rNodeId
-  lastIdx <- Map.lookup _rNodeId <$> use esNodeStates
-  -- this bit is important, we don't want to double count any node's evidence so we need to decrement the old evidence (if any)
-  -- and increment the new
-  case lastIdx of
-    Nothing -> do
-      esNodeStates %= Map.insert _rNodeId _rLogIndex
-      -- Adding it here is fine because esNodeState's values only are nothing if we've never heard from
-      -- that node OR we've reset this service (aka membership event) and the esPartialEvidence will also
-      -- be reset
-      esPartialEvidence %= Map.insertWith (+) _rLogIndex 1
-    Just i | i < _rLogIndex -> do
-      esNodeStates %= Map.insert _rNodeId _rLogIndex
-      -- Add the updated evidence
-      esPartialEvidence %= Map.insertWith (+) _rLogIndex 1
-      -- Remove the previous evidence, removing the key if count == 0
-      esPartialEvidence %= Map.alter (maybe Nothing (\cnt -> if cnt - 1 <= 0
-                                                      then Nothing
-                                                      else Just (cnt - 1))
-                                    ) i
-           | otherwise ->
-      -- this one is interesting, we have an old but successful message... I think we just drop it
-      return ()
-processResult SuccessfulButOld{..} = do
-  esUnconvincedNodes %= Set.delete _rNodeId
-  esNodeStates %= Map.insert _rNodeId _rLogIndex
-processResult MisMatch{..} = do
-  esMismatchNodes %= Set.insert _rNodeId
-{-# INLINE processResult #-}
+queryLogs :: Set Log.AtomicQuery -> EvidenceProcEnv (Map Log.AtomicQuery Log.QueryResult)
+queryLogs aq = do
+  c <- view logService
+  mv <- liftIO $ newEmptyMVar
+  liftIO $ writeComm c $ Log.Query aq mv
+  liftIO $ takeMVar mv
+
+updateLogs :: Log.UpdateLogs -> EvidenceProcEnv ()
+updateLogs q = do
+  logService' <- view logService
+  liftIO $ writeComm logService' $ Log.Update q
+
+debug :: String -> EvidenceProcEnv ()
+debug s = do
+  debugFn' <- view debugFn
+  liftIO $ debugFn' $ "[EV_SERVICE]: " ++ s
 
 checkForNewCommitIndex :: Int -> Map LogIndex Int -> Either Int LogIndex
 checkForNewCommitIndex evidenceNeeded partialEvidence = go (Map.toDescList partialEvidence) evidenceNeeded
@@ -153,8 +107,18 @@ processEvidence :: [AppendEntriesResponse] -> EvidenceCache -> EvidenceProcessor
 processEvidence aers ec = do
   es <- get
   mapM_ processResult (checkEvidence ec es <$> aers)
-  checkForNewCommitIndex (_esQuorumSize es) <$> use esPartialEvidence
+  res <- checkForNewCommitIndex (_esQuorumSize es) <$> use esPartialEvidence
+  case res of
+    Left i -> return $ Left i
+    Right li -> do
+      esCommitIndex .= li
+      -- though the code in `processResult Successful` should be enough to keep everything in sync
+      -- we're going to make doubly sure that we don't double count
+      esPartialEvidence %= Map.filterWithKey (\k _ -> k > li)
+      return $ Right li
 {-# INLINE processEvidence #-}
+
+
 
 
 -- For Testing

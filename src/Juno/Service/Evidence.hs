@@ -48,7 +48,7 @@ initEvidenceState quorumSize' otherNodes' commidIndex' = EvidenceState
   , _esMismatchNodes = Set.empty
   }
 
-type EvidenceProcessor = StateT EvidenceState IO
+type EvidenceProcessor = State EvidenceState
 
 -- | Result of the evidence check
 -- NB: there are some optimizations that can be done, but I choose not to because they complicate matters and I think
@@ -115,15 +115,24 @@ processResult Successful{..} = do
   -- this bit is important, we don't want to double count any node's evidence so we need to decrement the old evidence (if any)
   -- and increment the new
   case lastIdx of
-    Nothing -> esNodeStates %= Map.insert _rNodeId _rLogIndex
+    Nothing -> do
+      esNodeStates %= Map.insert _rNodeId _rLogIndex
+      -- Adding it here is fine because esNodeState's values only are nothing if we've never heard from
+      -- that node OR we've reset this service (aka membership event) and the esPartialEvidence will also
+      -- be reset
+      esPartialEvidence %= Map.insertWith (+) _rLogIndex 1
     Just i | i < _rLogIndex -> do
-               esNodeStates %= Map.insert _rNodeId _rLogIndex
-               esPartialEvidence %= Map.insertWith (+) _rLogIndex 1
-               esPartialEvidence %= Map.alter (maybe Nothing (\cnt -> if cnt - 1 <= 0
-                                                               then Nothing
-                                                               else Just (cnt - 1))
-                                              ) _rLogIndex
-           | otherwise -> return ()
+      esNodeStates %= Map.insert _rNodeId _rLogIndex
+      -- Add the updated evidence
+      esPartialEvidence %= Map.insertWith (+) _rLogIndex 1
+      -- Remove the previous evidence, removing the key if count == 0
+      esPartialEvidence %= Map.alter (maybe Nothing (\cnt -> if cnt - 1 <= 0
+                                                      then Nothing
+                                                      else Just (cnt - 1))
+                                    ) i
+           | otherwise ->
+      -- this one is interesting, we have an old but successful message... I think we just drop it
+      return ()
 processResult SuccessfulButOld{..} = do
   esUnconvincedNodes %= Set.delete _rNodeId
   esNodeStates %= Map.insert _rNodeId _rLogIndex
@@ -145,3 +154,15 @@ processEvidence aers ec = do
   es <- get
   mapM_ processResult (checkEvidence ec es <$> aers)
   checkForNewCommitIndex (_esQuorumSize es) <$> use esPartialEvidence
+{-# INLINE processEvidence #-}
+
+
+-- For Testing
+
+_runEvidenceProcessTest
+  :: (EvidenceState, EvidenceCache, [AppendEntriesResponse])
+  -> (Either Int LogIndex, EvidenceState)
+_runEvidenceProcessTest (es, ec, aers) = runState (processEvidence aers ec) es
+
+_checkEvidence :: (EvidenceState, EvidenceCache, AppendEntriesResponse) -> Result
+_checkEvidence (es, ec, aer) = checkEvidence ec es aer

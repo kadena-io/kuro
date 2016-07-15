@@ -31,6 +31,9 @@ module Juno.Types.Service.Log
   , LastApplied(..), LastLogIndex(..), NextLogIndex(..), CommitIndex(..)
   , UnappliedEntries(..)
   , module X
+  -- for tesing
+  , newEntriesToLog
+  , hashNewEntry
   ) where
 
 
@@ -242,13 +245,14 @@ appendLogEntry NewLogEntries{..} ls = case lastEntry ls of
 {-# INLINE appendLogEntry #-}
 
 newEntriesToLog :: Term -> ByteString -> LogIndex -> [Command] -> Seq LogEntry
-newEntriesToLog ct prevHash idx cmds = Seq.fromList $ go prevHash idx cmds
+newEntriesToLog ct prevHash idx cmds = res `seq` res
   where
+    res = Seq.fromList $! go prevHash idx cmds
     go _ _ [] = []
     go prevHash' i [c] = [LogEntry ct i c (hashNewEntry prevHash' ct i c)]
     go prevHash' i (c:cs) = let
         newHash = hashNewEntry prevHash' ct i c
-      in (LogEntry ct i c newHash) : go newHash (i + 1) cs
+      in (:) (LogEntry ct i c newHash) $! go newHash (i + 1) cs
 {-# INLINE newEntriesToLog #-}
 
 updateLogHashesFromIndex :: LogIndex -> Log LogEntry -> Log LogEntry
@@ -260,7 +264,7 @@ updateLogHashesFromIndex i ls =
 {-# INLINE updateLogHashesFromIndex #-}
 
 hashNewEntry :: ByteString -> Term -> LogIndex -> Command -> ByteString
-hashNewEntry prevHash leTerm' leLogIndex' cmd = hash (encode $ LEWire (leTerm', leLogIndex', sigCmd cmd, prevHash))
+hashNewEntry prevHash leTerm' leLogIndex' cmd = hash $! (encode $! LEWire (leTerm', leLogIndex', sigCmd cmd, prevHash))
   where
     sigCmd Command{ _cmdProvenance = ReceivedMsg{ _pDig = dig, _pOrig = bdy }} =
       SignedRPC dig bdy

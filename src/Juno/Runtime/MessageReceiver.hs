@@ -139,17 +139,19 @@ aerTurbine = do
   enqueueEvent' <- view (dispatch.internalEvent)
   let enqueueEvent = writeComm enqueueEvent' . InternalEvent
   debug <- view debugPrint
+  ks <- view keySet
   forever $ liftIO $ do
-    (alotOfAers, invalidAers) <- toAlotOfAers <$> getAers 2000
+    (alotOfAers, invalidAers) <- toAlotOfAers ks <$> getAers 2000
     unless (alotOfAers == mempty) $ enqueueEvent $ AERs alotOfAers
     mapM_ debug invalidAers
     threadDelay 10000 -- 10ms delay for AERs
 
-toAlotOfAers :: [InboundAER] -> (AlotOfAERs, [String])
-toAlotOfAers s = (alotOfAers, invalids)
+toAlotOfAers :: KeySet -> [InboundAER] -> (AlotOfAERs, [String])
+toAlotOfAers ks s = (alotOfAers, invalids)
   where
-    (invalids, decodedAers) = partitionEithers $ uncurry (aerOnlyDecode) . _unInboundAER <$> s
-    mkAlot aer@AppendEntriesResponse{..} = AlotOfAERs $ Map.insert _aerNodeId (Set.singleton aer) Map.empty
+    (invalids, decodedAers) = partitionEithers $ parallelVerify _unInboundAER ks s
+    mkAlot (AER' aer@AppendEntriesResponse{..}) = AlotOfAERs $ Map.insert _aerNodeId (Set.singleton aer) Map.empty
+    mkAlot msg = error $ "invariant error: expected AER' but got " ++ show msg
     alotOfAers = mconcat (mkAlot <$> decodedAers)
 
 rvAndRvrTurbine :: ReaderT ReceiverEnv IO ()
@@ -177,11 +179,3 @@ batchCommands cmdRPCs = cmdBatch
     prepCmds (CMD' cmd) = [cmd]
     prepCmds (CMDB' (CommandBatch cmds _)) = cmds
     prepCmds o = error $ "Invariant failure in batchCommands: " ++ show o
-
-
-aerOnlyDecode :: ReceivedAt -> SignedRPC -> Either String AppendEntriesResponse
-aerOnlyDecode ts s@SignedRPC{..}
-  | _digType _sigDigest /= AER = error $ "Invariant Error: aerOnlyDecode called on " ++ show s
-  | otherwise = case S.decode _sigBody of
-      Left !err -> Left $! "Failure to decode AERWire: " ++ err
-      Right (AERWire !(t,nid,s',c,i,h)) -> Right $! AppendEntriesResponse t nid s' c i h False $ ReceivedMsg _sigDigest _sigBody $ Just ts

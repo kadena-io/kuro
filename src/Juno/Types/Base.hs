@@ -40,7 +40,10 @@ import GHC.Int (Int64)
 import GHC.Generics hiding (from)
 
 newtype Alias = Alias { unAlias :: BSC.ByteString }
-  deriving (Show, Read, Eq, Ord, Generic, Serialize)
+  deriving (Eq, Ord, Generic, Serialize)
+
+instance Show Alias where
+  show (Alias a) = "Alias: " ++ (BSC.unpack a)
 
 instance ToJSON Alias where
   toJSON = toJSON . decodeUtf8 . unAlias
@@ -50,7 +53,9 @@ instance FromJSON Alias where
   parseJSON _ = mzero
 
 data NodeId = NodeId { _host :: !String, _port :: !Word64, _fullAddr :: !String, _alias :: !Alias}
-  deriving (Eq,Ord,Read,Show,Generic)
+  deriving (Eq,Ord,Generic)
+instance Show NodeId where
+  show nid = "NodeId: " ++ (BSC.unpack $ unAlias $ _alias nid)
 instance Serialize NodeId
 instance ToJSON NodeId where
   toJSON = genericToJSON defaultOptions { fieldLabelModifier = drop 1 }

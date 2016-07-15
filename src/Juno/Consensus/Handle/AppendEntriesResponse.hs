@@ -151,21 +151,7 @@ handleAlotOfAers (AlotOfAERs m) = do
   mapM_ handle aers
 
 processSetAer :: KeySet -> Set AppendEntriesResponse -> (Maybe AppendEntriesResponse, [String])
-processSetAer ks s = go [] (Set.toDescList s)
+processSetAer _ks s = go [] (Set.toDescList s)
   where
     go fails [] = (Nothing, fails)
-    go fails (aer:rest)
-      | _aerWasVerified aer = (Just aer, fails)
-      | otherwise = case aerReVerify ks aer of
-                      Left f -> go (f:fails) rest
-                      Right () -> (Just $ aer {_aerWasVerified = True}, fails)
-
-
--- | Verify if needed on `ReceivedMsg` provenance
-aerReVerify :: KeySet -> AppendEntriesResponse -> Either String ()
-aerReVerify  _ AppendEntriesResponse{ _aerWasVerified = True } = Right ()
-aerReVerify  _ AppendEntriesResponse{ _aerProvenance = NewMsg } = Right ()
-aerReVerify ks AppendEntriesResponse{
-                  _aerWasVerified = False,
-                  _aerProvenance = ReceivedMsg{..}
-                } = verifySignedRPC ks $ SignedRPC _pDig _pOrig
+    go fails (aer:_) = (Just aer, fails)

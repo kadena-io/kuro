@@ -5,7 +5,7 @@
 
 module Juno.Types.Message.AER
   ( AppendEntriesResponse(..), aerTerm, aerNodeId, aerSuccess, aerConvinced
-  , aerIndex, aerHash, aerWasVerified, aerProvenance
+  , aerIndex, aerHash, aerProvenance
   , AERWire(..)
   , AlotOfAERs(..), unAlot
   ) where
@@ -31,7 +31,6 @@ data AppendEntriesResponse = AppendEntriesResponse
   , _aerConvinced  :: !Bool
   , _aerIndex      :: !LogIndex
   , _aerHash       :: !ByteString
-  , _aerWasVerified:: !Bool
   , _aerProvenance :: !Provenance
   }
   deriving (Show, Generic, Eq)
@@ -45,8 +44,8 @@ instance Ord AppendEntriesResponse where
   -- Hash matters more than verified due to conflict resolution
   -- Then verified, which is metadata really, because if everything up to that point is the same then the one that already ran through crypto is more valuable
   -- After that it doesn't matter.
-  (AppendEntriesResponse t n s c i h v p) <= (AppendEntriesResponse t' n' s' c' i' h' v' p') =
-    (n,t,i,h,v,s,c,p) <= (n',t',i',h',v',s',c',p')
+  (AppendEntriesResponse t n s c i h p) <= (AppendEntriesResponse t' n' s' c' i' h' p') =
+    (n,t,i,h,s,c,p) <= (n',t',i',h',s',c',p')
 
 data AERWire = AERWire (Term,NodeId,Bool,Bool,LogIndex,ByteString)
   deriving (Show, Generic)
@@ -70,7 +69,7 @@ instance WireFormat AppendEntriesResponse where
       then error $ "Invariant Failure: attempting to decode " ++ show (_digType dig) ++ " with AERWire instance"
       else case S.decode bdy of
         Left !err -> Left $! "Failure to decode AERWire: " ++ err
-        Right (AERWire !(t,nid,s',c,i,h)) -> Right $! AppendEntriesResponse t nid s' c i h True $ ReceivedMsg dig bdy ts
+        Right (AERWire !(t,nid,s',c,i,h)) -> Right $! AppendEntriesResponse t nid s' c i h $ ReceivedMsg dig bdy ts
   {-# INLINE toWire #-}
   {-# INLINE fromWire #-}
 

@@ -256,7 +256,7 @@ canBroadcastAE clusterSize' lNextIndex' ct myNodeId' vts =
 
 createAppendEntriesResponse' :: Bool -> Bool -> Term -> NodeId -> LogIndex -> ByteString -> RPC
 createAppendEntriesResponse' success convinced ct myNodeId' lindex lhash =
-  AER' $ AppendEntriesResponse ct myNodeId' success convinced lindex lhash True NewMsg
+  AER' $ AppendEntriesResponse ct myNodeId' success convinced lindex lhash NewMsg
 
 -- this only gets used when a Follower is replying in the negative to the Leader
 sendAppendEntriesResponse :: NodeId -> Bool -> Bool -> SenderService ()
@@ -334,7 +334,7 @@ sendAerRvRvr rpc = do
   debug $ "Broadcast only msg sent: "
         ++ show (_digType $ _sigDigest sRpc)
         ++ (case rpc of
-              AER' v -> " for " ++ show (_aerIndex v, _aerTerm v, _aerWasVerified v)
+              AER' v -> " for " ++ show (_aerIndex v, _aerTerm v)
               RV' v -> " for " ++ show (_rvTerm v, _rvLastLogIndex v)
               RVR' v -> " for " ++ show (_rvrTerm v, _voteGranted v)
               _ -> "")

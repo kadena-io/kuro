@@ -5,6 +5,8 @@ module Juno.Service.Evidence
   ( startProcessor
   , initEvidenceEnv
   , module X
+  -- for benchmarks
+  , _runEvidenceProcessTest
   ) where
 
 import Control.Concurrent (MVar, readMVar, newEmptyMVar, takeMVar, swapMVar)

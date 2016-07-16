@@ -21,7 +21,7 @@ import Control.Monad.IO.Class
 
 import Data.Monoid ((<>))
 import Data.Thyme.Calendar (showGregorian)
-import Data.Thyme.Clock (getCurrentTime)
+import Data.Thyme.Clock (UTCTime, getCurrentTime)
 import Data.Thyme.LocalTime
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.Map as Map
@@ -96,14 +96,25 @@ getSysLogTime = do
   (ZonedTime (LocalTime d t) _) <- getZonedTime
   return $ BSC.pack $ (showGregorian d) ++ "T" ++ (take 12 $ show t)
 
-timeCache :: IO (IO FormattedTime)
-timeCache = mkAutoUpdate defaultUpdateSettings
-  {  updateAction = getSysLogTime
-  ,  updateFreq = 1000 -- every millisecond
-  }
 
-initSysLog :: IO (TimedFastLogger)
-initSysLog = fst <$> newTimedFastLogger (join timeCache) (LogStdout defaultBufSize)
+timeCache :: TimeZone -> (IO UTCTime) -> IO (IO FormattedTime)
+timeCache tz tc = mkAutoUpdate defaultUpdateSettings
+  { updateAction = do
+      t <- tc
+      (ZonedTime (LocalTime d t) _) <- return $ view (zonedTime) (tz,t)
+      return $ BSC.pack $ (showGregorian d) ++ "T" ++ (take 12 $ show t)
+  , updateFreq = 1000}
+
+
+utcTimeCache :: IO (IO UTCTime)
+utcTimeCache = mkAutoUpdate defaultUpdateSettings
+  { updateAction = getCurrentTime
+  , updateFreq = 1000}
+
+initSysLog :: (IO UTCTime) -> IO (TimedFastLogger)
+initSysLog tc = do
+  tz <- getCurrentTimeZone
+  fst <$> newTimedFastLogger (join $ timeCache tz tc) (LogStdout defaultBufSize)
 
 simpleRaftSpec :: (Command -> IO CommandResult)
                -> (String -> IO ())
@@ -168,7 +179,8 @@ runClient applyFn getEntries cmdStatusMap' disableTimeouts = do
   setLineBuffering
   rconf <- getConfig
   resetAwsEnv (rconf ^. enableAwsIntegration)
-  fs <- initSysLog
+  utcTimeCache' <- utcTimeCache
+  fs <- initSysLog utcTimeCache'
   let debugFn = if (rconf ^. enableDebug) then showDebug fs else noDebug
   pubMetric <- startMonitoring rconf
   dispatch <- initDispatch
@@ -206,7 +218,8 @@ runJuno applyFn toCommands getApiCommands sharedCmdStatusMap = do
   let myApiPort = rconf ^. apiPort -- passed in on startup (default 8000): `--apiPort 8001`
   void $ CL.fork $ runApiServer toCommands sharedCmdStatusMap myApiPort
 
-  fs <- initSysLog
+  utcTimeCache' <- utcTimeCache
+  fs <- initSysLog utcTimeCache'
   let debugFn = if (rconf ^. enableDebug) then showDebug fs else noDebug
 
   -- each node has its own snap monitoring server

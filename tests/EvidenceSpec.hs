@@ -1,9 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Main where
+module EvidenceSpec where
 
-import Criterion.Main
+import Test.Hspec
 
 import Control.Parallel.Strategies
 import Data.Maybe (fromJust)
@@ -13,66 +13,25 @@ import qualified Data.ByteString.Char8 as BSC
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Sequence (Seq)
-
-
+import qualified Data.Sequence as Seq
+import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Crypto.Random
 import System.IO.Unsafe
-
+import qualified Data.Serialize as S
 
 import Juno.Types
 import qualified Juno.Types.Log as Log
 import qualified Juno.Types.Service.Log as Log
 import qualified Juno.Service.Evidence as Ev
 
-main :: IO ()
-main = do
---  let lenOfMsg = 1
---      lenOfLog = 100
---  cmds <- return $! mkCmds lenOfLog lenOfMsg
---  let lewire c = LEWire (Term 0, LogIndex 0, cmdSigRpc c, B.empty)
---      cmdSigRpc c = SignedRPC (_pDig $ _cmdProvenance c) (_pOrig $ _cmdProvenance c)
---
---  asLeWires <- return $! lewire <$> cmds
---  asEncoded <- return $! S.encode . lewire <$> cmds
---  encodedLogEntryLength <- return $! B.length $ S.encode $ last asLeWires
---  putStrLn $ "Length of encoded: " ++ show encodedLogEntryLength
---  bss <- return $! replicate lenOfLog (randomBytestring encodedLogEntryLength)
-  cluster4 <- return $! mkState 4 3 5000 100
-  cluster32 <- return $! mkState 32 17 5000 100
-  cluster128 <- return $! mkState 128 65 5000 100
-  cluster512 <- return $! mkState 512 257 5000 100
-  cluster2048 <- return $! mkState 2048 1025 5000 100
-  cluster4Crypto <- return $! (\(es, ec, aers) -> (es, ec, signedEvidence aers)) $ cluster4
-  cluster32Crypto <- return $! (\(es, ec, aers) -> (es, ec, signedEvidence aers)) $ cluster32
-  cluster128Crypto <- return $! (\(es, ec, aers) -> (es, ec, signedEvidence aers)) $ cluster128
-  cluster512Crypto <- return $! (\(es, ec, aers) -> (es, ec, signedEvidence aers)) $ cluster512
-  cluster2048Crypto <- return $! (\(es, ec, aers) -> (es, ec, signedEvidence aers)) $ cluster2048
-  defaultMain
-    [
---    [ bgroup "hash"
---      [ bench "LogEntry' 100x" $ whnf (sum . (fmap (B.length . _leHash)) . testLogHashingSpeed) cmds
---      , bench "hashNewEntry 100x" $ whnf (sum . (fmap (B.length . Log.hashNewEntry B.empty (Term 0) (LogIndex 0)))) cmds
---      , bench "encodeThenHash 100x" $ whnf (sum . (fmap (B.length . hash . S.encode))) asLeWires
---      , bench "just hash encoded 100x" $ whnf (sum . (fmap (B.length . hash))) asEncoded
---      , bench "repeaded hashing 100x" $ whnf (B.length . testHashingNoEncoding 100) $ head bss
---      , bench "Straight hash 100x" $ whnf (sum . fmap (B.length . hash)) bss
---      ]
-      bgroup "AER Logic, 5000 logs"
-        [ bench "cluster = 4" $ whnf ((\(Right v ) -> v ) . fst . Ev._runEvidenceProcessTest) cluster4
-        , bench "cluster = 32" $ whnf ((\(Right v ) -> v ) . fst . Ev._runEvidenceProcessTest) cluster32
-        , bench "cluster = 128" $ whnf ((\(Right v ) -> v ) . fst . Ev._runEvidenceProcessTest) cluster128
-        , bench "cluster = 512" $ whnf ((\(Right v ) -> v ) . fst . Ev._runEvidenceProcessTest) cluster512
-        , bench "cluster = 2048" $ whnf ((\(Right v ) -> v ) . fst . Ev._runEvidenceProcessTest) cluster2048
-        ]
-    , bgroup "AER Crypto+Logic, 5000 logs"
-        [ bench "cluster = 4" $ whnf ((\(Right v ) -> v ) . fst . testWithCrypto) cluster4Crypto
-        , bench "cluster = 32" $ whnf ((\(Right v ) -> v ) . fst . testWithCrypto) cluster32Crypto
-        , bench "cluster = 128" $ whnf ((\(Right v ) -> v ) . fst . testWithCrypto) cluster128Crypto
-        , bench "cluster = 512" $ whnf ((\(Right v ) -> v ) . fst . testWithCrypto) cluster512Crypto
-        , bench "cluster = 2048" $ whnf ((\(Right v ) -> v ) . fst . testWithCrypto) cluster2048Crypto
-        ]
-    ]
+spec :: Spec
+spec = describe "Evidence Service" testEvidence
+
+testEvidence :: Spec
+testEvidence = do
+  undefined
+--  it "Command" $ undefined `shouldBe` undefined
 
 
 nodeIdLeader, nodeIdFollower, nodeIdClient :: NodeId

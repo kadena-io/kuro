@@ -226,6 +226,7 @@ executable junorepl
 
 test-suite hspec
   other-modules:       ParserSpec
+                     , EvidenceSpec
                      , WireFormatSpec
                      , JsonTypesSpec
   type: exitcode-stdio-1.0

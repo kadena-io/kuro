@@ -13,7 +13,7 @@ module Juno.Consensus.Handle.Types (
   , LogEntry(..)
   -- * RPC
   , AppendEntries(..)
-  , AppendEntriesResponse(..),AlotOfAERs(..)
+  , AppendEntriesResponse(..)
   , RequestVote(..)
   , RequestVoteResponse(..)
   , Command(..)

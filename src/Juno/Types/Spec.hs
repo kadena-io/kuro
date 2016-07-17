@@ -7,23 +7,24 @@ module Juno.Types.Spec
   ( Raft
   , RaftSpec(..)
   , applyLogEntry , debugPrint, publishMetric, getTimestamp, random
-  , viewConfig, readConfig, timerTarget
+  , viewConfig, readConfig, timerTarget, evidenceState, timeCache
   -- for API <-> Juno communication
   , dequeueFromApi ,cmdStatusMap, updateCmdMap
   , RaftEnv(..), cfg, enqueueLogQuery, clusterSize, quorumSize, rs
   , enqueue, enqueueMultiple, dequeue, enqueueLater, killEnqueued
-  , sendMessage, clientSendMsg
-  , RaftState(..), nodeRole, term, votedFor, lazyVote, currentLeader, ignoreLeader
-  , commitProof, timerThread, replayMap
-  , cYesVotes, cPotentialVotes, lNextIndex, lConvinced
-  , lastCommitTime, numTimeouts, pendingRequests, currentRequestId
-  , timeSinceLastAER
-  , initialRaftState
+  , sendMessage, clientSendMsg, mResetLeaderNoFollowers
+  , informEvidenceServiceOfElection
+  , RaftState(..), initialRaftState
+  , nodeRole, term, votedFor, lazyVote, currentLeader, ignoreLeader
+  , timerThread, replayMap, cYesVotes, cPotentialVotes, lastCommitTime, numTimeouts
+  , pendingRequests, currentRequestId, timeSinceLastAER
   , Event(..)
   , mkRaftEnv
   ) where
 
-import Control.Concurrent (MVar, ThreadId, killThread, yield, forkIO, threadDelay, tryPutMVar, tryTakeMVar)
+-- timeSinceLastAER, lNextIndex, lConvinced, commitProof
+
+import Control.Concurrent (MVar, ThreadId, killThread, yield, forkIO, threadDelay, tryPutMVar, tryTakeMVar, readMVar)
 import Control.Lens hiding (Index, (|>))
 import Control.Monad (when,void)
 import Control.Monad.IO.Class
@@ -48,6 +49,7 @@ import Juno.Types.Comms
 import Juno.Types.Dispatch
 import Juno.Types.Service.Sender (SenderServiceChannel, ServiceRequest')
 import Juno.Types.Service.Log (QueryApi(..))
+import Juno.Types.Service.Evidence (EvidenceState, Evidence(ClearConvincedNodes))
 
 data RaftSpec = RaftSpec
   {
@@ -80,15 +82,12 @@ data RaftState = RaftState
   , _lazyVote         :: Maybe (Term, NodeId, LogIndex)
   , _currentLeader    :: Maybe NodeId
   , _ignoreLeader     :: Bool
-  , _commitProof      :: Map NodeId AppendEntriesResponse
   , _timerThread      :: Maybe ThreadId
   , _timerTarget      :: MVar Event
-  , _timeSinceLastAER :: Int
   , _replayMap        :: Map (NodeId, Signature) (Maybe CommandResult)
   , _cYesVotes        :: Set RequestVoteResponse
   , _cPotentialVotes  :: Set NodeId
-  , _lNextIndex       :: Map NodeId LogIndex
-  , _lConvinced       :: Set NodeId
+  , _timeSinceLastAER :: Int
   -- used for metrics
   , _lastCommitTime   :: Maybe UTCTime
   -- used by clients
@@ -100,25 +99,22 @@ makeLenses ''RaftState
 
 initialRaftState :: MVar Event -> RaftState
 initialRaftState timerTarget' = RaftState
-  Follower   -- role
-  startTerm  -- term
-  Nothing    -- votedFor
-  Nothing    -- lazyVote
-  Nothing    -- currentLeader
-  False      -- ignoreLeader
-  Map.empty  -- commitProof
-  Nothing    -- timerThread
-  timerTarget'
-  0          -- timeSinceLastAER
-  Map.empty  -- replayMap
-  Set.empty  -- cYesVotes
-  Set.empty  -- cPotentialVotes
-  Map.empty  -- lNextIndex
-  Set.empty  -- lConvinced
-  Nothing    -- lastCommitTime
-  Map.empty  -- pendingRequests
-  0          -- nextRequestId
-  0          -- numTimeouts
+{-role-}                Follower
+{-term-}                startTerm
+{-votedFor-}            Nothing
+{-lazyVote-}            Nothing
+{-currentLeader-}       Nothing
+{-ignoreLeader-}        False
+{-timerThread-}         Nothing
+{-timerTarget-}         timerTarget'
+{-replayMap-}           Map.empty
+{-cYesVotes-}           Set.empty
+{-cPotentialVotes-}     Set.empty
+{-timeSinceLastAER-}    0
+{-lastCommitTime-}      Nothing
+{-pendingRequests-}     Map.empty
+{-currentRequestId-}    0
+{-numTimeouts-}         0
 
 type Raft = RWST (RaftEnv) () RaftState IO
 
@@ -135,11 +131,25 @@ data RaftEnv = RaftEnv
   , _killEnqueued     :: ThreadId -> IO ()
   , _dequeue          :: IO Event
   , _clientSendMsg    :: OutboundGeneral -> IO ()
+  , _evidenceState    :: IO EvidenceState
+  , _timeCache        :: IO UTCTime
+  , _mResetLeaderNoFollowers :: MVar ResetLeaderNoFollowersTimeout
+  , _informEvidenceServiceOfElection :: IO ()
   }
 makeLenses ''RaftEnv
 
-mkRaftEnv :: IORef Config -> Int -> Int -> RaftSpec -> Dispatch -> MVar Event -> RaftEnv
-mkRaftEnv conf' cSize qSize rSpec dispatch timerTarget' = RaftEnv
+mkRaftEnv
+  :: IORef Config
+  -> Int
+  -> Int
+  -> RaftSpec
+  -> Dispatch
+  -> MVar Event
+  -> (IO UTCTime)
+  -> MVar EvidenceState
+  -> MVar ResetLeaderNoFollowersTimeout
+  -> RaftEnv
+mkRaftEnv conf' cSize qSize rSpec dispatch timerTarget' timeCache' mEs mResetLeaderNoFollowers' = RaftEnv
     { _cfg = conf'
     , _enqueueLogQuery = writeComm ls'
     , _clusterSize = cSize
@@ -161,12 +171,17 @@ mkRaftEnv conf' cSize qSize rSpec dispatch timerTarget' = RaftEnv
     , _killEnqueued = killThread
     , _dequeue = _unInternalEvent <$> readComm ie'
     , _clientSendMsg = writeComm cog'
+    , _evidenceState = readMVar mEs
+    , _timeCache = timeCache'
+    , _mResetLeaderNoFollowers = mResetLeaderNoFollowers'
+    , _informEvidenceServiceOfElection = writeComm ev' ClearConvincedNodes
     }
   where
     g' = dispatch ^. senderService
     cog' = dispatch ^. outboundGeneral
     ls' = dispatch ^. logService
     ie' = dispatch ^. internalEvent
+    ev' = dispatch ^. evidence
 
 sendMsg :: SenderServiceChannel -> ServiceRequest' -> IO ()
 sendMsg outboxWrite og = do

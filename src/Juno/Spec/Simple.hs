@@ -38,7 +38,7 @@ import System.Random
 
 import Juno.Consensus.Server
 import Juno.Consensus.Client
-import Juno.Types
+import Juno.Types hiding (timeCache)
 import Juno.Util.Util (awsDashVar)
 import Juno.Messaging.ZMQ
 import Juno.Monitoring.Server (startMonitoring)
@@ -198,7 +198,7 @@ runClient applyFn getEntries cmdStatusMap' disableTimeouts = do
                    stubGetApiCommands
   restartTurbo <- newEmptyMVar
   let receiverEnv = simpleReceiverEnv dispatch rconf debugFn restartTurbo
-  runRaftClient receiverEnv getEntries cmdStatusMap' rconf raftSpec disableTimeouts
+  runRaftClient receiverEnv getEntries cmdStatusMap' rconf raftSpec disableTimeouts utcTimeCache'
 
 -- | sets up and runs both API and raft protocol
 --   shared state between API and protocol: sharedCmdStatusMap
@@ -234,4 +234,4 @@ runJuno applyFn toCommands getApiCommands sharedCmdStatusMap = do
                    getApiCommands
   restartTurbo <- newEmptyMVar
   let receiverEnv = simpleReceiverEnv dispatch rconf debugFn restartTurbo
-  runRaftServer receiverEnv rconf raftSpec
+  runRaftServer receiverEnv rconf raftSpec utcTimeCache'

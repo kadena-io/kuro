@@ -32,13 +32,14 @@ import Data.Serialize
 
 import qualified Juno.Types as JT
 import Juno.Types.Service.Sender as X
+import qualified Juno.Types.Service.Evidence as Ev
 import qualified Juno.Types.Service.Log as Log
 import Juno.Types hiding (debugPrint, RaftState(..), Config(..)
   , Raft, RaftSpec(..), nodeId, sendMessage, outboundGeneral, outboundAerRvRvr
   , myPublicKey, myPrivateKey, otherNodes, nodeRole, term, Event(..), logService)
 
-runSenderService :: Dispatch -> JT.Config -> (String -> IO ()) -> IO ()
-runSenderService dispatch conf debugFn = do
+runSenderService :: Dispatch -> JT.Config -> (String -> IO ()) -> MVar Ev.EvidenceState -> IO ()
+runSenderService dispatch conf debugFn mEvState = do
   s <- return $ ServiceEnv
     { _myNodeId = conf ^. JT.nodeId
     , _nodeRole = Follower
@@ -56,6 +57,7 @@ runSenderService dispatch conf debugFn = do
     , _outboundAerRvRvr = dispatch ^. JT.outboundAerRvRvr
     -- Log Storage
     , _logService = dispatch ^. JT.logService
+    , _getEvidenceState = readMVar mEvState
     }
   void $ liftIO $ runReaderT serviceRequests s
 
@@ -79,8 +81,9 @@ serviceRequests = do
     sr <- liftIO $ readComm rrc
     case sr of
       (ServiceRequest' ss m) -> local (updateEnv ss) $ case m of
-          SingleAE{..} -> sendAppendEntries _srFor _srNextIndex _srFollowsLeader
-          BroadcastAE{..} -> sendAllAppendEntries _srlNextIndex _srConvincedNodes _srAeBoardcastControl
+          BroadcastAE{..} -> do
+            evState <- view getEvidenceState >>= liftIO
+            sendAllAppendEntries (evState ^. Ev.esNodeStates) (evState ^. Ev.esConvincedNodes) _srAeBoardcastControl
           SingleAER{..} -> sendAppendEntriesResponse _srFor _srSuccess _srConvinced
           BroadcastAER -> sendAllAppendEntriesResponse
           BroadcastRV -> sendAllRequestVotes
@@ -192,20 +195,6 @@ sendAllAppendEntries lNextIndex' lConvinced' sendIfOutOfSync = do
     (BackStreet, OnlySendIfFollowersAreInSync) -> do
       -- We can't just spam AE's to the followers because they can get clogged with overlapping/redundant AE's. This eventually trips an election.
       -- TODO: figure out how an out of date follower can precache LEs that it can't add to it's log yet (withough tripping an election)
-      debug "Followers are out of sync, cannot issue broadcast AE"
-    (BackStreet, SendEmptyAEIfOutOfSync) -> do
-      -- This is a straight up heartbeat but Raft doesn't have that RPC because... that would be too confusing?
-      -- Instead, we send an Empty AE here. This should only happen when a heartbeat event is encountered but followers are out of sync
-      -- TODO: track time since last contact with every node. If some node goes down/partitions we don't want that to ruin our lovely
-      --       broadcast here (which it will currently). If a node is out of date for longer than a max election timeout
-      --       (though +1 heartbeat may make more sense) then don't count it towards the "InSync" measurement
-      mv <- queryLogs $ Set.map (\n -> Log.GetLogInfoForNextIndex (Map.lookup n lNextIndex')) oNodes
-      sendRPCs $ (\target ->
-                    ( target
-                    , createEmptyAppendEntries' target
-                      (Log.hasQueryResult (Log.LogInfoForNextIndex (Map.lookup target lNextIndex')) mv)
-                      ct myNodeId' lConvinced' yesVotes')
-                 ) <$> Set.toList oNodes
       debug "Followers are out of sync, cannot issue broadcast AE"
     (InSync (ae, ln), _) -> do
       -- Hell yeah, we can just broadcast. We don't care about the Broadcast control if we know we can broadcast.

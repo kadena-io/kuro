@@ -21,7 +21,7 @@ module Juno.Types.Service.Log
   , QueryResult(..)
   , QueryApi(..)
   , evalQuery
-  , LogEnv(..), logQueryChannel, debugPrint, dbConn
+  , LogEnv(..), logQueryChannel, internalEvent, debugPrint, dbConn, evidenceCache
   , HasQueryResult(..)
   , LogThread
   , LogServiceChannel(..)
@@ -63,6 +63,8 @@ import Juno.Types.Comms
 import Juno.Types.Message.Signed
 import Juno.Types.Message.CMD
 
+import Juno.Types.Evidence (EvidenceCache)
+
 class LogApi a where
   lastPersisted :: a -> LogIndex
   lastApplied :: a -> LogIndex
@@ -86,6 +88,7 @@ class LogApi a where
   -- prevLog(Index/Term)
   -- | get every entry that hasn't been applied yet (betweek LastApplied and CommitIndex)
   getUnappliedEntries :: a -> Maybe (Seq LogEntry)
+  getUncommitedHashes :: a -> Seq ByteString
   getUnpersisted      :: a -> Maybe (Seq LogEntry)
   logInfoForNextIndex :: Maybe LogIndex -> a -> (LogIndex,Term)
   -- | Latest hash or empty
@@ -164,6 +167,11 @@ instance LogApi (LogState LogEntry) where
     v | Seq.null v -> Nothing
       | otherwise  -> Just v
   {-# INLINE takeEntries #-}
+
+  getUncommitedHashes ls =
+    let ci  = commitIndex ls
+    in _leHash <$> (Seq.drop (fromIntegral $ ci + 1) $ viewLogSeq ls)
+  {-# INLINE getUncommitedHashes #-}
 
   getUnappliedEntries ls =
     let ci = commitIndex ls
@@ -465,8 +473,10 @@ instance Comms QueryApi LogServiceChannel where
 
 data LogEnv = LogEnv
   { _logQueryChannel :: LogServiceChannel
+  , _internalEvent :: InternalEventChannel
   , _debugPrint :: (String -> IO ())
-  , _dbConn :: Maybe Connection }
+  , _dbConn :: Maybe Connection
+  , _evidenceCache :: MVar EvidenceCache }
 makeLenses ''LogEnv
 
 type LogThread = RWST LogEnv () (LogState LogEntry) IO

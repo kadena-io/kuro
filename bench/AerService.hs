@@ -157,6 +157,7 @@ mkEvCache les =
             , Ev.maxLogIdx = _leLogIndex $ fromJust $ Log.seqTail les
             , Ev.lastLogTerm = _leTerm $ fromJust $ Log.seqTail les
             , Ev.hashes = _leHash <$> les
+            , Ev.hashAtCommitIndex = mempty
             }
   in (sum $ B.length <$> Ev.hashes ec) `seq` ec
 
@@ -192,4 +193,4 @@ verifyAER ks msg = case signedRPCtoRPC Nothing ks msg of
   Right (AER' aer) -> aer
 
 testWithCrypto :: (Ev.EvidenceState, Ev.EvidenceCache, [SignedRPC]) -> (Either Int LogIndex, Ev.EvidenceState)
-testWithCrypto (es, ec, srpcs) = let ks = mkKeySet $ Ev._esUnconvincedNodes es in Ev._runEvidenceProcessTest (es, ec, parallelVerify ks srpcs)
+testWithCrypto (es, ec, srpcs) = let ks = mkKeySet $ Map.keysSet $ Ev._esNodeStates es in Ev._runEvidenceProcessTest (es, ec, parallelVerify ks srpcs)

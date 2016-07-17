@@ -10,7 +10,7 @@ import Control.Lens
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer.Strict
-import Data.Map as Map
+-- import Data.Map as Map
 import Data.Set as Set
 
 import Juno.Consensus.Handle.Types
@@ -102,13 +102,14 @@ becomeLeader :: JT.Raft ()
 becomeLeader = do
   setRole Leader
   setCurrentLeader . Just =<< JT.viewConfig JT.nodeId
-  mv <- queryLogs $ Set.fromList [Log.GetEntryCount, Log.GetCommitIndex]
-  ni <- return $ Log.hasQueryResult Log.EntryCount mv
-  ci <- return $ Log.hasQueryResult Log.CommitIndex mv
-  lNextIndex' <- Map.fromSet (const $ LogIndex ni) <$> JT.viewConfig JT.otherNodes
-  setLNextIndex ci lNextIndex'
-  JT.lConvinced .= Set.empty
-  enqueueRequest $ Sender.BroadcastAE Sender.SendAERegardless lNextIndex' Set.empty
+--  mv <- queryLogs $ Set.fromList [Log.GetEntryCount, Log.GetCommitIndex]
+--  ni <- return $ Log.hasQueryResult Log.EntryCount mv
+--  ci <- return $ Log.hasQueryResult Log.CommitIndex mv
+--  lNextIndex' <- Map.fromSet (const $ LogIndex ni) <$> JT.viewConfig JT.otherNodes
+--  setLNextIndex ci lNextIndex'
+--  JT.lConvinced .= Set.empty
+  enqueueRequest $ Sender.BroadcastAE Sender.SendAERegardless
+  view JT.informEvidenceServiceOfElection >>= liftIO
   resetHeartbeatTimer
   resetElectionTimerLeader
 
@@ -122,4 +123,5 @@ revertToLastQuorumState = do
   JT.votedFor .= Nothing
   JT.cYesVotes .= Set.empty
   JT.cPotentialVotes .= Set.empty
+  view JT.informEvidenceServiceOfElection >>= liftIO
   resetElectionTimer

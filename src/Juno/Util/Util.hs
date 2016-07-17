@@ -19,8 +19,6 @@ module Juno.Util.Util
   , setTerm
   , setRole
   , setCurrentLeader
-  , updateLNextIndex
-  , setLNextIndex
   , getCmdSigOrInvariantError
   , getRevSigOrInvariantError
   , enqueueRequest
@@ -38,7 +36,6 @@ import Data.Set (Set)
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
 
 import qualified System.Random as R
 import System.Process (system)
@@ -150,24 +147,6 @@ setCurrentLeader :: Maybe NodeId -> Raft ()
 setCurrentLeader mNode = do
   currentLeader .= mNode
   logMetric $ MetricCurrentLeader mNode
-
-updateLNextIndex :: LogIndex
-                 -> (Map.Map NodeId LogIndex -> Map.Map NodeId LogIndex)
-                 -> Raft ()
-updateLNextIndex myCommitIndex f = do
-  lNextIndex %= f
-  lni <- use lNextIndex
-  logMetric $ MetricAvailableSize $ availSize lni myCommitIndex
-
-  where
-    -- | The number of nodes at most one behind the commit index
-    availSize lni ci = let oneBehind = pred ci
-                       in succ $ Map.size $ Map.filter (>= oneBehind) lni
-
-setLNextIndex :: LogIndex
-              -> Map.Map NodeId LogIndex
-              -> Raft ()
-setLNextIndex myCommitIndex = updateLNextIndex myCommitIndex . const
 
 getCmdSigOrInvariantError :: String -> Command -> Signature
 getCmdSigOrInvariantError where' s@Command{..} = case _cmdProvenance of

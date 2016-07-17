@@ -18,8 +18,8 @@ import Control.Monad.Reader
 import Control.Parallel.Strategies
 import Data.Either (partitionEithers)
 import Data.List (partition)
-import qualified Data.Map.Strict as Map
-import qualified Data.Serialize as S
+
+-- import qualified Data.Serialize as S
 import qualified Data.Set as Set
 
 import Data.AffineSpace ((.-.))
@@ -27,6 +27,7 @@ import Data.Thyme.Clock (microseconds, getCurrentTime)
 
 import Juno.Util.Combinator (foreverRetry)
 import Juno.Types hiding (debugPrint, nodeId)
+import Juno.Types.Evidence (Evidence(VerifiedAER))
 
 data ReceiverEnv = ReceiverEnv
   { _dispatch :: Dispatch
@@ -136,23 +137,21 @@ aerTurbine :: ReaderT ReceiverEnv IO ()
 aerTurbine = do
   getAers' <- view (dispatch.inboundAER)
   let getAers n = readComms getAers' n
-  enqueueEvent' <- view (dispatch.internalEvent)
-  let enqueueEvent = writeComm enqueueEvent' . InternalEvent
+  enqueueEvent' <- view (dispatch.evidence)
+  let enqueueEvent = writeComm enqueueEvent' . VerifiedAER
   debug <- view debugPrint
   ks <- view keySet
   forever $ liftIO $ do
-    (alotOfAers, invalidAers) <- toAlotOfAers ks <$> getAers 2000
-    unless (alotOfAers == mempty) $ enqueueEvent $ AERs alotOfAers
-    mapM_ debug invalidAers
-    threadDelay 10000 -- 10ms delay for AERs
-
-toAlotOfAers :: KeySet -> [InboundAER] -> (AlotOfAERs, [String])
-toAlotOfAers ks s = (alotOfAers, invalids)
-  where
-    (invalids, decodedAers) = partitionEithers $ parallelVerify _unInboundAER ks s
-    mkAlot (AER' aer@AppendEntriesResponse{..}) = AlotOfAERs $ Map.insert _aerNodeId (Set.singleton aer) Map.empty
-    mkAlot msg = error $ "invariant error: expected AER' but got " ++ show msg
-    alotOfAers = mconcat (mkAlot <$> decodedAers)
+    rawAers <- getAers 16
+    unless (null rawAers) $ do
+      (invalidAers, verifiedAers) <- return $! partitionEithers (
+        ((\(InboundAER (ts,srpc)) -> fromWire (Just ts) ks srpc) <$> rawAers)
+        `using`
+        parList rseq)
+      enqueueEvent $ verifiedAers
+      mapM_ debug invalidAers
+    -- 200microsecond delay for AERs if we're not seeing any, no delay if we are
+    threadDelay 200
 
 rvAndRvrTurbine :: ReaderT ReceiverEnv IO ()
 rvAndRvrTurbine = do

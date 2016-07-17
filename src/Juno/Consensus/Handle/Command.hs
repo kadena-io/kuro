@@ -14,20 +14,18 @@ import Control.Monad.Writer
 
 
 import qualified Data.Map.Strict as Map
-import qualified Data.Set as Set
+
 import Data.Maybe (isNothing, isJust, fromJust)
 
 import Juno.Consensus.Commit (makeCommandResponse')
-import Juno.Consensus.Handle.AppendEntries (createAppendEntriesResponse)
+
 import Juno.Consensus.Handle.Types
-import Juno.Util.Util (getCmdSigOrInvariantError, queryLogs, updateLogs, enqueueRequest)
+import Juno.Util.Util (getCmdSigOrInvariantError, updateLogs, enqueueRequest)
 import Juno.Runtime.Timer (resetHeartbeatTimer)
 import qualified Juno.Types as JT
 
 import qualified Juno.Service.Sender as Sender
-import qualified Juno.Service.Log as Log
-
-import Juno.Consensus.Handle.AppendEntriesResponse (updateCommitProofMap)
+import qualified Juno.Service.Evidence as Ev
 
 data CommandEnv = CommandEnv {
       _nodeRole :: Role
@@ -139,17 +137,11 @@ handleSingleCommand cmd = do
     (CommitAndPropagate newEntry replayKey) -> do
       updateLogs $ ULNew newEntry
       JT.replayMap %= Map.insert replayKey Nothing
-      newMv <- queryLogs $ Set.fromList [Log.GetMaxIndex,Log.GetLastLogHash]
-      newMaxIndex' <- return $ Log.hasQueryResult Log.MaxIndex newMv
-      newLastLogHash' <- return $ Log.hasQueryResult Log.LastLogHash newMv
-      myEvidence <- createAppendEntriesResponse True True newMaxIndex' newLastLogHash'
-      JT.commitProof %= updateCommitProofMap myEvidence
-      lNextIndex' <- use JT.lNextIndex
-      lConvinced' <- use JT.lConvinced
-      enqueueRequest $ Sender.BroadcastAE Sender.OnlySendIfFollowersAreInSync lNextIndex' lConvinced'
+      enqueueRequest $ Sender.BroadcastAE Sender.OnlySendIfFollowersAreInSync
       enqueueRequest $ Sender.BroadcastAER
       quorumSize' <- view JT.quorumSize
-      when (Sender.willBroadcastAE quorumSize' lNextIndex' lConvinced') resetHeartbeatTimer
+      es <- view JT.evidenceState >>= liftIO
+      when (Sender.willBroadcastAE quorumSize' (es ^. Ev.esNodeStates) (es ^. Ev.esConvincedNodes)) resetHeartbeatTimer
 
 handle :: Command -> JT.Raft ()
 handle cmd = handleSingleCommand cmd
@@ -170,19 +162,13 @@ handleBatch cmdb@CommandBatch{..} = do
     IAmLeader BatchProcessing{..} -> do
       updateLogs $ ULNew $ NewLogEntries (JT._term s) newEntries
       JT.replayMap .= updatedReplays
-      newMv <- queryLogs $ Set.fromList [Log.GetMaxIndex,Log.GetLastLogHash]
-      newMaxIndex' <- return $ Log.hasQueryResult Log.MaxIndex newMv
-      newLastLogHash' <- return $ Log.hasQueryResult Log.LastLogHash newMv
-      myEvidence <- createAppendEntriesResponse True True newMaxIndex' newLastLogHash'
-      JT.commitProof %= updateCommitProofMap myEvidence
-      lNextIndex' <- use JT.lNextIndex
-      lConvinced' <- use JT.lConvinced
       unless (null newEntries) $ do
-        enqueueRequest $ Sender.BroadcastAE Sender.OnlySendIfFollowersAreInSync lNextIndex' lConvinced'
+        enqueueRequest $ Sender.BroadcastAE Sender.OnlySendIfFollowersAreInSync
         enqueueRequest $ Sender.BroadcastAER
       unless (null serviceAlreadySeen) $ enqueueRequest $ Sender.SendCommandResults serviceAlreadySeen
       quorumSize' <- view JT.quorumSize
-      when (Sender.willBroadcastAE quorumSize' lNextIndex' lConvinced') resetHeartbeatTimer
+      es <- view JT.evidenceState >>= liftIO
+      when (Sender.willBroadcastAE quorumSize' (es ^. Ev.esNodeStates) (es ^. Ev.esConvincedNodes)) resetHeartbeatTimer
     IAmFollower BatchProcessing{..} -> do
       when (isJust lid) $ enqueueRequest $ Sender.ForwardCommandToLeader (fromJust lid) newEntries
       unless (null serviceAlreadySeen) $ enqueueRequest $ Sender.SendCommandResults serviceAlreadySeen

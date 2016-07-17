@@ -23,7 +23,6 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 
 import Juno.Consensus.Handle.Types
-import Juno.Consensus.Handle.AppendEntriesResponse (updateCommitProofMap)
 import Juno.Service.Sender (createAppendEntriesResponse')
 import Juno.Runtime.Timer (resetElectionTimer)
 import Juno.Util.Util
@@ -171,6 +170,7 @@ applyNewLeader NewLeaderConfirmed{..} = do
   setTerm _stateRsUpdateTerm
   JT.ignoreLeader .= _stateIgnoreLeader
   setCurrentLeader $ Just _stateCurrentLeader
+  view JT.informEvidenceServiceOfElection >>= liftIO
   setRole _stateRole
 
 logHashChange :: ByteString -> JT.Raft ()
@@ -207,14 +207,10 @@ handle ae = do
         SendFailureResponse -> enqueueRequest $ Sender.SingleAER _responseLeaderId False True
         (Commit rMap rle) -> do
           updateLogs $ Log.ULReplicate rle
-          newMv <- queryLogs $ Set.fromList [Log.GetMaxIndex,Log.GetLastLogHash]
-          newMaxIndex' <- return $ Log.hasQueryResult Log.MaxIndex newMv
+          newMv <- queryLogs $ Set.singleton Log.GetLastLogHash
           newLastLogHash' <- return $ Log.hasQueryResult Log.LastLogHash newMv
           logHashChange newLastLogHash'
           JT.replayMap %= Map.union rMap
-          myEvidence <- createAppendEntriesResponse True True newMaxIndex' newLastLogHash'
-          JT.commitProof %= updateCommitProofMap myEvidence
-          -- TODO: we can be smarter here and fill in the details the AER needs about the logs without needing to hit that thread
           enqueueRequest Sender.BroadcastAER
         DoNothing -> enqueueRequest Sender.BroadcastAER
       -- This NEEDS to be last, otherwise we can have an election fire when we are are transmitting proof/accessing the logs

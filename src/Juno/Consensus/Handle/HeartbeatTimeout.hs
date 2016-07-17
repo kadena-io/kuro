@@ -6,6 +6,7 @@ module Juno.Consensus.Handle.HeartbeatTimeout
     (handle)
 where
 
+import Control.Concurrent (tryTakeMVar)
 import Control.Lens
 import Control.Monad.Reader
 import Control.Monad.State
@@ -47,12 +48,13 @@ handle msg = do
   mapM_ debug l
   case out of
     IsLeader -> do
-      lNextIndex' <- use JT.lNextIndex
-      lConvinced' <- use JT.lConvinced
-      enqueueRequest $ Sender.BroadcastAE Sender.SendEmptyAEIfOutOfSync lNextIndex' lConvinced'
+      enqueueRequest $ Sender.BroadcastAE Sender.SendAERegardless
       resetHeartbeatTimer
       hbMicrosecs <- JT.viewConfig JT.heartbeatTimeout
-      JT.timeSinceLastAER %= (+ hbMicrosecs)
+      r <- view JT.mResetLeaderNoFollowers >>= liftIO . tryTakeMVar
+      case r of
+        Nothing -> JT.timeSinceLastAER %= (+ hbMicrosecs)
+        Just JT.ResetLeaderNoFollowersTimeout -> JT.timeSinceLastAER .= 0
     NotLeader -> JT.timeSinceLastAER .= 0 -- probably overkill, but nice to know this gets set to 0 if not leader
     NoFollowers -> do
       timeout' <- return $ JT._timeSinceLastAER s

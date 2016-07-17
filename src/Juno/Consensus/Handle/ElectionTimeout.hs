@@ -140,6 +140,7 @@ handle msg = do
                JT.cYesVotes .= Set.singleton selfYesVote
                JT.cPotentialVotes.= _potentialVotes
                enqueueRequest $ Sender.BroadcastRV
+               view JT.informEvidenceServiceOfElection >>= liftIO
                resetElectionTimer
 
 castLazyVote :: Term -> NodeId -> LogIndex -> JT.Raft ()

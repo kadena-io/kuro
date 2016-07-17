@@ -25,7 +25,6 @@ library
                      , Apps.Juno.JsonTypes
                      , Apps.Juno.ApiDemoHandler
                      , Apps.Juno.ApiHandlers
-                     , Apps.AERTest
                      , Apps.Juno.Ledger
                      , Apps.Juno.Parser
                      , Apps.Juno.Repl
@@ -72,6 +71,7 @@ library
                      , Juno.Types.Config
                      , Juno.Types.Dispatch
                      , Juno.Types.Event
+                     , Juno.Types.Evidence
                      , Juno.Types.Log
                      , Juno.Types.Message
                      , Juno.Types.Message.Signed

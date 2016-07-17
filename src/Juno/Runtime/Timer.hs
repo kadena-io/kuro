@@ -20,6 +20,7 @@ resetElectionTimer = do
   debug $ "Reset Election Timeout: " ++ show (timeout `div` 1000) ++ "ms"
   setTimedEvent (ElectionTimeout $ show (timeout `div` 1000) ++ "ms") timeout
 
+-- | If a leader hasn't heard from a follower in longer than 2x max election timeouts, he should step down.
 hasElectionTimerLeaderFired :: Raft Bool
 hasElectionTimerLeaderFired = do
   maxTimeout <- ((*2) . snd) <$> viewConfig electionTimeoutRange

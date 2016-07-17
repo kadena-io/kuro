@@ -10,9 +10,10 @@ import Control.Monad.IO.Class
 
 import Juno.Types
 import Juno.Util.Util (debug, dequeueEvent)
+import Juno.Consensus.Commit (applyLogEntries)
 
 import qualified Juno.Consensus.Handle.AppendEntries as PureAppendEntries
-import qualified Juno.Consensus.Handle.AppendEntriesResponse as PureAppendEntriesResponse
+--import qualified Juno.Consensus.Handle.AppendEntriesResponse as PureAppendEntriesResponse
 import qualified Juno.Consensus.Handle.Command as PureCommand
 import qualified Juno.Consensus.Handle.ElectionTimeout as PureElectionTimeout
 import qualified Juno.Consensus.Handle.HeartbeatTimeout as PureHeartbeatTimeout
@@ -29,16 +30,17 @@ handleEvents = forever $ do
     Nothing -> dequeueEvent
     Just v -> return v
   case e of
-    ERPC rpc           -> handleRPC rpc
-    AERs alotOfAers    -> PureAppendEntriesResponse.handleAlotOfAers alotOfAers
-    ElectionTimeout s  -> PureElectionTimeout.handle s
-    HeartbeatTimeout s -> PureHeartbeatTimeout.handle s
-    Tick tock'         -> liftIO (pprintTock tock' "handleEvents") >>= debug
+    ERPC rpc                      -> handleRPC rpc
+    ElectionTimeout s             -> PureElectionTimeout.handle s
+    HeartbeatTimeout s            -> PureHeartbeatTimeout.handle s
+    ApplyLogEntries               -> applyLogEntries
+    Tick tock'                    -> liftIO (pprintTock tock' "handleEvents") >>= debug
 
+-- TODO: prune out AER's from RPC if possible
 handleRPC :: RPC -> Raft ()
 handleRPC rpc = case rpc of
   AE' ae          -> PureAppendEntries.handle ae
-  AER' aer        -> PureAppendEntriesResponse.handle aer
+  AER' aer        -> error $ "Invariant Error: AER received by Consensus Service" ++ show aer
   RV' rv          -> PureRequestVote.handle rv
   RVR' rvr        -> PureRequestVoteResponse.handle rvr
   CMD' cmd        -> PureCommand.handle cmd

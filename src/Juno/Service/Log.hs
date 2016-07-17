@@ -5,7 +5,7 @@ module Juno.Service.Log
   where
 
 import Control.Lens hiding (Index, (|>))
-import Control.Concurrent (putMVar)
+import Control.Concurrent (MVar, putMVar, swapMVar)
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Trans.RWS.Strict
@@ -18,10 +18,13 @@ import Database.SQLite.Simple (Connection(..))
 import Juno.Types.Comms
 import Juno.Persistence.SQLite
 import Juno.Types.Service.Log as X
-import Juno.Types (startIndex)
+import qualified Juno.Types.Service.Evidence as Ev
+import qualified Juno.Types.Dispatch as Dispatch
+import Juno.Types (startIndex, Event(ApplyLogEntries), Dispatch)
 
-runLogService :: LogServiceChannel -> (String -> IO()) -> FilePath -> IO ()
-runLogService lsc dbg dbPath = do
+
+runLogService :: Dispatch -> (String -> IO()) -> FilePath -> MVar Ev.EvidenceCache -> IO ()
+runLogService dispatch dbg dbPath mEvCache = do
   dbConn' <- if not (null dbPath)
     then do
       dbg $ "[LogThread] Database Connection Opened: " ++ dbPath
@@ -29,7 +32,7 @@ runLogService lsc dbg dbPath = do
     else do
       dbg "[LogThread] Persistence Disabled"
       return Nothing
-  env <- return $ LogEnv lsc dbg dbConn'
+  env <- return $ LogEnv (dispatch ^. Dispatch.logService) (dispatch ^. Dispatch.internalEvent) dbg dbConn' mEvCache
   initLogState' <- case dbConn' of
     Just conn' -> syncLogsFromDisk conn'
     Nothing -> return $ initLogState
@@ -55,6 +58,7 @@ runQuery (Query aq mv) = do
   liftIO $ putMVar mv qr
 runQuery (Update ul) = do
   modify (\a' -> updateLogs ul a')
+  updateEvidenceCache ul
   toPersist <- getUnpersisted <$> get
   case toPersist of
     Just logs -> do
@@ -67,6 +71,42 @@ runQuery (Update ul) = do
 runQuery (Tick t) = do
   t' <- liftIO $ pprintTock t "runQuery"
   debug t'
+
+updateEvidenceCache :: UpdateLogs -> LogThread ()
+updateEvidenceCache (UpdateLastApplied _) = return ()
+-- In these cases, we need to update the cache because we have something new
+updateEvidenceCache (ULNew _) = updateEvidenceCache'
+updateEvidenceCache (ULReplicate _) = updateEvidenceCache'
+updateEvidenceCache (ULCommitIdx _) = tellJunoToApplyLogEntries >> updateEvidenceCache'
+
+-- For pattern matching totality checking goodness
+updateEvidenceCache' :: LogThread ()
+updateEvidenceCache' = do
+  ci <- use lsCommitIndex
+  lli <- use lsLastLogIndex
+  llt <- use lsLastLogTerm
+  ciHash <- (lookupEntry ci <$> get) >>= return . maybe mempty _leHash
+  mEvCache <- view evidenceCache
+  if ci == lli
+  then do
+    -- In this case, there's no new hashes to compare evidence against. Basically a steady state
+    void $ liftIO $ swapMVar mEvCache $ Ev.EvidenceCache
+        { Ev.minLogIdx = ci + 1
+        , Ev.maxLogIdx = ci + 1
+        , Ev.lastLogTerm = llt
+        , Ev.hashes = mempty
+        , Ev.hashAtCommitIndex = ciHash
+        }
+  else do
+    -- We have uncommited entries
+    hashes <- getUncommitedHashes <$> get
+    void $ liftIO $ swapMVar mEvCache $ Ev.EvidenceCache
+        { Ev.minLogIdx = ci + 1
+        , Ev.maxLogIdx = lli
+        , Ev.lastLogTerm = llt
+        , Ev.hashes = hashes
+        , Ev.hashAtCommitIndex = ciHash
+        }
 
 syncLogsFromDisk :: Connection -> IO (LogState LogEntry)
 syncLogsFromDisk conn = do
@@ -83,3 +123,7 @@ syncLogsFromDisk conn = do
       , _lsLastLogTerm = _leTerm log'
       }
     Nothing -> return $ initLogState
+
+tellJunoToApplyLogEntries :: LogThread ()
+tellJunoToApplyLogEntries = do
+  view internalEvent >>= liftIO . (`writeComm` (InternalEvent ApplyLogEntries))

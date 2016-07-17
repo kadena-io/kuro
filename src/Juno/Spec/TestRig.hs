@@ -34,7 +34,7 @@ import System.Log.FastLogger
 import System.Random
 
 import Juno.Consensus.Server
-import Juno.Types
+import Juno.Types hiding (timeCache)
 import Juno.Messaging.ZMQ
 import qualified Juno.Runtime.MessageReceiver as RENV
 
@@ -119,14 +119,25 @@ getSysLogTime = do
   (ZonedTime (LocalTime d t) _) <- getZonedTime
   return $ BSC.pack $ (showGregorian d) ++ "T" ++ (take 12 $ show t)
 
-timeCache :: IO (IO FormattedTime)
-timeCache = mkAutoUpdate defaultUpdateSettings
-  {  updateAction = getSysLogTime
-  ,  updateFreq = 1000 -- every millisecond
-  }
 
-initSysLog :: IO (TimedFastLogger)
-initSysLog = fst <$> newTimedFastLogger (join timeCache) (LogStdout defaultBufSize)
+timeCache :: TimeZone -> (IO UTCTime) -> IO (IO FormattedTime)
+timeCache tz tc = mkAutoUpdate defaultUpdateSettings
+  { updateAction = do
+      t' <- tc
+      (ZonedTime (LocalTime d t) _) <- return $ view (zonedTime) (tz,t')
+      return $ BSC.pack $ (showGregorian d) ++ "T" ++ (take 12 $ show t)
+  , updateFreq = 1000}
+
+
+utcTimeCache :: IO (IO UTCTime)
+utcTimeCache = mkAutoUpdate defaultUpdateSettings
+  { updateAction = getCurrentTime
+  , updateFreq = 1000}
+
+initSysLog :: (IO UTCTime) -> IO (TimedFastLogger)
+initSysLog tc = do
+  tz <- getCurrentTimeZone
+  fst <$> newTimedFastLogger (join $ timeCache tz tc) (LogStdout defaultBufSize)
 
 simpleRaftSpec :: (Command -> IO CommandResult)
                -> (String -> IO ())
@@ -182,7 +193,8 @@ testJuno rconf rstate dispatch applyFn = do
 
   (_emptyAPIChanIn,emptyAPIChanOut) <- Unagi.newChan
 
-  fs <- initSysLog
+  utcTimeCache' <- utcTimeCache
+  fs <- initSysLog utcTimeCache'
   let debugFn = if (rconf ^. enableDebug) then showDebug fs else noDebug
 
   -- each node has its own snap monitoring server
@@ -197,4 +209,4 @@ testJuno rconf rstate dispatch applyFn = do
                    emptyAPIChanOut
   restartTurbo <- newEmptyMVar
   let receiverEnv = simpleReceiverEnv dispatch rconf debugFn restartTurbo
-  runPrimedRaftServer receiverEnv rconf raftSpec rstate
+  runPrimedRaftServer receiverEnv rconf raftSpec rstate utcTimeCache'

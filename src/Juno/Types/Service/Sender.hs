@@ -22,7 +22,7 @@ module Juno.Types.Service.Sender
   , SenderService
   , ServiceEnv(..), myNodeId, currentLeader, currentTerm, myPublicKey
   , myPrivateKey, yesVotes, debugPrint, serviceRequestChan, outboundGeneral, outboundAerRvRvr
-  , logService, otherNodes, nodeRole
+  , logService, otherNodes, nodeRole, getEvidenceState
   ) where
 
 import Control.Lens
@@ -32,13 +32,13 @@ import Control.Monad.Trans.Reader (ReaderT)
 
 import qualified Control.Concurrent.Chan.Unagi as Unagi
 
-import Data.Map (Map)
 import Data.Set (Set)
 
 import Juno.Types.Base
 import Juno.Types.Message
 import Juno.Types.Comms
 import Juno.Types.Service.Log (LogServiceChannel)
+import Juno.Types.Service.Evidence (EvidenceState)
 
 data ServiceRequest' =
   ServiceRequest'
@@ -58,19 +58,12 @@ instance Comms ServiceRequest' SenderServiceChannel where
 
 data AEBroadcastControl =
   SendAERegardless |
-  OnlySendIfFollowersAreInSync |
-  SendEmptyAEIfOutOfSync
+  OnlySendIfFollowersAreInSync
   deriving (Show, Eq)
 
 data ServiceRequest =
-    SingleAE
-    { _srFor :: !NodeId
-    , _srNextIndex :: !(Maybe LogIndex)
-    , _srFollowsLeader :: !Bool} |
     BroadcastAE
-    { _srAeBoardcastControl :: !AEBroadcastControl
-    , _srlNextIndex :: !(Map NodeId LogIndex)
-    , _srConvincedNodes :: !(Set NodeId) } |
+    { _srAeBoardcastControl :: !AEBroadcastControl } |
     SingleAER
     { _srFor :: !NodeId
     , _srSuccess :: !Bool
@@ -118,6 +111,8 @@ data ServiceEnv = ServiceEnv
   , _outboundAerRvRvr :: OutboundAerRvRvrChannel
   -- Log Storage
   , _logService :: LogServiceChannel
+  -- Evidence Thread's Published State
+  , _getEvidenceState :: IO EvidenceState
   }
 makeLenses ''ServiceEnv
 

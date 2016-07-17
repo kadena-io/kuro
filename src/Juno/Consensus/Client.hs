@@ -19,6 +19,8 @@ import qualified Data.ByteString.Char8 as SB8
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
+import Data.Thyme.Clock (UTCTime)
+
 import Juno.Runtime.MessageReceiver
 import Juno.Runtime.Timer
 import Juno.Types
@@ -33,8 +35,9 @@ runRaftClient :: ReceiverEnv
               -> Config
               -> RaftSpec
               -> MVar Bool
+              -> IO UTCTime
               -> IO ()
-runRaftClient renv getEntries cmdStatusMap' rconf spec@RaftSpec{..} disableTimeouts = do
+runRaftClient renv getEntries cmdStatusMap' rconf spec@RaftSpec{..} disableTimeouts timeCache' = do
   let csize = Set.size $ rconf ^. otherNodes
       qsize = getQuorumSize csize
   -- TODO: do we really need currentRequestId in state any longer, doing this to keep them in sync
@@ -42,9 +45,11 @@ runRaftClient renv getEntries cmdStatusMap' rconf spec@RaftSpec{..} disableTimeo
   void $ runMessageReceiver renv -- THREAD: CLIENT MESSAGE RECEIVER
   rconf' <- newIORef rconf
   timerTarget' <- newEmptyMVar
+  mEvState <- newEmptyMVar
+  mLeaderNoFollowers <- newEmptyMVar
   runRWS_
     (raftClient (lift getEntries) cmdStatusMap' disableTimeouts)
-    (mkRaftEnv rconf' csize qsize spec (_dispatch renv) timerTarget')
+    (mkRaftEnv rconf' csize qsize spec (_dispatch renv) timerTarget' timeCache' mEvState mLeaderNoFollowers)
     -- TODO: because UTC can flow backwards, this request ID is problematic:
     (initialRaftState timerTarget') {_currentRequestId = rid} -- only use currentLeader and logEntries
 

@@ -1,6 +1,11 @@
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
 module Juno.Types.Evidence
   ( EvidenceCache(..), initEvidenceCache
@@ -19,6 +24,7 @@ import Control.Monad.Trans.State.Strict
 import qualified Control.Concurrent.Chan.Unagi as Unagi
 import Control.Concurrent (MVar)
 
+import Data.Aeson
 import Data.ByteString (ByteString)
 import Data.Sequence (Seq)
 import Data.Map.Strict (Map)
@@ -27,6 +33,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 
 import Data.Typeable
+import GHC.Generics
 
 import Juno.Types.Base as X
 import Juno.Types.Config as X
@@ -72,6 +79,15 @@ initEvidenceCache = EvidenceCache
   , hashAtCommitIndex = mempty
   }
 
+instance ToJSON LogIndex where
+  toJSON m = toJSON $ show m
+instance ToJSON (Map LogIndex Int) where
+  toJSON m = toJSON $ Map.toList m
+instance ToJSON (Map NodeId LogIndex) where
+  toJSON m = toJSON $ Map.toList m
+instance ToJSON AppendEntriesResponse where
+  toJSON m = toJSON $ show m
+
 data EvidenceState = EvidenceState
   { _esQuorumSize :: Int
   , _esNodeStates :: !(Map NodeId LogIndex)
@@ -81,15 +97,16 @@ data EvidenceState = EvidenceState
   , _esFutureEvidence :: ![AppendEntriesResponse]
   , _esMismatchNodes :: !(Set NodeId)
   , _esResetLeaderNoFollowers :: Bool
-  } deriving (Show)
+  } deriving (Show, Generic, ToJSON)
 makeLenses ''EvidenceState
+
 
 -- | Quorum Size for evidence processing is a different size than used elsewhere, specifically 1 less.
 -- The reason is that to get a match on the hash, the receiving node already needs to have replicated
 -- the entry. As such, getting a match that is counted when checking evidence implies that count is already +1
 -- This note is here because we used to process our own evidence, which was stupid.
 getEvidenceQuorumSize :: Int -> Int
-getEvidenceQuorumSize n = floor (fromIntegral n / 2 :: Float)
+getEvidenceQuorumSize n = 1 + floor (fromIntegral n / 2 :: Float)
 
 initEvidenceState :: Set NodeId -> LogIndex -> EvidenceState
 initEvidenceState otherNodes' commidIndex' = EvidenceState

@@ -9,7 +9,7 @@ module Juno.Service.Evidence
   , _runEvidenceProcessTest
   ) where
 
-import Control.Concurrent (MVar, readMVar, newEmptyMVar, takeMVar, swapMVar, tryPutMVar)
+import Control.Concurrent (MVar, readMVar, newEmptyMVar, takeMVar, swapMVar, tryPutMVar, putMVar)
 import Control.Lens hiding (Index)
 import Control.Monad
 import Control.Monad.IO.Class
@@ -21,6 +21,11 @@ import qualified Data.Map.Strict as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.IORef
+
+import qualified Data.ByteString.Char8 as BSC
+import Data.Yaml (encode)
+
+import Debug.Trace
 
 import Juno.Types.Dispatch (Dispatch)
 import Juno.Types.Event (ResetLeaderNoFollowersTimeout(..))
@@ -55,10 +60,15 @@ rebuildState es = do
   commitIndex' <- return $ Log.hasQueryResult Log.CommitIndex mv
   newEs <- return $! initEvidenceState otherNodes' commitIndex'
   case es of
-    Just es' -> return $! es'
+    Just es' -> do
+      res <- return $ es'
         { _esQuorumSize = _esQuorumSize newEs
         }
-    Nothing -> return $! newEs
+      debug $ "rebuilt state to: " ++ (BSC.unpack $ encode res)
+      return res
+    Nothing -> do
+      debug $ "state was nothing, built: " ++ (BSC.unpack $ encode newEs)
+      return $! newEs
 
 runEvidenceProcessor :: EvidenceState -> EvidenceProcEnv (EvidenceState)
 runEvidenceProcessor es = do
@@ -84,12 +94,15 @@ runEvidenceProcessor es = do
       liftIO (pprintTock tock "runEvidenceProcessor") >>= debug
       runEvidenceProcessor es
     Bounce -> return es
-    ClearConvincedNodes -> -- Consensus has signaled that an election has or is taking place
+    ClearConvincedNodes -> do
+      -- Consensus has signaled that an election has or is taking place
+      debug "Clearing Convinced Nodes"
       runEvidenceProcessor $ es {_esConvincedNodes = Set.empty}
 
 runEvidenceService :: EvidenceEnv -> IO ()
 runEvidenceService ev = do
   startingEs <- runReaderT (rebuildState Nothing) ev
+  putMVar (ev ^. mPubStateTo) startingEs
   runReaderT (foreverRunProcessor startingEs) ev
 
 foreverRunProcessor :: EvidenceState -> EvidenceProcEnv ()
@@ -124,7 +137,7 @@ checkForNewCommitIndex evidenceNeeded partialEvidence = go (Map.toDescList parti
 processEvidence :: [AppendEntriesResponse] -> EvidenceCache -> EvidenceProcessor (Either Int LogIndex)
 processEvidence aers ec = do
   es <- get
-  mapM_ processResult (checkEvidence ec es <$> aers)
+  mapM_ processResult (traceShowId . checkEvidence ec es <$> aers)
   res <- checkForNewCommitIndex (_esQuorumSize es) <$> use esPartialEvidence
   case res of
     Left i -> return $ Left i

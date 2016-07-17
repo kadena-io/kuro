@@ -16,9 +16,8 @@ import Data.Int (Int64)
 import Data.Thyme.Clock (UTCTime, microseconds)
 
 import qualified Data.ByteString.Char8 as BSC
--- import Data.Map.Strict (Map)
+import Data.Sequence (Seq)
 import qualified Data.Map.Strict as Map
-import qualified Data.Set as Set
 import Data.Foldable (toList)
 
 import Juno.Types hiding (valid)
@@ -27,11 +26,8 @@ import qualified Juno.Service.Sender as Sender
 import qualified Juno.Service.Log as Log
 
 
-applyLogEntries :: Raft ()
-applyLogEntries = do
-  mv <- queryLogs $ Set.fromList [Log.GetUnappliedEntries, Log.GetCommitIndex]
-  unappliedEntries' <- return $ Log.hasQueryResult Log.UnappliedEntries mv
-  commitIndex' <- return $ Log.hasQueryResult Log.CommitIndex mv
+applyLogEntries :: Maybe (Seq LogEntry) -> LogIndex -> Raft ()
+applyLogEntries unappliedEntries' commitIndex' = do
   now <- view (rs.getTimestamp) >>= liftIO
   case unappliedEntries' of
     Nothing -> debug $ "No new entries to apply"
@@ -111,6 +107,8 @@ makeCommandResponse' nid mlid Command{..} result lat = CommandResponse
              lat
              NewMsg
 
+
+-- TODO: replicate metrics integration in Evidence
 --logCommitChange :: LogIndex -> LogIndex -> Raft ()
 --logCommitChange before after
 --  | after > before = do

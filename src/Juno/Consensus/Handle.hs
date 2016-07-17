@@ -33,7 +33,7 @@ handleEvents = forever $ do
     ERPC rpc                      -> handleRPC rpc
     ElectionTimeout s             -> PureElectionTimeout.handle s
     HeartbeatTimeout s            -> PureHeartbeatTimeout.handle s
-    ApplyLogEntries               -> applyLogEntries
+    ApplyLogEntries unappliedEntries' commitIndex' -> applyLogEntries unappliedEntries' commitIndex'
     Tick tock'                    -> liftIO (pprintTock tock' "handleEvents") >>= debug
 
 -- TODO: prune out AER's from RPC if possible

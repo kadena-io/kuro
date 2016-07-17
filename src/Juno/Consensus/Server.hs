@@ -3,8 +3,8 @@ module Juno.Consensus.Server
   , runPrimedRaftServer
   ) where
 
-import Control.Concurrent (newEmptyMVar, forkIO, newMVar)
---import Control.Concurrent.Async
+import Control.Concurrent (newEmptyMVar)
+import Control.Concurrent.Async
 import qualified Control.Concurrent.Lifted as CL
 import Control.Lens
 import Control.Monad
@@ -35,18 +35,18 @@ runPrimedRaftServer renv rconf spec rstate timeCache' = do
   timerTarget' <- return $ (rstate ^. timerTarget)
   -- EvidenceService Environment
   mEvState <- newEmptyMVar
-  mEvCache <- newMVar Ev.initEvidenceCache
   mLeaderNoFollowers <- newEmptyMVar
-  evEnv <- return $! Ev.initEvidenceEnv (_dispatch renv) (RENV._debugPrint renv) rconf' mEvState mEvCache mLeaderNoFollowers
+  evEnv <- return $! Ev.initEvidenceEnv (_dispatch renv) (RENV._debugPrint renv) rconf' mEvState mLeaderNoFollowers
 
-  void $ forkIO $ Log.runLogService (_dispatch renv) (RENV._debugPrint renv) (rconf ^. logSqlitePath) mEvCache
-  void $ forkIO $ Sender.runSenderService (_dispatch renv) rconf (RENV._debugPrint renv) mEvState
-  void $ forkIO $ Ev.runEvidenceService evEnv
+  link =<< (async $ Log.runLogService (_dispatch renv) (RENV._debugPrint renv) (rconf ^. logSqlitePath))
+  link =<< (async $ Sender.runSenderService (_dispatch renv) rconf (RENV._debugPrint renv) mEvState)
+  link =<< (async $ Ev.runEvidenceService evEnv)
   -- This helps for testing, we'll send tocks every second to inflate the logs when we see weird pauses right before an election
   -- forever (writeComm (_internalEvent $ _dispatch renv) (InternalEvent $ Tock $ t) >> threadDelay 1000000)
-  void $ forkIO $ foreverTick (_internalEvent $ _dispatch renv) 1000000 (InternalEvent . Tick)
-  void $ forkIO $ foreverTick (_senderService $ _dispatch renv) 1000000 (Sender.Tick)
-  void $ forkIO $ foreverTick (_logService    $ _dispatch renv) 1000000 (Log.Tick)
+  link =<< (async $ foreverTick (_internalEvent $ _dispatch renv) 1000000 (InternalEvent . Tick))
+  link =<< (async $ foreverTick (_senderService $ _dispatch renv) 1000000 (Sender.Tick))
+  link =<< (async $ foreverTick (_logService    $ _dispatch renv) 1000000 (Log.Tick))
+  link =<< (async $ foreverTick (_evidence      $ _dispatch renv) 1000000 (Ev.Tick))
   runRWS_
     raft
     (mkRaftEnv rconf' csize qsize spec (_dispatch renv) timerTarget' timeCache' mEvState mLeaderNoFollowers)
@@ -61,7 +61,10 @@ runRaftServer renv rconf spec timeCache' = do
 raft :: Raft ()
 raft = do
   debug "Launch Sequence: syncing logs from disk"
-  applyLogEntries -- This is for us replaying from disk, it will sync state before we launch
+  mv <- queryLogs $ Set.fromList [Log.GetUnappliedEntries, Log.GetCommitIndex]
+  unappliedEntries' <- return $ Log.hasQueryResult Log.UnappliedEntries mv
+  commitIndex' <- return $ Log.hasQueryResult Log.CommitIndex mv
+  applyLogEntries unappliedEntries' commitIndex' -- This is for us replaying from disk, it will sync state before we launch
   la <- Log.hasQueryResult Log.LastApplied <$> (queryLogs $ Set.singleton Log.GetLastApplied)
   when (startIndex /= la) $ debug $ "Launch Sequence: disk sync replayed, Commit Index now " ++ show la
   logStaticMetrics

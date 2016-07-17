@@ -160,26 +160,6 @@ library
   ghc-prof-options:    -fprof-auto -fprof-auto-calls
   default-language:    Haskell2010
 
-executable aertest
-  main-is:             AerService.hs
-  build-depends:       base < 5
-                     , bytestring
-                     , cereal >= 0.4.1.1
-                     , containers
-                     , parallel
-                     , criterion
-                     , crypto-api
-                     , directory
-                     , ed25519-donna
-                     , filepath
-                     , juno
-                     , network
-                     , thyme
-                     , yaml
-  hs-source-dirs:      bench
-  ghc-options:         -Wall -threaded -rtsopts -O2
-  default-language:    Haskell2010
-
 executable genconfs
   main-is:             GenerateConfigFiles.hs
   build-depends:       base < 5

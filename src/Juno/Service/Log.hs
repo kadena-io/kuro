@@ -10,7 +10,11 @@ import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Trans.RWS.Strict
 
+import Data.ByteString (ByteString)
+import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import Data.Set (Set)
+import qualified Data.Set as Set
 import Data.Maybe (fromJust)
 
 import Database.SQLite.Simple (Connection(..))
@@ -22,9 +26,8 @@ import qualified Juno.Types.Service.Evidence as Ev
 import qualified Juno.Types.Dispatch as Dispatch
 import Juno.Types (startIndex, Event(ApplyLogEntries), Dispatch)
 
-
-runLogService :: Dispatch -> (String -> IO()) -> FilePath -> MVar Ev.EvidenceCache -> IO ()
-runLogService dispatch dbg dbPath mEvCache = do
+runLogService :: Dispatch -> (String -> IO()) -> FilePath -> IO ()
+runLogService dispatch dbg dbPath = do
   dbConn' <- if not (null dbPath)
     then do
       dbg $ "[LogThread] Database Connection Opened: " ++ dbPath
@@ -32,7 +35,13 @@ runLogService dispatch dbg dbPath mEvCache = do
     else do
       dbg "[LogThread] Persistence Disabled"
       return Nothing
-  env <- return $ LogEnv (dispatch ^. Dispatch.logService) (dispatch ^. Dispatch.internalEvent) dbg dbConn' mEvCache
+  env <- return $ LogEnv
+    { _logQueryChannel = (dispatch ^. Dispatch.logService)
+    , _internalEvent = (dispatch ^. Dispatch.internalEvent)
+    , _evidence = (dispatch ^. Dispatch.evidence)
+    , _debugPrint = dbg
+    , _dbConn = dbConn'
+    }
   initLogState' <- case dbConn' of
     Just conn' -> syncLogsFromDisk conn'
     Nothing -> return $ initLogState
@@ -68,45 +77,39 @@ runQuery (Update ul) = do
         Just conn -> liftIO $ insertSeqLogEntry conn logs
         Nothing ->  return ()
     Nothing -> return ()
+runQuery (NeedCacheEvidence lis mv) = do
+  qr <- buildNeedCacheEvidence lis <$> get
+  liftIO $ putMVar mv qr
+  debug $ "Servicing CacheMiss Request for: " ++ show lis
 runQuery (Tick t) = do
   t' <- liftIO $ pprintTock t "runQuery"
   debug t'
+
+buildNeedCacheEvidence :: Set LogIndex -> LogState LogEntry -> Map LogIndex ByteString
+buildNeedCacheEvidence lis ls = res `seq` res
+  where
+    res = Map.fromAscList $ go $ Set.toAscList lis
+    go [] = []
+    go (li:rest) = case lookupEntry li ls of
+      Nothing -> go rest
+      Just le -> (li,_leHash le) : go rest
+{-# INLINE buildNeedCacheEvidence #-}
 
 updateEvidenceCache :: UpdateLogs -> LogThread ()
 updateEvidenceCache (UpdateLastApplied _) = return ()
 -- In these cases, we need to update the cache because we have something new
 updateEvidenceCache (ULNew _) = updateEvidenceCache'
 updateEvidenceCache (ULReplicate _) = updateEvidenceCache'
-updateEvidenceCache (ULCommitIdx _) = tellJunoToApplyLogEntries >> updateEvidenceCache'
+updateEvidenceCache (ULCommitIdx _) = tellJunoToApplyLogEntries
 
 -- For pattern matching totality checking goodness
 updateEvidenceCache' :: LogThread ()
 updateEvidenceCache' = do
-  ci <- use lsCommitIndex
   lli <- use lsLastLogIndex
-  llt <- use lsLastLogTerm
-  ciHash <- (lookupEntry ci <$> get) >>= return . maybe mempty _leHash
-  mEvCache <- view evidenceCache
-  if ci == lli
-  then do
-    -- In this case, there's no new hashes to compare evidence against. Basically a steady state
-    void $ liftIO $ swapMVar mEvCache $ Ev.EvidenceCache
-        { Ev.minLogIdx = ci + 1
-        , Ev.maxLogIdx = ci + 1
-        , Ev.lastLogTerm = llt
-        , Ev.hashes = mempty
-        , Ev.hashAtCommitIndex = ciHash
-        }
-  else do
-    -- We have uncommited entries
-    hashes <- getUncommitedHashes <$> get
-    void $ liftIO $ swapMVar mEvCache $ Ev.EvidenceCache
-        { Ev.minLogIdx = ci + 1
-        , Ev.maxLogIdx = lli
-        , Ev.lastLogTerm = llt
-        , Ev.hashes = hashes
-        , Ev.hashAtCommitIndex = ciHash
-        }
+  llh <- use lsLastLogHash
+  evChan <- view evidence
+  liftIO $ writeComm evChan $ Ev.CacheNewHash lli llh
+  debug $ "Sent CacheNewEvidenc for: " ++ show lli
 
 syncLogsFromDisk :: Connection -> IO (LogState LogEntry)
 syncLogsFromDisk conn = do
@@ -117,6 +120,7 @@ syncLogsFromDisk conn = do
       { _lsLogEntries = Log logs
       , _lsLastApplied = startIndex
       , _lsLastLogIndex = _leLogIndex log'
+      , _lsLastLogHash = _leHash log'
       , _lsNextLogIndex = (_leLogIndex log') + 1
       , _lsCommitIndex = _leLogIndex log'
       , _lsLastPersisted = _leLogIndex log'
@@ -126,4 +130,7 @@ syncLogsFromDisk conn = do
 
 tellJunoToApplyLogEntries :: LogThread ()
 tellJunoToApplyLogEntries = do
-  view internalEvent >>= liftIO . (`writeComm` (InternalEvent ApplyLogEntries))
+  es <- get
+  unappliedEntries' <- return $ getUnappliedEntries es
+  commitIndex' <- return $ es ^. lsCommitIndex
+  view internalEvent >>= liftIO . (`writeComm` (InternalEvent $ ApplyLogEntries unappliedEntries' commitIndex'))

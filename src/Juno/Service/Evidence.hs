@@ -5,11 +5,9 @@ module Juno.Service.Evidence
   ( runEvidenceService
   , initEvidenceEnv
   , module X
-  -- for benchmarks
-  , _runEvidenceProcessTest
   ) where
 
-import Control.Concurrent (MVar, readMVar, newEmptyMVar, takeMVar, swapMVar, tryPutMVar, putMVar)
+import Control.Concurrent (MVar, newEmptyMVar, takeMVar, swapMVar, tryPutMVar, putMVar)
 import Control.Lens hiding (Index)
 import Control.Monad
 import Control.Monad.IO.Class
@@ -22,11 +20,6 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.IORef
 
-import qualified Data.ByteString.Char8 as BSC
-import Data.Yaml (encode)
-
-import Debug.Trace
-
 import Juno.Types.Dispatch (Dispatch)
 import Juno.Types.Event (ResetLeaderNoFollowersTimeout(..))
 import Juno.Types.Service.Evidence as X
@@ -38,17 +31,15 @@ import qualified Juno.Types.Service.Log as Log
 initEvidenceEnv :: Dispatch
                 -> (String -> IO ())
                 -> IORef Config
-                -> MVar EvidenceState
-                -> MVar EvidenceCache
+                -> MVar PublishedEvidenceState
                 -> MVar ResetLeaderNoFollowersTimeout
                 -> EvidenceEnv
-initEvidenceEnv dispatch debugFn' mConfig' mPubStateTo' mEvCache' mResetLeaderNoFollowers' = EvidenceEnv
+initEvidenceEnv dispatch debugFn' mConfig' mPubStateTo' mResetLeaderNoFollowers' = EvidenceEnv
   { _logService = dispatch ^. Dispatch.logService
   , _evidence = dispatch ^. Dispatch.evidence
   , _mResetLeaderNoFollowers = mResetLeaderNoFollowers'
   , _mConfig = mConfig'
   , _mPubStateTo = mPubStateTo'
-  , _mEvCache = mEvCache'
   , _debugFn = debugFn'
   }
 
@@ -64,11 +55,14 @@ rebuildState es = do
       res <- return $ es'
         { _esQuorumSize = _esQuorumSize newEs
         }
-      debug $ "rebuilt state to: " ++ (BSC.unpack $ encode res)
       return res
     Nothing -> do
-      debug $ "state was nothing, built: " ++ (BSC.unpack $ encode newEs)
       return $! newEs
+
+publishEvidence :: EvidenceState -> EvidenceProcEnv ()
+publishEvidence es = do
+  esPub <- view mPubStateTo
+  liftIO $ void $ swapMVar esPub $ PublishedEvidenceState (es ^. esConvincedNodes) (es ^. esNodeStates)
 
 runEvidenceProcessor :: EvidenceState -> EvidenceProcEnv (EvidenceState)
 runEvidenceProcessor es = do
@@ -77,32 +71,44 @@ runEvidenceProcessor es = do
   es' <- return $! es {_esResetLeaderNoFollowers = False}
   case newEv of
     VerifiedAER aers -> do
-      esPub <- view mPubStateTo
-      ec <- view mEvCache >>= liftIO . readMVar
-      (res, newEs) <- return $! runState (processEvidence aers ec) es'
-      liftIO $ void $ swapMVar esPub newEs
+      (res, newEs) <- return $! runState (processEvidence aers) es'
+      publishEvidence newEs
       when (newEs ^. esResetLeaderNoFollowers) tellJunoToResetLeaderNoFollowersTimeout
       case res of
-        Left i -> do
-          debug $ "Evidence still required " ++ (show i) ++ " of " ++ show (1 + _esQuorumSize newEs)
-          runEvidenceProcessor newEs
-        Right li -> do
-          updateLogs $ Log.ULCommitIdx $ Log.UpdateCommitIndex li
-          debug $ "CommitIndex = " ++ (show li)
-          runEvidenceProcessor newEs
+        SteadyState ci -> do
+          debug $ "CommitIndex steady at " ++ show ci
+          if (not $ Set.null $ newEs ^. esCacheMissAers)
+          then processCacheMisses newEs >>= runEvidenceProcessor
+          else runEvidenceProcessor newEs
+        NeedMoreEvidence i -> do
+          if (not $ Set.null $ newEs ^. esCacheMissAers)
+          then processCacheMisses newEs >>= runEvidenceProcessor
+          else do
+            debug $ "Evidence still required " ++ (show i) ++ " of " ++ show (1 + _esQuorumSize newEs)
+            runEvidenceProcessor newEs
+        NewCommitIndex ci -> do
+          updateLogs $ Log.ULCommitIdx $ Log.UpdateCommitIndex ci
+          debug $ "CommitIndex = " ++ (show ci)
+          if (not $ Set.null $ newEs ^. esCacheMissAers)
+          then processCacheMisses newEs >>= runEvidenceProcessor
+          else runEvidenceProcessor newEs
     Tick tock -> do
       liftIO (pprintTock tock "runEvidenceProcessor") >>= debug
-      runEvidenceProcessor es
+      runEvidenceProcessor $ garbageCollectCache es
     Bounce -> return es
     ClearConvincedNodes -> do
       -- Consensus has signaled that an election has or is taking place
       debug "Clearing Convinced Nodes"
       runEvidenceProcessor $ es {_esConvincedNodes = Set.empty}
+    CacheNewHash{..} -> do
+      runEvidenceProcessor $ es {
+        _esEvidenceCache = Map.insert _cLogIndex _cHash (_esEvidenceCache es)
+        }
 
 runEvidenceService :: EvidenceEnv -> IO ()
 runEvidenceService ev = do
   startingEs <- runReaderT (rebuildState Nothing) ev
-  putMVar (ev ^. mPubStateTo) startingEs
+  putMVar (ev ^. mPubStateTo) $ PublishedEvidenceState (startingEs ^. esConvincedNodes) (startingEs ^. esNodeStates)
   runReaderT (foreverRunProcessor startingEs) ev
 
 foreverRunProcessor :: EvidenceState -> EvidenceProcEnv ()
@@ -125,28 +131,82 @@ debug s = do
   debugFn' <- view debugFn
   liftIO $ debugFn' $ "[EV_SERVICE]: " ++ s
 
-checkForNewCommitIndex :: Int -> Map LogIndex Int -> Either Int LogIndex
-checkForNewCommitIndex evidenceNeeded partialEvidence = go (Map.toDescList partialEvidence) evidenceNeeded
+garbageCollectCache :: EvidenceState -> EvidenceState
+garbageCollectCache es =
+  let dropCnt = (Map.size $ _esEvidenceCache es) - 1000
+  in if dropCnt > 0
+     then es {_esEvidenceCache = Map.fromAscList $ drop dropCnt $ Map.toAscList $ _esEvidenceCache es}
+     else es
+
+checkPartialEvidence :: Int -> Map LogIndex Int -> Either Int LogIndex
+checkPartialEvidence evidenceNeeded partialEvidence = go (Map.toDescList partialEvidence) evidenceNeeded
   where
     go [] eStillNeeded = Left eStillNeeded
     go ((li, cnt):pes) en
       | en - cnt <= 0 = Right li
       | otherwise     = go pes (en - cnt)
-{-# INLINE checkForNewCommitIndex #-}
+{-# INLINE checkPartialEvidence #-}
 
-processEvidence :: [AppendEntriesResponse] -> EvidenceCache -> EvidenceProcessor (Either Int LogIndex)
-processEvidence aers ec = do
+checkForNewCommitIndex :: EvidenceProcessor CommitCheckResult
+checkForNewCommitIndex = do
+  partialEvidence <- use esPartialEvidence
+  if Map.null partialEvidence
+  -- Only populated when we see aerLogIndex > commitIndex. If it's empty, then nothings happening
+  then use esCommitIndex >>= return . SteadyState
+  else do
+    quorumSize' <- use esQuorumSize
+    case checkPartialEvidence quorumSize' partialEvidence of
+      Left i -> return $ NeedMoreEvidence i
+      Right ci -> do
+        esEvidenceCache' <- use esEvidenceCache
+        newHash <- case Map.lookup ci esEvidenceCache' of
+          Nothing -> do
+             es <- get
+             error $ "deep invariant error: checkForNewCommitIndex found a new commit index "
+                           ++ show ci ++ " but the hash was not in the Evidence Cache\n### STATE DUMP ###\n"
+                           ++ show es
+          Just h -> return h
+        esHashAtCommitIndex .= newHash
+        esCommitIndex .= ci
+        -- though the code in `processResult Successful` should be enough to keep everything in sync
+        -- we're going to make doubly sure that we don't double count
+        esPartialEvidence %= Map.filterWithKey (\k _ -> k > ci)
+        return $ NewCommitIndex ci
+
+processCacheMisses :: EvidenceState -> EvidenceProcEnv (EvidenceState)
+processCacheMisses es = do
+  aerCacheMisses <- return $ es ^. esCacheMissAers
+  debug $ "Processing " ++ show (Set.size aerCacheMisses) ++ " Cache Misses"
+  c <- view logService
+  mv <- liftIO $ newEmptyMVar
+  liftIO $ writeComm c $ Log.NeedCacheEvidence (Set.map _aerIndex aerCacheMisses) mv
+  newCacheEv <- liftIO $ takeMVar mv
+  updatedEs <- return $ es
+    { _esEvidenceCache = Map.union newCacheEv $ _esEvidenceCache es
+    , _esCacheMissAers = Set.empty}
+  (res, newEs) <- return $! runState (processEvidence $ Set.toList aerCacheMisses) updatedEs
+  if (newEs == updatedEs)
+  -- the cached evidence may not have changed anything, doubtful but could happen
+  then return newEs
+  else do
+    publishEvidence newEs
+    when (newEs ^. esResetLeaderNoFollowers) tellJunoToResetLeaderNoFollowersTimeout
+    case res of
+      SteadyState _ -> return newEs
+      NeedMoreEvidence i -> do
+        debug $ "Evidence still required " ++ (show i) ++ " of " ++ show (1 + _esQuorumSize newEs)
+        return newEs
+      NewCommitIndex ci -> do
+        updateLogs $ Log.ULCommitIdx $ Log.UpdateCommitIndex ci
+        debug $ "CommitIndex = " ++ (show ci)
+        return newEs
+
+
+processEvidence :: [AppendEntriesResponse] -> EvidenceProcessor CommitCheckResult
+processEvidence aers = do
   es <- get
-  mapM_ processResult (traceShowId . checkEvidence ec es <$> aers)
-  res <- checkForNewCommitIndex (_esQuorumSize es) <$> use esPartialEvidence
-  case res of
-    Left i -> return $ Left i
-    Right li -> do
-      esCommitIndex .= li
-      -- though the code in `processResult Successful` should be enough to keep everything in sync
-      -- we're going to make doubly sure that we don't double count
-      esPartialEvidence %= Map.filterWithKey (\k _ -> k > li)
-      return $ Right li
+  mapM_ processResult (checkEvidence es <$> aers)
+  checkForNewCommitIndex
 {-# INLINE processEvidence #-}
 
 -- | The semantics for this are that the MVar is initialized empty, when Evidence needs to signal consensus it puts
@@ -179,13 +239,3 @@ tellJunoToResetLeaderNoFollowersTimeout = do
 --              -> Map.Map NodeId LogIndex
 --              -> Raft ()
 --setLNextIndex myCommitIndex = updateLNextIndex myCommitIndex . const
-
--- For Testing
-
-_runEvidenceProcessTest
-  :: (EvidenceState, EvidenceCache, [AppendEntriesResponse])
-  -> (Either Int LogIndex, EvidenceState)
-_runEvidenceProcessTest (es, ec, aers) = runState (processEvidence aers ec) es
-
-_checkEvidence :: (EvidenceState, EvidenceCache, AppendEntriesResponse) -> Result
-_checkEvidence (es, ec, aer) = checkEvidence ec es aer

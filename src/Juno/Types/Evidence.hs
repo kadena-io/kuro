@@ -1,17 +1,14 @@
-{-# OPTIONS_GHC -fno-warn-orphans #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE StandaloneDeriving #-}
 
 module Juno.Types.Evidence
-  ( EvidenceCache(..), initEvidenceCache
-  , EvidenceState(..), initEvidenceState
+  ( EvidenceState(..), initEvidenceState
   , esQuorumSize, esNodeStates, esConvincedNodes, esPartialEvidence
-  , esCommitIndex, esFutureEvidence, esMismatchNodes, esResetLeaderNoFollowers
+  , esCommitIndex, esCacheMissAers, esMismatchNodes, esResetLeaderNoFollowers
+  , esHashAtCommitIndex, esEvidenceCache
+  , PublishedEvidenceState(..)
+  , pesConvincedNodes, pesNodeStates
   , EvidenceProcessor
   , Evidence(..)
   , EvidenceChannel(..)
@@ -24,16 +21,13 @@ import Control.Monad.Trans.State.Strict
 import qualified Control.Concurrent.Chan.Unagi as Unagi
 import Control.Concurrent (MVar)
 
-import Data.Aeson
 import Data.ByteString (ByteString)
-import Data.Sequence (Seq)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
 
 import Data.Typeable
-import GHC.Generics
 
 import Juno.Types.Base as X
 import Juno.Types.Config as X
@@ -50,6 +44,12 @@ data Evidence =
   -- * A bit of future tech/trying out a design. When we have participant changes, we can sync
   -- Evidence thread with this.
   Bounce |
+  -- * The LogService has a pretty good idea of what hashes we'll need to check and can pre-cache
+  -- them with us here. Log entries come in batches and AER's are only issued pertaining to the last.
+  -- So, whenever LogService sees a new batch come it, it hands us the info for the last one.
+  -- We will have misses -- if nodes are out of sync they may get different batches but overall this should
+  -- function fine.
+  CacheNewHash { _cLogIndex :: LogIndex , _cHash :: ByteString } |
   Tick Tock
   deriving (Show, Eq, Typeable)
 
@@ -62,44 +62,25 @@ instance Comms Evidence EvidenceChannel where
   readComms (EvidenceChannel (_,o)) = readCommsUnagi o
   writeComm (EvidenceChannel (i,_)) = writeCommUnagi i
 
-data EvidenceCache = EvidenceCache
-  { minLogIdx :: !LogIndex
-  , maxLogIdx :: !LogIndex
-  , lastLogTerm :: !Term
-  , hashes :: !(Seq ByteString)
-  , hashAtCommitIndex :: !ByteString
-  } deriving (Show)
-
-initEvidenceCache :: EvidenceCache
-initEvidenceCache = EvidenceCache
-  { minLogIdx = startIndex + 1
-  , maxLogIdx = startIndex + 1
-  , lastLogTerm = startTerm
-  , hashes = mempty
-  , hashAtCommitIndex = mempty
-  }
-
-instance ToJSON LogIndex where
-  toJSON m = toJSON $ show m
-instance ToJSON (Map LogIndex Int) where
-  toJSON m = toJSON $ Map.toList m
-instance ToJSON (Map NodeId LogIndex) where
-  toJSON m = toJSON $ Map.toList m
-instance ToJSON AppendEntriesResponse where
-  toJSON m = toJSON $ show m
-
 data EvidenceState = EvidenceState
   { _esQuorumSize :: Int
   , _esNodeStates :: !(Map NodeId LogIndex)
   , _esConvincedNodes :: !(Set NodeId)
   , _esPartialEvidence :: !(Map LogIndex Int)
   , _esCommitIndex :: !LogIndex
-  , _esFutureEvidence :: ![AppendEntriesResponse]
+  , _esCacheMissAers :: (Set AppendEntriesResponse)
   , _esMismatchNodes :: !(Set NodeId)
   , _esResetLeaderNoFollowers :: Bool
-  } deriving (Show, Generic, ToJSON)
+  , _esHashAtCommitIndex :: !ByteString
+  , _esEvidenceCache :: !(Map LogIndex ByteString)
+  } deriving (Show, Eq)
 makeLenses ''EvidenceState
 
+data PublishedEvidenceState = PublishedEvidenceState
+  { _pesConvincedNodes :: !(Set NodeId)
+  , _pesNodeStates :: !(Map NodeId LogIndex)
+  } deriving (Show)
+makeLenses ''PublishedEvidenceState
 
 -- | Quorum Size for evidence processing is a different size than used elsewhere, specifically 1 less.
 -- The reason is that to get a match on the hash, the receiving node already needs to have replicated
@@ -115,9 +96,11 @@ initEvidenceState otherNodes' commidIndex' = EvidenceState
   , _esConvincedNodes = Set.empty
   , _esPartialEvidence = Map.empty
   , _esCommitIndex = commidIndex'
-  , _esFutureEvidence = []
+  , _esCacheMissAers = Set.empty
   , _esMismatchNodes = Set.empty
   , _esResetLeaderNoFollowers = False
+  , _esHashAtCommitIndex = mempty
+  , _esEvidenceCache = Map.singleton startIndex mempty
   }
 
 type EvidenceProcessor = State EvidenceState

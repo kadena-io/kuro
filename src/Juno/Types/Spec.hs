@@ -49,7 +49,7 @@ import Juno.Types.Comms
 import Juno.Types.Dispatch
 import Juno.Types.Service.Sender (SenderServiceChannel, ServiceRequest')
 import Juno.Types.Service.Log (QueryApi(..))
-import Juno.Types.Service.Evidence (EvidenceState, Evidence(ClearConvincedNodes))
+import Juno.Types.Service.Evidence (PublishedEvidenceState, Evidence(ClearConvincedNodes))
 
 data RaftSpec = RaftSpec
   {
@@ -131,7 +131,7 @@ data RaftEnv = RaftEnv
   , _killEnqueued     :: ThreadId -> IO ()
   , _dequeue          :: IO Event
   , _clientSendMsg    :: OutboundGeneral -> IO ()
-  , _evidenceState    :: IO EvidenceState
+  , _evidenceState    :: IO PublishedEvidenceState
   , _timeCache        :: IO UTCTime
   , _mResetLeaderNoFollowers :: MVar ResetLeaderNoFollowersTimeout
   , _informEvidenceServiceOfElection :: IO ()
@@ -146,7 +146,7 @@ mkRaftEnv
   -> Dispatch
   -> MVar Event
   -> (IO UTCTime)
-  -> MVar EvidenceState
+  -> MVar PublishedEvidenceState
   -> MVar ResetLeaderNoFollowersTimeout
   -> RaftEnv
 mkRaftEnv conf' cSize qSize rSpec dispatch timerTarget' timeCache' mEs mResetLeaderNoFollowers' = RaftEnv

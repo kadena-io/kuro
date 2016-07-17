@@ -38,7 +38,7 @@ import Juno.Types.Base
 import Juno.Types.Message
 import Juno.Types.Comms
 import Juno.Types.Service.Log (LogServiceChannel)
-import Juno.Types.Service.Evidence (EvidenceState)
+import Juno.Types.Service.Evidence (PublishedEvidenceState)
 
 data ServiceRequest' =
   ServiceRequest'
@@ -112,7 +112,7 @@ data ServiceEnv = ServiceEnv
   -- Log Storage
   , _logService :: LogServiceChannel
   -- Evidence Thread's Published State
-  , _getEvidenceState :: IO EvidenceState
+  , _getEvidenceState :: IO PublishedEvidenceState
   }
 makeLenses ''ServiceEnv
 

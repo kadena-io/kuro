@@ -38,8 +38,8 @@ import Juno.Types hiding (debugPrint, RaftState(..), Config(..)
   , Raft, RaftSpec(..), nodeId, sendMessage, outboundGeneral, outboundAerRvRvr
   , myPublicKey, myPrivateKey, otherNodes, nodeRole, term, Event(..), logService)
 
-runSenderService :: Dispatch -> JT.Config -> (String -> IO ()) -> MVar Ev.EvidenceState -> IO ()
-runSenderService dispatch conf debugFn mEvState = do
+runSenderService :: Dispatch -> JT.Config -> (String -> IO ()) -> MVar Ev.PublishedEvidenceState -> IO ()
+runSenderService dispatch conf debugFn mPubEvState = do
   s <- return $ ServiceEnv
     { _myNodeId = conf ^. JT.nodeId
     , _nodeRole = Follower
@@ -57,7 +57,7 @@ runSenderService dispatch conf debugFn mEvState = do
     , _outboundAerRvRvr = dispatch ^. JT.outboundAerRvRvr
     -- Log Storage
     , _logService = dispatch ^. JT.logService
-    , _getEvidenceState = readMVar mEvState
+    , _getEvidenceState = readMVar mPubEvState
     }
   void $ liftIO $ runReaderT serviceRequests s
 
@@ -83,7 +83,7 @@ serviceRequests = do
       (ServiceRequest' ss m) -> local (updateEnv ss) $ case m of
           BroadcastAE{..} -> do
             evState <- view getEvidenceState >>= liftIO
-            sendAllAppendEntries (evState ^. Ev.esNodeStates) (evState ^. Ev.esConvincedNodes) _srAeBoardcastControl
+            sendAllAppendEntries (evState ^. Ev.pesNodeStates) (evState ^. Ev.pesConvincedNodes) _srAeBoardcastControl
           SingleAER{..} -> sendAppendEntriesResponse _srFor _srSuccess _srConvinced
           BroadcastAER -> sendAllAppendEntriesResponse
           BroadcastRV -> sendAllRequestVotes

@@ -9,10 +9,11 @@ module Juno.Types.Service.Evidence
   , processResult
   , EvidenceChannel(..)
   , EvidenceEnv(..)
-  , logService, evidence, mConfig, mPubStateTo, mEvCache, mResetLeaderNoFollowers
+  , logService, evidence, mConfig, mPubStateTo, mResetLeaderNoFollowers
   -- TODO: re-integrate EKG when Evidence Service is finished and hspec tests are written
   --, publishMetric
   , debugFn
+  , CommitCheckResult(..)
   , module X
   ) where
 
@@ -21,11 +22,8 @@ import Control.Monad.Trans.Reader
 import Control.Concurrent (MVar)
 import Data.IORef (IORef)
 
-import qualified Data.Sequence as Seq
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
-
-import Data.Typeable
 
 import Juno.Types.Base as X
 import Juno.Types.Config as X
@@ -36,26 +34,12 @@ import Juno.Types.Event (ResetLeaderNoFollowersTimeout)
 --import Juno.Types.Metric (Metric)
 import Juno.Types.Service.Log (LogServiceChannel)
 
-data Evidence =
-  -- * A list of verified AER's, the turbine handles the crypto
-  VerifiedAER { _unVerifiedAER :: [AppendEntriesResponse]} |
-  -- * When we verify a new leader, become a candidate or become leader we need to clear out
-  -- the set of convinced nodes. SenderService.BroadcastAE needs this info for attaching votes
-  -- to the message
-  ClearConvincedNodes |
-  -- * A bit of future tech/trying out a design. When we have participant changes, we can sync
-  -- Evidence thread with this.
-  Bounce |
-  Tick Tock
-  deriving (Show, Eq, Typeable)
-
 data EvidenceEnv = EvidenceEnv
   { _logService :: LogServiceChannel
   , _evidence :: EvidenceChannel
   , _mResetLeaderNoFollowers :: MVar ResetLeaderNoFollowersTimeout
   , _mConfig :: IORef Config
-  , _mPubStateTo :: MVar EvidenceState
-  , _mEvCache :: MVar EvidenceCache
+  , _mPubStateTo :: MVar PublishedEvidenceState
   , _debugFn :: (String -> IO ())
 --  , _publishMetric :: Metric -> IO ()
   }
@@ -78,9 +62,6 @@ data Result =
     { _rNodeId :: !NodeId
     , _rLogIndex :: !LogIndex
     , _rReceivedAt :: !(Maybe ReceivedAt)}|
-  FutureEvidence
-  -- * Evidence is for some future log entry that we don't have access too
-    { _rAER :: !AppendEntriesResponse }|
   Successful
   -- * Replication occurred and the incremental hash matches our own
     { _rNodeId :: !NodeId
@@ -90,10 +71,9 @@ data Result =
   -- * Nothing's going on besides heartbeats
     { _rNodeId :: !NodeId
     , _rLogIndex :: !LogIndex }|
-  SuccessfulButTooOld
-  -- * Evidence it too old to check (not in our cache)
-    { _rNodeId :: !NodeId
-    , _rLogIndex :: !LogIndex }|
+  SuccessfulButCacheMiss
+  -- * Our pre-cached evidence was lacking this particular hash, so we need to request it
+    { _rAer :: AppendEntriesResponse }|
   MisMatch
   -- * Sender was successful BUT incremental hash doesn't match our own
   -- NB: this is a big deal as something went seriously wrong BUT it's the sender's problem and not ours
@@ -102,26 +82,29 @@ data Result =
     , _rLogIndex :: !LogIndex }
   deriving (Show, Eq)
 
+data CommitCheckResult =
+  SteadyState {_ccrCommitIndex :: !LogIndex}|
+  NeedMoreEvidence {_ccrEvRequired :: Int} |
+  NewCommitIndex {_ccrCommitIndex :: !LogIndex}
+  deriving (Show)
+
 getTimestamp :: Provenance -> Maybe ReceivedAt
 getTimestamp NewMsg = Nothing
 getTimestamp ReceivedMsg{..} = _pTimeStamp
 
 -- `checkEvidence` and `processResult` are staying here to keep them close to result
-checkEvidence :: EvidenceCache -> EvidenceState -> AppendEntriesResponse -> Result
-checkEvidence ec es aer@(AppendEntriesResponse{..}) =
+checkEvidence :: EvidenceState -> AppendEntriesResponse -> Result
+checkEvidence es aer@(AppendEntriesResponse{..}) =
   if not _aerConvinced
     then Unconvinced _aerNodeId _aerIndex
   else if not _aerSuccess
     then Unsuccessful _aerNodeId _aerIndex (getTimestamp _aerProvenance)
-  else if _aerIndex < minLogIdx ec
-    then if _aerIndex == _esCommitIndex es && _aerHash == hashAtCommitIndex ec
-         then SuccessfulSteadyState _aerNodeId _aerIndex
-         else SuccessfulButTooOld _aerNodeId _aerIndex
-  else if _aerIndex > maxLogIdx ec
-    then FutureEvidence aer
-  else if Seq.index (hashes ec) (fromIntegral $ _aerIndex - (minLogIdx ec)) == _aerHash
-    then Successful _aerNodeId _aerIndex (getTimestamp _aerProvenance)
-    else MisMatch _aerNodeId _aerIndex
+  else if _aerIndex == _esCommitIndex es && _aerHash == es ^. esHashAtCommitIndex
+    then SuccessfulSteadyState _aerNodeId _aerIndex
+  else case Map.lookup _aerIndex (es ^. esEvidenceCache) of
+    Nothing -> SuccessfulButCacheMiss aer
+    Just h | h == _aerHash -> Successful _aerNodeId _aerIndex (getTimestamp _aerProvenance)
+           | otherwise     -> MisMatch _aerNodeId _aerIndex
     -- this one is interesting. We are going to make it the responsibility of the follower to identify that they have a bad incremental hash
     -- and prune all of their uncommitted logs.
 {-# INLINE checkEvidence #-}
@@ -134,10 +117,9 @@ processResult Unsuccessful{..} = do
   esConvincedNodes %= Set.insert _rNodeId
   esNodeStates %= Map.insert _rNodeId _rLogIndex
   esResetLeaderNoFollowers .= True
-processResult FutureEvidence{..} = do
-  esFutureEvidence %= (:) _rAER
 processResult Successful{..} = do
   esConvincedNodes %= Set.insert _rNodeId
+  esMismatchNodes %= Set.delete _rNodeId
   esResetLeaderNoFollowers .= True
   lastIdx <- Map.lookup _rNodeId <$> use esNodeStates
   -- this bit is important, we don't want to double count any node's evidence so we need to decrement the old evidence (if any)
@@ -163,10 +145,10 @@ processResult Successful{..} = do
 processResult SuccessfulSteadyState{..} = do
   -- basically, nothings going on and these are just heartbeats
   esNodeStates %= Map.insert _rNodeId _rLogIndex
+  esMismatchNodes %= Set.delete _rNodeId
   esResetLeaderNoFollowers .= True
-processResult SuccessfulButTooOld{..} = return ()
-  -- this is just a wayward message. If the leader's understanding of the follower's state is incorrect, we'll get an
-  -- unsuccessful
+processResult SuccessfulButCacheMiss{..} = do
+  esCacheMissAers %= Set.insert _rAer
 processResult MisMatch{..} = do
   esMismatchNodes %= Set.insert _rNodeId
 {-# INLINE processResult #-}

@@ -141,7 +141,7 @@ handleSingleCommand cmd = do
       enqueueRequest $ Sender.BroadcastAER
       quorumSize' <- view JT.quorumSize
       es <- view JT.evidenceState >>= liftIO
-      when (Sender.willBroadcastAE quorumSize' (es ^. Ev.esNodeStates) (es ^. Ev.esConvincedNodes)) resetHeartbeatTimer
+      when (Sender.willBroadcastAE quorumSize' (es ^. Ev.pesNodeStates) (es ^. Ev.pesConvincedNodes)) resetHeartbeatTimer
 
 handle :: Command -> JT.Raft ()
 handle cmd = handleSingleCommand cmd
@@ -168,7 +168,7 @@ handleBatch cmdb@CommandBatch{..} = do
       unless (null serviceAlreadySeen) $ enqueueRequest $ Sender.SendCommandResults serviceAlreadySeen
       quorumSize' <- view JT.quorumSize
       es <- view JT.evidenceState >>= liftIO
-      when (Sender.willBroadcastAE quorumSize' (es ^. Ev.esNodeStates) (es ^. Ev.esConvincedNodes)) resetHeartbeatTimer
+      when (Sender.willBroadcastAE quorumSize' (es ^. Ev.pesNodeStates) (es ^. Ev.pesConvincedNodes)) resetHeartbeatTimer
     IAmFollower BatchProcessing{..} -> do
       when (isJust lid) $ enqueueRequest $ Sender.ForwardCommandToLeader (fromJust lid) newEntries
       unless (null serviceAlreadySeen) $ enqueueRequest $ Sender.SendCommandResults serviceAlreadySeen

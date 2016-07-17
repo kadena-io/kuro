@@ -13,7 +13,7 @@
 
 module Juno.Types.Service.Log
   ( LogState(..), lsLogEntries, lsLastApplied, lsLastLogIndex, lsNextLogIndex, lsCommitIndex
-  , lsLastPersisted, lsLastLogTerm
+  , lsLastPersisted, lsLastLogTerm, lsLastLogHash
   , LogApi(..)
   , initLogState
   , UpdateLogs(..)
@@ -21,7 +21,7 @@ module Juno.Types.Service.Log
   , QueryResult(..)
   , QueryApi(..)
   , evalQuery
-  , LogEnv(..), logQueryChannel, internalEvent, debugPrint, dbConn, evidenceCache
+  , LogEnv(..), logQueryChannel, internalEvent, debugPrint, dbConn, evidence
   , HasQueryResult(..)
   , LogThread
   , LogServiceChannel(..)
@@ -30,7 +30,9 @@ module Juno.Types.Service.Log
   , EntriesAfter(..), InfoAndEntriesAfter(..)
   , LastApplied(..), LastLogIndex(..), NextLogIndex(..), CommitIndex(..)
   , UnappliedEntries(..)
+  -- ReExports
   , module X
+  , LogIndex(..)
   -- for tesing
   , newEntriesToLog
   , hashNewEntry
@@ -63,7 +65,7 @@ import Juno.Types.Comms
 import Juno.Types.Message.Signed
 import Juno.Types.Message.CMD
 
-import Juno.Types.Evidence (EvidenceCache)
+import Juno.Types.Evidence (EvidenceChannel)
 
 class LogApi a where
   lastPersisted :: a -> LogIndex
@@ -104,6 +106,7 @@ data LogState a = LogState
   { _lsLogEntries       :: !(Log a)
   , _lsLastApplied      :: !LogIndex
   , _lsLastLogIndex     :: !LogIndex
+  , _lsLastLogHash      :: !ByteString
   , _lsNextLogIndex     :: !LogIndex
   , _lsCommitIndex      :: !LogIndex
   , _lsLastPersisted    :: !LogIndex
@@ -122,6 +125,7 @@ initLogState = LogState
   { _lsLogEntries = mempty
   , _lsLastApplied = startIndex
   , _lsLastLogIndex = startIndex
+  , _lsLastLogHash = mempty
   , _lsNextLogIndex = startIndex + 1
   , _lsCommitIndex = startIndex
   , _lsLastPersisted = startIndex
@@ -220,11 +224,12 @@ addLogEntriesAt pli newLEs ls =
                 . over (lEntries) ((Seq.>< newLEs)
                 . Seq.take (fromIntegral pli + 1))
                 $ _lsLogEntries ls
-      (lastIdx',lastTerm') = case ls' ^. lEntries of
-        (_ :> e) -> (_leLogIndex e, _leTerm e)
-        _        -> (ls ^. lsLastLogIndex, ls ^. lsLastLogTerm)
+      (lastIdx',lastTerm',lastHash') = case ls' ^. lEntries of
+        (_ :> e) -> (_leLogIndex e, _leTerm e, _leHash e)
+        _        -> (ls ^. lsLastLogIndex, ls ^. lsLastLogTerm, ls ^. lsLastLogHash)
   in ls { _lsLogEntries = ls'
         , _lsLastLogIndex = lastIdx'
+        , _lsLastLogHash = lastHash'
         , _lsNextLogIndex = lastIdx' + 1
         , _lsLastLogTerm = lastTerm'
         }
@@ -237,17 +242,23 @@ appendLogEntry NewLogEntries{..} ls = case lastEntry ls of
     Just ple -> let
         nle = newEntriesToLog (_nleTerm) (_leHash ple) (ls ^. lsNextLogIndex) _nleEntries
         ls' = ls { _lsLogEntries = Log $ (Seq.><) (viewLogSeq ls) nle }
-        lastIdx' = maybe (ls ^. lsLastLogIndex) _leLogIndex $ seqTail nle
-        lastTerm' = maybe (ls ^. lsLastLogTerm) _leTerm $ seqTail nle
+        lastLog' = seqTail nle
+        lastIdx' = maybe (ls ^. lsLastLogIndex) _leLogIndex lastLog'
+        lastTerm' = maybe (ls ^. lsLastLogTerm) _leTerm lastLog'
+        lastHash' = maybe (ls ^. lsLastLogHash) _leHash lastLog'
       in ls' { _lsLastLogIndex = lastIdx'
+             , _lsLastLogHash = lastHash'
              , _lsNextLogIndex = lastIdx' + 1
              , _lsLastLogTerm  = lastTerm' }
     Nothing -> let
         nle = newEntriesToLog (_nleTerm) (B.empty) (ls ^. lsNextLogIndex) _nleEntries
         ls' = ls { _lsLogEntries = Log nle }
-        lastIdx' = maybe (ls ^. lsLastLogIndex) _leLogIndex $ seqTail nle
-        lastTerm' = maybe (ls ^. lsLastLogTerm) _leTerm $ seqTail nle
+        lastLog' = seqTail nle
+        lastIdx' = maybe (ls ^. lsLastLogIndex) _leLogIndex lastLog'
+        lastTerm' = maybe (ls ^. lsLastLogTerm) _leTerm lastLog'
+        lastHash' = maybe (ls ^. lsLastLogHash) _leHash lastLog'
       in ls' { _lsLastLogIndex = lastIdx'
+             , _lsLastLogHash = lastHash'
              , _lsNextLogIndex = lastIdx' + 1
              , _lsLastLogTerm  = lastTerm' }
 {-# INLINE appendLogEntry #-}
@@ -459,6 +470,7 @@ instance HasQueryResult InfoAndEntriesAfter (LogIndex, Term, Seq LogEntry) where
 data QueryApi =
   Query (Set AtomicQuery) (MVar (Map AtomicQuery QueryResult)) |
   Update UpdateLogs |
+  NeedCacheEvidence (Set LogIndex) (MVar (Map LogIndex ByteString)) |
   Tick Tock
   deriving (Eq)
 
@@ -474,9 +486,9 @@ instance Comms QueryApi LogServiceChannel where
 data LogEnv = LogEnv
   { _logQueryChannel :: LogServiceChannel
   , _internalEvent :: InternalEventChannel
+  , _evidence :: EvidenceChannel
   , _debugPrint :: (String -> IO ())
-  , _dbConn :: Maybe Connection
-  , _evidenceCache :: MVar EvidenceCache }
+  , _dbConn :: Maybe Connection }
 makeLenses ''LogEnv
 
 type LogThread = RWST LogEnv () (LogState LogEntry) IO

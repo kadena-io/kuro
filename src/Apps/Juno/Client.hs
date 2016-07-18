@@ -122,9 +122,9 @@ runREPL toCommands' cmdStatusMap' alias' disableTimeouts = do
 
 intervalOfNumerous :: Int64 -> Int64 -> String
 intervalOfNumerous cnt mics = let
-  interval = fromIntegral mics / 1000000
-  perSec = ceiling (fromIntegral cnt / interval)
-  in "Completed in " ++ show (interval :: Double) ++ "sec (" ++ show (perSec::Integer) ++ " per sec)"
+  interval' = fromIntegral mics / 1000000
+  perSec = ceiling (fromIntegral cnt / interval')
+  in "Completed in " ++ show (interval' :: Double) ++ "sec (" ++ show (perSec::Integer) ++ " per sec)"
 
 -- | Runs a 'Raft nt String String mt'.
 -- Simple fixes nt to 'HostPort' and mt to 'String'.

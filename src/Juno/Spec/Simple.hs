@@ -11,7 +11,6 @@ module Juno.Spec.Simple
   ) where
 
 import Control.AutoUpdate (mkAutoUpdate, defaultUpdateSettings,updateAction,updateFreq)
--- import Control.Concurrent (forkIO)
 import Control.Concurrent (modifyMVar_, MVar, newEmptyMVar)
 import qualified Control.Concurrent.Chan.Unagi as Unagi
 import qualified Control.Concurrent.Lifted as CL
@@ -33,7 +32,6 @@ import System.Environment
 import System.Exit
 import System.IO (BufferMode(..),stdout,stderr,hSetBuffering)
 import System.Log.FastLogger
--- import System.Process (system)
 import System.Random
 
 import Juno.Consensus.Server
@@ -91,20 +89,13 @@ showDebug fs m = fs (\t -> (toLogStr t) <> " " <> (toLogStr $ BSC.pack $ m) <> "
 noDebug :: String -> IO ()
 noDebug _ = return ()
 
-getSysLogTime :: IO (FormattedTime)
-getSysLogTime = do
-  (ZonedTime (LocalTime d t) _) <- getZonedTime
-  return $ BSC.pack $ (showGregorian d) ++ "T" ++ (take 12 $ show t)
-
-
 timeCache :: TimeZone -> (IO UTCTime) -> IO (IO FormattedTime)
 timeCache tz tc = mkAutoUpdate defaultUpdateSettings
   { updateAction = do
-      t <- tc
-      (ZonedTime (LocalTime d t) _) <- return $ view (zonedTime) (tz,t)
+      t' <- tc
+      (ZonedTime (LocalTime d t) _) <- return $ view (zonedTime) (tz,t')
       return $ BSC.pack $ (showGregorian d) ++ "T" ++ (take 12 $ show t)
   , updateFreq = 1000}
-
 
 utcTimeCache :: IO (IO UTCTime)
 utcTimeCache = mkAutoUpdate defaultUpdateSettings

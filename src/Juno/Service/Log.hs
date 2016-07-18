@@ -5,7 +5,7 @@ module Juno.Service.Log
   where
 
 import Control.Lens hiding (Index, (|>))
-import Control.Concurrent (MVar, putMVar, swapMVar)
+import Control.Concurrent (putMVar)
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Trans.RWS.Strict

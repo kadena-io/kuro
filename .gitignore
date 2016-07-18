@@ -2,6 +2,7 @@
 aws-conf/*
 .dir-locals.el
 .stack-work/
+.stack-work*
 *~
 log/*
 dist/*

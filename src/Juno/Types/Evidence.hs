@@ -6,7 +6,7 @@ module Juno.Types.Evidence
   ( EvidenceState(..), initEvidenceState
   , esQuorumSize, esNodeStates, esConvincedNodes, esPartialEvidence
   , esCommitIndex, esCacheMissAers, esMismatchNodes, esResetLeaderNoFollowers
-  , esHashAtCommitIndex, esEvidenceCache
+  , esHashAtCommitIndex, esEvidenceCache, esMaxCachedIndex, esMaxElectionTimeout
   , PublishedEvidenceState(..)
   , pesConvincedNodes, pesNodeStates
   , EvidenceProcessor
@@ -28,6 +28,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 
 import Data.Typeable
+import Data.Thyme.Clock (UTCTime)
 
 import Juno.Types.Base as X
 import Juno.Types.Config as X
@@ -64,21 +65,23 @@ instance Comms Evidence EvidenceChannel where
 
 data EvidenceState = EvidenceState
   { _esQuorumSize :: Int
-  , _esNodeStates :: !(Map NodeId LogIndex)
+  , _esNodeStates :: !(Map NodeId (LogIndex, UTCTime))
   , _esConvincedNodes :: !(Set NodeId)
   , _esPartialEvidence :: !(Map LogIndex Int)
   , _esCommitIndex :: !LogIndex
+  , _esMaxCachedIndex :: !LogIndex
   , _esCacheMissAers :: (Set AppendEntriesResponse)
   , _esMismatchNodes :: !(Set NodeId)
   , _esResetLeaderNoFollowers :: Bool
   , _esHashAtCommitIndex :: !ByteString
   , _esEvidenceCache :: !(Map LogIndex ByteString)
+  , _esMaxElectionTimeout :: Int
   } deriving (Show, Eq)
 makeLenses ''EvidenceState
 
 data PublishedEvidenceState = PublishedEvidenceState
   { _pesConvincedNodes :: !(Set NodeId)
-  , _pesNodeStates :: !(Map NodeId LogIndex)
+  , _pesNodeStates :: !(Map NodeId (LogIndex,UTCTime))
   } deriving (Show)
 makeLenses ''PublishedEvidenceState
 
@@ -89,18 +92,20 @@ makeLenses ''PublishedEvidenceState
 getEvidenceQuorumSize :: Int -> Int
 getEvidenceQuorumSize n = 1 + floor (fromIntegral n / 2 :: Float)
 
-initEvidenceState :: Set NodeId -> LogIndex -> EvidenceState
-initEvidenceState otherNodes' commidIndex' = EvidenceState
+initEvidenceState :: Set NodeId -> LogIndex -> Int -> EvidenceState
+initEvidenceState otherNodes' commidIndex' maxElectionTimeout' = EvidenceState
   { _esQuorumSize = getEvidenceQuorumSize $ Set.size otherNodes'
-  , _esNodeStates = Map.fromSet (\_ -> commidIndex') otherNodes'
+  , _esNodeStates = Map.fromSet (\_ -> (commidIndex',minBound)) otherNodes'
   , _esConvincedNodes = Set.empty
   , _esPartialEvidence = Map.empty
   , _esCommitIndex = commidIndex'
+  , _esMaxCachedIndex = commidIndex'
   , _esCacheMissAers = Set.empty
   , _esMismatchNodes = Set.empty
   , _esResetLeaderNoFollowers = False
   , _esHashAtCommitIndex = mempty
   , _esEvidenceCache = Map.singleton startIndex mempty
+  , _esMaxElectionTimeout = maxElectionTimeout'
   }
 
 type EvidenceProcessor = State EvidenceState

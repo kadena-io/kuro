@@ -7,6 +7,7 @@ module Juno.Types.Message.AER
   ( AppendEntriesResponse(..), aerTerm, aerNodeId, aerSuccess, aerConvinced
   , aerIndex, aerHash, aerProvenance
   , AERWire(..)
+  , aerDecodeNoVerify, aerReverify
   ) where
 
 import Control.Lens
@@ -17,6 +18,7 @@ import qualified Data.Serialize as S
 import GHC.Generics
 
 import Juno.Types.Base
+import Juno.Types.Config
 import Juno.Types.Message.Signed
 
 data AppendEntriesResponse = AppendEntriesResponse
@@ -67,3 +69,13 @@ instance WireFormat AppendEntriesResponse where
         Right (AERWire !(t,nid,s',c,i,h)) -> Right $! AppendEntriesResponse t nid s' c i h $ ReceivedMsg dig bdy ts
   {-# INLINE toWire #-}
   {-# INLINE fromWire #-}
+
+aerDecodeNoVerify :: (ReceivedAt, SignedRPC) -> Either String AppendEntriesResponse
+aerDecodeNoVerify (ts, (SignedRPC !dig !bdy)) = case S.decode bdy of
+  Left !err -> Left $! "Failure to decode AERWire: " ++ err
+  Right (AERWire !(t,nid,s',c,i,h)) -> Right $! AppendEntriesResponse t nid s' c i h $ ReceivedMsg dig bdy $ Just ts
+
+aerReverify :: KeySet -> AppendEntriesResponse -> Either String AppendEntriesResponse
+aerReverify ks aer = case _aerProvenance aer of
+  NewMsg -> Right aer
+  (ReceivedMsg !dig !bdy _) -> verifySignedRPC ks (SignedRPC dig bdy) >> return aer

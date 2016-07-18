@@ -68,19 +68,20 @@ runQuery (Query aq mv) = do
 runQuery (Update ul) = do
   modify (\a' -> updateLogs ul a')
   updateEvidenceCache ul
-  toPersist <- getUnpersisted <$> get
-  case toPersist of
-    Just logs -> do
-      dbConn' <- view dbConn
-      lsLastPersisted .= (_leLogIndex $ fromJust $ seqTail logs)
-      case dbConn' of
-        Just conn -> liftIO $ insertSeqLogEntry conn logs
-        Nothing ->  return ()
-    Nothing -> return ()
+  dbConn' <- view dbConn
+  case dbConn' of
+    Just conn -> do
+      toPersist <- getUnpersisted <$> get
+      case toPersist of
+        Just logs -> do
+          lsLastPersisted .= (_leLogIndex $ fromJust $ seqTail logs)
+          liftIO $ insertSeqLogEntry conn logs
+        Nothing -> return ()
+    Nothing ->  return ()
 runQuery (NeedCacheEvidence lis mv) = do
   qr <- buildNeedCacheEvidence lis <$> get
   liftIO $ putMVar mv qr
-  debug $ "Servicing CacheMiss Request for: " ++ show lis
+  debug $ "Servicing cache miss pertaining to: " ++ show lis
 runQuery (Tick t) = do
   t' <- liftIO $ pprintTock t "runQuery"
   debug t'
@@ -109,7 +110,7 @@ updateEvidenceCache' = do
   llh <- use lsLastLogHash
   evChan <- view evidence
   liftIO $ writeComm evChan $ Ev.CacheNewHash lli llh
-  debug $ "Sent CacheNewEvidenc for: " ++ show lli
+  debug $ "Sent new evidence to cache for: " ++ show lli
 
 syncLogsFromDisk :: Connection -> IO (LogState LogEntry)
 syncLogsFromDisk conn = do
@@ -134,3 +135,4 @@ tellJunoToApplyLogEntries = do
   unappliedEntries' <- return $ getUnappliedEntries es
   commitIndex' <- return $ es ^. lsCommitIndex
   view internalEvent >>= liftIO . (`writeComm` (InternalEvent $ ApplyLogEntries unappliedEntries' commitIndex'))
+  debug $ "informing Juno of a CommitIndex update: " ++ show commitIndex'

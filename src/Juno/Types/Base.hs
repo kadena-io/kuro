@@ -15,27 +15,34 @@ module Juno.Types.Base
   , Role(..)
   , EncryptionKey(..)
   , Alias(..)
+  , interval
   ) where
 
+import Control.Lens
 import Control.Monad (mzero)
 import Crypto.Ed25519.Pure ( PublicKey, PrivateKey, Signature(..), sign, valid
                            , importPublic, importPrivate, exportPublic, exportPrivate)
-import Data.Map (Map)
-import qualified Data.Map as Map
+
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Base16 as B16
-import Data.Serialize (Serialize)
-import qualified Data.Serialize as S
-import Data.Word (Word64)
-import Data.Text.Encoding (decodeUtf8, encodeUtf8)
+
+import Data.Map (Map)
+import qualified Data.Map as Map
+
+import Data.AffineSpace ((.-.))
 import Data.Thyme.Clock
 import Data.Thyme.Time.Core ()
 import Data.Thyme.Internal.Micro (Micro)
+
+import Data.Serialize (Serialize)
+import qualified Data.Serialize as S
+import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.Aeson (genericParseJSON,genericToJSON,parseJSON,toJSON,ToJSON,FromJSON,Value(..))
 import Data.Aeson.Types (defaultOptions,Options(..))
 
+import Data.Word (Word64)
 import GHC.Int (Int64)
 import GHC.Generics hiding (from)
 
@@ -157,6 +164,9 @@ instance Serialize ReceivedAt
 instance Serialize UTCTime
 instance Serialize NominalDiffTime
 instance Serialize Micro
+
+interval :: UTCTime -> UTCTime -> Int64
+interval start end = view microseconds $ end .-. start
 
 data Role = Follower
           | Candidate

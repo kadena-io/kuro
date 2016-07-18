@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE BangPatterns #-}
 
 module Apps.Juno.Client
   ( main
@@ -90,12 +91,12 @@ runREPL toCommands' cmdStatusMap' alias' disableTimeouts = do
           then do
             case readMaybe $ drop 10 cmd of
               Just n -> do
-                cmds <- replicateM n
+                !cmds <- replicateM n
                           (do rid <- setNextCmdRequestId cmdStatusMap'; return (rid, [(alias', CommandEntry "transfer(Acct1->Acct2, 1%1)")]))
                 writeList2Chan toCommands' cmds
                 --- this is the tracer round for timing purposes
                 putStrLn $ "Sending " ++ show n ++ " 'transfer(Acct1->Acct2, 1%1)' transactions individually"
-                showTestingResult cmdStatusMap' (Just $ fromIntegral n)
+                showResult cmdStatusMap' (fst $ last cmds) (Just $ fromIntegral n)
                 runREPL toCommands' cmdStatusMap' alias' disableTimeouts
               Nothing -> runREPL toCommands' cmdStatusMap' alias' disableTimeouts
           else if cmd == "disable timeout"

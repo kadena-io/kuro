@@ -20,7 +20,7 @@ import Data.Maybe (isNothing, isJust, fromJust)
 import Juno.Consensus.Commit (makeCommandResponse')
 
 import Juno.Consensus.Handle.Types
-import Juno.Util.Util (getCmdSigOrInvariantError, updateLogs, enqueueRequest)
+import Juno.Util.Util (getCmdSigOrInvariantError, updateLogs, enqueueRequest, debug)
 import Juno.Runtime.Timer (resetHeartbeatTimer)
 import qualified Juno.Types as JT
 
@@ -52,7 +52,7 @@ data CommandOut =
 data BatchProcessing = BatchProcessing
   { newEntries :: ![Command]
   , serviceAlreadySeen :: ![(NodeId, CommandResponse)]
-  , updatedReplays :: (Map.Map (NodeId, Signature) (Maybe CommandResult))
+  , updatedReplays :: !(Map.Map (NodeId, Signature) (Maybe CommandResult))
   } deriving (Show, Eq)
 
 data CommandBatchOut =
@@ -106,6 +106,7 @@ filterBatch nid mlid replays cs = go cs (BatchProcessing [] [] replays)
       _ | isNothing mlid -> go cmds bp
       Nothing -> go cmds bp { newEntries = cmd : (newEntries bp)
                             , updatedReplays = Map.insert (_cmdClientId, cmdSig cmd) Nothing $ updatedReplays bp }
+{-# INLINE filterBatch #-}
 
 handleCommandBatch :: (MonadReader CommandEnv m,MonadWriter [String] m) => CommandBatch -> m CommandBatchOut
 handleCommandBatch CommandBatch{..} = do
@@ -148,6 +149,7 @@ handle cmd = handleSingleCommand cmd
 
 handleBatch :: CommandBatch -> JT.Raft ()
 handleBatch cmdb@CommandBatch{..} = do
+  debug "Received Command Batch"
   c <- JT.readConfig
   s <- get
   lid <- return $ JT._currentLeader s
@@ -158,6 +160,7 @@ handleBatch cmdb@CommandBatch{..} = do
                         lid
                         (JT._replayMap s)
                         (JT._nodeId c)
+  debug "Finished processing command batch"
   case out of
     IAmLeader BatchProcessing{..} -> do
       updateLogs $ ULNew $ NewLogEntries (JT._term s) newEntries

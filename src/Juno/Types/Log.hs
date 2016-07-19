@@ -24,6 +24,8 @@ module Juno.Types.Log
   , seqHead
   , seqTail
   , hash
+  , VerifiedLogEntries(..)
+  , verifyLogEntry, verifySeqLogEntries
   ) where
 
 import Control.Parallel.Strategies
@@ -32,6 +34,8 @@ import qualified Control.Lens as Lens
 
 import qualified Crypto.Hash.BLAKE2.BLAKE2bp as BLAKE
 
+import Data.IntMap.Strict (IntMap)
+import qualified Data.IntMap.Strict as IntMap
 import Data.Sequence (Seq, (|>))
 import qualified Data.Sequence as Seq
 import qualified Data.ByteString as B
@@ -93,6 +97,22 @@ toSeqLogEntry !ele = go ele mempty
     go (Right le:les) s = go les (s |> le)
     go (Left err:_) _ = Left $! err
 {-# INLINE toSeqLogEntry #-}
+
+verifyLogEntry :: KeySet -> LogEntry -> (Int, CryptoVerified)
+verifyLogEntry !ks LogEntry{..} = res `seq` res
+  where
+    res = (fromIntegral _leLogIndex, v `seq` v)
+    v = verifyCmd ks _leCommand
+{-# INLINE verifyLogEntry #-}
+
+verifySeqLogEntries :: KeySet -> Seq LogEntry -> IntMap CryptoVerified
+verifySeqLogEntries !ks !s = foldr' (\(k,v) -> IntMap.insert k v) IntMap.empty $! ((verifyLogEntry ks <$> s) `using` parTraversable rseq)
+{-# INLINE verifySeqLogEntries #-}
+
+data VerifiedLogEntries = VerifiedLogEntries
+  { _vleMaxIndex :: LogIndex
+  , _vleResults :: (IntMap CryptoVerified)}
+  deriving (Show, Eq)
 
 decodeLEWire :: Maybe ReceivedAt -> KeySet -> [LEWire] -> Either String (Seq LogEntry)
 decodeLEWire !ts !ks !les = go les Seq.empty
@@ -187,5 +207,6 @@ data UpdateLogs =
   ULReplicate ReplicateLogEntries |
   ULNew NewLogEntries |
   ULCommitIdx UpdateCommitIndex |
-  UpdateLastApplied LogIndex
+  UpdateLastApplied LogIndex |
+  UpdateVerified VerifiedLogEntries
   deriving (Show, Eq, Generic)

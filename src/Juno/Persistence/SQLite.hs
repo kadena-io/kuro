@@ -98,6 +98,15 @@ instance ToField Alias where
 instance FromField Alias where
   fromField f = Alias <$> fromField f
 
+instance ToField CryptoVerified where
+  toField = toField . encode
+instance FromField CryptoVerified where
+  fromField f = do
+    s :: ByteString <- fromField f
+    case decode s of
+      Left err -> returnError ConversionFailed f ("Couldn't deserialize CryptoVerified: " ++ err)
+      Right v -> Ok v
+
 instance ToRow LogEntry where
   toRow LogEntry{..} = [toField _leLogIndex
                        ,toField _leTerm
@@ -106,6 +115,7 @@ instance ToRow LogEntry where
                        ,toField $ _cmdClientId _leCommand
                        ,toField $ _cmdRequestId _leCommand
                        ,toField $ _cmdEncryptGroup _leCommand
+                       ,toField $ _cmdCryptoVerified _leCommand
                        ,toField $ _cmdProvenance _leCommand
                        ]
 
@@ -118,6 +128,7 @@ instance FromRow LogEntry where
     cmdClientId' <- field
     cmdRequestId' <- field
     cmdEncryptGroup' <- field
+    cmdCryptoVerified' <- field
     cmdProvenance' <- field
     return $ LogEntry
       { _leTerm = leTerm'
@@ -127,6 +138,7 @@ instance FromRow LogEntry where
         , _cmdClientId = cmdClientId'
         , _cmdRequestId = cmdRequestId'
         , _cmdEncryptGroup = cmdEncryptGroup'
+        , _cmdCryptoVerified = cmdCryptoVerified'
         , _cmdProvenance = cmdProvenance'
         }
       , _leHash = leHash'
@@ -142,6 +154,7 @@ sqlDbSchema = Query $ T.pack $ concat
     ,", 'clientId' TEXT"
     ,", 'requestId' INTEGER"
     ,", 'encryptGroup' TEXT"
+    ,", 'cryptoVerified' TEXT"
     ,", 'provenance' TEXT"
     ,")"]
 
@@ -161,15 +174,16 @@ sqlInsertLogEntry = Query $ T.pack $ concat
     ,", 'clientId'"
     ,", 'requestId'"
     ,", 'encryptGroup'"
+    ,", 'cryptoVerified'"
     ,", 'provenance'"
-    ,") VALUES (?,?,?,?,?,?,?,?)"]
+    ,") VALUES (?,?,?,?,?,?,?,?,?)"]
 
 insertSeqLogEntry :: Connection -> Seq LogEntry -> IO ()
 insertSeqLogEntry conn les = withTransaction conn $ mapM_ (execute conn sqlInsertLogEntry) les
 
 sqlSelectAllLogEntries :: Query
 sqlSelectAllLogEntries = Query $ T.pack $ concat
-  ["SELECT logIndex,term,hash,commandEntry,clientId,requestId,encryptGroup,provenance"
+  ["SELECT logIndex,term,hash,commandEntry,clientId,requestId,encryptGroup,cryptoVerified,provenance"
   ," FROM 'main'.'logEntry'"
   ," ORDER BY logIndex ASC"]
 
@@ -178,7 +192,7 @@ selectAllLogEntries conn = Seq.fromList <$> query_ conn sqlSelectAllLogEntries
 
 sqlSelectLastLogEntry :: Query
 sqlSelectLastLogEntry = Query $ T.pack $ concat
-  ["SELECT logIndex,term,hash,commandEntry,clientId,requestId,encryptGroup,provenance"
+  ["SELECT logIndex,term,hash,commandEntry,clientId,requestId,encryptGroup,cryptoVerified,provenance"
   ," FROM 'main'.'logEntry'"
   ," ORDER BY logIndex DESC"
   ," LIMIT 1"]
@@ -193,7 +207,7 @@ selectLastLogEntry conn = do
 
 sqlSelectAllLogEntryAfter :: LogIndex -> Query
 sqlSelectAllLogEntryAfter (LogIndex li) = Query $ T.pack $ concat
-  ["SELECT logIndex,term,hash,commandEntry,clientId,requestId,encryptGroup,provenance"
+  ["SELECT logIndex,term,hash,commandEntry,clientId,requestId,encryptGroup,cryptoVerified,provenance"
   ," FROM 'main'.'logEntry'"
   ," ORDER BY logIndex ASC"
   ," WHERE logIndex > " ++ show li]
@@ -203,7 +217,7 @@ selectAllLogEntriesAfter li conn = Seq.fromList <$> query_ conn (sqlSelectAllLog
 
 sqlSelectLogEntryeInclusiveSection :: LogIndex -> LogIndex -> Query
 sqlSelectLogEntryeInclusiveSection (LogIndex liFrom) (LogIndex liTo) = Query $ T.pack $ concat
-  ["SELECT logIndex,term,hash,commandEntry,clientId,requestId,encryptGroup,provenance"
+  ["SELECT logIndex,term,hash,commandEntry,clientId,requestId,encryptGroup,cryptoVerified,provenance"
   ," FROM 'main'.'logEntry'"
   ," ORDER BY logIndex ASC"
   ," WHERE logIndex >= " ++ show liFrom

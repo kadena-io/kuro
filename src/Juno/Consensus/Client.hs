@@ -84,7 +84,7 @@ commandGetter getEntries cmdStatusMap' = do
     liftIO (modifyMVar_ cmdStatusMap' (\(CommandMap n m) -> return $ CommandMap n (Map.insert rid CmdAccepted m)))
     -- hack set the head to the org rid
     let cmds'' = case cmds' of
-                   ((Command entry nid' _ alias' NewMsg):rest) -> (Command entry nid' rid' alias' NewMsg):rest
+                   ((Command entry nid' _ alias' Valid NewMsg):rest) -> (Command entry nid' rid' alias' Valid NewMsg):rest
                    _ -> [] -- TODO: fix this
     enqueueEvent $ ERPC $ CMDB' $ CommandBatch cmds'' NewMsg
   where
@@ -94,7 +94,7 @@ commandGetter getEntries cmdStatusMap' = do
     nextRid :: NodeId -> (Maybe Alias,CommandEntry) -> IO Command
     nextRid nid (alias',entry) = do
       rid <- (setNextCmdRequestId cmdStatusMap')
-      return (Command entry nid rid alias' NewMsg)
+      return (Command entry nid rid alias' Valid NewMsg)
 
     hardcodedTransfers :: NodeId -> Maybe Alias -> IO Command
     hardcodedTransfers nid alias = nextRid nid (alias, transferCmdEntry)

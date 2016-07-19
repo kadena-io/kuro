@@ -38,7 +38,7 @@ runPrimedRaftServer renv rconf spec rstate timeCache' = do
   mLeaderNoFollowers <- newEmptyMVar
   evEnv <- return $! Ev.initEvidenceEnv (_dispatch renv) (RENV._debugPrint renv) rconf' mEvState mLeaderNoFollowers
 
-  link =<< (async $ Log.runLogService (_dispatch renv) (RENV._debugPrint renv) (rconf ^. logSqlitePath))
+  link =<< (async $ Log.runLogService (_dispatch renv) (RENV._debugPrint renv) (rconf ^. logSqlitePath) (RENV._keySet renv))
   link =<< (async $ Sender.runSenderService (_dispatch renv) rconf (RENV._debugPrint renv) mEvState)
   link =<< (async $ Ev.runEvidenceService evEnv)
   -- This helps for testing, we'll send tocks every second to inflate the logs when we see weird pauses right before an election
@@ -61,10 +61,11 @@ runRaftServer renv rconf spec timeCache' = do
 raft :: Raft ()
 raft = do
   debug "Launch Sequence: syncing logs from disk"
-  mv <- queryLogs $ Set.fromList [Log.GetUnappliedEntries, Log.GetCommitIndex]
-  unappliedEntries' <- return $ Log.hasQueryResult Log.UnappliedEntries mv
-  commitIndex' <- return $ Log.hasQueryResult Log.CommitIndex mv
-  applyLogEntries unappliedEntries' commitIndex' -- This is for us replaying from disk, it will sync state before we launch
+  mv <- queryLogs $ Set.singleton Log.GetUnappliedEntries
+  res <- return $ Log.hasQueryResult Log.UnappliedEntries mv
+  case res of
+    Nothing -> return ()
+    Just (commitIndex', unappliedEntries') -> applyLogEntries (Just unappliedEntries') commitIndex' -- This is for us replaying from disk, it will sync state before we launch
   la <- Log.hasQueryResult Log.LastApplied <$> (queryLogs $ Set.singleton Log.GetLastApplied)
   when (startIndex /= la) $ debug $ "Launch Sequence: disk sync replayed, Commit Index now " ++ show la
   logStaticMetrics

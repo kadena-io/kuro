@@ -73,7 +73,11 @@ runEvidenceProcessor es = do
   es' <- return $! es {_esResetLeaderNoFollowers = False}
   case newEv of
     VerifiedAER aers -> do
-      (res, newEs) <- return $! runState (processEvidence aers) es'
+      (res, newEs) <- return $! if Set.null $ _esCacheMissAers es'
+                                then runState (processEvidence aers) es'
+                                else let es'' = es' { _esCacheMissAers = Set.empty }
+                                         aers' = aers ++ (Set.toList $ _esCacheMissAers es')
+                                     in runState (processEvidence aers') es''
       publishEvidence newEs
       when (newEs ^. esResetLeaderNoFollowers) tellJunoToResetLeaderNoFollowersTimeout
       case res of
@@ -190,32 +194,36 @@ checkForNewCommitIndex = do
 processCacheMisses :: EvidenceState -> EvidenceProcEnv (EvidenceState)
 processCacheMisses es = do
   (aerCacheMisses, futureAers) <- return $ Set.partition (\a -> _aerIndex a <= _esMaxCachedIndex es) (es ^. esCacheMissAers)
-  debug $ "Processing " ++ show (Set.size aerCacheMisses) ++ " Cache Misses"
-  c <- view logService
-  mv <- liftIO $ newEmptyMVar
-  liftIO $ writeComm c $ Log.NeedCacheEvidence (Set.map _aerIndex aerCacheMisses) mv
-  newCacheEv <- liftIO $ takeMVar mv
-  updatedEs <- return $ es
-    { _esEvidenceCache = Map.union newCacheEv $ _esEvidenceCache es
-    , _esCacheMissAers = futureAers}
-  (res, newEs) <- return $! runState (processEvidence $ Set.toList aerCacheMisses) updatedEs
-  if (newEs == updatedEs)
-  -- the cached evidence may not have changed anything, doubtful but could happen
-  then return newEs
+  if Set.null aerCacheMisses
+  then do
+    debug $ "All " ++ show (Set.size futureAers) ++ " cache miss(s) were for future log indicies"
+    return es
   else do
-    publishEvidence newEs
-    when (newEs ^. esResetLeaderNoFollowers) tellJunoToResetLeaderNoFollowersTimeout
-    case res of
-      SteadyState _ ->
-        return newEs
-      NeedMoreEvidence i -> do
-        debug $ "Even after processing cache misses, evidence still required (" ++ (show i) ++ " of " ++ show (1 + _esQuorumSize newEs) ++ ")"
-        return newEs
-      NewCommitIndex ci -> do
-        updateLogs $ Log.ULCommitIdx $ Log.UpdateCommitIndex ci
-        debug $ "After processing cache misses, new CommitIndex: " ++ (show ci)
-        return newEs
-
+    debug $ "Processing " ++ show (Set.size aerCacheMisses) ++ " Cache Misses"
+    c <- view logService
+    mv <- liftIO $ newEmptyMVar
+    liftIO $ writeComm c $ Log.NeedCacheEvidence (Set.map _aerIndex aerCacheMisses) mv
+    newCacheEv <- liftIO $ takeMVar mv
+    updatedEs <- return $ es
+      { _esEvidenceCache = Map.union newCacheEv $ _esEvidenceCache es
+      , _esCacheMissAers = futureAers}
+    (res, newEs) <- return $! runState (processEvidence $ Set.toList aerCacheMisses) updatedEs
+    if (newEs == updatedEs)
+    -- the cached evidence may not have changed anything, doubtful but could happen
+    then return newEs
+    else do
+      publishEvidence newEs
+      when (newEs ^. esResetLeaderNoFollowers) tellJunoToResetLeaderNoFollowersTimeout
+      case res of
+        SteadyState _ ->
+          return newEs
+        NeedMoreEvidence i -> do
+          debug $ "Even after processing cache misses, evidence still required (" ++ (show i) ++ " of " ++ show (1 + _esQuorumSize newEs) ++ ")"
+          return newEs
+        NewCommitIndex ci -> do
+          updateLogs $ Log.ULCommitIdx $ Log.UpdateCommitIndex ci
+          debug $ "After processing cache misses, new CommitIndex: " ++ (show ci)
+          return newEs
 
 processEvidence :: [AppendEntriesResponse] -> EvidenceProcessor CommitCheckResult
 processEvidence aers = do

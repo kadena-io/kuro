@@ -41,7 +41,7 @@ apiReceiver = do
     liftIO (modifyMVar_ cmdMap (\(CommandMap n m) -> return $ CommandMap n (Map.insert rid CmdAccepted m)))
     -- hack set the head to the org rid
     let cmds'' = case cmds' of
-                   ((Command entry nid' _ alias' NewMsg):rest) -> (Command entry nid' rid' alias' NewMsg):rest
+                   ((Command entry nid' _ alias' UnVerified NewMsg):rest) -> (Command entry nid' rid' alias' UnVerified NewMsg):rest
                    _ -> []
     -- TODO: have the client really sign this and map the client digest to this.
     --       for now, node 1003 has keys registered as client and protocol node.
@@ -53,7 +53,7 @@ apiReceiver = do
     nextRid :: NodeId -> CommandMVarMap -> (Maybe Alias, CommandEntry) -> IO Command
     nextRid nid cmdMap (alias,entry) = do
       rid <- (setNextCmdRequestId' cmdMap)
-      return (Command entry nid rid alias NewMsg)
+      return (Command entry nid rid alias UnVerified NewMsg)
 
     hardcodedTransfers :: NodeId -> CommandMVarMap -> Maybe Alias -> IO Command
     hardcodedTransfers nid cmdMap alias = nextRid nid cmdMap (alias, transferCmdEntry)

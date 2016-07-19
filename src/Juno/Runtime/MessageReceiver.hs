@@ -12,6 +12,7 @@ module Juno.Runtime.MessageReceiver
   ) where
 
 import Control.Concurrent (threadDelay, MVar, takeMVar)
+-- import Control.Concurrent.Async (mapConcurrently)
 import Control.Lens
 import Control.Monad
 import Control.Monad.Reader
@@ -19,7 +20,9 @@ import Control.Parallel.Strategies
 import Data.Either (partitionEithers)
 import Data.List (partition)
 
--- import qualified Data.Serialize as S
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
+import Data.Set (Set)
 import qualified Data.Set as Set
 
 import Data.AffineSpace ((.-.))
@@ -131,28 +134,6 @@ cmdDynamicTurbine ks' getCmds' debug' enqueueEvent' timeout = do
       | l > 10    -> cmdDynamicTurbine ks' getCmds' debug' enqueueEvent' 50000 -- .05sec
       | otherwise -> cmdDynamicTurbine ks' getCmds' debug' enqueueEvent' 10000 -- .01sec
 
-
-
-aerTurbine :: ReaderT ReceiverEnv IO ()
-aerTurbine = do
-  getAers' <- view (dispatch.inboundAER)
-  let getAers n = readComms getAers' n
-  enqueueEvent' <- view (dispatch.evidence)
-  let enqueueEvent = writeComm enqueueEvent' . VerifiedAER
-  debug <- view debugPrint
-  ks <- view keySet
-  forever $ liftIO $ do
-    rawAers <- getAers 16
-    unless (null rawAers) $ do
-      (invalidAers, verifiedAers) <- return $! partitionEithers (
-        ((\(InboundAER (ts,srpc)) -> fromWire (Just ts) ks srpc) <$> rawAers)
-        `using`
-        parList rseq)
-      enqueueEvent $ verifiedAers
-      mapM_ debug invalidAers
-    -- 200microsecond delay for AERs if we're not seeing any, no delay if we are
-    threadDelay 200
-
 rvAndRvrTurbine :: ReaderT ReceiverEnv IO ()
 rvAndRvrTurbine = do
   getRvAndRVRs' <- view (dispatch.inboundRVorRVR)
@@ -178,3 +159,41 @@ batchCommands cmdRPCs = cmdBatch
     prepCmds (CMD' cmd) = [cmd]
     prepCmds (CMDB' (CommandBatch cmds _)) = cmds
     prepCmds o = error $ "Invariant failure in batchCommands: " ++ show o
+{-# INLINE batchCommands #-}
+
+aerTurbine :: ReaderT ReceiverEnv IO ()
+aerTurbine = do
+  getAers' <- view (dispatch.inboundAER)
+  let getAers n = readComms getAers' n
+  enqueueEvent' <- view (dispatch.evidence)
+  let enqueueEvent = writeComm enqueueEvent' . VerifiedAER
+  debug <- view debugPrint
+  ks <- view keySet
+  forever $ liftIO $ do
+    rawAers <- getAers 2000
+    unless (null rawAers) $ do
+      (invalidAers, unverifiedAers) <- return $! constructEvidenceMap rawAers
+      (badCrypto, validAers) <- return $! partitionEithers $! ((getFirstValidAer ks <$> (Map.elems unverifiedAers)) `using` parList rseq)
+      enqueueEvent validAers
+      mapM_ debug invalidAers
+      mapM_ debug $ concat badCrypto
+    -- give it some time to build up redundant pieces of evidence
+    threadDelay 2000
+
+constructEvidenceMap :: [InboundAER] -> ([String], Map NodeId (Set AppendEntriesResponse))
+constructEvidenceMap srpcs = go srpcs Map.empty []
+  where
+    go [] m errs = (errs,m)
+    go (InboundAER (ts,srpc):rest) m errs = case aerDecodeNoVerify (ts, srpc) of
+      Left err -> go rest m (err:errs)
+      Right aer -> go rest (Map.insertWith Set.union (_aerNodeId aer) (Set.singleton aer) m) errs
+{-# INLINE constructEvidenceMap #-}
+
+getFirstValidAer :: KeySet -> Set AppendEntriesResponse -> Either [String] AppendEntriesResponse
+getFirstValidAer ks sAer = go (Set.toDescList sAer) []
+  where
+    go [] errs = Left errs
+    go (aer:rest) errs = case aerReverify ks aer of
+      Left err -> go rest (err:errs)
+      Right aer' -> Right aer'
+{-# INLINE getFirstValidAer #-}

@@ -13,7 +13,7 @@
 
 module Juno.Types.Service.Log
   ( LogState(..), lsLogEntries, lsLastApplied, lsLastLogIndex, lsNextLogIndex, lsCommitIndex
-  , lsLastPersisted, lsLastLogTerm, lsLastLogHash
+  , lsLastPersisted, lsLastLogTerm, lsLastLogHash, lsLastCryptoVerified
   , LogApi(..)
   , initLogState
   , UpdateLogs(..)
@@ -21,7 +21,9 @@ module Juno.Types.Service.Log
   , QueryResult(..)
   , QueryApi(..)
   , evalQuery
-  , LogEnv(..), logQueryChannel, internalEvent, debugPrint, dbConn, evidence
+  , CryptoWorkerStatus(..)
+  , LogEnv(..), logQueryChannel, internalEvent, debugPrint, dbConn, evidence, keySet
+  , cryptoWorkerTVar
   , HasQueryResult(..)
   , LogThread
   , LogServiceChannel(..)
@@ -33,6 +35,7 @@ module Juno.Types.Service.Log
   -- ReExports
   , module X
   , LogIndex(..)
+  , KeySet(..)
   -- for tesing
   , newEntriesToLog
   , hashNewEntry
@@ -42,9 +45,12 @@ module Juno.Types.Service.Log
 import Control.Lens hiding (Index, (|>))
 
 import Control.Concurrent (MVar)
+import Control.Concurrent.STM.TVar (TVar)
 import qualified Control.Concurrent.Chan.Unagi as Unagi
 import Control.Monad.Trans.RWS.Strict
 
+import Data.IntMap.Strict (IntMap)
+import qualified Data.IntMap.Strict as IntMap
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import Data.Map.Strict (Map)
@@ -59,6 +65,7 @@ import Database.SQLite.Simple (Connection(..))
 import GHC.Generics
 
 import Juno.Types.Base
+import Juno.Types.Config (KeySet(..))
 import Juno.Types.Log
 import qualified Juno.Types.Log as X
 import Juno.Types.Comms
@@ -89,9 +96,10 @@ class LogApi a where
   -- given a replica's nextIndex, get the index and term to send as
   -- prevLog(Index/Term)
   -- | get every entry that hasn't been applied yet (betweek LastApplied and CommitIndex)
-  getUnappliedEntries :: a -> Maybe (Seq LogEntry)
+  getUnappliedEntries :: a -> Maybe (LogIndex, Seq LogEntry)
   getUncommitedHashes :: a -> Seq ByteString
   getUnpersisted      :: a -> Maybe (Seq LogEntry)
+  getUnverifiedEntries :: a -> Maybe (LogIndex, Seq LogEntry)
   logInfoForNextIndex :: Maybe LogIndex -> a -> (LogIndex,Term)
   -- | Latest hash or empty
   lastLogHash :: a -> ByteString
@@ -110,6 +118,7 @@ data LogState a = LogState
   , _lsNextLogIndex     :: !LogIndex
   , _lsCommitIndex      :: !LogIndex
   , _lsLastPersisted    :: !LogIndex
+  , _lsLastCryptoVerified :: !LogIndex
   , _lsLastLogTerm      :: !Term
   } deriving (Show, Eq, Generic)
 makeLenses ''LogState
@@ -129,6 +138,7 @@ initLogState = LogState
   , _lsNextLogIndex = startIndex + 1
   , _lsCommitIndex = startIndex
   , _lsLastPersisted = startIndex
+  , _lsLastCryptoVerified = startIndex
   , _lsLastLogTerm = startTerm
   }
 
@@ -178,11 +188,16 @@ instance LogApi (LogState LogEntry) where
   {-# INLINE getUncommitedHashes #-}
 
   getUnappliedEntries ls =
-    let ci = commitIndex ls
+    let lv = ls ^. lsLastCryptoVerified
+        ci = commitIndex ls
+        finalIdx = if lv > ci then ci else lv
         la = lastApplied ls
-    in if la < ci
-       then fmap (Seq.drop (fromIntegral $ la + 1)) $ takeEntries (ci + 1) ls
-       else Nothing
+        les = if la < finalIdx
+              then fmap (Seq.drop (fromIntegral $ la + 1)) $ takeEntries (lv + 1) ls
+              else Nothing
+    in case les of
+         Just v -> Just (finalIdx, v)
+         Nothing -> Nothing
   {-# INLINE getUnappliedEntries #-}
 
   getUnpersisted ls =
@@ -192,6 +207,17 @@ instance LogApi (LogState LogEntry) where
        then fmap (Seq.drop (fromIntegral $ lp + 1)) $ takeEntries (la + 1) ls
        else Nothing
   {-# INLINE getUnpersisted #-}
+
+  getUnverifiedEntries ls =
+    let lstIndex = maxIndex ls
+        fstIndex = ls ^. lsLastCryptoVerified
+        les = if fstIndex < lstIndex
+              then fmap (Seq.drop (fromIntegral $ fstIndex + 1)) $ takeEntries (lstIndex + 1) ls
+              else Nothing
+    in case les of
+      Nothing -> Nothing
+      Just les' -> Just (lstIndex, les')
+  {-# INLINE getUnverifiedEntries #-}
 
   logInfoForNextIndex Nothing          _  = (startIndex, startTerm)
   logInfoForNextIndex (Just myNextIdx) ls = let pli = myNextIdx - 1 in
@@ -215,8 +241,17 @@ instance LogApi (LogState LogEntry) where
   updateLogs (ULReplicate ReplicateLogEntries{..}) ls = addLogEntriesAt _rlePrvLogIdx _rleEntries ls
   updateLogs (ULCommitIdx UpdateCommitIndex{..}) ls = ls {_lsCommitIndex = _uci}
   updateLogs (UpdateLastApplied li) ls = ls {_lsLastApplied = li}
+  updateLogs (UpdateVerified (VerifiedLogEntries maxLI res)) ls = ls
+    { _lsLogEntries = Log $ applyCryptoVerify' res $ viewLogSeq ls
+    , _lsLastCryptoVerified = maxLI }
   {-# INLINE updateLogs  #-}
 
+applyCryptoVerify' :: IntMap CryptoVerified -> Seq LogEntry -> Seq LogEntry
+applyCryptoVerify' m = fmap (\le@LogEntry{..} -> case IntMap.lookup (fromIntegral $ _leLogIndex) m of
+      Nothing -> le
+      Just c -> le { _leCommand = _leCommand { _cmdCryptoVerified = c }}
+      )
+{-# INLINE applyCryptoVerify' #-}
 
 addLogEntriesAt :: LogIndex -> Seq LogEntry -> LogState LogEntry -> LogState LogEntry
 addLogEntriesAt pli newLEs ls =
@@ -317,7 +352,7 @@ data QueryResult =
   QrEntryCount Int |
   QrSomeEntry (Maybe LogEntry) |
   QrTakenEntries (Maybe (Seq LogEntry)) |
-  QrUnappliedEntries (Maybe (Seq LogEntry)) |
+  QrUnappliedEntries (Maybe (LogIndex, Seq LogEntry)) |
   QrLogInfoForNextIndex (LogIndex,Term) |
   QrLastLogHash ByteString |
   QrLastLogTerm Term |
@@ -425,7 +460,7 @@ instance HasQueryResult SomeEntry (Maybe LogEntry) where
     _ -> error "Invariant Error: hasQueryResult SomeEntry failed to find SomeEntry"
   {-# INLINE hasQueryResult #-}
 
-instance HasQueryResult UnappliedEntries (Maybe (Seq LogEntry)) where
+instance HasQueryResult UnappliedEntries (Maybe (LogIndex, Seq LogEntry)) where
   hasQueryResult UnappliedEntries m = case Map.lookup GetUnappliedEntries m of
     Just (QrUnappliedEntries v) -> v
     _ -> error "Invariant Error: hasQueryResult TakenEntries failed to find TakenEntries"
@@ -483,10 +518,18 @@ instance Comms QueryApi LogServiceChannel where
   readComms (LogServiceChannel (_,o)) = readCommsUnagi o
   writeComm (LogServiceChannel (i,_)) = writeCommUnagi i
 
+data CryptoWorkerStatus =
+  Unprocessed (LogIndex, Seq LogEntry) |
+  Processing |
+  Idle
+  deriving (Show, Eq)
+
 data LogEnv = LogEnv
   { _logQueryChannel :: LogServiceChannel
   , _internalEvent :: InternalEventChannel
   , _evidence :: EvidenceChannel
+  , _keySet :: KeySet
+  , _cryptoWorkerTVar :: TVar CryptoWorkerStatus
   , _debugPrint :: (String -> IO ())
   , _dbConn :: Maybe Connection }
 makeLenses ''LogEnv

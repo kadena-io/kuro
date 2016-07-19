@@ -43,7 +43,7 @@ applyLogEntries unappliedEntries' commitIndex' = do
         else debug "Applied log entries but did not send results?"
 
 logApplyLatency :: Command -> Raft ()
-logApplyLatency (Command _ _ _ _ provenance) = case provenance of
+logApplyLatency (Command _ _ _ _ _ provenance) = case provenance of
   NewMsg -> return ()
   ReceivedMsg _digest _orig mReceivedAt -> case mReceivedAt of
     Just (ReceivedAt arrived) -> do

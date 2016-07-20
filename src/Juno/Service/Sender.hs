@@ -78,7 +78,7 @@ updateEnv StateSnapshot{..} s = s
 serviceRequests :: SenderService ()
 serviceRequests = do
   rrc <- view serviceRequestChan
-  debug "Begin"
+  debug "launch!"
   forever $ do
     sr <- liftIO $ readComm rrc
     case sr of
@@ -92,7 +92,7 @@ serviceRequests = do
           BroadcastRVR{..} -> sendRequestVoteResponse _srCandidate _srLastLogIndex _srVote
           SendCommandResults{..} -> sendResults _srResults
           ForwardCommandToLeader{..} -> mapM_ (sendRPC _srFor . CMD') _srCommands
-      Tick t -> liftIO (pprintTock t "serviceRequests") >>= debug
+      Tick t -> liftIO (pprintTock t) >>= debug
 
 queryLogs :: Set Log.AtomicQuery -> SenderService (Map Log.AtomicQuery Log.QueryResult)
 queryLogs q = do
@@ -104,7 +104,7 @@ queryLogs q = do
 debug :: String -> SenderService ()
 debug s = do
   dbg <- view debugPrint
-  liftIO $ dbg $ "[SenderService] " ++ s
+  liftIO $ dbg $ "[Service|Sender] " ++ s
 
 -- views state, but does not update
 sendAllRequestVotes :: SenderService ()
@@ -150,16 +150,16 @@ sendAllAppendEntries nodeCurrentIndex' nodesThatFollow' sendIfOutOfSync = do
                       (Log.hasQueryResult (Log.InfoAndEntriesAfter ((+) 1 .fst <$> Map.lookup target nodeCurrentIndex') limit') mv)
                       ct myNodeId' nodesThatFollow' yesVotes')
                  ) <$> Set.toList oNodes
-      debug "Sent All AppendEntries"
+      debug "sent all appendEntries"
     (BackStreet, OnlySendIfFollowersAreInSync) -> do
       -- We can't just spam AE's to the followers because they can get clogged with overlapping/redundant AE's. This eventually trips an election.
       -- TODO: figure out how an out of date follower can precache LEs that it can't add to it's log yet (withough tripping an election)
-      debug "Followers are out of sync, cannot issue broadcast AE"
+      debug "followers are out of sync, cannot issue broadcast AE"
     (InSync (ae, ln), _) -> do
       -- Hell yeah, we can just broadcast. We don't care about the Broadcast control if we know we can broadcast.
       -- This saves us a lot of time when node count grows.
       pubRPC $ ae
-      debug $ "Followers are in sync: broadcast AE containing " ++ show ln ++ " log entries"
+      debug $ "followers are in sync: broadcast AE containing " ++ show ln ++ " log entries"
 
 -- I've been on a coding bender for 6 straight 12hr days
 data InSync = InSync (RPC, Int) | BackStreet deriving (Show, Eq)
@@ -215,7 +215,7 @@ sendAppendEntriesResponse target success convinced = do
   maxIndex' <- return $ Log.hasQueryResult Log.MaxIndex mv
   lastLogHash' <- return $ Log.hasQueryResult Log.LastLogHash mv
   sendRPC target $ createAppendEntriesResponse' success convinced ct myNodeId' maxIndex' lastLogHash'
-  debug $ "Sent AppendEntriesResponse: " ++ show ct
+  debug $ "sent AppendEntriesResponse: " ++ show ct
 
 -- this is used for distributed evidence + updating the Leader with nodeCurrentIndex
 sendAllAppendEntriesResponse :: SenderService ()
@@ -237,8 +237,8 @@ sendRequestVoteResponse target logIndex' vote = do
 sendResults :: [(NodeId, CommandResponse)] -> SenderService ()
 sendResults results = do
   role' <- view nodeRole
-  when (role' /= Leader) $ mapM_ (debug . (++) "Follower responding to commands! : " . show) results
-  debug $ "###====>    Sending " ++ show (length results) ++ " results"
+  when (role' /= Leader) $ mapM_ (debug . (++) "follower responding to commands! : " . show) results
+  debug $ "sending " ++ show (length results) ++ " results"
   !res <- return $! second CMDR' <$> results
   sendRPCs res
 
@@ -249,7 +249,7 @@ pubRPC rpc = do
   privKey <- view myPrivateKey
   pubKey <- view myPublicKey
   sRpc <- return $ rpcToSignedRPC myNodeId' pubKey privKey rpc
-  debug $ "Issuing broadcast msg: " ++ show (_digType $ _sigDigest sRpc)
+  debug $ "issuing broadcast msg: " ++ show (_digType $ _sigDigest sRpc)
   liftIO $ writeComm oChan $ broadcastMsg $ encode $ sRpc
 
 sendRPC :: NodeId -> RPC -> SenderService ()
@@ -259,7 +259,7 @@ sendRPC target rpc = do
   privKey <- view myPrivateKey
   pubKey <- view myPublicKey
   sRpc <- return $ rpcToSignedRPC myNodeId' pubKey privKey rpc
-  debug $ "Issuing direct msg: " ++ show (_digType $ _sigDigest sRpc) ++ " to " ++ show (unAlias $ _alias target)
+  debug $ "issuing direct msg: " ++ show (_digType $ _sigDigest sRpc) ++ " to " ++ show (unAlias $ _alias target)
   liftIO $! writeComm oChan $! directMsg target $ encode $ sRpc
 
 sendRPCs :: [(NodeId, RPC)] -> SenderService ()
@@ -269,7 +269,6 @@ sendRPCs rpcs = do
   privKey <- view myPrivateKey
   pubKey <- view myPublicKey
   msgs <- return (((\(n,msg) -> (n, rpcToSignedRPC myNodeId' pubKey privKey msg)) <$> rpcs ) `using` parList rseq)
-  --mapM_ (\(_,r) -> debug $ "Issuing (multi) direct msg: " ++ show (_digType $ _sigDigest r)) msgs
   liftIO $ mapM_ (writeComm oChan) $! (\(n,r) -> directMsg n $ encode r) <$> msgs
 
 sendAerRvRvr :: RPC -> SenderService ()
@@ -279,7 +278,7 @@ sendAerRvRvr rpc = do
   privKey <- view myPrivateKey
   pubKey <- view myPublicKey
   sRpc <- return $ rpcToSignedRPC myNodeId' pubKey privKey rpc
-  debug $ "Broadcast only msg sent: "
+  debug $ "broadcast only msg sent: "
         ++ show (_digType $ _sigDigest sRpc)
         ++ (case rpc of
               AER' v -> " for " ++ show (_aerIndex v, _aerTerm v)

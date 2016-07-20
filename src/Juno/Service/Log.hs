@@ -59,12 +59,12 @@ runLogService dispatch dbg dbPath keySet' = do
 debug :: String -> LogThread ()
 debug s = do
   dbg <- view debugPrint
-  liftIO $ dbg $ "[LogThread] " ++ s
+  liftIO $ dbg $ "[Service|Log]: " ++ s
 
 handle :: LogThread ()
 handle = do
   oChan <- view logQueryChannel
-  debug "Begin"
+  debug "launch!"
   forever $ do
     q <- liftIO $ readComm oChan
     runQuery q
@@ -90,9 +90,9 @@ runQuery (Update ul) = do
 runQuery (NeedCacheEvidence lis mv) = do
   qr <- buildNeedCacheEvidence lis <$> get
   liftIO $ putMVar mv qr
-  debug $ "Servicing cache miss pertaining to: " ++ show lis
+  debug $ "servicing cache miss pertaining to: " ++ show lis
 runQuery (Tick t) = do
-  t' <- liftIO $ pprintTock t "runQuery"
+  t' <- liftIO $ pprintTock t
   debug t'
 
 tinyCryptoWorker :: KeySet -> (String -> IO ()) -> LogServiceChannel -> TVar CryptoWorkerStatus -> IO (Async ())
@@ -103,7 +103,7 @@ tinyCryptoWorker ks dbg c mv = async $ forever $ do
   atomically $ writeTVar mv Idle
   writeComm c $ Update $ UpdateVerified $ VerifiedLogEntries lastLogIndex' postVerify
   endTime <- getCurrentTime
-  dbg $ "[TinyCryptoWorker]: processed " ++ show (length unverifiedLes)
+  dbg $ "[Service|Crypto]: processed " ++ show (length unverifiedLes)
       ++ " in " ++ show (interval stTime endTime) ++ "mics"
 
 getWork :: TVar CryptoWorkerStatus -> STM (LogIndex, Seq LogEntry)
@@ -181,7 +181,7 @@ tellTinyCryptoWorkerToDoMore = do
       res <- liftIO $ atomically $ do
         r <- readTVar mv
         case r of
-          Unprocessed _ -> writeTVar mv (Unprocessed v) >> return "Added more work the Cryptoworker's TVar"
+          Unprocessed _ -> writeTVar mv (Unprocessed v) >> return "Added more work the Crypto's TVar"
           Idle -> writeTVar mv (Unprocessed v) >> return "CryptoWorker was Idle, gave it something to do"
-          Processing -> return "CrypoWorker hasn't finished yet..."
+          Processing -> return "Crypto hasn't finished yet..."
       debug res

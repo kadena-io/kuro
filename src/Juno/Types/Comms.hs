@@ -74,11 +74,11 @@ import Juno.Types.Message.Signed
 import Juno.Types.Message
 
 -- Tocks are useful for seeing how backed up things are
-pprintTock :: Tock -> String -> IO String
-pprintTock Tock{..} channelName = do
+pprintTock :: Tock -> IO String
+pprintTock Tock{..} = do
   t' <- getCurrentTime
   (delay :: Int) <- return $! (fromIntegral $ view microseconds $ t' .-. _tockStartTime)
-  return $! "[" ++ channelName ++ "] Tock delayed by " ++ show delay ++ "mics"
+  return $! "Tock delayed by " ++ show delay ++ "mics"
 
 createTock :: Int -> IO Tock
 createTock delay = Tock <$> pure delay <*> getCurrentTime
@@ -94,12 +94,12 @@ foreverTick comm delay mkTock = forever $ do
   _ <- fireTick comm delay mkTock
   threadDelay delay
 
-foreverTickDebugWriteDelay :: Comms a b => (String -> IO ()) -> String -> b -> Int -> (Tock -> a) -> IO ()
-foreverTickDebugWriteDelay debug' channel comm delay mkTock = forever $ do
+foreverTickDebugWriteDelay :: Comms a b => (String -> IO ()) -> b -> Int -> (Tock -> a) -> IO ()
+foreverTickDebugWriteDelay debug' comm delay mkTock = forever $ do
   !st <- fireTick comm delay mkTock
   !t' <- getCurrentTime
   !(writeDelay :: Int) <- return $! (fromIntegral $ view microseconds $ t' .-. st)
-  debug' $ "[" ++ channel ++ "] writing Tock to channel took " ++ show writeDelay ++ "mics"
+  debug' $ "writing Tock to channel took " ++ show writeDelay ++ "mics"
   threadDelay delay
 
 newtype InboundAER = InboundAER { _unInboundAER :: (ReceivedAt, SignedRPC)}

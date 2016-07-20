@@ -12,7 +12,6 @@ module Juno.Runtime.MessageReceiver
   ) where
 
 import Control.Concurrent (threadDelay, MVar, takeMVar)
--- import Control.Concurrent.Async (mapConcurrently)
 import Control.Lens
 import Control.Monad
 import Control.Monad.Reader
@@ -25,8 +24,7 @@ import qualified Data.Map.Strict as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
 
-import Data.AffineSpace ((.-.))
-import Data.Thyme.Clock (microseconds, getCurrentTime)
+import Data.Thyme.Clock (getCurrentTime)
 
 import Juno.Util.Combinator (foreverRetry)
 import Juno.Types hiding (debugPrint, nodeId)
@@ -40,8 +38,14 @@ data ReceiverEnv = ReceiverEnv
   }
 makeLenses ''ReceiverEnv
 
+turbineRv, turbineAer, turbineCmd, turbineGeneral :: String
+turbineRv = "[Turbine|Rv]: "
+turbineAer = "[Turbine|Aer]: "
+turbineCmd = "[Turbine|Cmd]: "
+turbineGeneral = "[Turbine|Gen]: "
+
 runMessageReceiver :: ReceiverEnv -> IO ()
-runMessageReceiver env = void $ foreverRetry (env ^. debugPrint) "MSG_RECEIVER_TURBO" $ runReaderT messageReceiver env
+runMessageReceiver env = void $ foreverRetry (env ^. debugPrint) "[Turbo|MsgReceiver]" $ runReaderT messageReceiver env
 
 -- | Thread to take incoming messages and write them to the event queue.
 -- THREAD: MESSAGE RECEIVER (client and server), no state updates
@@ -49,10 +53,10 @@ messageReceiver :: ReaderT ReceiverEnv IO ()
 messageReceiver = do
   env <- ask
   debug <- view debugPrint
-  void $ liftIO $ foreverRetry debug "RV_AND_RVR_TURBINE" $ runReaderT rvAndRvrTurbine env
-  void $ liftIO $ foreverRetry debug "AER_TURBINE" $ runReaderT aerTurbine env
-  void $ liftIO $ foreverRetry debug "CMD_TURBINE" $ runReaderT cmdTurbine env
-  void $ liftIO $ foreverRetry debug "GENERAL_TURBINE" $ runReaderT generalTurbine env
+  void $ liftIO $ foreverRetry debug turbineRv $ runReaderT rvAndRvrTurbine env
+  void $ liftIO $ foreverRetry debug turbineAer $ runReaderT aerTurbine env
+  void $ liftIO $ foreverRetry debug turbineCmd $ runReaderT cmdTurbine env
+  void $ liftIO $ foreverRetry debug turbineGeneral $ runReaderT generalTurbine env
   liftIO $ takeMVar (_restartTurbo env) >>= debug . (++) "restartTurbo MVar caught saying: "
 
 generalTurbine :: ReaderT ReceiverEnv IO ()
@@ -67,15 +71,15 @@ generalTurbine = do
     msgs <- gm 5
     (aes, noAes) <- return $ partition (\(_,SignedRPC{..}) -> if _digType _sigDigest == AE then True else False) (_unInboundGeneral <$> msgs)
     prunedAes <- return $ pruneRedundantAEs aes
-    when (length aes - length prunedAes /= 0) $ debug $ "[GENERAL_TURBINE] pruned " ++ show (length aes - length prunedAes) ++ " redundant AE(s)"
+    when (length aes - length prunedAes /= 0) $ debug $ turbineGeneral ++ "pruned " ++ show (length aes - length prunedAes) ++ " redundant AE(s)"
     unless (null aes) $ do
       l <- return $ show (length aes)
       mapM_ (\(ts,msg) -> case signedRPCtoRPC (Just ts) ks msg of
         Left err -> debug err
         Right v -> do
           t' <- getCurrentTime
-          debug $ "[GENERAL_TURBINE] enqueued 1 of " ++ l ++ " AE(s) taking "
-                ++ show (view microseconds $ t' .-. (_unReceivedAt ts))
+          debug $ turbineGeneral ++ "enqueued 1 of " ++ l ++ " AE(s) taking "
+                ++ show (interval (_unReceivedAt ts) t')
                 ++ "mics since it was received"
           enqueueEvent (ERPC v)
             ) prunedAes
@@ -125,7 +129,7 @@ cmdDynamicTurbine ks' getCmds' debug' enqueueEvent' timeout = do
       CMDB' v -> ( "CMDB", unAlias $ _alias $ _digNodeId $ _pDig $ _cmdbProvenance v )
       v -> error $ "deep invariant failure: caught something that wasn't a CMDB/CMD " ++ show v
       ) validCmds)
-    debug' $ "AutoBatched " ++ show (length cmds') ++ " Commands from " ++ show src
+    debug' $ turbineCmd ++ "batched " ++ show (length cmds') ++ " CMD(s) from " ++ show src
   threadDelay timeout
   case lenCmdBatch of
     l | l > 1000  -> cmdDynamicTurbine ks' getCmds' debug' enqueueEvent' 1000000 -- 1sec
@@ -145,12 +149,11 @@ rvAndRvrTurbine = do
     case signedRPCtoRPC (Just ts) ks msg of
       Left err -> debug err
       Right v -> do
-        debug $ "Received " ++ show (_digType $ _sigDigest msg)
+        debug $ turbineRv ++ "received " ++ show (_digType $ _sigDigest msg)
         writeComm enqueueEvent $ InternalEvent $ ERPC v
 
 parallelVerify :: (f -> (ReceivedAt,SignedRPC)) -> KeySet -> [f] -> [Either String RPC]
 parallelVerify f ks msgs = ((\(ts, msg) -> signedRPCtoRPC (Just ts) ks msg) . f <$> msgs) `using` parList rseq
-
 
 batchCommands :: [RPC] -> CommandBatch
 batchCommands cmdRPCs = cmdBatch
@@ -169,16 +172,26 @@ aerTurbine = do
   let enqueueEvent = writeComm enqueueEvent' . VerifiedAER
   debug <- view debugPrint
   ks <- view keySet
+  let backpressureDelay = 1000
   forever $ liftIO $ do
+    -- basically get every AER
     rawAers <- getAers 2000
-    unless (null rawAers) $ do
+    if null rawAers
+    -- give it some time to build up redundant pieces of evidence
+    then threadDelay backpressureDelay
+    else do
+      startTime <- getCurrentTime
       (invalidAers, unverifiedAers) <- return $! constructEvidenceMap rawAers
       (badCrypto, validAers) <- return $! partitionEithers $! ((getFirstValidAer ks <$> (Map.elems unverifiedAers)) `using` parList rseq)
       enqueueEvent validAers
-      mapM_ debug invalidAers
-      mapM_ debug $ concat badCrypto
-    -- give it some time to build up redundant pieces of evidence
-    threadDelay 2000
+      mapM_ (debug . ((++) turbineAer)) invalidAers
+      mapM_ (debug . ((++) turbineAer)) $ concat badCrypto
+      endTime <- getCurrentTime
+      timeDelta <- return $! interval startTime endTime
+      debug $ turbineAer ++ "received " ++ show (length rawAers) ++ " AER(s) & processed them into the "
+            ++ show (length validAers) ++ " AER(s) taking " ++ show timeDelta ++ "mics"
+      -- I think keeping the delay relatively constant is a good idea
+      unless (timeDelta >= (fromIntegral $ backpressureDelay)) $ threadDelay (backpressureDelay - (fromIntegral $ timeDelta))
 
 constructEvidenceMap :: [InboundAER] -> ([String], Map NodeId (Set AppendEntriesResponse))
 constructEvidenceMap srpcs = go srpcs Map.empty []

@@ -23,6 +23,12 @@ import Juno.Types
 nodeIdToZmqAddr :: NodeId -> String
 nodeIdToZmqAddr NodeId{..} = "tcp://" ++ _host ++ ":" ++ show _port
 
+zmqGenPub, zmqGenSub, zmqAerPub, zmqAerSub :: String
+zmqGenPub = "[Zmq|Gen|Pub]: "
+zmqGenSub = "[Zmq|Gen|Sub]: "
+zmqAerPub = "[Zmq|Aer|Pub]: "
+zmqAerSub = "[Zmq|Aer|Sub]: "
+
 runMsgServer :: Dispatch
              -> NodeId
              -> [NodeId]
@@ -39,7 +45,7 @@ runMsgServer dispatch me addrList debug = void $ forkIO $ forever $ do
   zmqGeneralThread <- Async.async $ runZMQ $ do
     -- ZMQ Pub Thread
     zmqPub <- async $ do
-      liftIO $ debug "[ZMQ_GENERAL_PUB] Launching..."
+      liftIO $ debug $ zmqGenPub ++ "launch!"
       pubSock <- socket Pub
       _ <- bind pubSock $ nodeIdToZmqAddr me
       forever $ do
@@ -52,25 +58,25 @@ runMsgServer dispatch me addrList debug = void $ forkIO $ forever $ do
     zmqSub <- async $ do
       subSocket <- socket Sub
       subscribe subSocket "all" -- the topic for broadcast messages
-      liftIO $ debug $ "[ZMQ_GENERAL_SUB] Subscribed to: \"all\""
+      liftIO $ debug $ zmqGenSub ++ "subscribed to: \"all\""
       subscribe subSocket $ unAlias $ _alias me
-      liftIO $ debug $ "[ZMQ_GENERAL_SUB] Subscribed to: " ++ show (unAlias $ _alias me)
+      liftIO $ debug $ zmqGenSub ++ "subscribed to: " ++ show (unAlias $ _alias me)
       void $ mapM_ (\addr -> do
           _ <- connect subSocket $ nodeIdToZmqAddr $ addr
-          liftIO $ debug $ "[ZMQ_GENERAL_SUB] made sub socket for: " ++ (show $ nodeIdToZmqAddr addr )
+          liftIO $ debug $  zmqGenSub ++ "made sub socket for: " ++ (show $ nodeIdToZmqAddr addr )
           ) addrList
       forever $ do
         env <- openEnvelope <$> receiveMulti subSocket
         ts <- liftIO getCurrentTime
         case env of
           Left err ->
-            liftIO $ debug $ "[ZMQ_GENERAL_SUB] " ++ show err
+            liftIO $ debug $  zmqGenSub ++ show err
           Right (Envelope (_topic',newMsg)) -> do
-            --liftIO $ debug $ "[ZMQ_GENERAL_SUB] got msg on topic: " ++ show (_unTopic topic')
+            --liftIO $ debug $  zmqGenSub ++ "got msg on topic: " ++ show (_unTopic topic')
             case decode newMsg of
               Left err -> do
-                liftIO $ debug $ "[ZMQ_GENERAL_SUB] Failed to deserialize to SignedRPC [Msg]: " ++ show newMsg
-                liftIO $ debug $ "[ZMQ_GENERAL_SUB] Failed to deserialize to SignedRPC [Error]: " ++ err
+                liftIO $ debug $  zmqGenSub ++ "failed to deserialize to SignedRPC [Msg]: " ++ show newMsg
+                liftIO $ debug $  zmqGenSub ++ "failed to deserialize to SignedRPC [Error]: " ++ err
                 liftIO yield
               Right s@(SignedRPC dig _)
                 | _digType dig == RV || _digType dig == RVR -> do
@@ -89,11 +95,11 @@ runMsgServer dispatch me addrList debug = void $ forkIO $ forever $ do
     liftIO $ do
       res <- Async.waitEitherCancel zmqSub zmqPub
       case res of
-        Left (Left (SomeException err)) -> liftIO $ debug $ "[ZMQ_SUB] errored with: " ++ show err
-        Left (Right _) -> liftIO $ debug $ "[ZMQ_SUB] errored with something unshowable..."
-        Right (Left (SomeException err)) -> liftIO $ debug $ "[ZMQ_PUB] errored with: " ++ show err
-        Right (Right _) -> liftIO $ debug $ "[ZMQ_PUB] errored with something unshowable..."
-    liftIO $ debug $ "[ZMQ_THREAD] Exiting"
+        Left (Left (SomeException err)) -> liftIO $ debug $ zmqGenSub ++ "errored with: " ++ show err
+        Left (Right _) -> liftIO $ debug $ zmqGenSub ++ "errored with something unshowable..."
+        Right (Left (SomeException err)) -> liftIO $ debug $ zmqGenPub ++ "errored with: " ++ show err
+        Right (Right _) -> liftIO $ debug $ zmqGenPub ++"errored with something unshowable..."
+    liftIO $ debug $ "[Zmq|Gen] exiting"
     return $ Right ()
 
   -- TODO: research if running two ZMQ's is better for scaling/speed than one with more sockets
@@ -102,12 +108,12 @@ runMsgServer dispatch me addrList debug = void $ forkIO $ forever $ do
   zmqAeRvRvrThread <- Async.async $ runZMQ $ do
     -- ZMQ Pub Thread
     zmqPub <- async $ do
-      liftIO $ debug $ "[ZMQ_AeRvRvr_PUB] Launching..."
+      liftIO $ debug $ zmqAerPub ++ "launch!"
       pubSock <- socket Pub
       _ <- bind pubSock $ nodeIdToZmqAddr $ me { _port = 5000 + _port me }
       forever $ do
         !msg <- liftIO $! sealEnvelope . _unOutboundAerRvRvr <$> readComm aerRvRvrRead
-        --liftIO $ debug $ "[ZMQ_AerRvRvr_PUB] publishing msg to: " ++ show (NonEmpty.head msg)
+        --liftIO $ debug $ zmqAerPub ++ "publishing msg to: " ++ show (NonEmpty.head msg)
         sendMulti pubSock msg
 
     liftIO $ threadDelay 100000 -- to be sure that the receive side is up first
@@ -115,36 +121,36 @@ runMsgServer dispatch me addrList debug = void $ forkIO $ forever $ do
     zmqSub <- async $ do
       subSocket <- socket Sub
       subscribe subSocket "" -- the topic for broadcast messages
-      liftIO $ debug $ "[ZMQ_AerRvRvr_SUB] Subscribed to: \"\" (everything)"
+      liftIO $ debug $ zmqAerSub ++ "subscribed to: \"\" (everything)"
       void $ mapM_ (\addr -> do
           _ <- connect subSocket $ nodeIdToZmqAddr $ addr { _port = 5000 + _port addr }
-          liftIO $ debug $ "[ZMQ_AerRvRvr_SUB] made sub socket for: " ++ (show $ nodeIdToZmqAddr $ addr { _port = 5000 + _port addr })
+          liftIO $ debug $  zmqAerSub ++ "made sub socket for: " ++ (show $ nodeIdToZmqAddr $ addr { _port = 5000 + _port addr })
           ) addrList
       forever $ do
         env <- openEnvelope <$> receiveMulti subSocket
         ts <- liftIO getCurrentTime
         case env of
           Left err ->
-            liftIO $ debug $ "[ZMQ_AerRvRvr_SUB] " ++ show err
+            liftIO $ debug $ zmqAerSub ++ show err
           Right (Envelope (_topic',newMsg)) -> do
-            --liftIO $ debug $ "[ZMQ_AerRvRvr_SUB] got msg on topic: " ++ show (_unTopic topic')
+            --liftIO $ debug $  zmqAerSub ++ "got msg on topic: " ++ show (_unTopic topic')
             case decode newMsg of
               Left err -> do
-                liftIO $ debug $ "[ZMQ_AerRvRvr_SUB] Failed to deserialize to SignedRPC [Msg]: " ++ show newMsg
-                liftIO $ debug $ "[ZMQ_AerRvRvr_SUB] Failed to deserialize to SignedRPC [Error]: " ++ err
+                liftIO $ debug $ zmqAerSub ++ "failed to deserialize to SignedRPC [Msg]: " ++ show newMsg
+                liftIO $ debug $ zmqAerSub ++ "failed to deserialize to SignedRPC [Error]: " ++ err
                 liftIO yield
               Right s@(SignedRPC dig _)
                 | _digType dig == RV || _digType dig == RVR -> do
-                  --liftIO $ debug $ "[ZMQ_AerRvRvr_SUB] Received RVR from: " ++ (show $ _alias $ _digNodeId dig)
+                  --liftIO $ debug $ zmqAerSub ++ "received RVR from: " ++ (show $ _alias $ _digNodeId dig)
                   liftIO $ writeComm rvAndRvrWrite (InboundRVorRVR (ReceivedAt ts, s)) >> yield
                 | _digType dig == CMD || _digType dig == CMDB -> do
-                  liftIO $ debug $ "[ZMQ_AerRvRvr_SUB] Received a CMD or CMDB but shouldn't have from: " ++ (show $ _alias $ _digNodeId dig)
+                  liftIO $ debug $ zmqAerSub ++ "Received a CMD or CMDB but shouldn't have from: " ++ (show $ _alias $ _digNodeId dig)
                   liftIO $ writeComm cmdInboxWrite (InboundCMD (ReceivedAt ts, s)) >> yield
                 | _digType dig == AER -> do
-                  --liftIO $ debug $ "[ZMQ_AerRvRvr_SUB] Received AER from: " ++ (show $ _alias $ _digNodeId dig)
+                  --liftIO $ debug $ zmqAerSub ++ "received AER from: " ++ (show $ _alias $ _digNodeId dig)
                   liftIO $ writeComm aerInboxWrite (InboundAER (ReceivedAt ts, s)) >> yield
                 | otherwise           -> do
-                  liftIO $ debug $ "[ZMQ_AerRvRvr_SUB] Received a "
+                  liftIO $ debug $ zmqAerSub ++ "received a "
                                    ++ (show $ _digType dig)
                                    ++ " that I shouldn't have from: "
                                    ++ (show $ _alias $ _digNodeId dig)
@@ -153,16 +159,16 @@ runMsgServer dispatch me addrList debug = void $ forkIO $ forever $ do
     liftIO $ do
       res <- Async.waitEitherCancel zmqSub zmqPub
       case res of
-        Left (Left (SomeException err)) -> liftIO $ debug $ "[ZMQ_AerRvRvr_SUB] errored with: " ++ show err
-        Left (Right _) -> liftIO $ debug $ "[ZMQ_AerRvRvr_SUB] errored with something unshowable..."
-        Right (Left (SomeException err)) -> liftIO $ debug $ "[ZMQ_AerRvRvr_PUB] errored with: " ++ show err
-        Right (Right _) -> liftIO $ debug $ "[ZMQ_AerRvRvr_PUB] errored with something unshowable..."
-    liftIO $ debug $ "[ZMQ_AerRvRvr_THREAD] Exiting"
+        Left (Left (SomeException err)) -> liftIO $ debug $ zmqAerSub ++ "errored with: " ++ show err
+        Left (Right _) -> liftIO $ debug $ zmqAerSub ++ "errored with something unshowable..."
+        Right (Left (SomeException err)) -> liftIO $ debug $ zmqAerPub ++ "errored with: " ++ show err
+        Right (Right _) -> liftIO $ debug $ zmqAerPub ++ "errored with something unshowable..."
+    liftIO $ debug $ "[Zmq|Aer] exiting"
     return $ Right ()
 
   res <- Async.waitEitherCancel zmqGeneralThread zmqAeRvRvrThread
   case res of
-    Left (Left (SomeException err)) -> liftIO $ debug $ "[ZMQ_GENERAL_THREAD] errored with: " ++ show err
-    Left (Right _) -> liftIO $ debug $ "[ZMQ_GENERAL_THREAD] errored with something unshowable..."
-    Right (Left (SomeException err)) -> liftIO $ debug $ "[ZMQ_AerRvRvr_THREAD] errored with: " ++ show err
-    Right (Right _) -> liftIO $ debug $ "[ZMQ_AerRvRvr_THREAD] errored with something unshowable..."
+    Left (Left (SomeException err)) -> liftIO $ debug $ "[Zmq|Gen] errored with: " ++ show err
+    Left (Right _) -> liftIO $ debug $ "[Zmq|Gen] errored with something unshowable..."
+    Right (Left (SomeException err)) -> liftIO $ debug $ "[Zmq|Aer] errored with: " ++ show err
+    Right (Right _) -> liftIO $ debug $ "[Zmq|Aer] errored with something unshowable..."

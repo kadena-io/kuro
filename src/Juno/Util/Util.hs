@@ -80,9 +80,9 @@ debug s = do
   role' <- use nodeRole
   dontDebugFollower' <- viewConfig dontDebugFollower
   case role' of
-    Leader -> liftIO $ dbg $ "\ESC[0;34m[LEADER]\ESC[0m: " ++ s
-    Follower -> liftIO $ when (not dontDebugFollower') $ dbg $ "\ESC[0;32m[FOLLOWER]\ESC[0m: " ++ s
-    Candidate -> liftIO $ dbg $ "\ESC[1;33m[CANDIDATE]\ESC[0m: " ++ s
+    Leader -> liftIO $ dbg $ "[Juno|\ESC[0;34mLEADER\ESC[0m]: " ++ s
+    Follower -> liftIO $ when (not dontDebugFollower') $ dbg $ "[Juno|\ESC[0;32mFOLLOWER\ESC[0m]: " ++ s
+    Candidate -> liftIO $ dbg $ "[Juno|\ESC[1;33mCANDIDATE\ESC[0m]: " ++ s
 
 randomRIO :: R.Random a => (a,a) -> Raft a
 randomRIO rng = view (rs.random) >>= \f -> liftIO $ f rng -- R.randomRIO

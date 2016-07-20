@@ -35,7 +35,6 @@ library
                      , Juno.Consensus.Commit
                      , Juno.Consensus.Handle.Types
                      , Juno.Consensus.Handle.AppendEntries
-                     , Juno.Consensus.Handle.AppendEntriesResponse
                      , Juno.Consensus.Handle.Command
                      , Juno.Consensus.Handle.RequestVote
                      , Juno.Consensus.Handle.RequestVoteResponse
@@ -49,7 +48,6 @@ library
                      , Juno.Hoplite.Transmatic
                      , Juno.Hoplite.Types
                      , Juno.Messaging.ZMQ
-                     , Juno.Messaging.TestRig
                      , Juno.Monitoring.EkgJson
                      , Juno.Monitoring.EkgMonitor
                      , Juno.Monitoring.EkgSnap

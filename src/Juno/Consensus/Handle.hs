@@ -15,7 +15,6 @@ import Juno.Util.Util (debug, dequeueEvent)
 import Juno.Consensus.Commit (applyLogEntries)
 
 import qualified Juno.Consensus.Handle.AppendEntries as PureAppendEntries
---import qualified Juno.Consensus.Handle.AppendEntriesResponse as PureAppendEntriesResponse
 import qualified Juno.Consensus.Handle.Command as PureCommand
 import qualified Juno.Consensus.Handle.ElectionTimeout as PureElectionTimeout
 import qualified Juno.Consensus.Handle.HeartbeatTimeout as PureHeartbeatTimeout
@@ -38,7 +37,7 @@ handleEvents = forever $ do
     ApplyLogEntries unappliedEntries' commitIndex' -> do
       debug $ maybe "EMPTY!" (show . Seq.length)  unappliedEntries' ++ " new log entries to apply, up to " ++ show commitIndex'
       applyLogEntries unappliedEntries' commitIndex'
-    Tick tock'                    -> liftIO (pprintTock tock' "handleEvents") >>= debug
+    Tick tock'                    -> liftIO (pprintTock tock') >>= debug
 
 -- TODO: prune out AER's from RPC if possible
 handleRPC :: RPC -> Raft ()

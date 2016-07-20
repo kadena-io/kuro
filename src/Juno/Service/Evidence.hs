@@ -90,26 +90,26 @@ runEvidenceProcessor es = do
           if (not $ Set.null $ newEs ^. esCacheMissAers)
           then processCacheMisses newEs >>= runEvidenceProcessor
           else do
-            debug $ "Evidence is still required (" ++ (show i) ++ " of " ++ show (1 + _esQuorumSize newEs) ++ ")"
+            debug $ "evidence is still required (" ++ (show i) ++ " of " ++ show (1 + _esQuorumSize newEs) ++ ")"
             runEvidenceProcessor newEs
         NewCommitIndex ci -> do
           updateLogs $ Log.ULCommitIdx $ Log.UpdateCommitIndex ci
-          debug $ "New CommitIndex: " ++ (show ci)
+          debug $ "new CommitIndex: " ++ (show ci)
           if (not $ Set.null $ newEs ^. esCacheMissAers)
           then processCacheMisses newEs >>= runEvidenceProcessor
           else runEvidenceProcessor newEs
     Tick tock -> do
-      liftIO (pprintTock tock "runEvidenceProcessor") >>= debug
+      liftIO (pprintTock tock) >>= debug
       runEvidenceProcessor $ garbageCollectCache es
     Bounce -> do
-      debug "Restart Command Received!"
+      debug "restart command received!"
       return es
     ClearConvincedNodes -> do
       -- Consensus has signaled that an election has or is taking place
-      debug "Clearing Convinced Nodes"
+      debug "clearing convinced nodes"
       runEvidenceProcessor $ es {_esConvincedNodes = Set.empty}
     CacheNewHash{..} -> do
-      debug $ "New Hash to Cache received: " ++ show _cLogIndex
+      debug $ "new hash to cache received: " ++ show _cLogIndex
       runEvidenceProcessor $ es
         { _esEvidenceCache = Map.insert _cLogIndex _cHash (_esEvidenceCache es)
         , _esMaxCachedIndex = if _cLogIndex > (_esMaxCachedIndex es) then _cLogIndex else (_esMaxCachedIndex es)
@@ -123,7 +123,7 @@ runEvidenceService ev = do
 
 foreverRunProcessor :: EvidenceState -> EvidenceProcEnv ()
 foreverRunProcessor es = do
-  debug "Starting Processor"
+  debug "launching!"
   runEvidenceProcessor es >>= rebuildState . Just >>= foreverRunProcessor
 
 queryLogs :: Set Log.AtomicQuery -> EvidenceProcEnv (Map Log.AtomicQuery Log.QueryResult)
@@ -141,7 +141,7 @@ updateLogs q = do
 debug :: String -> EvidenceProcEnv ()
 debug s = do
   debugFn' <- view debugFn
-  liftIO $ debugFn' $ "[EV_SERVICE]: " ++ s
+  liftIO $ debugFn' $ "[Service|Evidence]: " ++ s
 
 garbageCollectCache :: EvidenceState -> EvidenceState
 garbageCollectCache es =
@@ -176,8 +176,8 @@ checkForNewCommitIndex = do
           Nothing -> do
              es <- get
              error $ "deep invariant error: checkForNewCommitIndex found a new commit index "
-                           ++ show ci ++ " but the hash was not in the Evidence Cache\n### STATE DUMP ###\n"
-                           ++ show es
+                   ++ show ci ++ " but the hash was not in the Evidence Cache\n### STATE DUMP ###\n"
+                   ++ show es
           Just h -> return h
         esHashAtCommitIndex .= newHash
         esCommitIndex .= ci
@@ -196,10 +196,10 @@ processCacheMisses es = do
   (aerCacheMisses, futureAers) <- return $ Set.partition (\a -> _aerIndex a <= _esMaxCachedIndex es) (es ^. esCacheMissAers)
   if Set.null aerCacheMisses
   then do
-    debug $ "All " ++ show (Set.size futureAers) ++ " cache miss(s) were for future log indicies"
+    debug $ "all " ++ show (Set.size futureAers) ++ " cache miss(s) were for future log indicies"
     return es
   else do
-    debug $ "Processing " ++ show (Set.size aerCacheMisses) ++ " Cache Misses"
+    debug $ "processing " ++ show (Set.size aerCacheMisses) ++ " Cache Misses"
     c <- view logService
     mv <- liftIO $ newEmptyMVar
     liftIO $ writeComm c $ Log.NeedCacheEvidence (Set.map _aerIndex aerCacheMisses) mv
@@ -218,11 +218,11 @@ processCacheMisses es = do
         SteadyState _ ->
           return newEs
         NeedMoreEvidence i -> do
-          debug $ "Even after processing cache misses, evidence still required (" ++ (show i) ++ " of " ++ show (1 + _esQuorumSize newEs) ++ ")"
+          debug $ "even after processing cache misses, evidence still required (" ++ (show i) ++ " of " ++ show (1 + _esQuorumSize newEs) ++ ")"
           return newEs
         NewCommitIndex ci -> do
           updateLogs $ Log.ULCommitIdx $ Log.UpdateCommitIndex ci
-          debug $ "After processing cache misses, new CommitIndex: " ++ (show ci)
+          debug $ "after processing cache misses, new CommitIndex: " ++ (show ci)
           return newEs
 
 processEvidence :: [AppendEntriesResponse] -> EvidenceProcessor CommitCheckResult

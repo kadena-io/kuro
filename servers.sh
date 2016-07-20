@@ -17,6 +17,14 @@ case $cmd in
     for i in `cat junoservers.privateIp`; do ssh -i ~/user.pem ec2-user@$i 'pkill junoserver'; done
     exit 0
     ;;
+  copyLogs)
+    for i in `cat junoservers.privateIp`; do scp -i ~/user.pem -r ec2-user@$i:./${i}-output.log ~/juno/cluster-logs/${i}-output.log; done
+    exit 0
+    ;;
+  clearLogs)
+    for i in `cat junoservers.privateIp`; do ssh -i ~/user.pem ec2-user@$i 'rm ./'$i'-output.log'; done
+    exit 0
+    ;;
   ps)
     for i in `cat junoservers.privateIp`; do ssh -i ~/user.pem ec2-user@$i 'pgrep junoserver'; done
     exit 0

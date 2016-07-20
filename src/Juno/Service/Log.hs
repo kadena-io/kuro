@@ -20,7 +20,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Sequence (Seq)
 
-import Data.Maybe (fromJust, isJust)
+import Data.Maybe (fromJust)
 import Data.Thyme.Clock
 import Database.SQLite.Simple (Connection(..))
 

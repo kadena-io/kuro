@@ -66,7 +66,10 @@ mainAws clustersFile clientsFile = do
   clientConfs <- return (createClientConfig True (snd clusterKeyMaps) clientKeyMaps <$> clientIds)
   mapM_ (\c' -> Y.encodeFile
           ("aws-conf" </> (_host $ _nodeId c') ++ "-cluster-aws.yaml")
-          (c' { _enableAwsIntegration = True })
+          (c' { _enableAwsIntegration = False
+              , _electionTimeoutRange = (10000000,20000000)
+              , _heartbeatTimeout = 2000000
+              })
         ) clusterConfs
   mapM_ (\c' -> Y.encodeFile
           ("aws-conf" </> (_host $ _nodeId c') ++ "-client-aws.yaml")

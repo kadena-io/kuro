@@ -30,7 +30,7 @@ import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import Data.Serialize
 
-import Data.Thyme.Clock (UTCTime)
+import Data.Thyme.Clock (UTCTime, getCurrentTime)
 
 import qualified Juno.Types as JT
 import Juno.Types.Service.Sender as X
@@ -39,6 +39,7 @@ import qualified Juno.Types.Service.Log as Log
 import Juno.Types hiding (debugPrint, RaftState(..), Config(..)
   , Raft, RaftSpec(..), nodeId, sendMessage, outboundGeneral, outboundAerRvRvr
   , myPublicKey, myPrivateKey, otherNodes, nodeRole, term, Event(..), logService)
+
 
 runSenderService :: Dispatch -> JT.Config -> (String -> IO ()) -> MVar Ev.PublishedEvidenceState -> IO ()
 runSenderService dispatch conf debugFn mPubEvState = do
@@ -140,20 +141,25 @@ sendAllAppendEntries nodeCurrentIndex' nodesThatFollow' sendIfOutOfSync = do
   limit' <- view aeReplicationLogLimit
   inSync' <- canBroadcastAE (length oNodes) nodeCurrentIndex' ct myNodeId' nodesThatFollow'
   case (inSync', sendIfOutOfSync) of
-    (BackStreet, SendAERegardless) -> do
+    (BackStreet (broadcastRPC, laggingFollowers), SendAERegardless) -> do
       -- We can't take the short cut but the AE (which is overloaded as a heartbeat grr...) still need to be sent
       -- This usually takes place when we hit a heartbeat timeout
+      pubRPC broadcastRPC -- TODO: this is terrible as laggers will need a pause to catch up correctly unless we have them cache future AE
       mv <- queryLogs $ Set.map (\n -> Log.GetInfoAndEntriesAfter ((+) 1 . fst <$> Map.lookup n nodeCurrentIndex') limit') oNodes
-      sendRPCs $ (\target ->
-                    ( target
+      rpcs <- return $!
+        (\target -> ( target
                     , createAppendEntries' target
                       (Log.hasQueryResult (Log.InfoAndEntriesAfter ((+) 1 .fst <$> Map.lookup target nodeCurrentIndex') limit') mv)
                       ct myNodeId' nodesThatFollow' yesVotes')
-                 ) <$> Set.toList oNodes
+                    ) <$> Set.toList laggingFollowers
+      stTime <- liftIO $ getCurrentTime
+      sendRpcsPeicewise rpcs (length rpcs, stTime)
       debug "sent all appendEntries"
-    (BackStreet, OnlySendIfFollowersAreInSync) -> do
+    (BackStreet (broadcastRPC, _laggingFollowers), OnlySendIfFollowersAreInSync) -> do
       -- We can't just spam AE's to the followers because they can get clogged with overlapping/redundant AE's. This eventually trips an election.
       -- TODO: figure out how an out of date follower can precache LEs that it can't add to it's log yet (withough tripping an election)
+      -- NB: We're doing it anyway for now, so we can test scaling accurately
+      pubRPC broadcastRPC -- TODO: this is terrible as laggers will need a pause to catch up correctly unless we have them cache future AE
       debug "followers are out of sync, cannot issue broadcast AE"
     (InSync (ae, ln), _) -> do
       -- Hell yeah, we can just broadcast. We don't care about the Broadcast control if we know we can broadcast.
@@ -161,8 +167,7 @@ sendAllAppendEntries nodeCurrentIndex' nodesThatFollow' sendIfOutOfSync = do
       pubRPC $ ae
       debug $ "followers are in sync: broadcast AE containing " ++ show ln ++ " log entries"
 
--- I've been on a coding bender for 6 straight 12hr days
-data InSync = InSync (RPC, Int) | BackStreet deriving (Show, Eq)
+data InSync = InSync (RPC, Int) | BackStreet (RPC, Set NodeId) deriving (Show, Eq)
 
 willBroadcastAE :: Int
                 -> Map NodeId (LogIndex, UTCTime)
@@ -190,6 +195,8 @@ canBroadcastAE clusterSize' nodeCurrentIndex' ct myNodeId' vts =
     everyoneBelieves = Set.size vts == clusterSize'
     mniList = fst <$> Map.elems nodeCurrentIndex' -- get a list of where everyone is
     mniSet = Set.fromList $ mniList -- condense every Followers LI into a set
+    latestFollower = head $ Set.toDescList mniSet
+    laggingFollowers = Map.keysSet $ Map.filter ((/=) latestFollower . fst) nodeCurrentIndex'
     inSync = 1 == Set.size mniSet && clusterSize' == length mniList -- if each LI is the same, then the set is a signleton
     mni = head $ Set.elems mniSet -- totally unsafe but we only call it if we are going to broadcast
   in
@@ -199,7 +206,16 @@ canBroadcastAE clusterSize' nodeCurrentIndex' ct myNodeId' vts =
       mv <- queryLogs $ Set.singleton $ Log.GetInfoAndEntriesAfter (Just $ 1 + mni) limit'
       (pli,plt, es) <- return $ Log.hasQueryResult (Log.InfoAndEntriesAfter (Just $ 1 + mni) limit') mv
       return $ InSync (AE' $ AppendEntries ct myNodeId' pli plt es Set.empty NewMsg, Seq.length es)
-    else return BackStreet
+    else do
+      limit' <- view aeReplicationLogLimit
+      mv <- queryLogs $ Set.singleton $ Log.GetInfoAndEntriesAfter (Just $ 1 + latestFollower) limit'
+      (pli,plt, es) <- return $ Log.hasQueryResult (Log.InfoAndEntriesAfter (Just $ 1 + latestFollower) limit') mv
+      inSyncRpc <- return $! AE' $ AppendEntries ct myNodeId' pli plt es Set.empty NewMsg
+      if everyoneBelieves
+      then return $ BackStreet (inSyncRpc, laggingFollowers)
+      else do
+        oNodes' <- view otherNodes
+        return $ BackStreet (inSyncRpc, Set.union laggingFollowers (oNodes' Set.\\ vts))
 {-# INLINE canBroadcastAE #-}
 
 createAppendEntriesResponse' :: Bool -> Bool -> Term -> NodeId -> LogIndex -> ByteString -> RPC
@@ -262,13 +278,23 @@ sendRPC target rpc = do
   debug $ "issuing direct msg: " ++ show (_digType $ _sigDigest sRpc) ++ " to " ++ show (unAlias $ _alias target)
   liftIO $! writeComm oChan $! directMsg target $ encode $ sRpc
 
+sendRpcsPeicewise :: [(NodeId, RPC)] -> (Int, UTCTime) -> SenderService ()
+sendRpcsPeicewise rpcs d@(total, stTime) = do
+  (aFewRpcs,rest) <- return $! splitAt 8 rpcs
+  if null rest
+  then do
+    sendRPCs aFewRpcs
+    edTime <- liftIO $ getCurrentTime
+    debug $ "Sent " ++ show total ++ " RPCs taking " ++ show (interval stTime edTime) ++ "mics to construct"
+  else sendRpcsPeicewise rest d
+
 sendRPCs :: [(NodeId, RPC)] -> SenderService ()
 sendRPCs rpcs = do
   oChan <- view outboundGeneral
   myNodeId' <- view myNodeId
   privKey <- view myPrivateKey
   pubKey <- view myPublicKey
-  msgs <- return (((\(n,msg) -> (n, rpcToSignedRPC myNodeId' pubKey privKey msg)) <$> rpcs ) `using` parList rseq)
+  msgs <- return (((\(n,msg) -> (n, rpcToSignedRPC myNodeId' pubKey privKey msg)) <$> rpcs) `using` parList rseq)
   liftIO $ mapM_ (writeComm oChan) $! (\(n,r) -> directMsg n $ encode r) <$> msgs
 
 sendAerRvRvr :: RPC -> SenderService ()

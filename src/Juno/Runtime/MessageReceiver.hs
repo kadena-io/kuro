@@ -88,8 +88,6 @@ generalTurbine = do
     unless (null invalid) $ mapM_ debug invalid
 
 -- just a quick hack until we get better logic for sending AE's.
--- The idea is that the leader may send us the same AE a few times and as they are an expensive operation we'd prefer to avoid redundant crypto
--- TODO: figure out if there's a way for the leader to optimize traffic without risking elections
 pruneRedundantAEs :: [(ReceivedAt, SignedRPC)] -> [(ReceivedAt, SignedRPC)]
 pruneRedundantAEs m = go m Set.empty
   where

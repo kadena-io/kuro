@@ -49,9 +49,9 @@ runMsgServer dispatch me addrList debug = void $ forkIO $ forever $ do
       pubSock <- socket Pub
       _ <- bind pubSock $ nodeIdToZmqAddr me
       forever $ do
-        !msg <- liftIO $! sealEnvelope . _unOutboundGeneral <$> readComm outboxRead
+        !msgs <- liftIO (_unOutboundGeneral <$> readComm outboxRead) >>= return . fmap sealEnvelope
         --liftIO $ debug $ "[ZMQ_GENERAL_PUB] publishing msg to: " ++ show (NonEmpty.head msg)
-        sendMulti pubSock msg
+        mapM_ (sendMulti pubSock) msgs
 
     liftIO $ threadDelay 100000 -- to be sure that the receive side is up first
 
@@ -112,9 +112,9 @@ runMsgServer dispatch me addrList debug = void $ forkIO $ forever $ do
       pubSock <- socket Pub
       _ <- bind pubSock $ nodeIdToZmqAddr $ me { _port = 5000 + _port me }
       forever $ do
-        !msg <- liftIO $! sealEnvelope . _unOutboundAerRvRvr <$> readComm aerRvRvrRead
+        !msgs <- liftIO (_unOutboundAerRvRvr <$> readComm aerRvRvrRead) >>= return . fmap sealEnvelope
         --liftIO $ debug $ zmqAerPub ++ "publishing msg to: " ++ show (NonEmpty.head msg)
-        sendMulti pubSock msg
+        mapM_ (sendMulti pubSock) msgs
 
     liftIO $ threadDelay 100000 -- to be sure that the receive side is up first
 

@@ -114,10 +114,10 @@ newtype InboundGeneral = InboundGeneral { _unInboundGeneral :: (ReceivedAt, Sign
 newtype InboundRVorRVR = InboundRVorRVR { _unInboundRVorRVR :: (ReceivedAt, SignedRPC)}
   deriving (Show, Eq, Typeable)
 
-newtype OutboundGeneral = OutboundGeneral { _unOutboundGeneral :: Envelope}
+newtype OutboundGeneral = OutboundGeneral { _unOutboundGeneral :: [Envelope]}
   deriving (Show, Eq, Typeable)
 
-newtype OutboundAerRvRvr = OutboundAerRvRvr { _unOutboundAerRvRvr :: Envelope}
+newtype OutboundAerRvRvr = OutboundAerRvRvr { _unOutboundAerRvRvr :: [Envelope]}
   deriving (Show, Eq, Typeable)
 
 newtype TestRigInput = TestRigInput {_unTestRigInput :: [ByteString] }
@@ -126,14 +126,14 @@ newtype TestRigInput = TestRigInput {_unTestRigInput :: [ByteString] }
 newtype TestRigOutput = TestRigOutput {_unTestRigOutput :: Envelope }
   deriving (Show, Eq, Typeable)
 
-directMsg :: NodeId -> ByteString -> OutboundGeneral
-directMsg n b = OutboundGeneral $ Envelope (Topic $ unAlias $ _alias n, b)
+directMsg :: [(NodeId, ByteString)] -> OutboundGeneral
+directMsg msgs = OutboundGeneral $ Envelope . (\(n,b) -> (Topic $ unAlias $ _alias n, b)) <$> msgs
 
-broadcastMsg :: ByteString -> OutboundGeneral
-broadcastMsg b = OutboundGeneral $ Envelope (Topic $ "all", b)
+broadcastMsg :: [ByteString] -> OutboundGeneral
+broadcastMsg msgs = OutboundGeneral $ Envelope . (\b -> (Topic $ "all", b)) <$> msgs
 
-aerRvRvrMsg :: ByteString -> OutboundAerRvRvr
-aerRvRvrMsg b = OutboundAerRvRvr $ Envelope (Topic $ "all", b)
+aerRvRvrMsg :: [ByteString] -> OutboundAerRvRvr
+aerRvRvrMsg msgs = OutboundAerRvRvr $ Envelope . (\b -> (Topic $ "all", b)) <$> msgs
 
 newtype InternalEvent = InternalEvent { _unInternalEvent :: Event}
   deriving (Show, Typeable)

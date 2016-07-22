@@ -228,4 +228,4 @@ clientSendRPC target rpc = do
   pubKey <- viewConfig myPublicKey
   sRpc <- return $ rpcToSignedRPC myNodeId' pubKey privKey rpc
   debug $ "Issuing direct msg: " ++ show (_digType $ _sigDigest sRpc) ++ " to " ++ show (unAlias $ _alias target)
-  liftIO $! send $! directMsg target $ encode $ sRpc
+  liftIO $! send $! directMsg [(target, encode sRpc)]

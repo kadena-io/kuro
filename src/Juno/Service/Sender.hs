@@ -266,7 +266,7 @@ pubRPC rpc = do
   pubKey <- view myPublicKey
   sRpc <- return $ rpcToSignedRPC myNodeId' pubKey privKey rpc
   debug $ "issuing broadcast msg: " ++ show (_digType $ _sigDigest sRpc)
-  liftIO $ writeComm oChan $ broadcastMsg $ encode $ sRpc
+  liftIO $ writeComm oChan $ broadcastMsg [encode $ sRpc]
 
 sendRPC :: NodeId -> RPC -> SenderService ()
 sendRPC target rpc = do
@@ -276,7 +276,7 @@ sendRPC target rpc = do
   pubKey <- view myPublicKey
   sRpc <- return $ rpcToSignedRPC myNodeId' pubKey privKey rpc
   debug $ "issuing direct msg: " ++ show (_digType $ _sigDigest sRpc) ++ " to " ++ show (unAlias $ _alias target)
-  liftIO $! writeComm oChan $! directMsg target $ encode $ sRpc
+  liftIO $! writeComm oChan $! directMsg [(target, encode $ sRpc)]
 
 sendRpcsPeicewise :: [(NodeId, RPC)] -> (Int, UTCTime) -> SenderService ()
 sendRpcsPeicewise rpcs d@(total, stTime) = do
@@ -294,8 +294,8 @@ sendRPCs rpcs = do
   myNodeId' <- view myNodeId
   privKey <- view myPrivateKey
   pubKey <- view myPublicKey
-  msgs <- return (((\(n,msg) -> (n, rpcToSignedRPC myNodeId' pubKey privKey msg)) <$> rpcs) `using` parList rseq)
-  liftIO $ mapM_ (writeComm oChan) $! (\(n,r) -> directMsg n $ encode r) <$> msgs
+  msgs <- return (((\(n,msg) -> (n, encode $ rpcToSignedRPC myNodeId' pubKey privKey msg)) <$> rpcs) `using` parList rseq)
+  liftIO $ writeComm oChan $! directMsg msgs
 
 sendAerRvRvr :: RPC -> SenderService ()
 sendAerRvRvr rpc = do
@@ -311,4 +311,4 @@ sendAerRvRvr rpc = do
               RV' v -> " for " ++ show (_rvTerm v, _rvLastLogIndex v)
               RVR' v -> " for " ++ show (_rvrTerm v, _voteGranted v)
               _ -> "")
-  liftIO $! writeComm oChan $! aerRvRvrMsg $ encode $ sRpc
+  liftIO $! writeComm oChan $! aerRvRvrMsg [encode sRpc]

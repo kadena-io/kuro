@@ -170,7 +170,7 @@ aerTurbine = do
   let enqueueEvent = writeComm enqueueEvent' . VerifiedAER
   debug <- view debugPrint
   ks <- view keySet
-  let backpressureDelay = 1000
+  let backpressureDelay = 500
   forever $ liftIO $ do
     -- basically get every AER
     rawAers <- getAers 2000

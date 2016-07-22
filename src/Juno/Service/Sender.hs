@@ -140,11 +140,14 @@ sendAllAppendEntries nodeCurrentIndex' nodesThatFollow' sendIfOutOfSync = do
   oNodes <- view otherNodes
   limit' <- view aeReplicationLogLimit
   inSync' <- canBroadcastAE (length oNodes) nodeCurrentIndex' ct myNodeId' nodesThatFollow'
+  synTime <- liftIO $ getCurrentTime
   case (inSync', sendIfOutOfSync) of
     (BackStreet (broadcastRPC, laggingFollowers), SendAERegardless) -> do
       -- We can't take the short cut but the AE (which is overloaded as a heartbeat grr...) still need to be sent
       -- This usually takes place when we hit a heartbeat timeout
       pubRPC broadcastRPC -- TODO: this is terrible as laggers will need a pause to catch up correctly unless we have them cache future AE
+      debug "followers are out of sync, publishing latest LogEntries"
+      stTime <- liftIO $ getCurrentTime
       mv <- queryLogs $ Set.map (\n -> Log.GetInfoAndEntriesAfter ((+) 1 . fst <$> Map.lookup n nodeCurrentIndex') limit') oNodes
       rpcs <- return $!
         (\target -> ( target
@@ -152,20 +155,23 @@ sendAllAppendEntries nodeCurrentIndex' nodesThatFollow' sendIfOutOfSync = do
                       (Log.hasQueryResult (Log.InfoAndEntriesAfter ((+) 1 .fst <$> Map.lookup target nodeCurrentIndex') limit') mv)
                       ct myNodeId' nodesThatFollow' yesVotes')
                     ) <$> Set.toList laggingFollowers
-      stTime <- liftIO $ getCurrentTime
-      sendRpcsPeicewise rpcs (length rpcs, stTime)
-      debug "sent all appendEntries"
+      edTime <- liftIO $ getCurrentTime
+      debug $ "servicing lagging nodes, taking " ++ show (interval stTime edTime) ++ "mics to create"
+      sendRpcsPeicewise rpcs (length rpcs, edTime)
+      debug $ "sent all AEs Regardless: " ++ show (interval synTime edTime) ++ "mics"
     (BackStreet (broadcastRPC, _laggingFollowers), OnlySendIfFollowersAreInSync) -> do
       -- We can't just spam AE's to the followers because they can get clogged with overlapping/redundant AE's. This eventually trips an election.
       -- TODO: figure out how an out of date follower can precache LEs that it can't add to it's log yet (withough tripping an election)
       -- NB: We're doing it anyway for now, so we can test scaling accurately
       pubRPC broadcastRPC -- TODO: this is terrible as laggers will need a pause to catch up correctly unless we have them cache future AE
-      debug "followers are out of sync, cannot issue broadcast AE"
+      edTime <- liftIO $ getCurrentTime
+      debug $ "followers are out of sync, broadcasting AE anyway: " ++ show (interval synTime edTime)
     (InSync (ae, ln), _) -> do
       -- Hell yeah, we can just broadcast. We don't care about the Broadcast control if we know we can broadcast.
       -- This saves us a lot of time when node count grows.
       pubRPC $ ae
-      debug $ "followers are in sync: broadcast AE containing " ++ show ln ++ " log entries"
+      edTime <- liftIO $ getCurrentTime
+      debug $ "followers are in sync, pub AE with " ++ show ln ++ " log entries: " ++ show (interval synTime edTime)
 
 data InSync = InSync (RPC, Int) | BackStreet (RPC, Set NodeId) deriving (Show, Eq)
 
@@ -215,6 +221,7 @@ canBroadcastAE clusterSize' nodeCurrentIndex' ct myNodeId' vts =
       then return $ BackStreet (inSyncRpc, laggingFollowers)
       else do
         oNodes' <- view otherNodes
+        debug $ "non-believers exist, establishing dominance"
         return $ BackStreet (inSyncRpc, Set.union laggingFollowers (oNodes' Set.\\ vts))
 {-# INLINE canBroadcastAE #-}
 
@@ -236,6 +243,7 @@ sendAppendEntriesResponse target success convinced = do
 -- this is used for distributed evidence + updating the Leader with nodeCurrentIndex
 sendAllAppendEntriesResponse :: SenderService ()
 sendAllAppendEntriesResponse = do
+  stTime <- liftIO $ getCurrentTime
   ct <- view currentTerm
   myNodeId' <- view myNodeId
   mv <- queryLogs $ Set.fromList [Log.GetMaxIndex, Log.GetLastLogHash]
@@ -243,6 +251,8 @@ sendAllAppendEntriesResponse = do
   lastLogHash' <- return $ Log.hasQueryResult Log.LastLogHash mv
   aer <- return $ createAppendEntriesResponse' True True ct myNodeId' maxIndex' lastLogHash'
   sendAerRvRvr aer
+  edTime <- liftIO $ getCurrentTime
+  debug $ "pub AER taking " ++ show (interval stTime edTime) ++ "mics to construct"
 
 sendRequestVoteResponse :: NodeId -> LogIndex -> Bool -> SenderService ()
 sendRequestVoteResponse target logIndex' vote = do

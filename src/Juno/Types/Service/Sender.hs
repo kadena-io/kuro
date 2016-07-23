@@ -64,6 +64,7 @@ data AEBroadcastControl =
 data ServiceRequest =
     BroadcastAE
     { _srAeBoardcastControl :: !AEBroadcastControl } |
+    EstablishDominance |
     SingleAER
     { _srFor :: !NodeId
     , _srSuccess :: !Bool

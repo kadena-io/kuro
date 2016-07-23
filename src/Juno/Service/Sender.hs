@@ -87,6 +87,7 @@ serviceRequests = do
           BroadcastAE{..} -> do
             evState <- view getEvidenceState >>= liftIO
             sendAllAppendEntries (evState ^. Ev.pesNodeStates) (evState ^. Ev.pesConvincedNodes) _srAeBoardcastControl
+          EstablishDominance -> establishDominance
           SingleAER{..} -> sendAppendEntriesResponse _srFor _srSuccess _srConvinced
           BroadcastAER -> sendAllAppendEntriesResponse
           BroadcastRV -> sendAllRequestVotes
@@ -131,6 +132,22 @@ createAppendEntries' target (pli, plt, es) ct myNodeId' vts yesVotes' =
   in
     AE' $ AppendEntries ct myNodeId' pli plt es vts' NewMsg
 
+establishDominance :: SenderService ()
+establishDominance = do
+  debug "establishing general dominance"
+  stTime <- liftIO $ getCurrentTime
+  ct <- view currentTerm
+  myNodeId' <- view myNodeId
+  yesVotes' <- view yesVotes
+  mv <- queryLogs $ Set.fromList [Log.GetMaxIndex, Log.GetLastLogTerm]
+  pli <- return $! Log.hasQueryResult Log.MaxIndex mv
+  plt <- return $! Log.hasQueryResult Log.LastLogTerm mv
+  rpc <- return $! AE' $ AppendEntries ct myNodeId' pli plt Seq.empty yesVotes' NewMsg
+  edTime <- liftIO $ getCurrentTime
+  pubRPC rpc
+  debug $ "asserted dominance: " ++ show (interval stTime edTime) ++ "mics"
+
+
 -- | Send all append entries is only needed in special circumstances. Either we have a Heartbeat event or we are getting a quick win in with CMD's
 sendAllAppendEntries :: Map NodeId (LogIndex, UTCTime) -> Set NodeId -> AEBroadcastControl -> SenderService ()
 sendAllAppendEntries nodeCurrentIndex' nodesThatFollow' sendIfOutOfSync = do
@@ -171,7 +188,7 @@ sendAllAppendEntries nodeCurrentIndex' nodesThatFollow' sendIfOutOfSync = do
       -- This saves us a lot of time when node count grows.
       pubRPC $ ae
       edTime <- liftIO $ getCurrentTime
-      debug $ "followers are in sync, pub AE with " ++ show ln ++ " log entries: " ++ show (interval synTime edTime)
+      debug $ "followers are in sync, pub AE with " ++ show ln ++ " log entries: " ++ show (interval synTime edTime) ++ "mics"
 
 data InSync = InSync (RPC, Int) | BackStreet (RPC, Set NodeId) deriving (Show, Eq)
 
@@ -221,7 +238,7 @@ canBroadcastAE clusterSize' nodeCurrentIndex' ct myNodeId' vts =
       then return $ BackStreet (inSyncRpc, laggingFollowers)
       else do
         oNodes' <- view otherNodes
-        debug $ "non-believers exist, establishing dominance"
+        debug $ "non-believers exist, establishing dominance over " ++ show ((Set.size vts) - 1)
         return $ BackStreet (inSyncRpc, Set.union laggingFollowers (oNodes' Set.\\ vts))
 {-# INLINE canBroadcastAE #-}
 

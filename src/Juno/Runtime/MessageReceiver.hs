@@ -68,7 +68,7 @@ generalTurbine = do
   debug <- view debugPrint
   ks <- view keySet
   forever $ liftIO $ do
-    msgs <- gm 5
+    msgs <- gm 10
     (aes, noAes) <- return $ partition (\(_,SignedRPC{..}) -> if _digType _sigDigest == AE then True else False) (_unInboundGeneral <$> msgs)
     prunedAes <- return $ pruneRedundantAEs aes
     when (length aes - length prunedAes /= 0) $ debug $ turbineGeneral ++ "pruned " ++ show (length aes - length prunedAes) ++ " redundant AE(s)"

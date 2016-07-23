@@ -159,12 +159,15 @@ processResult Successful{..} = do
       -- this one is interesting, we have an old but successful message... I think we just drop it
 processResult SuccessfulSteadyState{..} = do
   -- basically, nothings going on and these are just heartbeats
+  esConvincedNodes %= Set.insert _rNodeId
   esNodeStates %= Map.insert _rNodeId (_rLogIndex, _rReceivedAt)
   esMismatchNodes %= Set.delete _rNodeId
   esResetLeaderNoFollowers .= True
 processResult SuccessfulButCacheMiss{..} = do
+  esConvincedNodes %= Set.insert (_aerNodeId _rAer)
   esCacheMissAers %= Set.insert _rAer
 processResult MisMatch{..} = do
+  esConvincedNodes %= Set.insert _rNodeId
   esMismatchNodes %= Set.insert _rNodeId
 processResult Noop = return ()
 {-# INLINE processResult #-}

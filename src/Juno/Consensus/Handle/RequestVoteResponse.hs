@@ -108,7 +108,7 @@ becomeLeader = do
 --  lNextIndex' <- Map.fromSet (const $ LogIndex ni) <$> JT.viewConfig JT.otherNodes
 --  setLNextIndex ci lNextIndex'
 --  JT.lConvinced .= Set.empty
-  enqueueRequest $ Sender.BroadcastAE Sender.SendAERegardless
+  enqueueRequest $ Sender.EstablishDominance
   view JT.informEvidenceServiceOfElection >>= liftIO
   resetHeartbeatTimer
   resetElectionTimerLeader

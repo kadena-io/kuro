@@ -85,7 +85,7 @@ runQuery (Update ul) = do
         Just logs -> do
           lsLastPersisted' <- return (_leLogIndex $ snd $ Map.findMax $ (logs ^. logEntries))
           lsLastPersisted .= lsLastPersisted'
-          lsPersistedLogEntries %= (`lesUnion` logs)
+          lsPersistedLogEntries %= plesAddNew logs
           lsVolatileLogEntries %= lesGetSection (Just $ lsLastPersisted' + 1) Nothing
           liftIO $ insertSeqLogEntry conn logs
         Nothing -> return ()
@@ -152,10 +152,11 @@ syncLogsFromDisk internalEvent' conn = do
   lastLog' <- return $ if Map.null logs' then Nothing else Just $ snd $ Map.findMax logs'
   case lastLog' of
     Just log' -> do
-      liftIO $ writeComm internalEvent' (InternalEvent $ ApplyLogEntries (Just logs) $ _leLogIndex log')
+      liftIO $ writeComm internalEvent' $ InternalEvent $ ApplyLogEntries logs
+      (Just minIdx) <- return $ lesMinIndex logs
       return $ LogState
         { _lsVolatileLogEntries = LogEntries Map.empty
-        , _lsPersistedLogEntries = logs
+        , _lsPersistedLogEntries = PersistedLogEntries $ Map.singleton minIdx logs
         , _lsLastApplied = startIndex
         , _lsLastLogIndex = _leLogIndex log'
         , _lsLastLogHash = _leHash log'
@@ -172,11 +173,10 @@ tellJunoToApplyLogEntries = do
   es <- get
   case getUnappliedEntries es of
     Just unappliedEntries' -> do
-      (Just commitIndex') <- return $ lesMinIndex unappliedEntries'
       (Just appliedIndex') <- return $ lesMaxIndex unappliedEntries'
       lsLastApplied .= appliedIndex'
-      view internalEvent >>= liftIO . (`writeComm` (InternalEvent $ ApplyLogEntries (Just unappliedEntries') commitIndex'))
-      debug $ "informing Juno of a CommitIndex update: " ++ show commitIndex'
+      view internalEvent >>= liftIO . (`writeComm` (InternalEvent $ ApplyLogEntries unappliedEntries'))
+      debug $ "informing Juno to apply up to: " ++ show appliedIndex'
     Nothing -> return ()
 
 tellTinyCryptoWorkerToDoMore :: LogThread ()

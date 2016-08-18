@@ -9,7 +9,6 @@ module Juno.Types.Event
 
 import Data.Thyme.Clock (UTCTime)
 
-import Juno.Types.Base
 import Juno.Types.Message
 import Juno.Types.Log (LogEntries)
 
@@ -21,6 +20,6 @@ data ResetLeaderNoFollowersTimeout = ResetLeaderNoFollowersTimeout deriving (Sho
 data Event = ERPC RPC
            | ElectionTimeout String
            | HeartbeatTimeout String
-           | ApplyLogEntries (Maybe LogEntries) LogIndex
+           | ApplyLogEntries LogEntries
            | Tick Tock
   deriving (Show)

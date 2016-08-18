@@ -108,7 +108,7 @@ class LogApi a where
 
 data LogState = LogState
   { _lsVolatileLogEntries  :: !LogEntries
-  , _lsPersistedLogEntries :: !LogEntries
+  , _lsPersistedLogEntries :: !PersistedLogEntries
   , _lsLastApplied      :: !LogIndex
   , _lsLastLogIndex     :: !LogIndex
   , _lsLastLogHash      :: !ByteString
@@ -122,8 +122,8 @@ makeLenses ''LogState
 
 initLogState :: LogState
 initLogState = LogState
-  { _lsVolatileLogEntries = LogEntries mempty
-  , _lsPersistedLogEntries = LogEntries mempty
+  { _lsVolatileLogEntries = lesEmpty
+  , _lsPersistedLogEntries = plesEmpty
   , _lsLastApplied = startIndex
   , _lsLastLogIndex = startIndex
   , _lsLastLogHash = mempty
@@ -151,22 +151,20 @@ instance LogApi (LogState) where
   {-# INLINE commitIndex #-}
 
   firstEntry ls =
-    let ples = ls ^. (lsPersistedLogEntries.logEntries)
-        vles = ls ^. (lsVolatileLogEntries.logEntries)
-    in if not $ Map.null ples
-       then Just $! snd $ Map.findMin ples
-       else if not $! Map.null vles
-            then Just $! snd $ Map.findMin vles
-            else Nothing
+    let ples = ls ^. lsPersistedLogEntries
+        vles = ls ^. lsVolatileLogEntries
+    in if not $ plesNull ples
+       then plesMinEntry ples
+       else lesMinEntry vles
   {-# INLINE firstEntry #-}
 
   lastEntry ls =
-    let ples = ls ^. (lsPersistedLogEntries.logEntries)
-        vles = ls ^. (lsVolatileLogEntries.logEntries)
-    in if not $ Map.null vles
-       then Just $! snd $ Map.findMax vles
-       else if not $! Map.null ples
-            then Just $! snd $ Map.findMax ples
+    let ples = ls ^. lsPersistedLogEntries
+        vles = ls ^. lsVolatileLogEntries
+    in if not $ lesNull vles
+       then lesMaxEntry $ vles
+       else if not $ plesNull ples
+            then plesMaxEntry ples
             else Nothing
   {-# INLINE lastEntry #-}
 
@@ -174,16 +172,21 @@ instance LogApi (LogState) where
   {-# INLINE maxIndex #-}
 
   entryCount ls =
-    let ples = ls ^. (lsPersistedLogEntries.logEntries)
-        vles = ls ^. (lsVolatileLogEntries.logEntries)
-    in (Map.size ples) + (Map.size vles)
+    let ples = ls ^. lsPersistedLogEntries
+        vles = ls ^. lsVolatileLogEntries
+    in (plesCnt ples) + (lesCnt vles)
   {-# INLINE entryCount #-}
 
   lookupEntry i ls =
-    let ples = ls ^. (lsPersistedLogEntries.logEntries)
-        vles = ls ^. (lsVolatileLogEntries.logEntries)
-    in case Map.lookup i vles of
-      Nothing -> Map.lookup i ples
+    let ples = ls ^. (lsPersistedLogEntries.pLogEntries)
+        vles = ls ^. lsVolatileLogEntries
+        lookup' i' (LogEntries les) = Map.lookup i' les
+    in case lookup' i vles of
+      Nothing -> case Map.lookupGE i ples of
+        Nothing -> Nothing
+        Just (_, ples') -> case lookup' i ples' of
+          Nothing -> Nothing
+          v -> v
       v -> v
   {-# INLINE lookupEntry #-}
 
@@ -253,10 +256,11 @@ instance LogApi (LogState) where
     in if pli >= lp
        then lesGetSection (Just $ pli + 1) (Just $ pli + fromIntegral cnt) vles
        else let ples = ls ^. lsPersistedLogEntries
-                firstPart = lesGetSection (Just $ pli + 1) (Just $ pli + fromIntegral cnt) ples
-            in if lesCnt firstPart == cnt
-               then firstPart
-               else lesUnion firstPart (lesGetSection (Just $ pli + 1) (Just $ pli + fromIntegral cnt) vles)
+                firstPart = plesGetSection (Just $ pli + 1) (Just $ pli + fromIntegral cnt) ples
+            in --if lesCnt firstPart == cnt
+               --then firstPart
+               --else lesUnion firstPart (lesGetSection (Just $ pli + 1) (Just $ pli + fromIntegral cnt) vles)
+               lesUnion firstPart (lesGetSection (Just $ pli + 1) (Just $ pli + fromIntegral cnt) vles)
   {-# INLINE getEntriesAfter #-}
 
   updateLogs (ULNew nle) ls = appendLogEntry nle ls
@@ -309,12 +313,9 @@ appendLogEntry NewLogEntries{..} ls = case lastEntry ls of
     Nothing -> let
         nle = newEntriesToLog (_nleTerm) (B.empty) (ls ^. lsNextLogIndex) _nleEntries
         ls' = ls { _lsVolatileLogEntries = nle }
-        ples = ls ^. (lsPersistedLogEntries.logEntries)
-        lastLog' = if not $ Map.null $ nle ^. logEntries
-                   then Just $! snd $ Map.findMax $ nle ^. logEntries
-                   else if not $! Map.null ples
-                         then Just $! snd $ Map.findMax ples
-                         else Nothing
+        lastLog' = case lesMaxEntry nle of
+                     Nothing -> plesMaxEntry (ls ^. lsPersistedLogEntries)
+                     v -> v
         lastIdx' = maybe (ls ^. lsLastLogIndex) _leLogIndex lastLog'
         lastTerm' = maybe (ls ^. lsLastLogTerm) _leTerm lastLog'
         lastHash' = maybe (ls ^. lsLastLogHash) _leHash lastLog'

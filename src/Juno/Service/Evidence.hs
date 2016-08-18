@@ -65,6 +65,7 @@ publishEvidence :: EvidenceState -> EvidenceProcEnv ()
 publishEvidence es = do
   esPub <- view mPubStateTo
   liftIO $ void $ swapMVar esPub $ PublishedEvidenceState (es ^. esConvincedNodes) (es ^. esNodeStates)
+--  debug $ "Published Evidence" ++ show (es ^. esNodeStates)
 
 runEvidenceProcessor :: EvidenceState -> EvidenceProcEnv (EvidenceState)
 runEvidenceProcessor es = do

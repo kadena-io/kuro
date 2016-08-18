@@ -16,6 +16,7 @@ import Data.Thyme.Clock (UTCTime)
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.Map.Strict as Map
 import Data.Foldable (toList)
+import Data.Maybe (fromJust)
 
 import Juno.Types hiding (valid)
 import Juno.Util.Util
@@ -23,23 +24,20 @@ import qualified Juno.Service.Sender as Sender
 import qualified Juno.Service.Log as Log
 
 
-applyLogEntries :: Maybe LogEntries -> LogIndex -> Raft ()
-applyLogEntries unappliedEntries' commitIndex' = do
+applyLogEntries :: LogEntries -> Raft ()
+applyLogEntries les@(LogEntries leToApply) = do
   now <- view (rs.getTimestamp) >>= liftIO
-  case unappliedEntries' of
-    Nothing -> debug $ "No new entries to apply"
-    Just (LogEntries leToApply) -> do
-      results <- mapM (applyCommand now . _leCommand) (Map.elems leToApply)
-      r <- use nodeRole
-      updateLogs $ Log.UpdateLastApplied commitIndex'
-      logMetric $ MetricAppliedIndex commitIndex'
-      if not (null results)
-        then if r == Leader
-            then do
-              enqueueRequest $! Sender.SendCommandResults $! toList results
-              debug $ "Applied and Responded to " ++ show (length results) ++ " CMD(s)"
-            else debug $ "Applied " ++ show (length results) ++ " CMD(s)"
-        else debug "Applied log entries but did not send results?"
+  results <- mapM (applyCommand now . _leCommand) (Map.elems leToApply)
+  r <- use nodeRole
+  commitIndex' <- return $ fromJust $ Log.lesMaxIndex les
+  logMetric $ MetricAppliedIndex commitIndex'
+  if not (null results)
+    then if r == Leader
+        then do
+          enqueueRequest $! Sender.SendCommandResults $! toList results
+          debug $ "Applied and Responded to " ++ show (length results) ++ " CMD(s)"
+        else debug $ "Applied " ++ show (length results) ++ " CMD(s)"
+    else debug "Applied log entries but did not send results?"
 
 logApplyLatency :: Command -> Raft ()
 logApplyLatency (Command _ _ _ _ _ provenance) = case provenance of

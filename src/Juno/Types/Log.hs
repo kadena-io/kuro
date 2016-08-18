@@ -15,7 +15,10 @@ module Juno.Types.Log
   ( LogEntry(..), leTerm, leLogIndex, leCommand, leHash
   , LogEntries(..), logEntries, lesCnt, lesMinEntry, lesMaxEntry
   , lesMinIndex, lesMaxIndex, lesEmpty, lesNull, checkLogEntries, lesGetSection
-  , lesUnion
+  , lesUnion, lesUnions
+  , PersistedLogEntries(..), pLogEntries, plesCnt, plesMinEntry, plesMaxEntry
+  , plesMinIndex, plesMaxIndex, plesEmpty, plesNull, plesGetSection
+  , plesUnion, plesAddNew
   , LEWire(..), encodeLEWire, decodeLEWire, decodeLEWire', toLogEntries
   , ReplicateLogEntries(..), rleMinLogIdx, rleMaxLogIdx, rlePrvLogIdx, rleEntries
   , toReplicateLogEntries
@@ -82,33 +85,98 @@ checkLogEntries m = if Map.null m
 
 lesNull :: LogEntries -> Bool
 lesNull (LogEntries les) = Map.null les
+{-# INLINE lesNull #-}
 
 lesCnt :: LogEntries -> Int
 lesCnt (LogEntries les) = Map.size les
+{-# INLINE lesCnt #-}
 
 lesEmpty :: LogEntries
 lesEmpty = LogEntries Map.empty
+{-# INLINE lesEmpty #-}
 
 lesMinEntry :: LogEntries -> Maybe LogEntry
 lesMinEntry (LogEntries les) = if Map.null les then Nothing else Just $ snd $ Map.findMin les
+{-# INLINE lesMinEntry #-}
 
 lesMaxEntry :: LogEntries -> Maybe LogEntry
 lesMaxEntry (LogEntries les) = if Map.null les then Nothing else Just $ snd $ Map.findMax les
+{-# INLINE lesMaxEntry #-}
 
 lesMinIndex :: LogEntries -> Maybe LogIndex
 lesMinIndex (LogEntries les) = if Map.null les then Nothing else Just $ fst $ Map.findMin les
+{-# INLINE lesMinIndex #-}
 
 lesMaxIndex :: LogEntries -> Maybe LogIndex
 lesMaxIndex (LogEntries les) = if Map.null les then Nothing else Just $ fst $ Map.findMax les
+{-# INLINE lesMaxIndex #-}
 
 lesGetSection :: Maybe LogIndex -> Maybe LogIndex -> LogEntries -> LogEntries
 lesGetSection (Just minIdx) (Just maxIdx) (LogEntries les) = LogEntries $! Map.filterWithKey (\k _ -> k >= minIdx && k <= maxIdx) les
 lesGetSection Nothing (Just maxIdx) (LogEntries les) = LogEntries $! Map.filterWithKey (\k _ -> k <= maxIdx) les
 lesGetSection (Just minIdx) Nothing (LogEntries les) = LogEntries $! Map.filterWithKey (\k _ -> k >= minIdx) les
 lesGetSection Nothing Nothing (LogEntries _) = error "Invariant Error: lesGetSection called with neither a min or max bound!"
+{-# INLINE lesGetSection #-}
 
 lesUnion :: LogEntries -> LogEntries -> LogEntries
 lesUnion (LogEntries les1) (LogEntries les2) = LogEntries $! Map.union les1 les2
+{-# INLINE lesUnion #-}
+
+lesUnions :: [LogEntries] -> LogEntries
+lesUnions les = LogEntries $! (Map.unions (_logEntries <$> les))
+{-# INLINE lesUnions #-}
+
+newtype PersistedLogEntries = PersistedLogEntries { _pLogEntries :: Map LogIndex LogEntries }
+    deriving (Eq,Show,Ord,Generic)
+makeLenses ''PersistedLogEntries
+
+plesNull :: PersistedLogEntries -> Bool
+plesNull (PersistedLogEntries les) = Map.null les
+{-# INLINE plesNull #-}
+
+plesCnt :: PersistedLogEntries -> Int
+plesCnt (PersistedLogEntries les) = sum (lesCnt <$> les)
+{-# INLINE plesCnt #-}
+
+plesEmpty :: PersistedLogEntries
+plesEmpty = PersistedLogEntries Map.empty
+{-# INLINE plesEmpty #-}
+
+plesMinEntry :: PersistedLogEntries -> Maybe LogEntry
+plesMinEntry (PersistedLogEntries les) = if Map.null les then Nothing else lesMinEntry $ snd $ Map.findMin les
+{-# INLINE plesMinEntry #-}
+
+plesMaxEntry :: PersistedLogEntries -> Maybe LogEntry
+plesMaxEntry (PersistedLogEntries les) = if Map.null les then Nothing else lesMaxEntry $ snd $ Map.findMax les
+{-# INLINE plesMaxEntry #-}
+
+plesMinIndex :: PersistedLogEntries -> Maybe LogIndex
+plesMinIndex (PersistedLogEntries les) = if Map.null les then Nothing else lesMinIndex $ snd $ Map.findMin les
+{-# INLINE plesMinIndex #-}
+
+plesMaxIndex :: PersistedLogEntries -> Maybe LogIndex
+plesMaxIndex (PersistedLogEntries les) = if Map.null les then Nothing else lesMaxIndex $ snd $ Map.findMax les
+{-# INLINE plesMaxIndex #-}
+
+plesGetSection :: Maybe LogIndex -> Maybe LogIndex -> PersistedLogEntries -> LogEntries
+plesGetSection m1@(Just minIdx) m2@(Just maxIdx) (PersistedLogEntries les) =
+  lesUnions $ fmap (lesGetSection m1 m2) (Map.elems $ Map.filterWithKey (\k _ -> k >= minIdx && k <= maxIdx) les)
+plesGetSection m1@(Nothing) m2@(Just maxIdx) (PersistedLogEntries les) =
+  lesUnions $ fmap (lesGetSection m1 m2) (Map.elems $ Map.filterWithKey (\k _ -> k <= maxIdx) les)
+plesGetSection m1@(Just minIdx) m2@(Nothing) (PersistedLogEntries les) =
+  lesUnions $ fmap (lesGetSection m1 m2) (Map.elems $ Map.filterWithKey (\k _ -> k >= minIdx) les)
+plesGetSection Nothing Nothing (PersistedLogEntries _) = error "Invariant Error: lesGetSection called with neither a min or max bound!"
+{-# INLINE plesGetSection #-}
+
+plesUnion :: PersistedLogEntries -> PersistedLogEntries -> PersistedLogEntries
+plesUnion (PersistedLogEntries les1) (PersistedLogEntries les2) = PersistedLogEntries $! Map.union les1 les2
+{-# INLINE plesUnion #-}
+
+plesAddNew :: LogEntries -> PersistedLogEntries -> PersistedLogEntries
+plesAddNew les p@(PersistedLogEntries ples) = case lesMinIndex les of
+  Nothing -> p
+  Just k -> PersistedLogEntries $! Map.insertWith (\n o -> lesUnion o n) k les ples
+{-# INLINE plesAddNew #-}
 
 decodeLEWire' :: Maybe ReceivedAt -> KeySet -> LEWire -> Either String LogEntry
 decodeLEWire' !ts !ks (LEWire !(t,i,cmd,hsh)) = case fromWire ts ks cmd of

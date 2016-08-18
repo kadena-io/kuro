@@ -8,6 +8,8 @@ import Control.Lens hiding ((:>))
 import Control.Monad
 import Control.Monad.IO.Class
 
+import Data.Maybe (fromJust)
+
 import Juno.Types
 import Juno.Util.Util (debug, dequeueEvent)
 import Juno.Consensus.Commit (applyLogEntries)
@@ -33,9 +35,11 @@ handleEvents = forever $ do
     ERPC rpc                      -> handleRPC rpc
     ElectionTimeout s             -> PureElectionTimeout.handle s
     HeartbeatTimeout s            -> PureHeartbeatTimeout.handle s
-    ApplyLogEntries unappliedEntries' commitIndex' -> do
-      debug $ maybe "EMPTY!" (show . Log.lesCnt) unappliedEntries' ++ " new log entries to apply, up to " ++ show commitIndex'
-      applyLogEntries unappliedEntries' commitIndex'
+    ApplyLogEntries unappliedEntries' -> do
+      debug $ (show . Log.lesCnt $ unappliedEntries')
+            ++ " new log entries to apply, up to "
+            ++ show (fromJust $ Log.lesMaxIndex unappliedEntries')
+      applyLogEntries unappliedEntries'
     Tick tock'                    -> liftIO (pprintTock tock') >>= debug
 
 -- TODO: prune out AER's from RPC if possible

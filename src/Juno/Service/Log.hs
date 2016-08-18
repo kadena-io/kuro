@@ -83,7 +83,10 @@ runQuery (Update ul) = do
       toPersist <- getUnpersisted <$> get
       case toPersist of
         Just logs -> do
-          lsLastPersisted .= (_leLogIndex $ snd $ Map.findMax $ (logs ^. logEntries))
+          lsLastPersisted' <- return (_leLogIndex $ snd $ Map.findMax $ (logs ^. logEntries))
+          lsLastPersisted .= lsLastPersisted'
+          lsPersistedLogEntries %= (`lesUnion` logs)
+          lsVolatileLogEntries %= lesGetSection (Just $ lsLastPersisted' + 1) Nothing
           liftIO $ insertSeqLogEntry conn logs
         Nothing -> return ()
     Nothing ->  return ()
@@ -169,7 +172,9 @@ tellJunoToApplyLogEntries = do
   es <- get
   case getUnappliedEntries es of
     Just unappliedEntries' -> do
-      commitIndex' <- return $ fst $ Map.findMin (unappliedEntries' ^. logEntries)
+      (Just commitIndex') <- return $ lesMinIndex unappliedEntries'
+      (Just appliedIndex') <- return $ lesMaxIndex unappliedEntries'
+      lsLastApplied .= appliedIndex'
       view internalEvent >>= liftIO . (`writeComm` (InternalEvent $ ApplyLogEntries (Just unappliedEntries') commitIndex'))
       debug $ "informing Juno of a CommitIndex update: " ++ show commitIndex'
     Nothing -> return ()

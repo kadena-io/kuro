@@ -189,21 +189,21 @@ instance LogApi (LogState) where
 
   getUncommitedHashes ls =
     let ci  = commitIndex ls
-        vles = ls ^. (lsVolatileLogEntries.logEntries)
-    in _leHash <$> (snd $ Map.split ci vles)
+        vles = ls ^. lsVolatileLogEntries
+    in _leHash <$> (_logEntries $ lesGetSection (Just $ ci + 1) Nothing vles)
   {-# INLINE getUncommitedHashes #-}
 
   getUnappliedEntries ls =
     let lv = ls ^. lsLastCryptoVerified
-        vles = ls ^. (lsVolatileLogEntries.logEntries)
+        vles = ls ^. lsVolatileLogEntries
         ci = commitIndex ls
         finalIdx = if lv > ci then ci else lv
         la = lastApplied ls
         les = if la < finalIdx
-              then Just $ fst $ Map.split (finalIdx+1) (snd $! Map.split la vles)
+              then Just $ lesGetSection (Just $ la + 1) (Just finalIdx) vles
               else Nothing
     in case les of
-         Just v | Map.null v -> Nothing
+         Just (LogEntries v) | Map.null v -> Nothing
                 | otherwise  -> Just $ LogEntries v
          Nothing -> Nothing
   {-# INLINE getUnappliedEntries #-}
@@ -211,22 +211,21 @@ instance LogApi (LogState) where
   getUnpersisted ls =
     let la = lastApplied ls
         lp = lastPersisted ls
-        vles = ls ^. (lsVolatileLogEntries.logEntries)
-        uples = fst $ Map.split (la+1) (snd $! Map.split lp vles)
+        vles = ls ^. lsVolatileLogEntries
+        uples = lesGetSection (Just $ lp + 1) (Just $ la) vles
     in if lp < la
-       then if Map.null uples
+       then if Map.null $ _logEntries uples
             then Nothing
-            else Just $ LogEntries uples
+            else Just uples
        else Nothing
   {-# INLINE getUnpersisted #-}
 
   getUnverifiedEntries ls =
     let lstIndex = maxIndex ls
         fstIndex = ls ^. lsLastCryptoVerified
-        vles = ls ^. (lsVolatileLogEntries.logEntries)
+        vles = ls ^. lsVolatileLogEntries
         les = if fstIndex < lstIndex
-              --then fmap (Seq.drop (fromIntegral $ fstIndex + 1)) $ takeEntries (lstIndex + 1) ls
-              then Just $ LogEntries $! snd $! Map.split fstIndex vles
+              then Just $! lesGetSection (Just $ fstIndex + 1) Nothing vles
               else Nothing
     in case les of
       Nothing -> Nothing
@@ -250,14 +249,14 @@ instance LogApi (LogState) where
 
   getEntriesAfter pli cnt ls = -- Seq.take cnt . Seq.drop (fromIntegral $ pli + 1) . viewLogSeq
     let lp = lastPersisted ls
-        ples = ls ^. (lsPersistedLogEntries.logEntries)
-    in if pli + fromIntegral cnt <= lp
-       then LogEntries $ fst $ Map.split (pli + fromIntegral (cnt + 1)) (snd $ Map.split (pli - 1) ples)
-       else let vles = ls ^. (lsVolatileLogEntries.logEntries)
-                firstPart = snd $ Map.split (pli - 1) ples
-                remainingCnt = cnt + Map.size firstPart
-                secondPart = fst $ Map.split (lp + fromIntegral remainingCnt + 2) vles
-            in LogEntries $ Map.union firstPart secondPart
+        vles = ls ^. lsVolatileLogEntries
+    in if pli >= lp
+       then lesGetSection (Just $ pli + 1) (Just $ pli + fromIntegral cnt) vles
+       else let ples = ls ^. lsPersistedLogEntries
+                firstPart = lesGetSection (Just $ pli + 1) (Just $ pli + fromIntegral cnt) ples
+            in if lesCnt firstPart == cnt
+               then firstPart
+               else lesUnion firstPart (lesGetSection (Just $ pli + 1) (Just $ pli + fromIntegral cnt) vles)
   {-# INLINE getEntriesAfter #-}
 
   updateLogs (ULNew nle) ls = appendLogEntry nle ls

@@ -13,7 +13,9 @@
 
 module Juno.Types.Log
   ( LogEntry(..), leTerm, leLogIndex, leCommand, leHash
-  , LogEntries(..), logEntries, lesCnt, lesMinEntry, lesMaxEntry, lesMinIndex, lesMaxIndex, lesEmpty, lesNull
+  , LogEntries(..), logEntries, lesCnt, lesMinEntry, lesMaxEntry
+  , lesMinIndex, lesMaxIndex, lesEmpty, lesNull, checkLogEntries, lesGetSection
+  , lesUnion
   , LEWire(..), encodeLEWire, decodeLEWire, decodeLEWire', toLogEntries
   , ReplicateLogEntries(..), rleMinLogIdx, rleMaxLogIdx, rlePrvLogIdx, rleEntries
   , toReplicateLogEntries
@@ -70,6 +72,13 @@ newtype LogEntries = LogEntries { _logEntries :: Map LogIndex LogEntry }
     deriving (Eq,Show,Ord,Generic)
 makeLenses ''LogEntries
 
+checkLogEntries :: Map LogIndex LogEntry -> Either String LogEntries
+checkLogEntries m = if Map.null m
+  then Right $ LogEntries m
+  else let verifiedMap = Map.filterWithKey (\k a -> k == _leLogIndex a) m
+       in verifiedMap `seq` if Map.size m == Map.size verifiedMap
+                            then Right $! LogEntries m
+                            else Left $! "Mismatches in the map were found!\n" ++ show (Map.difference m verifiedMap)
 
 lesNull :: LogEntries -> Bool
 lesNull (LogEntries les) = Map.null les
@@ -91,6 +100,15 @@ lesMinIndex (LogEntries les) = if Map.null les then Nothing else Just $ fst $ Ma
 
 lesMaxIndex :: LogEntries -> Maybe LogIndex
 lesMaxIndex (LogEntries les) = if Map.null les then Nothing else Just $ fst $ Map.findMax les
+
+lesGetSection :: Maybe LogIndex -> Maybe LogIndex -> LogEntries -> LogEntries
+lesGetSection (Just minIdx) (Just maxIdx) (LogEntries les) = LogEntries $! Map.filterWithKey (\k _ -> k >= minIdx && k <= maxIdx) les
+lesGetSection Nothing (Just maxIdx) (LogEntries les) = LogEntries $! Map.filterWithKey (\k _ -> k <= maxIdx) les
+lesGetSection (Just minIdx) Nothing (LogEntries les) = LogEntries $! Map.filterWithKey (\k _ -> k >= minIdx) les
+lesGetSection Nothing Nothing (LogEntries _) = error "Invariant Error: lesGetSection called with neither a min or max bound!"
+
+lesUnion :: LogEntries -> LogEntries -> LogEntries
+lesUnion (LogEntries les1) (LogEntries les2) = LogEntries $! Map.union les1 les2
 
 decodeLEWire' :: Maybe ReceivedAt -> KeySet -> LEWire -> Either String LogEntry
 decodeLEWire' !ts !ks (LEWire !(t,i,cmd,hsh)) = case fromWire ts ks cmd of

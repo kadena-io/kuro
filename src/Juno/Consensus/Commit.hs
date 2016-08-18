@@ -14,7 +14,6 @@ import Data.Int (Int64)
 import Data.Thyme.Clock (UTCTime)
 
 import qualified Data.ByteString.Char8 as BSC
-import Data.Sequence (Seq)
 import qualified Data.Map.Strict as Map
 import Data.Foldable (toList)
 
@@ -24,13 +23,13 @@ import qualified Juno.Service.Sender as Sender
 import qualified Juno.Service.Log as Log
 
 
-applyLogEntries :: Maybe (Seq LogEntry) -> LogIndex -> Raft ()
+applyLogEntries :: Maybe LogEntries -> LogIndex -> Raft ()
 applyLogEntries unappliedEntries' commitIndex' = do
   now <- view (rs.getTimestamp) >>= liftIO
   case unappliedEntries' of
     Nothing -> debug $ "No new entries to apply"
-    Just leToApply -> do
-      results <- mapM (applyCommand now . _leCommand) leToApply
+    Just (LogEntries leToApply) -> do
+      results <- mapM (applyCommand now . _leCommand) (Map.elems leToApply)
       r <- use nodeRole
       updateLogs $ Log.UpdateLastApplied commitIndex'
       logMetric $ MetricAppliedIndex commitIndex'

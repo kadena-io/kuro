@@ -16,9 +16,7 @@ import Control.Monad.Writer.Strict
 import Data.ByteString (ByteString)
 
 import Data.Map.Strict (Map)
-import qualified Data.Map as Map
-import Data.Sequence (Seq)
-import qualified Data.Sequence as Seq
+import qualified Data.Map.Strict as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
 
@@ -104,7 +102,7 @@ handleAppendEntries ae@AppendEntries{..} = do
       tell ["sending unconvinced response for AE received from "
            ++ show (JT.unAlias $ _alias $ _digNodeId $ _pDig $ _aeProvenance)
            ++ " for " ++ show (_aeTerm, _prevLogIndex)
-           ++ " with " ++ show (Seq.length $ _aeEntries)
+           ++ " with " ++ show (Log.lesCnt _aeEntries)
            ++ " entries; my term is " ++ show currentTerm']
       return $ AppendEntriesOut nlo $ SendUnconvincedResponse _leaderId
     _ -> return $ AppendEntriesOut nlo Ignore
@@ -149,18 +147,17 @@ prevLogEntryMatches pli plt = do
     Just LogEntry{..} -> return (_leTerm == plt)
 
 appendLogEntries :: (MonadWriter [String] m, MonadReader AppendEntriesEnv m)
-                 => LogIndex -> Seq LogEntry -> m ValidResponse
+                 => LogIndex -> LogEntries -> m ValidResponse
 appendLogEntries pli newEs
-  | Seq.null newEs = return DoNothing
+  | Log.lesNull newEs = return DoNothing
   | otherwise = case JT.toReplicateLogEntries pli newEs of
       Left err -> do
           tell ["Failure to Append Logs: " ++ err]
           return SendFailureResponse
       Right rle -> do
-        replay <- return $
-          foldl (\m LogEntry{_leCommand = c@Command{..}} ->
-                  Map.insert (_cmdClientId, getCmdSigOrInvariantError "appendLogEntries" c) Nothing m)
-          Map.empty newEs
+        replay <- return $ Map.fromList $ fmap
+          (\LogEntry{_leCommand = c@Command{..}} -> ((_cmdClientId, getCmdSigOrInvariantError "appendLogEntries" c), Nothing))
+          (Map.elems (newEs ^. Log.logEntries))
         tell ["replicated LogEntry(s): " ++ (show $ _rleMinLogIdx rle) ++ " through " ++ (show $ _rleMaxLogIdx rle)]
         return $ Commit replay rle
 
@@ -198,7 +195,7 @@ handle ae = do
       debug $ "Ignoring AE from "
             ++ show (JT.unAlias $ _alias $ _digNodeId $ _pDig $ _aeProvenance ae )
             ++ " for " ++ show (_prevLogIndex $ ae)
-            ++ " with " ++ show (Seq.length $ _aeEntries ae) ++ " entries."
+            ++ " with " ++ show (Log.lesCnt $ _aeEntries ae) ++ " entries."
       return ()
     SendUnconvincedResponse{..} -> enqueueRequest $ Sender.SingleAER _responseLeaderId False False
     ValidLeaderAndTerm{..} -> do

@@ -12,7 +12,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 
 module Juno.Types.Service.Log
-  ( LogState(..), lsLogEntries, lsLastApplied, lsLastLogIndex, lsNextLogIndex, lsCommitIndex
+  ( LogState(..), lsVolatileLogEntries, lsPersistedLogEntries, lsLastApplied, lsLastLogIndex, lsNextLogIndex, lsCommitIndex
   , lsLastPersisted, lsLastLogTerm, lsLastLogHash, lsLastCryptoVerified
   , LogApi(..)
   , initLogState
@@ -28,7 +28,7 @@ module Juno.Types.Service.Log
   , LogThread
   , LogServiceChannel(..)
   , FirstEntry(..), LastEntry(..), MaxIndex(..), EntryCount(..), SomeEntry(..)
-  , TakenEntries(..), LogInfoForNextIndex(..) , LastLogHash(..), LastLogTerm(..)
+  , LogInfoForNextIndex(..) , LastLogHash(..), LastLogTerm(..)
   , EntriesAfter(..), InfoAndEntriesAfter(..)
   , LastApplied(..), LastLogIndex(..), NextLogIndex(..), CommitIndex(..)
   , UnappliedEntries(..)
@@ -51,8 +51,6 @@ import Control.Monad.Trans.RWS.Strict
 
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
-import Data.Sequence (Seq)
-import qualified Data.Sequence as Seq
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
@@ -90,16 +88,14 @@ class LogApi a where
   entryCount :: a -> Int
   -- | Safe index
   lookupEntry :: LogIndex -> a -> Maybe LogEntry
-  -- | Take operation: `takeEntries 3 $ Log $ Seq.fromList [0,1,2,3,4] == fromList [0,1,2]`
-  takeEntries :: LogIndex -> a -> (Maybe (Seq LogEntry))
   -- | called by leaders sending appendEntries.
   -- given a replica's nextIndex, get the index and term to send as
   -- prevLog(Index/Term)
   -- | get every entry that hasn't been applied yet (betweek LastApplied and CommitIndex)
-  getUnappliedEntries :: a -> Maybe (LogIndex, Seq LogEntry)
-  getUncommitedHashes :: a -> Seq ByteString
-  getUnpersisted      :: a -> Maybe (Seq LogEntry)
-  getUnverifiedEntries :: a -> Maybe (LogIndex, Seq LogEntry)
+  getUnappliedEntries :: a -> Maybe LogEntries
+  getUncommitedHashes :: a -> Map LogIndex ByteString
+  getUnpersisted      :: a -> Maybe LogEntries
+  getUnverifiedEntries :: a -> Maybe LogEntries
   logInfoForNextIndex :: Maybe LogIndex -> a -> (LogIndex,Term)
   -- | Latest hash or empty
   lastLogHash :: a -> ByteString
@@ -107,11 +103,12 @@ class LogApi a where
   lastLogTerm :: a -> Term
   -- | get entries after index to beginning, with limit, for AppendEntries message.
   -- TODO make monadic to get 8000 limit from config.
-  getEntriesAfter :: LogIndex -> Int -> a -> Seq LogEntry
+  getEntriesAfter :: LogIndex -> Int -> a -> LogEntries
   updateLogs :: UpdateLogs -> a -> a
 
-data LogState a = LogState
-  { _lsLogEntries       :: !(Log a)
+data LogState = LogState
+  { _lsVolatileLogEntries  :: !LogEntries
+  , _lsPersistedLogEntries :: !LogEntries
   , _lsLastApplied      :: !LogIndex
   , _lsLastLogIndex     :: !LogIndex
   , _lsLastLogHash      :: !ByteString
@@ -123,15 +120,10 @@ data LogState a = LogState
   } deriving (Show, Eq, Generic)
 makeLenses ''LogState
 
-viewLogSeq :: LogState LogEntry -> Seq LogEntry
-viewLogSeq = view (lsLogEntries.lEntries)
-
-viewLogs :: LogState LogEntry -> Log LogEntry
-viewLogs = view lsLogEntries
-
-initLogState :: LogState LogEntry
+initLogState :: LogState
 initLogState = LogState
-  { _lsLogEntries = mempty
+  { _lsVolatileLogEntries = LogEntries mempty
+  , _lsPersistedLogEntries = LogEntries mempty
   , _lsLastApplied = startIndex
   , _lsLastLogIndex = startIndex
   , _lsLastLogHash = mempty
@@ -142,7 +134,7 @@ initLogState = LogState
   , _lsLastLogTerm = startTerm
   }
 
-instance LogApi (LogState LogEntry) where
+instance LogApi (LogState) where
   lastPersisted a = view lsLastPersisted a
   {-# INLINE lastPersisted #-}
 
@@ -158,65 +150,87 @@ instance LogApi (LogState LogEntry) where
   commitIndex a = view lsCommitIndex a
   {-# INLINE commitIndex #-}
 
-  firstEntry ls = case viewLogs ls of
-    (e :< _) -> Just e
-    _        -> Nothing
+  firstEntry ls =
+    let ples = ls ^. (lsPersistedLogEntries.logEntries)
+        vles = ls ^. (lsVolatileLogEntries.logEntries)
+    in if not $ Map.null ples
+       then Just $! snd $ Map.findMin ples
+       else if not $! Map.null vles
+            then Just $! snd $ Map.findMin vles
+            else Nothing
   {-# INLINE firstEntry #-}
 
-  lastEntry ls = case viewLogs ls of
-    (_ :> e) -> Just e
-    _        -> Nothing
+  lastEntry ls =
+    let ples = ls ^. (lsPersistedLogEntries.logEntries)
+        vles = ls ^. (lsVolatileLogEntries.logEntries)
+    in if not $ Map.null vles
+       then Just $! snd $ Map.findMax vles
+       else if not $! Map.null ples
+            then Just $! snd $ Map.findMax ples
+            else Nothing
   {-# INLINE lastEntry #-}
 
   maxIndex ls = maybe startIndex _leLogIndex (lastEntry ls)
   {-# INLINE maxIndex #-}
 
-  entryCount ls = fromIntegral . Seq.length . viewLogSeq $ ls
+  entryCount ls =
+    let ples = ls ^. (lsPersistedLogEntries.logEntries)
+        vles = ls ^. (lsVolatileLogEntries.logEntries)
+    in (Map.size ples) + (Map.size vles)
   {-# INLINE entryCount #-}
 
-  lookupEntry i = firstOf (ix i) . viewLogs
+  lookupEntry i ls =
+    let ples = ls ^. (lsPersistedLogEntries.logEntries)
+        vles = ls ^. (lsVolatileLogEntries.logEntries)
+    in case Map.lookup i vles of
+      Nothing -> Map.lookup i ples
+      v -> v
   {-# INLINE lookupEntry #-}
-
-  takeEntries t ls = case Seq.take (fromIntegral t) $ viewLogSeq ls of
-    v | Seq.null v -> Nothing
-      | otherwise  -> Just v
-  {-# INLINE takeEntries #-}
 
   getUncommitedHashes ls =
     let ci  = commitIndex ls
-    in _leHash <$> (Seq.drop (fromIntegral $ ci + 1) $ viewLogSeq ls)
+        vles = ls ^. (lsVolatileLogEntries.logEntries)
+    in _leHash <$> (snd $ Map.split ci vles)
   {-# INLINE getUncommitedHashes #-}
 
   getUnappliedEntries ls =
     let lv = ls ^. lsLastCryptoVerified
+        vles = ls ^. (lsVolatileLogEntries.logEntries)
         ci = commitIndex ls
         finalIdx = if lv > ci then ci else lv
         la = lastApplied ls
         les = if la < finalIdx
-              then fmap (Seq.drop (fromIntegral $ la + 1)) $ takeEntries (lv + 1) ls
+              then Just $ fst $ Map.split (finalIdx+1) (snd $! Map.split la vles)
               else Nothing
     in case les of
-         Just v -> Just (finalIdx, v)
+         Just v | Map.null v -> Nothing
+                | otherwise  -> Just $ LogEntries v
          Nothing -> Nothing
   {-# INLINE getUnappliedEntries #-}
 
   getUnpersisted ls =
     let la = lastApplied ls
         lp = lastPersisted ls
+        vles = ls ^. (lsVolatileLogEntries.logEntries)
+        uples = fst $ Map.split (la+1) (snd $! Map.split lp vles)
     in if lp < la
-       then fmap (Seq.drop (fromIntegral $ lp + 1)) $ takeEntries (la + 1) ls
+       then if Map.null uples
+            then Nothing
+            else Just $ LogEntries uples
        else Nothing
   {-# INLINE getUnpersisted #-}
 
   getUnverifiedEntries ls =
     let lstIndex = maxIndex ls
         fstIndex = ls ^. lsLastCryptoVerified
+        vles = ls ^. (lsVolatileLogEntries.logEntries)
         les = if fstIndex < lstIndex
-              then fmap (Seq.drop (fromIntegral $ fstIndex + 1)) $ takeEntries (lstIndex + 1) ls
+              --then fmap (Seq.drop (fromIntegral $ fstIndex + 1)) $ takeEntries (lstIndex + 1) ls
+              then Just $ LogEntries $! snd $! Map.split fstIndex vles
               else Nothing
     in case les of
       Nothing -> Nothing
-      Just les' -> Just (lstIndex, les')
+      Just les' -> Just les'
   {-# INLINE getUnverifiedEntries #-}
 
   logInfoForNextIndex Nothing          _  = (startIndex, startTerm)
@@ -234,35 +248,43 @@ instance LogApi (LogState LogEntry) where
   lastLogTerm ls = view lsLastLogTerm ls
   {-# INLINE lastLogTerm #-}
 
-  getEntriesAfter pli cnt = Seq.take cnt . Seq.drop (fromIntegral $ pli + 1) . viewLogSeq
+  getEntriesAfter pli cnt ls = -- Seq.take cnt . Seq.drop (fromIntegral $ pli + 1) . viewLogSeq
+    let lp = lastPersisted ls
+        ples = ls ^. (lsPersistedLogEntries.logEntries)
+    in if pli + fromIntegral cnt <= lp
+       then LogEntries $ fst $ Map.split (pli + fromIntegral (cnt + 1)) (snd $ Map.split (pli - 1) ples)
+       else let vles = ls ^. (lsVolatileLogEntries.logEntries)
+                firstPart = snd $ Map.split (pli - 1) ples
+                remainingCnt = cnt + Map.size firstPart
+                secondPart = fst $ Map.split (lp + fromIntegral remainingCnt + 2) vles
+            in LogEntries $ Map.union firstPart secondPart
   {-# INLINE getEntriesAfter #-}
 
   updateLogs (ULNew nle) ls = appendLogEntry nle ls
   updateLogs (ULReplicate ReplicateLogEntries{..}) ls = addLogEntriesAt _rlePrvLogIdx _rleEntries ls
   updateLogs (ULCommitIdx UpdateCommitIndex{..}) ls = ls {_lsCommitIndex = _uci}
   updateLogs (UpdateLastApplied li) ls = ls {_lsLastApplied = li}
-  updateLogs (UpdateVerified (VerifiedLogEntries maxLI res)) ls = ls
-    { _lsLogEntries = Log $ applyCryptoVerify' res $ viewLogSeq ls
-    , _lsLastCryptoVerified = maxLI }
+  updateLogs (UpdateVerified (VerifiedLogEntries res)) ls = ls
+    { _lsVolatileLogEntries = applyCryptoVerify' res (ls ^. (lsVolatileLogEntries))
+    , _lsLastCryptoVerified = LogIndex $ fst $ IntMap.findMax res }
   {-# INLINE updateLogs  #-}
 
-applyCryptoVerify' :: IntMap CryptoVerified -> Seq LogEntry -> Seq LogEntry
-applyCryptoVerify' m = fmap (\le@LogEntry{..} -> case IntMap.lookup (fromIntegral $ _leLogIndex) m of
+applyCryptoVerify' :: IntMap CryptoVerified -> LogEntries -> LogEntries
+applyCryptoVerify' m (LogEntries les) = LogEntries $! fmap (\le@LogEntry{..} -> case IntMap.lookup (fromIntegral $ _leLogIndex) m of
       Nothing -> le
       Just c -> le { _leCommand = _leCommand { _cmdCryptoVerified = c }}
-      )
+      ) les
 {-# INLINE applyCryptoVerify' #-}
 
-addLogEntriesAt :: LogIndex -> Seq LogEntry -> LogState LogEntry -> LogState LogEntry
+addLogEntriesAt :: LogIndex -> LogEntries -> LogState -> LogState
 addLogEntriesAt pli newLEs ls =
-  let ls' = updateLogHashesFromIndex (pli + 1)
-                . over (lEntries) ((Seq.>< newLEs)
-                . Seq.take (fromIntegral pli + 1))
-                $ _lsLogEntries ls
-      (lastIdx',lastTerm',lastHash') = case ls' ^. lEntries of
-        (_ :> e) -> (_leLogIndex e, _leTerm e, _leHash e)
-        _        -> (ls ^. lsLastLogIndex, ls ^. lsLastLogTerm, ls ^. lsLastLogHash)
-  in ls { _lsLogEntries = ls'
+  let preceedingEntry = lookupEntry pli ls
+      ls' = LogEntries $ Map.union (_logEntries $ updateLogEntriesHashes preceedingEntry newLEs) (ls ^. lsVolatileLogEntries.logEntries)
+      (lastIdx',lastTerm',lastHash') =
+        if Map.null $ _logEntries ls'
+        then error "Invariant Error: addLogEntries attempted called on an null map!"
+        else let e = snd $ Map.findMax (ls' ^. logEntries) in (_leLogIndex e, _leTerm e, _leHash e)
+  in ls { _lsVolatileLogEntries = ls'
         , _lsLastLogIndex = lastIdx'
         , _lsLastLogHash = lastHash'
         , _lsNextLogIndex = lastIdx' + 1
@@ -272,12 +294,12 @@ addLogEntriesAt pli newLEs ls =
 
 -- Since the only node to ever append a log entry is the Leader we can start keeping the logs in sync here
 -- TODO: this needs to handle picking the right LogIndex
-appendLogEntry :: NewLogEntries -> LogState LogEntry -> LogState LogEntry
+appendLogEntry :: NewLogEntries -> LogState -> LogState
 appendLogEntry NewLogEntries{..} ls = case lastEntry ls of
     Just ple -> let
         nle = newEntriesToLog (_nleTerm) (_leHash ple) (ls ^. lsNextLogIndex) _nleEntries
-        ls' = ls { _lsLogEntries = Log $ (Seq.><) (viewLogSeq ls) nle }
-        lastLog' = seqTail nle
+        ls' = ls { _lsVolatileLogEntries = LogEntries $ Map.union (_logEntries nle) (ls ^. (lsVolatileLogEntries.logEntries)) }
+        lastLog' = lastEntry ls'
         lastIdx' = maybe (ls ^. lsLastLogIndex) _leLogIndex lastLog'
         lastTerm' = maybe (ls ^. lsLastLogTerm) _leTerm lastLog'
         lastHash' = maybe (ls ^. lsLastLogHash) _leHash lastLog'
@@ -287,8 +309,13 @@ appendLogEntry NewLogEntries{..} ls = case lastEntry ls of
              , _lsLastLogTerm  = lastTerm' }
     Nothing -> let
         nle = newEntriesToLog (_nleTerm) (B.empty) (ls ^. lsNextLogIndex) _nleEntries
-        ls' = ls { _lsLogEntries = Log nle }
-        lastLog' = seqTail nle
+        ls' = ls { _lsVolatileLogEntries = nle }
+        ples = ls ^. (lsPersistedLogEntries.logEntries)
+        lastLog' = if not $ Map.null $ nle ^. logEntries
+                   then Just $! snd $ Map.findMax $ nle ^. logEntries
+                   else if not $! Map.null ples
+                         then Just $! snd $ Map.findMax ples
+                         else Nothing
         lastIdx' = maybe (ls ^. lsLastLogIndex) _leLogIndex lastLog'
         lastTerm' = maybe (ls ^. lsLastLogTerm) _leTerm lastLog'
         lastHash' = maybe (ls ^. lsLastLogHash) _leHash lastLog'
@@ -298,24 +325,29 @@ appendLogEntry NewLogEntries{..} ls = case lastEntry ls of
              , _lsLastLogTerm  = lastTerm' }
 {-# INLINE appendLogEntry #-}
 
-newEntriesToLog :: Term -> ByteString -> LogIndex -> [Command] -> Seq LogEntry
-newEntriesToLog ct prevHash idx cmds = res `seq` res
+newEntriesToLog :: Term -> ByteString -> LogIndex -> [Command] -> LogEntries
+newEntriesToLog ct prevHash idx cmds = res `seq` LogEntries res
   where
-    res = Seq.fromList $! go prevHash idx cmds
+    res = Map.fromList $! go prevHash idx cmds
     go _ _ [] = []
-    go prevHash' i [c] = [LogEntry ct i c (hashNewEntry prevHash' ct i c)]
+    go prevHash' i [c] = [(i,LogEntry ct i c (hashNewEntry prevHash' ct i c))]
     go prevHash' i (c:cs) = let
         newHash = hashNewEntry prevHash' ct i c
-      in (:) (LogEntry ct i c newHash) $! go newHash (i + 1) cs
+      in (:) (i, LogEntry ct i c newHash) $! go newHash (i + 1) cs
 {-# INLINE newEntriesToLog #-}
 
-updateLogHashesFromIndex :: LogIndex -> Log LogEntry -> Log LogEntry
-updateLogHashesFromIndex i ls =
-  case firstOf (ix i) ls of
-    Just _ -> updateLogHashesFromIndex (succ i) $
-              over (lEntries) (Seq.adjust (hashLogEntry (firstOf (ix (i - 1)) ls)) (fromIntegral i)) ls
-    Nothing -> ls
-{-# INLINE updateLogHashesFromIndex #-}
+updateLogEntriesHashes :: Maybe LogEntry -> LogEntries -> LogEntries
+updateLogEntriesHashes preceedingEntry (LogEntries les) = LogEntries $! Map.fromAscList $! go (Map.toAscList les) preceedingEntry
+  where
+    go [] _ = []
+    go ((k,le):rest) pEntry =
+      let hashedEntry = hashLogEntry pEntry le
+      in (hashedEntry `seq` (k,hashedEntry)) : go rest (Just hashedEntry)
+--  case firstOf (ix i) ls of
+--    Just _ -> updateLogHashesFromIndex (succ i) $
+--              over (logEntries) (Seq.adjust (hashLogEntry (firstOf (ix (i - 1)) ls)) (fromIntegral i)) ls
+--    Nothing -> ls
+{-# INLINE updateLogEntriesHashes #-}
 
 hashNewEntry :: ByteString -> Term -> LogIndex -> Command -> ByteString
 hashNewEntry prevHash leTerm' leLogIndex' cmd = hash $! (encode $! LEWire (leTerm', leLogIndex', sigCmd cmd, prevHash))
@@ -332,7 +364,6 @@ data AtomicQuery =
   GetMaxIndex |
   GetEntryCount |
   GetSomeEntry LogIndex |
-  TakeEntries LogIndex |
   GetUnappliedEntries |
   GetLogInfoForNextIndex (Maybe LogIndex) |
   GetLastLogHash |
@@ -351,13 +382,12 @@ data QueryResult =
   QrMaxIndex LogIndex |
   QrEntryCount Int |
   QrSomeEntry (Maybe LogEntry) |
-  QrTakenEntries (Maybe (Seq LogEntry)) |
-  QrUnappliedEntries (Maybe (LogIndex, Seq LogEntry)) |
+  QrUnappliedEntries (Maybe LogEntries) |
   QrLogInfoForNextIndex (LogIndex,Term) |
   QrLastLogHash ByteString |
   QrLastLogTerm Term |
-  QrEntriesAfter (Seq LogEntry) |
-  QrInfoAndEntriesAfter (LogIndex, Term, Seq LogEntry) |
+  QrEntriesAfter LogEntries |
+  QrInfoAndEntriesAfter (LogIndex, Term, LogEntries) |
   QrLastApplied LogIndex |
   QrLastLogIndex LogIndex |
   QrNextLogIndex LogIndex |
@@ -369,7 +399,6 @@ data LastEntry = LastEntry deriving (Eq,Show)
 data MaxIndex = MaxIndex deriving (Eq,Show)
 data EntryCount = EntryCount deriving (Eq,Show)
 data SomeEntry = SomeEntry LogIndex deriving (Eq,Show)
-data TakenEntries = TakenEntries LogIndex deriving (Eq,Show)
 data UnappliedEntries = UnappliedEntries deriving (Eq,Show)
 data LogInfoForNextIndex = LogInfoForNextIndex (Maybe LogIndex) deriving (Eq,Show)
 data LastLogHash = LastLogHash deriving (Eq,Show)
@@ -392,7 +421,6 @@ evalQuery GetMaxIndex a = QrMaxIndex $! maxIndex a
 evalQuery GetUnappliedEntries a = QrUnappliedEntries $! getUnappliedEntries a
 evalQuery GetEntryCount a = QrEntryCount $! entryCount a
 evalQuery (GetSomeEntry li) a = QrSomeEntry $! lookupEntry li a
-evalQuery (TakeEntries li) a = QrTakenEntries $! takeEntries li a
 evalQuery (GetLogInfoForNextIndex mli) a = QrLogInfoForNextIndex $! logInfoForNextIndex mli a
 evalQuery GetLastLogHash a = QrLastLogHash $! lastLogHash a
 evalQuery GetLastLogTerm a = QrLastLogTerm $! lastLogTerm a
@@ -460,15 +488,9 @@ instance HasQueryResult SomeEntry (Maybe LogEntry) where
     _ -> error "Invariant Error: hasQueryResult SomeEntry failed to find SomeEntry"
   {-# INLINE hasQueryResult #-}
 
-instance HasQueryResult UnappliedEntries (Maybe (LogIndex, Seq LogEntry)) where
+instance HasQueryResult UnappliedEntries (Maybe LogEntries) where
   hasQueryResult UnappliedEntries m = case Map.lookup GetUnappliedEntries m of
     Just (QrUnappliedEntries v) -> v
-    _ -> error "Invariant Error: hasQueryResult TakenEntries failed to find TakenEntries"
-  {-# INLINE hasQueryResult #-}
-
-instance HasQueryResult TakenEntries (Maybe (Seq LogEntry)) where
-  hasQueryResult (TakenEntries li) m = case Map.lookup (TakeEntries li) m of
-    Just (QrTakenEntries v) -> v
     _ -> error "Invariant Error: hasQueryResult TakenEntries failed to find TakenEntries"
   {-# INLINE hasQueryResult #-}
 
@@ -490,13 +512,13 @@ instance HasQueryResult LastLogTerm Term where
     _ -> error "Invariant Error: hasQueryResult LastLogTerm failed to find LastLogTerm"
   {-# INLINE hasQueryResult #-}
 
-instance HasQueryResult EntriesAfter (Seq LogEntry) where
+instance HasQueryResult EntriesAfter (LogEntries) where
   hasQueryResult (EntriesAfter li cnt) m = case Map.lookup (GetEntriesAfter li cnt) m of
     Just (QrEntriesAfter v) -> v
     _ -> error "Invariant Error: hasQueryResult EntriesAfter failed to find EntriesAfter"
   {-# INLINE hasQueryResult #-}
 
-instance HasQueryResult InfoAndEntriesAfter (LogIndex, Term, Seq LogEntry) where
+instance HasQueryResult InfoAndEntriesAfter (LogIndex, Term, LogEntries) where
   hasQueryResult (InfoAndEntriesAfter mli cnt) m = case Map.lookup (GetInfoAndEntriesAfter mli cnt) m of
     Just (QrInfoAndEntriesAfter v) -> v
     _ -> error "Invariant Error: hasQueryResult InfoAndEntriesAfter failed to find InfoAndEntriesAfter"
@@ -519,7 +541,7 @@ instance Comms QueryApi LogServiceChannel where
   writeComm (LogServiceChannel (i,_)) = writeCommUnagi i
 
 data CryptoWorkerStatus =
-  Unprocessed (LogIndex, Seq LogEntry) |
+  Unprocessed LogEntries |
   Processing |
   Idle
   deriving (Show, Eq)
@@ -534,4 +556,4 @@ data LogEnv = LogEnv
   , _dbConn :: Maybe Connection }
 makeLenses ''LogEnv
 
-type LogThread = RWST LogEnv () (LogState LogEntry) IO
+type LogThread = RWST LogEnv () (LogState) IO

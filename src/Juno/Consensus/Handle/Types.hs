@@ -27,7 +27,7 @@ module Juno.Consensus.Handle.Types (
   , SignedRPC(..)
   , PrivateKey, PublicKey, Signature(..)
   , ReceivedAt(..)
-  , Log(..)
+  , LogEntries(..)
   , ReplicateLogEntries(..), rleMinLogIdx, rleMaxLogIdx, rlePrvLogIdx, rleEntries
   , toReplicateLogEntries
   , NewLogEntries(..), nleTerm, nleEntries

@@ -7,12 +7,11 @@ module Juno.Types.Event
   , ResetLeaderNoFollowersTimeout(..)
   ) where
 
-import Data.Sequence as Seq
 import Data.Thyme.Clock (UTCTime)
 
 import Juno.Types.Base
 import Juno.Types.Message
-import Juno.Types.Log (LogEntry)
+import Juno.Types.Log (LogEntries)
 
 data Tock = Tock {_tockTargetDelay :: Int, _tockStartTime :: UTCTime}
   deriving (Show, Eq)
@@ -22,6 +21,6 @@ data ResetLeaderNoFollowersTimeout = ResetLeaderNoFollowersTimeout deriving (Sho
 data Event = ERPC RPC
            | ElectionTimeout String
            | HeartbeatTimeout String
-           | ApplyLogEntries (Maybe (Seq LogEntry)) LogIndex
+           | ApplyLogEntries (Maybe LogEntries) LogIndex
            | Tick Tock
   deriving (Show)

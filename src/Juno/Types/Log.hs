@@ -13,16 +13,14 @@
 
 module Juno.Types.Log
   ( LogEntry(..), leTerm, leLogIndex, leCommand, leHash
-  , Log(..), lEntries
-  , LEWire(..), encodeLEWire, decodeLEWire, decodeLEWire', toSeqLogEntry
+  , LogEntries(..), logEntries, lesCnt, lesMinEntry, lesMaxEntry, lesMinIndex, lesMaxIndex, lesEmpty, lesNull
+  , LEWire(..), encodeLEWire, decodeLEWire, decodeLEWire', toLogEntries
   , ReplicateLogEntries(..), rleMinLogIdx, rleMaxLogIdx, rlePrvLogIdx, rleEntries
   , toReplicateLogEntries
   , NewLogEntries(..), nleTerm, nleEntries
   , UpdateCommitIndex(..), uci
   , UpdateLogs(..)
   , hashLogEntry
-  , seqHead
-  , seqTail
   , hash
   , VerifiedLogEntries(..)
   , verifyLogEntry, verifySeqLogEntries
@@ -30,19 +28,18 @@ module Juno.Types.Log
 
 import Control.Parallel.Strategies
 import Control.Lens hiding (Index, (|>))
-import qualified Control.Lens as Lens
 
 import qualified Crypto.Hash.BLAKE2.BLAKE2bp as BLAKE
 
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
-import Data.Sequence (Seq, (|>))
-import qualified Data.Sequence as Seq
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import qualified Data.ByteString as B
 import Data.ByteString (ByteString)
 import Data.Serialize hiding (get)
 import Data.Foldable
-import Data.Maybe (fromJust)
+
 import Data.Thyme.Time.Core ()
 import GHC.Generics
 
@@ -55,33 +52,45 @@ hash :: ByteString -> ByteString
 hash = BLAKE.hash 32 B.empty
 {-# INLINE hash #-}
 
+-- TODO: add discrimination here, so we can get a better map construction
 data LogEntry = LogEntry
-  { _leTerm    :: !Term
+  { _leTerm     :: !Term
   , _leLogIndex :: !LogIndex
-  , _leCommand :: !Command
-  , _leHash    :: !ByteString
+  , _leCommand  :: !Command
+  , _leHash     :: !ByteString
   }
   deriving (Show, Eq, Ord, Generic)
 makeLenses ''LogEntry
 
-newtype Log a = Log { _lEntries :: Seq a }
-    deriving (Eq,Show,Ord,Generic,Monoid,Functor,Foldable,Traversable,Applicative,Monad,NFData)
-makeLenses ''Log
-instance (t ~ Log a) => Rewrapped (Log a) t
-instance Wrapped (Log a) where
-    type Unwrapped (Log a) = Seq a
-    _Wrapped' = iso _lEntries Log
-instance Cons (Log a) (Log a) a a where
-    _Cons = _Wrapped . _Cons . mapping _Unwrapped
-instance Snoc (Log a) (Log a) a a where
-    _Snoc = _Wrapped . _Snoc . firsting _Unwrapped
-type instance IxValue (Log a) = a
-type instance Lens.Index (Log a) = LogIndex
-instance Ixed (Log a) where ix i = lEntries.ix (fromIntegral i)
-
 data LEWire = LEWire (Term, LogIndex, SignedRPC, ByteString)
   deriving (Show, Generic)
 instance Serialize LEWire
+
+newtype LogEntries = LogEntries { _logEntries :: Map LogIndex LogEntry }
+    deriving (Eq,Show,Ord,Generic)
+makeLenses ''LogEntries
+
+
+lesNull :: LogEntries -> Bool
+lesNull (LogEntries les) = Map.null les
+
+lesCnt :: LogEntries -> Int
+lesCnt (LogEntries les) = Map.size les
+
+lesEmpty :: LogEntries
+lesEmpty = LogEntries Map.empty
+
+lesMinEntry :: LogEntries -> Maybe LogEntry
+lesMinEntry (LogEntries les) = if Map.null les then Nothing else Just $ snd $ Map.findMin les
+
+lesMaxEntry :: LogEntries -> Maybe LogEntry
+lesMaxEntry (LogEntries les) = if Map.null les then Nothing else Just $ snd $ Map.findMax les
+
+lesMinIndex :: LogEntries -> Maybe LogIndex
+lesMinIndex (LogEntries les) = if Map.null les then Nothing else Just $ fst $ Map.findMin les
+
+lesMaxIndex :: LogEntries -> Maybe LogIndex
+lesMaxIndex (LogEntries les) = if Map.null les then Nothing else Just $ fst $ Map.findMax les
 
 decodeLEWire' :: Maybe ReceivedAt -> KeySet -> LEWire -> Either String LogEntry
 decodeLEWire' !ts !ks (LEWire !(t,i,cmd,hsh)) = case fromWire ts ks cmd of
@@ -89,14 +98,17 @@ decodeLEWire' !ts !ks (LEWire !(t,i,cmd,hsh)) = case fromWire ts ks cmd of
       Right !cmd' -> Right $! LogEntry t i cmd' hsh
 {-# INLINE decodeLEWire' #-}
 
+insertOrError :: LogEntry -> LogEntry -> LogEntry
+insertOrError old new = error $ "Invariant Failure: duplicate LogEntry found!\n Old: " ++ (show old) ++ "\n New: " ++ (show new)
+
 -- TODO: check if `toSeqLogEntry ele = Seq.fromList <$> sequence ele` is fusable?
-toSeqLogEntry :: [Either String LogEntry] -> Either String (Seq LogEntry)
-toSeqLogEntry !ele = go ele mempty
+toLogEntries :: [Either String LogEntry] -> Either String LogEntries
+toLogEntries !ele = go ele Map.empty
   where
-    go [] s = Right $! s
-    go (Right le:les) s = go les (s |> le)
+    go [] s = Right $! LogEntries s
+    go (Right le:les) s = go les $! Map.insertWith insertOrError (_leLogIndex le) le s
     go (Left err:_) _ = Left $! err
-{-# INLINE toSeqLogEntry #-}
+{-# INLINE toLogEntries #-}
 
 verifyLogEntry :: KeySet -> LogEntry -> (Int, CryptoVerified)
 verifyLogEntry !ks LogEntry{..} = res `seq` res
@@ -105,27 +117,26 @@ verifyLogEntry !ks LogEntry{..} = res `seq` res
     v = verifyCmd ks _leCommand
 {-# INLINE verifyLogEntry #-}
 
-verifySeqLogEntries :: KeySet -> Seq LogEntry -> IntMap CryptoVerified
-verifySeqLogEntries !ks !s = foldr' (\(k,v) -> IntMap.insert k v) IntMap.empty $! ((verifyLogEntry ks <$> s) `using` parTraversable rseq)
+verifySeqLogEntries :: KeySet -> LogEntries -> IntMap CryptoVerified
+verifySeqLogEntries !ks !s = foldr' (\(k,v) -> IntMap.insert k v) IntMap.empty $! ((verifyLogEntry ks <$> (_logEntries s)) `using` parTraversable rseq)
 {-# INLINE verifySeqLogEntries #-}
 
-data VerifiedLogEntries = VerifiedLogEntries
-  { _vleMaxIndex :: LogIndex
-  , _vleResults :: (IntMap CryptoVerified)}
+newtype VerifiedLogEntries = VerifiedLogEntries
+  { _vleResults :: (IntMap CryptoVerified)}
   deriving (Show, Eq)
 
-decodeLEWire :: Maybe ReceivedAt -> KeySet -> [LEWire] -> Either String (Seq LogEntry)
-decodeLEWire !ts !ks !les = go les Seq.empty
+decodeLEWire :: Maybe ReceivedAt -> KeySet -> [LEWire] -> Either String LogEntries
+decodeLEWire !ts !ks !les = go les Map.empty
   where
-    go [] s = Right $! s
+    go [] s = Right $! LogEntries s
     go (LEWire !(t,i,cmd,hsh):ls) v = case fromWire ts ks cmd of
       Left err -> Left $! err
-      Right cmd' -> go ls (v |> LogEntry t i cmd' hsh)
+      Right cmd' -> go ls $! Map.insertWith insertOrError i (LogEntry t i cmd' hsh) v
 {-# INLINE decodeLEWire #-}
 
-encodeLEWire :: NodeId -> PublicKey -> PrivateKey -> Seq LogEntry -> [LEWire]
+encodeLEWire :: NodeId -> PublicKey -> PrivateKey -> LogEntries -> [LEWire]
 encodeLEWire nid pubKey privKey les =
-  (\LogEntry{..} -> LEWire (_leTerm, _leLogIndex, toWire nid pubKey privKey _leCommand, _leHash)) <$> toList les
+  (\LogEntry{..} -> LEWire (_leTerm, _leLogIndex, toWire nid pubKey privKey _leCommand, _leHash)) <$> (Map.elems $ _logEntries les)
 {-# INLINE encodeLEWire #-}
 
 -- TODO: This uses the old decode encode trick and should be changed...
@@ -146,46 +157,27 @@ data ReplicateLogEntries = ReplicateLogEntries
   { _rleMinLogIdx :: LogIndex
   , _rleMaxLogIdx :: LogIndex
   , _rlePrvLogIdx :: LogIndex
-  , _rleEntries :: Seq LogEntry
+  , _rleEntries   :: LogEntries
   } deriving (Show, Eq, Generic)
 makeLenses ''ReplicateLogEntries
 
-seqHead :: Seq a -> Maybe a
-seqHead s = case Seq.viewl s of
-  (e Seq.:< _) -> Just e
-  _            -> Nothing
-{-# INLINE seqHead #-}
-
-seqTail :: Seq a -> Maybe a
-seqTail s = case Seq.viewr s of
-  (_ Seq.:> e) -> Just e
-  _        -> Nothing
-{-# INLINE seqTail #-}
-
-toReplicateLogEntries :: LogIndex -> Seq LogEntry -> Either String ReplicateLogEntries
+toReplicateLogEntries :: LogIndex -> LogEntries -> Either String ReplicateLogEntries
 toReplicateLogEntries prevLogIndex les = do
-  let minLogIdx = _leLogIndex $ fromJust $ seqHead les
-      maxLogIdx = _leLogIndex $ fromJust $ seqTail les
+  let minLogIdx = fst $! Map.findMin $ _logEntries les
+      maxLogIdx = fst $! Map.findMax $ _logEntries les
   if prevLogIndex /= minLogIdx - 1
   then Left $ "PrevLogIndex ("
             ++ show prevLogIndex
             ++ ") should be -1 the head entry's ("
             ++ show minLogIdx
             ++ ")"
-  else if minLogIdx > maxLogIdx
-  then Left $ "Min"
-            ++ show prevLogIndex
-            ++ "> Max"
-            ++ show minLogIdx
-            ++ " where Length was "
-            ++ show (Seq.length les)
-  else if fromIntegral (maxLogIdx - minLogIdx + 1) /= Seq.length les && maxLogIdx /= startIndex && minLogIdx /= startIndex
+  else if fromIntegral (maxLogIdx - minLogIdx + 1) /= (Map.size $ _logEntries les) && maxLogIdx /= startIndex && minLogIdx /= startIndex
   then Left $ "HeadLogIdx - TailLogIdx + 1 != length les: "
             ++ show maxLogIdx
             ++ " - "
             ++ show minLogIdx
             ++ " + 1 != "
-            ++ show (Seq.length les)
+            ++ show (Map.size $ _logEntries les)
   else -- TODO: add a protection in here to check that Seq's LogIndexs are
     -- strictly increasing by 1 from right to left
     return $ ReplicateLogEntries { _rleMinLogIdx = minLogIdx

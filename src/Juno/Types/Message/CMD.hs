@@ -69,7 +69,7 @@ verifyCmd !ks Command{..} = case _cmdCryptoVerified of
     NewMsg ->_cmdCryptoVerified
     ReceivedMsg !dig !bdy _ -> case verifySignedRPC ks $! SignedRPC dig bdy of
       Left !err -> Invalid err
-      Right () ->_cmdCryptoVerified
+      Right () -> Valid
 
 -- TODO: kill provenance for CommandBatch.
 data CommandBatch = CommandBatch

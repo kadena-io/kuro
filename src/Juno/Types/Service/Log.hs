@@ -182,7 +182,7 @@ instance LogApi (LogState) where
         vles = ls ^. lsVolatileLogEntries
         lookup' i' (LogEntries les) = Map.lookup i' les
     in case lookup' i vles of
-      Nothing -> case Map.lookupGE i ples of
+      Nothing -> case Map.lookupLE i ples of
         Nothing -> Nothing
         Just (_, ples') -> case lookup' i ples' of
           Nothing -> Nothing

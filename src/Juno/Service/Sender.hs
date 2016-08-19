@@ -226,15 +226,15 @@ canBroadcastAE clusterSize' nodeCurrentIndex' ct myNodeId' vts =
       limit' <- view aeReplicationLogLimit
       mv <- queryLogs $ Set.singleton $ Log.GetInfoAndEntriesAfter (Just $ 1 + mni) limit'
       (pli,plt, es) <- return $ Log.hasQueryResult (Log.InfoAndEntriesAfter (Just $ 1 + mni) limit') mv
-      debug $ "InfoAndEntriesAfter InSync " ++ (show (Just $ 1 + mni)) ++ " " ++ show limit'
-            ++ " with results " ++ show (Log.lesMinIndex es, Log.lesMaxIndex es)
+--      debug $ "InfoAndEntriesAfter InSync " ++ (show (Just $ 1 + mni)) ++ " " ++ show limit'
+--            ++ " with results " ++ show (Log.lesMinIndex es, Log.lesMaxIndex es)
       return $ InSync (AE' $ AppendEntries ct myNodeId' pli plt es Set.empty NewMsg, Log.lesCnt es)
     else do
       limit' <- view aeReplicationLogLimit
       mv <- queryLogs $ Set.singleton $ Log.GetInfoAndEntriesAfter (Just $ 1 + latestFollower) limit'
       (pli,plt, es) <- return $ Log.hasQueryResult (Log.InfoAndEntriesAfter (Just $ 1 + latestFollower) limit') mv
-      debug $ "InfoAndEntriesAfter Backstreet " ++ (show (Just $ 1 + latestFollower)) ++ " " ++ show limit'
-            ++ " with results " ++ show (Log.lesMinIndex es, Log.lesMaxIndex es)
+--      debug $ "InfoAndEntriesAfter Backstreet " ++ (show (Just $ 1 + latestFollower)) ++ " " ++ show limit'
+--            ++ " with results " ++ show (Log.lesMinIndex es, Log.lesMaxIndex es)
       inSyncRpc <- return $! AE' $ AppendEntries ct myNodeId' pli plt es Set.empty NewMsg
       if everyoneBelieves
       then return $ BackStreet (inSyncRpc, laggingFollowers)

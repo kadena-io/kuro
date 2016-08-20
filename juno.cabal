@@ -101,22 +101,25 @@ library
                      , blake2
                      , bound
                      , bytestring
+                     , cacophony
                      , cereal >= 0.4.1.1
                      , containers
                      , criterion
                      , crypto-api
+                     , cryptonite
+                     , data-default
                      , deepseq >= 1.4.1.1
                      , ed25519-donna
                      , ekg >= 0.4 && < 0.5
                      , ekg-core >= 0.1.1.0 && < 0.2
                      , ekg-json
                      , enclosed-exceptions
-                     , enclosed-exceptions
+                     , exceptions
                      , fast-logger
                      , filepath
                      , ghc-prim
                      , hspec
-                     , lens
+                     , lens >= 4.13
                      , lifted-base
                      , lz4
                      , megaparsec >= 4.2.0 && < 4.3
@@ -126,6 +129,7 @@ library
                      , mtl
                      , mtl-compat
                      , network
+                     , pact == 0.0.1
                      , parallel
                      , parsers
                      , prelude-extras

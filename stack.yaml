@@ -1,4 +1,4 @@
-resolver: lts-6.5
+resolver: lts-6.12
 
 # Local packages, usually specified by relative directory name
 packages:
@@ -7,23 +7,23 @@ packages:
     git: https://github.com/slpopejoy/snap-cors.git
     commit: cc88bab1fd3f62dc4d9f9ad81a231877a639c812
   extra-dep: true
+- location:
+    git: git@bitbucket.org:spopejoy/pact.git
+    commit: 52ddb8694cc25830679eaf18ad019e048175c19d
+  extra-dep: true
+
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)
 extra-deps:
+- cacophony-0.8.0
+- cryptonite-0.16
 - ed25519-donna-0.1.1
-- unagi-chan-0.4.0.0
-- ed25519-donna-0.1.1
-- AES-0.2.9
-- megaparsec-4.2.0
-# Are these required because a dependency of this project is using data-dword, or because masala is using data-dword and extra-deps aren't propagated?
-- data-dword-0.3
-- data-bword-0.1 # for data-dword
-- vector-0.11.0.0
-- ekg-0.4.0.9
-- ekg-json-0.1.0.1
-- lens-4.13.2.1
 - kan-extensions-5.0.1
+- lens-4.13.2.1
 - lz4-0.2.3.1
+- megaparsec-4.2.0
+- safe-exceptions-0.1.4.0
+- unagi-chan-0.4.0.0
 
 # Override default flag values for local packages and extra-deps
 # flags: []

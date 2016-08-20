@@ -14,8 +14,7 @@ module Juno.Persistence.SQLite
 
 import Data.Typeable
 import Data.Set
-import Data.Sequence (Seq)
-import qualified Data.Sequence as Seq
+import qualified Data.Map.Strict as Map
 import Data.Serialize
 import Data.ByteString hiding (concat, length, head)
 import qualified Data.Text as T
@@ -55,15 +54,6 @@ instance ToField Term where
   toField (Term a) = toField a
 instance FromField Term where
   fromField a = Term <$> fromField a
-
-instance (Aeson.ToJSON a, Serialize a) => ToField (Seq a) where
-  toField s = toField $ Aeson.encode s
-instance (Aeson.FromJSON a, Typeable a, Serialize a) => FromField (Seq a) where
-  fromField f = do
-    s :: ByteString <- fromField f
-    case Aeson.eitherDecodeStrict s of
-      Left err -> returnError ConversionFailed f ("Couldn't deserialize Seq a: " ++ err)
-      Right v -> Ok v
 
 instance (Aeson.ToJSON a, Ord a, Serialize a) => ToField (Set a) where
   toField s = toField $ Aeson.encode s
@@ -178,8 +168,8 @@ sqlInsertLogEntry = Query $ T.pack $ concat
     ,", 'provenance'"
     ,") VALUES (?,?,?,?,?,?,?,?,?)"]
 
-insertSeqLogEntry :: Connection -> Seq LogEntry -> IO ()
-insertSeqLogEntry conn les = withTransaction conn $ mapM_ (execute conn sqlInsertLogEntry) les
+insertSeqLogEntry :: Connection -> LogEntries -> IO ()
+insertSeqLogEntry conn (LogEntries les) = withTransaction conn $ mapM_ (execute conn sqlInsertLogEntry) $ Map.elems les
 
 sqlSelectAllLogEntries :: Query
 sqlSelectAllLogEntries = Query $ T.pack $ concat
@@ -187,8 +177,11 @@ sqlSelectAllLogEntries = Query $ T.pack $ concat
   ," FROM 'main'.'logEntry'"
   ," ORDER BY logIndex ASC"]
 
-selectAllLogEntries :: Connection -> IO (Seq LogEntry)
-selectAllLogEntries conn = Seq.fromList <$> query_ conn sqlSelectAllLogEntries
+selectAllLogEntries :: Connection -> IO LogEntries
+selectAllLogEntries conn = do
+  res <- query_ conn sqlSelectAllLogEntries
+  res' <- return ((\l -> (_leLogIndex l, l)) <$> res)
+  return $ LogEntries . Map.fromList $ res'
 
 sqlSelectLastLogEntry :: Query
 sqlSelectLastLogEntry = Query $ T.pack $ concat
@@ -212,8 +205,11 @@ sqlSelectAllLogEntryAfter (LogIndex li) = Query $ T.pack $ concat
   ," ORDER BY logIndex ASC"
   ," WHERE logIndex > " ++ show li]
 
-selectAllLogEntriesAfter :: LogIndex -> Connection -> IO (Seq LogEntry)
-selectAllLogEntriesAfter li conn = Seq.fromList <$> query_ conn (sqlSelectAllLogEntryAfter li)
+selectAllLogEntriesAfter :: LogIndex -> Connection -> IO LogEntries
+selectAllLogEntriesAfter li conn = do
+  res <- query_ conn (sqlSelectAllLogEntryAfter li)
+  res' <- return ((\l -> (_leLogIndex l, l)) <$> res)
+  return $ LogEntries . Map.fromList $ res'
 
 sqlSelectLogEntryeInclusiveSection :: LogIndex -> LogIndex -> Query
 sqlSelectLogEntryeInclusiveSection (LogIndex liFrom) (LogIndex liTo) = Query $ T.pack $ concat
@@ -223,5 +219,8 @@ sqlSelectLogEntryeInclusiveSection (LogIndex liFrom) (LogIndex liTo) = Query $ T
   ," WHERE logIndex >= " ++ show liFrom
   ," AND logIndex <= " ++ show liTo]
 
-selectLogEntriesInclusiveSection :: LogIndex -> LogIndex -> Connection -> IO (Seq LogEntry)
-selectLogEntriesInclusiveSection liFrom liTo conn = Seq.fromList <$> query_ conn (sqlSelectLogEntryeInclusiveSection liFrom liTo)
+selectLogEntriesInclusiveSection :: LogIndex -> LogIndex -> Connection -> IO LogEntries
+selectLogEntriesInclusiveSection liFrom liTo conn = do
+  res <- query_ conn (sqlSelectLogEntryeInclusiveSection liFrom liTo)
+  res' <- return ((\l -> (_leLogIndex l, l)) <$> res)
+  return $ LogEntries . Map.fromList $ res'

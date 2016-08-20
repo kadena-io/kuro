@@ -10,7 +10,6 @@ module Juno.Types.Message.AE
 import Codec.Compression.LZ4
 import Control.Parallel.Strategies
 import Control.Lens
-import Data.Sequence (Seq)
 import Data.Set (Set)
 import Data.Serialize (Serialize)
 import qualified Data.Serialize as S
@@ -28,7 +27,7 @@ data AppendEntries = AppendEntries
   , _leaderId      :: !NodeId
   , _prevLogIndex  :: !LogIndex
   , _prevLogTerm   :: !Term
-  , _aeEntries     :: !(Seq LogEntry)
+  , _aeEntries     :: !LogEntries
   , _aeQuorumVotes :: !(Set RequestVoteResponse)
   , _aeProvenance  :: !Provenance
   }
@@ -58,7 +57,7 @@ instance WireFormat AppendEntries where
       else case maybe (Left "Decompression failure") S.decode $ decompress bdy of
         Left err -> Left $! "Failure to decode AEWire: " ++ err
         Right (AEWire (t,lid,pli,pt,les,vts)) -> runEval $ do
-          eLes <- rpar (toSeqLogEntry ((decodeLEWire' ts ks <$> les) `using` parList rseq))
+          eLes <- rpar (toLogEntries ((decodeLEWire' ts ks <$> les) `using` parList rseq))
           eRvr <- rseq (toSetRvr ((fromWire ts ks <$> vts) `using` parList rseq))
           case eRvr of
             Left !err -> return $! Left $! "Caught an invalid RVR in an AE: " ++ err

@@ -26,8 +26,6 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Data.Sequence (Seq)
-import qualified Data.Sequence as Seq
 import Data.Serialize
 
 import Data.Thyme.Clock (UTCTime, getCurrentTime)
@@ -120,7 +118,7 @@ sendAllRequestVotes = do
   pubRPC $ RV' $ RequestVote ct nid lastLogIndex' lastLogTerm' NewMsg
 
 createAppendEntries' :: NodeId
-                     -> (LogIndex, Term, Seq LogEntry)
+                     -> (LogIndex, Term, LogEntries)
                      -> Term
                      -> NodeId
                      -> Set NodeId
@@ -142,7 +140,7 @@ establishDominance = do
   mv <- queryLogs $ Set.fromList [Log.GetMaxIndex, Log.GetLastLogTerm]
   pli <- return $! Log.hasQueryResult Log.MaxIndex mv
   plt <- return $! Log.hasQueryResult Log.LastLogTerm mv
-  rpc <- return $! AE' $ AppendEntries ct myNodeId' pli plt Seq.empty yesVotes' NewMsg
+  rpc <- return $! AE' $ AppendEntries ct myNodeId' pli plt Log.lesEmpty yesVotes' NewMsg
   edTime <- liftIO $ getCurrentTime
   pubRPC rpc
   debug $ "asserted dominance: " ++ show (interval stTime edTime) ++ "mics"
@@ -228,11 +226,15 @@ canBroadcastAE clusterSize' nodeCurrentIndex' ct myNodeId' vts =
       limit' <- view aeReplicationLogLimit
       mv <- queryLogs $ Set.singleton $ Log.GetInfoAndEntriesAfter (Just $ 1 + mni) limit'
       (pli,plt, es) <- return $ Log.hasQueryResult (Log.InfoAndEntriesAfter (Just $ 1 + mni) limit') mv
-      return $ InSync (AE' $ AppendEntries ct myNodeId' pli plt es Set.empty NewMsg, Seq.length es)
+--      debug $ "InfoAndEntriesAfter InSync " ++ (show (Just $ 1 + mni)) ++ " " ++ show limit'
+--            ++ " with results " ++ show (Log.lesMinIndex es, Log.lesMaxIndex es)
+      return $ InSync (AE' $ AppendEntries ct myNodeId' pli plt es Set.empty NewMsg, Log.lesCnt es)
     else do
       limit' <- view aeReplicationLogLimit
       mv <- queryLogs $ Set.singleton $ Log.GetInfoAndEntriesAfter (Just $ 1 + latestFollower) limit'
       (pli,plt, es) <- return $ Log.hasQueryResult (Log.InfoAndEntriesAfter (Just $ 1 + latestFollower) limit') mv
+--      debug $ "InfoAndEntriesAfter Backstreet " ++ (show (Just $ 1 + latestFollower)) ++ " " ++ show limit'
+--            ++ " with results " ++ show (Log.lesMinIndex es, Log.lesMaxIndex es)
       inSyncRpc <- return $! AE' $ AppendEntries ct myNodeId' pli plt es Set.empty NewMsg
       if everyoneBelieves
       then return $ BackStreet (inSyncRpc, laggingFollowers)

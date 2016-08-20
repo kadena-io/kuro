@@ -9,7 +9,7 @@ packages:
   extra-dep: true
 - location:
     git: git@bitbucket.org:spopejoy/pact.git
-    commit: 52ddb8694cc25830679eaf18ad019e048175c19d
+    commit: cc64141199fabd89fe9ba56c5227c855099b2e62
   extra-dep: true
 
 

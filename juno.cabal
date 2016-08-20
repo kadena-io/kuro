@@ -136,6 +136,7 @@ library
                      , primitive
                      , process
                      , random
+                     , safe-exceptions >= 0.1.4.0
                      , semigroups
                      , snap-core
                      , snap-core-cors
@@ -150,6 +151,7 @@ library
                      , unagi-chan
                      , unix >= 2.7.1.0
                      , unordered-containers
+                     , utf8-string >= 1.0.1.1
                      , vector >= 0.11.0.0
                      , vector-space >= 0.10.2 && < 0.11
                      , wreq

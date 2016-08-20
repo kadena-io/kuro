@@ -1,33 +1,34 @@
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE StandaloneDeriving #-}
 
 module Juno.Command.Types where
 
 import Control.Concurrent
 import Data.Default
-import qualified Numeric as N
-import Data.String
-import qualified Data.Text as T
-import Data.Aeson
-import Data.Word
-import GHC.Generics
+import Data.Aeson as A
 import Data.ByteString (ByteString)
-import Crypto.Noise
-import qualified Crypto.PubKey.Curve25519 as C
-import Control.Monad.Catch (MonadThrow (..))
+import Data.ByteString.Lazy (toStrict,fromStrict)
+import qualified Crypto.PubKey.Curve25519 as C2
+import qualified Crypto.Ed25519.Pure as E2
 import Data.ByteArray.Extend
+import Data.Serialize as SZ
+import GHC.Generics
+import Control.Monad.State
+import Control.Monad.Reader
+import Control.Exception.Safe
+import Data.Text.Encoding
+import Control.Applicative
 
 
-import Pact.Types
+import Pact.Types as Pact
 import Pact.Pure
 
-import Juno.Types.Base
 import Juno.Types.Log
 import Juno.Types.Command
-import Juno.Types.Message
+import Juno.Types.Message hiding (RPC)
 
 
 
@@ -68,26 +69,39 @@ Encrypted message handling:
 
 -}
 
-type EntSecretKey = C.SecretKey
-type EntPublicKey = C.PublicKey
+type EntSecretKey = C2.SecretKey
+type EntPublicKey = C2.PublicKey
+
 
 -- | Types of encryption sessions.
 data SessionCipherType =
-    -- | Not encrypted
-    None |
     -- | Simulate n-way encryption
     DisjointPlain |
     -- | Two-way (noise)
     TwoWay |
     -- | N-way (TBD)
     NWay
-    deriving (Eq,Show,Enum,Bounded,Generic)
-
+    deriving (Eq,Show,Generic)
+instance Serialize SessionCipherType
 
 data MessageTags =
     SessionInitTags { _mtInitTags :: [ByteString] } |
     SessionTag { _mtSessionTag :: ByteString }
+               deriving (Eq,Generic)
+instance Serialize MessageTags
 
+
+
+data CommandMessage =
+    PublicMessage {
+      _cmMessage :: ByteString
+    } |
+    PrivateMessage {
+      _cmType :: SessionCipherType
+    , _cmTags :: MessageTags
+    , _cmMessage :: ByteString
+    } deriving (Eq,Generic)
+instance Serialize CommandMessage
 
 
 -- | Encryption session message.
@@ -109,110 +123,190 @@ class SessionCipher a where
     encryptMessage :: MonadThrow m => SessionObject a -> ScrubbedBytes -> m (ByteString,SessionObject a)
     decryptMessage :: MonadThrow m => SessionObject a -> ByteString -> m (ScrubbedBytes,SessionObject a)
 
+type RPCPublicKey = E2.PublicKey
 
-{-
-
-
-
-RPC messages:
-- Transaction
-- Local
-- Yield
-- Multisig
-
--}
-
-type RPCPublicKey = C.PublicKey
-
-data ExecutionMode = Transactional | Local deriving (Eq,Show)
-
-
-data PactMsg = PactMsg {
+data ExecMsg = ExecMsg {
       _pmCode :: String
     , _pmData :: Value
-    , _pmMode :: ExecutionMode
     }
+    deriving (Eq)
+instance FromJSON ExecMsg where
+    parseJSON =
+        withObject "PactMsg" $ \o ->
+            ExecMsg <$> o .: "code" <*> o .: "data"
+instance ToJSON ExecMsg where
+    toJSON (ExecMsg c d) = object [ "code" .= c, "data" .= d]
 
 data YieldMsg = YieldMsg {
       _ymTxId :: TxId
     , _ymStep :: Int
     , _ymRollback :: Bool
     }
+    deriving (Eq)
+instance FromJSON YieldMsg where
+    parseJSON =
+        withObject "YieldMsg" $ \o ->
+            YieldMsg <$> o .: "txid" <*> o .: "step" <*> o .: "rollback"
+instance ToJSON YieldMsg where
+    toJSON (YieldMsg t s r) = object [ "txid" .= t, "step" .= s, "rollback" .= r]
 
-type RPCDigest = (RPCPublicKey,ByteString)
+data MultisigMsg = MultisigMsg {
+      _mmTxId :: TxId
+    } deriving (Eq)
+instance FromJSON MultisigMsg where
+    parseJSON =
+        withObject "MultisigMsg" $ \o ->
+            MultisigMsg <$> o .: "txid"
+instance ToJSON MultisigMsg where
+    toJSON (MultisigMsg t) = object [ "txid" .= t]
 
-data RPC =
-    Exec {
-      _rPactMsg :: PactMsg
-    , _rDigest :: RPCDigest
-    } |
-    Yield {
-      _rYieldMsg :: YieldMsg
-    , _rDigest :: RPCDigest
-    } |
-    Multisig {
-      _rTxId :: TxId
-    , _rDigest :: RPCDigest
+data RPCDigest = RPCDigest {
+      _rdPublicKey :: ByteString
+    , _rdSignature :: ByteString
+    } deriving (Eq)
+instance FromJSON RPCDigest where
+    parseJSON =
+        withObject "RPCDigest" $ \o ->
+            RPCDigest <$> fmap encodeUtf8 (o .: "key") <*> fmap encodeUtf8 (o .: "sig")
+
+data PactMessage = PactMessage {
+      _pmPayload :: ByteString
+    , _pmKey :: ByteString
+    , _pmSig :: ByteString
+    } deriving (Eq,Generic)
+instance Serialize PactMessage
+
+data PactRPC =
+    Exec ExecMsg |
+    Yield YieldMsg |
+    Multisig MultisigMsg
+    deriving (Eq)
+instance FromJSON PactRPC where
+    parseJSON =
+        withObject "RPC" $ \o ->
+            (Exec <$> o .: "exec") <|>
+             (Yield <$> o .: "yield") <|>
+             (Multisig <$> o .: "multisig")
+
+
+data EntityInfo = EntityInfo {
+      _entName :: String
+    , _entPK :: EntPublicKey
+    , _entSK :: EntSecretKey
+}
+
+
+data CommandConfig = CommandConfig {
+      _ccEntity :: EntityInfo
+    , _ccDebug :: String -> IO ()
     }
 
+data CommandState = CommandState {
+      _csPactState :: PureState
+    }
+instance Default CommandState where def = CommandState def
 
 
+data ExecutionMode = Transactional TxId | Local deriving (Eq,Show)
+
+data CommandEnv = CommandEnv {
+      _ceConfig :: CommandConfig
+    , _ceMode :: ExecutionMode
+    }
+
+data CommandException = CommandException String
+                        deriving (Typeable)
+instance Show CommandException where show (CommandException e) = e
+instance Exception CommandException
+
+data CommandError = CommandError {
+      _ceMsg :: String
+    , _ceDetail :: Maybe String
+}
+instance ToJSON CommandError where
+    toJSON (CommandError m d) =
+        object $ [ "status" .= ("Failure" :: String)
+                 , "msg" .= m ] ++
+        maybe [] ((:[]) . ("detail" .=)) d
+
+type CommandM a = ReaderT CommandEnv (StateT CommandState IO) a
+
+runCommand :: CommandEnv -> CommandState -> CommandM a -> IO (a,CommandState)
+runCommand e s a = runStateT (runReaderT a e) s
 
 
+throwCmdEx :: MonadThrow m => String -> m a
+throwCmdEx = throw . CommandException
 
-
-
-
-
-data PactCommand = PactCommand {
-      _pcCode :: T.Text
-    , _pcData :: Value
-    } deriving (Eq,Show)
-
-
-
-initPact :: IO (LogEntry -> IO CommandResult)
-initPact = do
+initCommandLayer :: CommandConfig -> IO (LogEntry -> IO CommandResult,
+                                         ByteString -> IO CommandResult)
+initCommandLayer config = do
   mv <- newMVar def
-  return $ \le ->
-      do
-        pactState <- takeMVar mv
-        (s,r) <- runPact pactState le
-        putMVar mv s
-        return r
-
-foo :: Command
-foo = undefined
-
-runPact :: PureState -> LogEntry -> IO (PureState,CommandResult)
-runPact s e = undefined
-    where logIndex = _leLogIndex e
-          cmd = _leCommand e
-          cmdEntry = _cmdEntry cmd
+  return (applyTransactional config mv,applyLocal config mv)
 
 
-{-
-LogEntry { _leTerm    :: !Term
-  , _leLogIndex :: !LogIndex
-  , _leCommand :: !Command
-  , _leHash    :: !ByteString
-  }
+applyTransactional :: CommandConfig -> MVar CommandState -> LogEntry -> IO CommandResult
+applyTransactional config mv le = do
+  let logIndex = _leLogIndex le
+  s <- takeMVar mv
+  r <- tryAny (runCommand
+               (CommandEnv config (Transactional $ fromIntegral logIndex))
+               s
+               (applyLogEntry le))
+  case r of
+    Right (cr,s') -> do
+           putMVar mv s'
+           return cr
+    Left e ->
+        return $ CommandResult $ toStrict $ A.encode $
+               CommandError "Transaction execution failed" (Just $ show e)
 
+applyLocal :: CommandConfig -> MVar CommandState -> ByteString -> IO CommandResult
+applyLocal config mv bs = do
+  s <- takeMVar mv
+  r <- tryAny (runCommand
+               (CommandEnv config Local)
+               s
+               (applyPact bs))
+  case r of
+    Right (cr,_) -> return cr
+    Left e ->
+        return $ CommandResult $ toStrict $ A.encode $
+               CommandError "Local execution failed" (Just $ show e)
 
-data Command = Command
-  { _cmdEntry      :: !CommandEntry
-  , _cmdClientId   :: !NodeId
-  , _cmdRequestId  :: !RequestId
-  , _cmdEncryptGroup :: !(Maybe Alias)
-  , _cmdCryptoVerified :: !CryptoVerified
-  , _cmdProvenance :: !Provenance
-  }
+applyLogEntry :: LogEntry -> CommandM CommandResult
+applyLogEntry e = do
+    let
+        cmd = _leCommand e
+        bs = unCommandEntry $ _cmdEntry cmd
+    cmsg :: CommandMessage <- either (throwCmdEx . ("applyLogEntry: deserialize failed: " ++ ) . show) return $
+            SZ.decode bs
+    case cmsg of
+      PublicMessage m -> applyPact m
+      PrivateMessage ct mt m -> applyPrivate ct mt m
 
+applyPact :: ByteString -> CommandM CommandResult
+applyPact m = do
+  pmsg <- either (throwCmdEx . ("applyPact: deserialize failed: " ++ ) . show) return $
+          SZ.decode m
+  pk <- validateSig pmsg
+  case A.eitherDecode (fromStrict (_pmPayload pmsg)) of
+      Right (Exec pm) -> applyExec pm pk
+      Right (Yield ym) -> applyYield ym pk
+      Right (Multisig mm) -> applyMultisig mm pk
+      Left err -> throwCmdEx $ "RPC deserialize failed: " ++ show err
 
+validateSig :: PactMessage -> CommandM Pact.PublicKey
+validateSig (PactMessage payload key sig) = return (Pact.PublicKey key)
 
-newtype CommandEntry = CommandEntry { unCommandEntry :: ByteString }
-  deriving (Show, Eq, Ord, Generic, Serialize)
+applyExec :: ExecMsg -> Pact.PublicKey -> CommandM CommandResult
+applyExec (ExecMsg code edata) pk = throwCmdEx "Exec not supported"
 
-newtype CommandResult = CommandResult { unCommandResult :: ByteString }
-  deriving (Show, Eq, Ord, Generic, Serialize)
--}
+applyYield :: YieldMsg -> Pact.PublicKey -> CommandM CommandResult
+applyYield _ _ = throwCmdEx "Yield not supported"
+
+applyMultisig :: MultisigMsg -> Pact.PublicKey -> CommandM CommandResult
+applyMultisig _ _ = throwCmdEx "MultisigMsg not supported"
+
+applyPrivate :: SessionCipherType -> MessageTags -> ByteString -> CommandM a
+applyPrivate _ _ _ = throwCmdEx "Private messages not supported"

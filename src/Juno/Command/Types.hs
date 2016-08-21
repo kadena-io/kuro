@@ -1,3 +1,4 @@
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -14,17 +15,25 @@ import Data.ByteString.Lazy (toStrict,fromStrict)
 import qualified Crypto.PubKey.Curve25519 as C2
 import qualified Crypto.Ed25519.Pure as E2
 import Data.ByteArray.Extend
-import Data.Serialize as SZ
+import Data.Serialize as SZ hiding (get)
 import GHC.Generics
 import Control.Monad.State
 import Control.Monad.Reader
 import Control.Exception.Safe
 import Data.Text.Encoding
 import Control.Applicative
+import Control.Lens hiding ((.=))
+import qualified Control.Lens as L
+import Data.Set as S
+import Data.Maybe
+import qualified Text.Trifecta as TF
+import Control.Monad.Except
 
 
 import Pact.Types as Pact
 import Pact.Pure
+import Pact.Eval
+import Pact.Compile as Pact
 
 import Juno.Types.Log
 import Juno.Types.Command
@@ -194,25 +203,33 @@ data EntityInfo = EntityInfo {
     , _entPK :: EntPublicKey
     , _entSK :: EntSecretKey
 }
+$(makeLenses ''EntityInfo)
 
 
 data CommandConfig = CommandConfig {
       _ccEntity :: EntityInfo
     , _ccDebug :: String -> IO ()
     }
+$(makeLenses ''CommandConfig)
 
 data CommandState = CommandState {
       _csPactState :: PureState
     }
 instance Default CommandState where def = CommandState def
+$(makeLenses ''CommandState)
 
 
-data ExecutionMode = Transactional TxId | Local deriving (Eq,Show)
+data ExecutionMode =
+    Transactional { _emTxId :: TxId } |
+    Local
+    deriving (Eq,Show)
+$(makeLenses ''ExecutionMode)
 
 data CommandEnv = CommandEnv {
       _ceConfig :: CommandConfig
     , _ceMode :: ExecutionMode
     }
+$(makeLenses ''CommandEnv)
 
 data CommandException = CommandException String
                         deriving (Typeable)
@@ -228,6 +245,14 @@ instance ToJSON CommandError where
         object $ [ "status" .= ("Failure" :: String)
                  , "msg" .= m ] ++
         maybe [] ((:[]) . ("detail" .=)) d
+
+data CommandSuccess a = CommandSuccess {
+      _csData :: a
+    }
+instance (ToJSON a) => ToJSON (CommandSuccess a) where
+    toJSON (CommandSuccess a) =
+        object $ [ "status" .= ("Success" :: String)
+                 , "result" .= a ]
 
 type CommandM a = ReaderT CommandEnv (StateT CommandState IO) a
 
@@ -258,8 +283,11 @@ applyTransactional config mv le = do
            putMVar mv s'
            return cr
     Left e ->
-        return $ CommandResult $ toStrict $ A.encode $
+        return $ jsonResult $
                CommandError "Transaction execution failed" (Just $ show e)
+
+jsonResult :: ToJSON a => a -> CommandResult
+jsonResult = CommandResult . toStrict . A.encode
 
 applyLocal :: CommandConfig -> MVar CommandState -> ByteString -> IO CommandResult
 applyLocal config mv bs = do
@@ -271,7 +299,7 @@ applyLocal config mv bs = do
   case r of
     Right (cr,_) -> return cr
     Left e ->
-        return $ CommandResult $ toStrict $ A.encode $
+        return $ jsonResult $
                CommandError "Local execution failed" (Just $ show e)
 
 applyLogEntry :: LogEntry -> CommandM CommandResult
@@ -297,10 +325,40 @@ applyPact m = do
       Left err -> throwCmdEx $ "RPC deserialize failed: " ++ show err
 
 validateSig :: PactMessage -> CommandM Pact.PublicKey
-validateSig (PactMessage payload key sig) = return (Pact.PublicKey key)
+validateSig (PactMessage _payload key _sig) = return (Pact.PublicKey key)
 
 applyExec :: ExecMsg -> Pact.PublicKey -> CommandM CommandResult
-applyExec (ExecMsg code edata) pk = throwCmdEx "Exec not supported"
+applyExec (ExecMsg code edata) pk = do
+  pactExp <- case TF.parseString Pact.expr mempty code of
+           TF.Success s -> return s
+           TF.Failure f -> throwCmdEx $ "Pact parse failed: " ++ show f
+  term <- case compile pactExp of
+            Right r -> return r
+            Left (i,e) -> throwCmdEx $ "Pact compile failed: " ++ show i ++ ": " ++ show e
+  pureState <- use csPactState
+  env <- ask
+  let iEvalState = fst $ runPurePact initEvalState def
+      evalEnv = EvalEnv {
+                  _eeMsgSigs = S.singleton pk
+                , _eeMsgBody = edata
+                , _eeTxId = fromMaybe 0 $ firstOf (ceMode.emTxId) env
+                , _eeEntity = view (ceConfig.ccEntity.entName) env
+                , _eePactStep = Nothing
+                }
+      transactional = not $ view ceMode env == Local
+      run = do
+        evalBeginTx
+        er <- catchError (eval term)
+             (\e -> when transactional evalRollbackTx >> throwError e)
+        when transactional (void $ evalCommitTx)
+        return er
+      ((r,_evalState'),pureState') = runPurePact (runEval iEvalState evalEnv run) pureState
+  case r of
+    Right t -> do
+           when transactional $ csPactState L..= pureState'
+           return $ jsonResult $ CommandSuccess $ show t -- TODO Term needs a ToJSON, Yield handling
+    Left e -> throwCmdEx $ "Exec failed: " ++ show e
+
 
 applyYield :: YieldMsg -> Pact.PublicKey -> CommandM CommandResult
 applyYield _ _ = throwCmdEx "Yield not supported"

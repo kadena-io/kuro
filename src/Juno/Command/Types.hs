@@ -13,7 +13,6 @@ import Data.Aeson as A
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy (toStrict,fromStrict)
 import qualified Crypto.PubKey.Curve25519 as C2
-import qualified Crypto.Ed25519.Pure as E2
 import Data.ByteArray.Extend
 import Data.Serialize as SZ hiding (get)
 import GHC.Generics
@@ -24,18 +23,23 @@ import Data.Text.Encoding
 import Control.Applicative
 import Control.Lens hiding ((.=))
 import qualified Control.Lens as L
-import Data.Set as S
+import qualified Data.Set as S
 import Data.Maybe
 import qualified Text.Trifecta as TF
+import Text.Trifecta.Combinators (DeltaParsing(..))
+import qualified Data.Attoparsec.Text as AP
 import Control.Monad.Except
+import Data.Text (Text)
 
 
-import Pact.Types as Pact
+import Pact.Types hiding (PublicKey)
+import qualified Pact.Types as Pact
 import Pact.Pure
 import Pact.Eval
 import Pact.Compile as Pact
 
 import Juno.Types.Log
+import Juno.Types.Base
 import Juno.Types.Command
 import Juno.Types.Message hiding (RPC)
 
@@ -132,10 +136,8 @@ class SessionCipher a where
     encryptMessage :: MonadThrow m => SessionObject a -> ScrubbedBytes -> m (ByteString,SessionObject a)
     decryptMessage :: MonadThrow m => SessionObject a -> ByteString -> m (ScrubbedBytes,SessionObject a)
 
-type RPCPublicKey = E2.PublicKey
-
 data ExecMsg = ExecMsg {
-      _pmCode :: String
+      _pmCode :: Text
     , _pmData :: Value
     }
     deriving (Eq)
@@ -180,8 +182,8 @@ instance FromJSON RPCDigest where
 
 data PactMessage = PactMessage {
       _pmPayload :: ByteString
-    , _pmKey :: ByteString
-    , _pmSig :: ByteString
+    , _pmKey :: PublicKey
+    , _pmSig :: Signature
     } deriving (Eq,Generic)
 instance Serialize PactMessage
 
@@ -251,8 +253,15 @@ data CommandSuccess a = CommandSuccess {
     }
 instance (ToJSON a) => ToJSON (CommandSuccess a) where
     toJSON (CommandSuccess a) =
-        object $ [ "status" .= ("Success" :: String)
-                 , "result" .= a ]
+        object [ "status" .= ("Success" :: String)
+               , "result" .= a ]
+
+instance DeltaParsing (AP.Parser) where
+    line = return mempty
+    position = return mempty
+    slicedWith f a = a >>= return . (`f` mempty)
+    rend = return mempty
+    restOfLine = return mempty
 
 type CommandM a = ReaderT CommandEnv (StateT CommandState IO) a
 
@@ -325,13 +334,18 @@ applyPact m = do
       Left err -> throwCmdEx $ "RPC deserialize failed: " ++ show err
 
 validateSig :: PactMessage -> CommandM Pact.PublicKey
-validateSig (PactMessage _payload key _sig) = return (Pact.PublicKey key)
+validateSig (PactMessage payload key sig)
+    | valid payload key sig = return (Pact.PublicKey (exportPublic key)) -- TODO turn off with compile flags?
+    | otherwise = throwCmdEx "Signature verification failure"
+
 
 applyExec :: ExecMsg -> Pact.PublicKey -> CommandM CommandResult
 applyExec (ExecMsg code edata) pk = do
-  pactExp <- case TF.parseString Pact.expr mempty code of
-           TF.Success s -> return s
-           TF.Failure f -> throwCmdEx $ "Pact parse failed: " ++ show f
+  pactExp <- case AP.parseOnly Pact.expr code of --TF.parseString Pact.expr mempty code of
+           -- TF.Success s -> return s
+           -- TF.Failure f -> throwCmdEx $ "Pact parse failed: " ++ show f
+               Right s -> return s
+               Left e -> throwCmdEx $ "Pact parse failed: " ++ e
   term <- case compile pactExp of
             Right r -> return r
             Left (i,e) -> throwCmdEx $ "Pact compile failed: " ++ show i ++ ": " ++ show e
@@ -345,12 +359,12 @@ applyExec (ExecMsg code edata) pk = do
                 , _eeEntity = view (ceConfig.ccEntity.entName) env
                 , _eePactStep = Nothing
                 }
-      transactional = not $ view ceMode env == Local
+      transactional = view ceMode env /= Local
       run = do
         evalBeginTx
         er <- catchError (eval term)
              (\e -> when transactional evalRollbackTx >> throwError e)
-        when transactional (void $ evalCommitTx)
+        when transactional (void evalCommitTx)
         return er
       ((r,_evalState'),pureState') = runPurePact (runEval iEvalState evalEnv run) pureState
   case r of
@@ -368,3 +382,6 @@ applyMultisig _ _ = throwCmdEx "MultisigMsg not supported"
 
 applyPrivate :: SessionCipherType -> MessageTags -> ByteString -> CommandM a
 applyPrivate _ _ _ = throwCmdEx "Private messages not supported"
+
+--mkPactMessage :: E2.PublicKey -> E2.PrivateKey -> ByteString -> PactMessage
+--mkPactMessage pk sk bs = PactMessage bs (E2.exportPublic pk) (E2.sign bs sk pk)

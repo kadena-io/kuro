@@ -20,7 +20,7 @@ spec = do
 testLogEntries:: Spec
 testLogEntries= do
   sampleLogsFoo <- return $ mkLogEntries 0 10
-  sampleLogsBar <- return $ changeLogEntriesCmds sampleLogsFoo
+  sampleLogsBar <- return $ mkLogEntriesBar 0 10
   it "lesNull True" $
     (lesNull lesEmpty) `shouldBe` True
   it "lesNull False" $
@@ -85,11 +85,6 @@ testPersistedLogEntries = do
   it "plesAddNew" $
     (plesAddNew sampleLogs3 samplePLogs) `shouldBe` samplePLogs2
 
-testLogState :: Spec
-testLogState = do
-  it "updateLogs ULReplicate" $
-    (updateLogs (ULReplicate volatileReplicate) steadyState) `shouldBe` volatileState
-
 -- ##########################################################
 -- ####### All the stuff we need to actually run this #######
 -- ##########################################################
@@ -117,9 +112,16 @@ keySet = KeySet
   { _ksCluster = Map.fromList [(nodeIdLeader, pubKeyLeader),(nodeIdFollower, pubKeyFollower)]
   , _ksClient = Map.fromList [(nodeIdClient, pubKeyClient)] }
 
-cmdRPC :: Int -> Command
-cmdRPC i = Command
+cmdRPC0, cmdRPC1 :: Int -> Command
+cmdRPC0 i = Command
   { _cmdEntry = CommandEntry "CreateAccount foo"
+  , _cmdClientId = nodeIdClient
+  , _cmdRequestId = RequestId $ fromIntegral i
+  , _cmdEncryptGroup = Nothing
+  , _cmdCryptoVerified = Valid
+  , _cmdProvenance = NewMsg }
+cmdRPC1 i = Command
+  { _cmdEntry = CommandEntry "CreateAccount bar"
   , _cmdClientId = nodeIdClient
   , _cmdRequestId = RequestId $ fromIntegral i
   , _cmdEncryptGroup = Nothing
@@ -127,36 +129,51 @@ cmdRPC i = Command
   , _cmdProvenance = NewMsg }
 
 -- these are signed (received) provenance versions
-cmdRPC' :: Int -> Command
-cmdRPC' i = (\(Right v) -> v) $ fromWire Nothing keySet $ toWire nodeIdClient pubKeyClient privKeyClient $ cmdRPC i
+cmdRPC0', cmdRPC1' :: Int -> Command
+cmdRPC0' i = (\(Right v) -> v) $ fromWire Nothing keySet $ toWire nodeIdClient pubKeyClient privKeyClient $ cmdRPC0 i
+cmdRPC1' i = (\(Right v) -> v) $ fromWire Nothing keySet $ toWire nodeIdClient pubKeyClient privKeyClient $ cmdRPC1 i
 
 -- ########################################################
 -- LogEntry(s) and Seq LogEntry with correct hashes.
 -- LogEntry is not an RPC but is(are) nested in other RPCs.
 -- Given this, they are handled differently (no provenance)
 -- ########################################################
-logEntry :: Int -> LogEntry
+logEntry, logEntryBar :: Int -> LogEntry
 logEntry i = LogEntry
   { _leTerm    = Term 0
   , _leLogIndex = LogIndex i
-  , _leCommand = cmdRPC' i
+  , _leCommand = cmdRPC0' i
+  , _leHash    = ""
+  }
+logEntryBar i = LogEntry
+  { _leTerm    = Term 0
+  , _leLogIndex = LogIndex i
+  , _leCommand = cmdRPC1' i
   , _leHash    = ""
   }
 
-changeLogEntriesCmds :: LogEntries -> LogEntries
-changeLogEntriesCmds (LogEntries les) = LogEntries $ f <$> les
-  where
-    f l = set (leCommand.cmdEntry) (CommandEntry "CreateAccount bar") l
-
-changePLogEntriesCmds :: PersistedLogEntries -> PersistedLogEntries
-changePLogEntriesCmds (PersistedLogEntries les) = PersistedLogEntries $ changeLogEntriesCmds <$> les
-
-mkLogEntries :: Int -> Int -> LogEntries
+mkLogEntries, mkLogEntriesBar :: Int -> Int -> LogEntries
 mkLogEntries stIdx endIdx = either error id $ checkLogEntries $ Map.fromList $ fmap (\i -> (fromIntegral i, logEntry i)) [stIdx..endIdx]
+mkLogEntriesBar stIdx endIdx = either error id $ checkLogEntries $ Map.fromList $ fmap (\i -> (fromIntegral i, logEntryBar i)) [stIdx..endIdx]
 
--- #####################
--- ## Log State Setup ##
--- #####################
+-- ###############
+-- ## Log State ##
+-- ###############
+
+testLogState :: Spec
+testLogState = do
+  it "updateLogs NewLogEntries" $
+    (updateLogs (ULNew volatileNLE) steadyState) `shouldBe` volatileState
+  it "updateLogs ULReplicate Clean" $
+    (updateLogs (ULReplicate volatileReplicate) steadyState) `shouldBe` volatileState
+  it "updateLogs ULReplicate Overwrite #1" $
+    (updateLogs (ULReplicate volatileReplicate) overwriteState1) `shouldBe` volatileState
+  it "updateLogs ULReplicate Overwrite #2" $
+    (updateLogs (ULReplicate volatileReplicate) overwriteState2) `shouldBe` volatileState
+  it "updateLogs ULReplicate Exercise `alreadyStored` #1" $
+    (updateLogs (ULReplicate hackedVolReplicate0) volatileState) `shouldBe` volatileState
+  it "updateLogs ULReplicate Exercise `alreadyStored` #2" $
+    (updateLogs (ULReplicate hackedVolReplicate1) volatileState) `shouldBe` volatileState
 
 steadyState :: LogState
 steadyState = LogState
@@ -179,6 +196,23 @@ steadyState = LogState
 volatileReplicate :: ReplicateLogEntries
 volatileReplicate = (\(Right v) -> v) $ toReplicateLogEntries (LogIndex 29) $ mkLogEntries 30 39
 
+-- hacked because I'm changing the CommandEntry without touching the pOrig which is what is used for hashing.
+-- Thus, the hashes should be the same thus testing that addLogEntriesAt will not replicated entries already replicated
+hackLogEntriesCmds :: LogEntries -> LogEntries
+hackLogEntriesCmds (LogEntries les) = LogEntries $ f <$> les
+  where
+    f l = set (leCommand.cmdEntry) (CommandEntry "CreateAccount bar") l
+
+hackedVolReplicate0, hackedVolReplicate1 :: ReplicateLogEntries
+hackedVolReplicate0 = (\(Right v) -> v) $ toReplicateLogEntries (LogIndex 29) $ hackLogEntriesCmds $ mkLogEntries 30 39
+hackedVolReplicate1 = (\(Right v) -> v) $ toReplicateLogEntries (LogIndex 29) $ hackLogEntriesCmds $ mkLogEntries 30 32
+
+volatileNLE :: NewLogEntries
+volatileNLE = NewLogEntries
+  { _nleTerm = 0
+  , _nleEntries = (\l -> l ^. _2.leCommand) <$> (Map.toAscList $ _logEntries $ mkLogEntries 30 39)
+  }
+
 volatileState :: LogState
 volatileState = LogState
     { _lsVolatileLogEntries = sampleLogs3
@@ -197,3 +231,41 @@ volatileState = LogState
     sampleLogs1 = updateLogEntriesHashes (lesMaxEntry sampleLogs0) $ mkLogEntries 10 19
     sampleLogs2 = updateLogEntriesHashes (lesMaxEntry sampleLogs1) $ mkLogEntries 20 29
     sampleLogs3 = updateLogEntriesHashes (lesMaxEntry sampleLogs2) $ mkLogEntries 30 39
+
+overwriteState1 :: LogState
+overwriteState1 = LogState
+    { _lsVolatileLogEntries = sampleLogs3
+    , _lsPersistedLogEntries = PersistedLogEntries $ Map.fromList [(0,sampleLogs0), (10,sampleLogs1), (20, sampleLogs2)]
+    , _lsLastApplied = LogIndex 29
+    , _lsLastLogIndex = LogIndex 39
+    , _lsLastLogHash = _leHash $ fromJust $ lesMaxEntry sampleLogs3
+    , _lsNextLogIndex = LogIndex 40
+    , _lsCommitIndex = LogIndex 29
+    , _lsLastPersisted = LogIndex 29
+    , _lsLastCryptoVerified = LogIndex 29
+    , _lsLastLogTerm = Term 0
+    }
+  where
+    sampleLogs0 = updateLogEntriesHashes Nothing $ mkLogEntries 0 9
+    sampleLogs1 = updateLogEntriesHashes (lesMaxEntry sampleLogs0) $ mkLogEntries 10 19
+    sampleLogs2 = updateLogEntriesHashes (lesMaxEntry sampleLogs1) $ mkLogEntries 20 29
+    sampleLogs3 = updateLogEntriesHashes (lesMaxEntry sampleLogs2) $ mkLogEntriesBar 30 39
+
+overwriteState2 :: LogState
+overwriteState2 = LogState
+    { _lsVolatileLogEntries = sampleLogs3
+    , _lsPersistedLogEntries = PersistedLogEntries $ Map.fromList [(0,sampleLogs0), (10,sampleLogs1), (20, sampleLogs2)]
+    , _lsLastApplied = LogIndex 29
+    , _lsLastLogIndex = LogIndex 39
+    , _lsLastLogHash = _leHash $ fromJust $ lesMaxEntry sampleLogs3
+    , _lsNextLogIndex = LogIndex 40
+    , _lsCommitIndex = LogIndex 29
+    , _lsLastPersisted = LogIndex 29
+    , _lsLastCryptoVerified = LogIndex 29
+    , _lsLastLogTerm = Term 0
+    }
+  where
+    sampleLogs0 = updateLogEntriesHashes Nothing $ mkLogEntries 0 9
+    sampleLogs1 = updateLogEntriesHashes (lesMaxEntry sampleLogs0) $ mkLogEntries 10 19
+    sampleLogs2 = updateLogEntriesHashes (lesMaxEntry sampleLogs1) $ mkLogEntries 20 29
+    sampleLogs3 = updateLogEntriesHashes (lesMaxEntry sampleLogs2) $ mkLogEntriesBar 30 49

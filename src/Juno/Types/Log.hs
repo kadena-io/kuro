@@ -15,10 +15,10 @@ module Juno.Types.Log
   ( LogEntry(..), leTerm, leLogIndex, leCommand, leHash
   , LogEntries(..), logEntries, lesCnt, lesMinEntry, lesMaxEntry
   , lesMinIndex, lesMaxIndex, lesEmpty, lesNull, checkLogEntries, lesGetSection
-  , lesUnion, lesUnions
+  , lesUnion, lesUnions, lesLookupEntry
   , PersistedLogEntries(..), pLogEntries, plesCnt, plesMinEntry, plesMaxEntry
   , plesMinIndex, plesMaxIndex, plesEmpty, plesNull, plesGetSection
-  , plesAddNew
+  , plesAddNew, plesLookupEntry
   , LEWire(..), encodeLEWire, decodeLEWire, decodeLEWire', toLogEntries
   , ReplicateLogEntries(..), rleMinLogIdx, rleMaxLogIdx, rlePrvLogIdx, rleEntries
   , toReplicateLogEntries
@@ -95,6 +95,10 @@ lesEmpty :: LogEntries
 lesEmpty = LogEntries Map.empty
 {-# INLINE lesEmpty #-}
 
+lesLookupEntry :: LogIndex -> LogEntries -> Maybe LogEntry
+lesLookupEntry lIdx (LogEntries les) = Map.lookup lIdx les
+{-# INLINE lesLookupEntry #-}
+
 lesMinEntry :: LogEntries -> Maybe LogEntry
 lesMinEntry (LogEntries les) = if Map.null les then Nothing else Just $ snd $ Map.findMin les
 {-# INLINE lesMinEntry #-}
@@ -141,6 +145,9 @@ plesCnt (PersistedLogEntries les) = sum (lesCnt <$> les)
 plesEmpty :: PersistedLogEntries
 plesEmpty = PersistedLogEntries Map.empty
 {-# INLINE plesEmpty #-}
+
+plesLookupEntry :: LogIndex -> PersistedLogEntries -> Maybe LogEntry
+plesLookupEntry lIdx (PersistedLogEntries ples) = Map.lookupLE lIdx ples >>= lesLookupEntry lIdx . snd
 
 plesMinEntry :: PersistedLogEntries -> Maybe LogEntry
 plesMinEntry (PersistedLogEntries les) = if Map.null les then Nothing else lesMinEntry $ snd $ Map.findMin les

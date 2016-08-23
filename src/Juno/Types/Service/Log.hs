@@ -39,6 +39,7 @@ module Juno.Types.Service.Log
   -- for tesing
   , newEntriesToLog
   , hashNewEntry
+  , updateLogEntriesHashes
   ) where
 
 

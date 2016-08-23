@@ -218,6 +218,7 @@ test-suite hspec
                      , containers
                      , crypto-api
                      , parallel
+                     , lens
                      , hspec
                      , juno
                      , text >= 1.2.0.0 && < 1.3

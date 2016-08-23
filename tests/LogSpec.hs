@@ -4,30 +4,91 @@ module LogSpec where
 
 import Test.Hspec
 
+import Control.Lens
+import Data.Maybe (fromJust)
 import qualified Data.Map.Strict as Map
-import Data.Set (Set)
-import qualified Data.Set as Set
-
 
 import Juno.Types
 import Juno.Types.Service.Log hiding (keySet)
 
 spec :: Spec
-spec = describe "WireFormat RoundTrips" testWireRoundtrip
+spec = do
+  describe "LogEntries manipulation functions" testLogEntries
+  describe "PersistedLogEntries manipulation functions" testPersistedLogEntries
+  describe "LogState instance" testLogState
 
-testWireRoundtrip :: Spec
-testWireRoundtrip = do
---  it "Command" $
---    fromWire Nothing keySet cmdSignedRPC1
---      `shouldBe`
---        (Right $ cmdRPC1 {
---            _cmdProvenance = ReceivedMsg
---              { _pDig = _sigDigest cmdSignedRPC1
---              , _pOrig = _sigBody cmdSignedRPC1
---              , _pTimeStamp = Nothing}})
+testLogEntries:: Spec
+testLogEntries= do
+  sampleLogsFoo <- return $ mkLogEntries 0 10
+  sampleLogsBar <- return $ changeLogEntriesCmds sampleLogsFoo
+  it "lesNull True" $
+    (lesNull lesEmpty) `shouldBe` True
+  it "lesNull False" $
+    (lesNull sampleLogsFoo) `shouldBe` False
   it "lesCnt" $
-    (lesCnt $ mkLogEntries 0 9) `shouldBe` 10
+    (lesCnt $ mkLogEntries 0 10) `shouldBe` 11
+  it "lesMinEntry" $
+    (lesMinEntry sampleLogsFoo) `shouldBe` (Just $ logEntry 0)
+  it "lesMaxEntry" $
+    (lesMaxEntry sampleLogsFoo) `shouldBe` (Just $ logEntry 10)
+  it "lesMinIndex" $
+    (lesMinIndex sampleLogsFoo) `shouldBe` (Just 0)
+  it "lesMaxIndex" $
+    (lesMaxIndex sampleLogsFoo) `shouldBe` (Just 10)
+  it "lesGetSection #1" $
+    (lesGetSection Nothing (Just 8) sampleLogsFoo) `shouldBe` (mkLogEntries 0 8)
+  it "lesGetSection #2" $
+    (lesGetSection (Just 1) (Just 8) sampleLogsFoo) `shouldBe` (mkLogEntries 1 8)
+  it "lesGetSection #3" $
+    (lesGetSection (Just 2) Nothing sampleLogsFoo) `shouldBe` (mkLogEntries 2 10)
+  it "lesUnion" $
+    (lesUnion sampleLogsFoo sampleLogsBar) `shouldBe` sampleLogsFoo
+  it "lesUnions" $
+    (lesUnions [sampleLogsFoo,sampleLogsBar]) `shouldBe` sampleLogsFoo
 
+testPersistedLogEntries :: Spec
+testPersistedLogEntries = do
+  sampleLogs0 <- return $ mkLogEntries 0 9
+  sampleLogs1 <- return $ mkLogEntries 10 19
+  sampleLogs2 <- return $ mkLogEntries 20 29
+  sampleLogs3 <- return $ mkLogEntries 30 39
+  samplePLogs <- return $
+    PersistedLogEntries $ Map.fromList [(LogIndex 0, sampleLogs0),(LogIndex 10, sampleLogs1),(LogIndex 20, sampleLogs2)]
+  samplePLogs2 <- return $
+    PersistedLogEntries $ Map.fromList [(LogIndex 0, sampleLogs0),(LogIndex 10, sampleLogs1),(LogIndex 20, sampleLogs2),(LogIndex 30, sampleLogs3)]
+  it "plesNull True" $
+    (plesNull plesEmpty) `shouldBe` True
+  it "plesNull False" $
+    (plesNull samplePLogs) `shouldBe` False
+  it "plesCnt" $
+    (plesCnt $ samplePLogs) `shouldBe` 30
+  it "plesMinEntry" $
+    (plesMinEntry samplePLogs) `shouldBe` (Just $ logEntry 0)
+  it "plesMaxEntry" $
+    (plesMaxEntry samplePLogs) `shouldBe` (Just $ logEntry 29)
+  it "plesMinIndex" $
+    (plesMinIndex samplePLogs) `shouldBe` (Just 0)
+  it "plesMaxIndex" $
+    (plesMaxIndex samplePLogs) `shouldBe` (Just 29)
+  it "plesGetSection #1" $
+    (Map.keysSet $ _logEntries $ plesGetSection Nothing (Just 28) samplePLogs) `shouldBe` (Map.keysSet $ _logEntries $ mkLogEntries 0 28)
+  it "plesGetSection #2" $
+    (Map.keysSet $ _logEntries $ plesGetSection (Just 1) (Just 28) samplePLogs) `shouldBe` (Map.keysSet $ _logEntries $ mkLogEntries 1 28)
+  it "plesGetSection #3" $
+    (Map.keysSet $ _logEntries $ plesGetSection (Just 2) Nothing samplePLogs) `shouldBe` (Map.keysSet $ _logEntries $ mkLogEntries 2 29)
+  it "plesGetSection #4" $
+    (Map.keysSet $ _logEntries $ plesGetSection (Just 10) Nothing samplePLogs) `shouldBe` (Map.keysSet $ _logEntries $ mkLogEntries 10 29)
+  it "plesGetSection #5" $
+    (Map.keysSet $ _logEntries $ plesGetSection (Just 10) (Just 19) samplePLogs) `shouldBe` (Map.keysSet $ _logEntries $ mkLogEntries 10 19)
+  it "plesGetSection #6" $
+    (Map.keysSet $ _logEntries $ plesGetSection Nothing (Just 19) samplePLogs) `shouldBe` (Map.keysSet $ _logEntries $ mkLogEntries 0 19)
+  it "plesAddNew" $
+    (plesAddNew sampleLogs3 samplePLogs) `shouldBe` samplePLogs2
+
+testLogState :: Spec
+testLogState = do
+  it "updateLogs ULReplicate" $
+    (updateLogs (ULReplicate volatileReplicate) steadyState) `shouldBe` volatileState
 
 -- ##########################################################
 -- ####### All the stuff we need to actually run this #######
@@ -82,5 +143,57 @@ logEntry i = LogEntry
   , _leHash    = ""
   }
 
+changeLogEntriesCmds :: LogEntries -> LogEntries
+changeLogEntriesCmds (LogEntries les) = LogEntries $ f <$> les
+  where
+    f l = set (leCommand.cmdEntry) (CommandEntry "CreateAccount bar") l
+
+changePLogEntriesCmds :: PersistedLogEntries -> PersistedLogEntries
+changePLogEntriesCmds (PersistedLogEntries les) = PersistedLogEntries $ changeLogEntriesCmds <$> les
+
 mkLogEntries :: Int -> Int -> LogEntries
-mkLogEntries stIdx endIdx = (\(Right v) -> v) $ checkLogEntries $ Map.fromList $ fmap (\i -> (fromIntegral i, logEntry i)) [stIdx..endIdx]
+mkLogEntries stIdx endIdx = either error id $ checkLogEntries $ Map.fromList $ fmap (\i -> (fromIntegral i, logEntry i)) [stIdx..endIdx]
+
+-- #####################
+-- ## Log State Setup ##
+-- #####################
+
+steadyState :: LogState
+steadyState = LogState
+    { _lsVolatileLogEntries = lesEmpty
+    , _lsPersistedLogEntries = PersistedLogEntries $ Map.fromList [(0,sampleLogs0), (10,sampleLogs1), (20, sampleLogs2)]
+    , _lsLastApplied = LogIndex 29
+    , _lsLastLogIndex = LogIndex 29
+    , _lsLastLogHash = _leHash $ fromJust $ lesMaxEntry sampleLogs2
+    , _lsNextLogIndex = LogIndex 30
+    , _lsCommitIndex = LogIndex 29
+    , _lsLastPersisted = LogIndex 29
+    , _lsLastCryptoVerified = LogIndex 29
+    , _lsLastLogTerm = Term 0
+    }
+  where
+    sampleLogs0 = updateLogEntriesHashes Nothing $ mkLogEntries 0 9
+    sampleLogs1 = updateLogEntriesHashes (lesMaxEntry sampleLogs0) $ mkLogEntries 10 19
+    sampleLogs2 = updateLogEntriesHashes (lesMaxEntry sampleLogs1) $ mkLogEntries 20 29
+
+volatileReplicate :: ReplicateLogEntries
+volatileReplicate = (\(Right v) -> v) $ toReplicateLogEntries (LogIndex 29) $ mkLogEntries 30 39
+
+volatileState :: LogState
+volatileState = LogState
+    { _lsVolatileLogEntries = sampleLogs3
+    , _lsPersistedLogEntries = PersistedLogEntries $ Map.fromList [(0,sampleLogs0), (10,sampleLogs1), (20, sampleLogs2)]
+    , _lsLastApplied = LogIndex 29
+    , _lsLastLogIndex = LogIndex 39
+    , _lsLastLogHash = _leHash $ fromJust $ lesMaxEntry sampleLogs3
+    , _lsNextLogIndex = LogIndex 40
+    , _lsCommitIndex = LogIndex 29
+    , _lsLastPersisted = LogIndex 29
+    , _lsLastCryptoVerified = LogIndex 29
+    , _lsLastLogTerm = Term 0
+    }
+  where
+    sampleLogs0 = updateLogEntriesHashes Nothing $ mkLogEntries 0 9
+    sampleLogs1 = updateLogEntriesHashes (lesMaxEntry sampleLogs0) $ mkLogEntries 10 19
+    sampleLogs2 = updateLogEntriesHashes (lesMaxEntry sampleLogs1) $ mkLogEntries 20 29
+    sampleLogs3 = updateLogEntriesHashes (lesMaxEntry sampleLogs2) $ mkLogEntries 30 39

@@ -18,7 +18,7 @@ module Juno.Types.Log
   , lesUnion, lesUnions
   , PersistedLogEntries(..), pLogEntries, plesCnt, plesMinEntry, plesMaxEntry
   , plesMinIndex, plesMaxIndex, plesEmpty, plesNull, plesGetSection
-  , plesUnion, plesAddNew
+  , plesAddNew
   , LEWire(..), encodeLEWire, decodeLEWire, decodeLEWire', toLogEntries
   , ReplicateLogEntries(..), rleMinLogIdx, rleMaxLogIdx, rlePrvLogIdx, rleEntries
   , toReplicateLogEntries
@@ -159,23 +159,30 @@ plesMaxIndex (PersistedLogEntries les) = if Map.null les then Nothing else lesMa
 {-# INLINE plesMaxIndex #-}
 
 plesGetSection :: Maybe LogIndex -> Maybe LogIndex -> PersistedLogEntries -> LogEntries
-plesGetSection m1@(Just minIdx) m2@(Just maxIdx) (PersistedLogEntries les) =
-  lesUnions $ fmap (lesGetSection m1 m2) (Map.elems $ Map.filterWithKey (\k _ -> k >= minIdx && k <= maxIdx) les)
-plesGetSection m1@(Nothing) m2@(Just maxIdx) (PersistedLogEntries les) =
-  lesUnions $ fmap (lesGetSection m1 m2) (Map.elems $ Map.filterWithKey (\k _ -> k <= maxIdx) les)
-plesGetSection m1@(Just minIdx) m2@(Nothing) (PersistedLogEntries les) =
-  lesUnions $ fmap (lesGetSection m1 m2) (Map.elems $ Map.filterWithKey (\k _ -> k >= minIdx) les)
-plesGetSection Nothing Nothing (PersistedLogEntries _) = error "Invariant Error: lesGetSection called with neither a min or max bound!"
+plesGetSection Nothing Nothing (PersistedLogEntries _) = error "Invariant Error: plesGetSection called with neither a min or max bound!"
+plesGetSection m1 m2 (PersistedLogEntries les) = lesUnions $ lesGetSection m1 m2 <$> getParts
+  where
+    firstChunk = maybe Nothing (\idx -> fst <$> Map.lookupLE idx les) m1
+    firstAfterLastChunk = maybe Nothing (\idx -> fst <$> Map.lookupGT idx les) m2
+    getParts = case (firstChunk, firstAfterLastChunk) of
+      (Nothing, Nothing) -> Map.elems les
+      (Just fIdx, Nothing) -> Map.elems $ Map.filterWithKey (\k _ -> k >= fIdx) les
+      (Just fIdx, Just lIdx) -> Map.elems $ Map.filterWithKey (\k _ -> k >= fIdx && k < lIdx) les
+      (Nothing, Just lIdx) -> Map.elems $ Map.filterWithKey (\k _ -> k < lIdx) les
 {-# INLINE plesGetSection #-}
 
-plesUnion :: PersistedLogEntries -> PersistedLogEntries -> PersistedLogEntries
-plesUnion (PersistedLogEntries les1) (PersistedLogEntries les2) = PersistedLogEntries $! Map.union les1 les2
-{-# INLINE plesUnion #-}
+-- NB: this is the wrong way to do this, I think it shouldn't be exposed/should be explicitly implemented as needed
+--plesUnion :: PersistedLogEntries -> PersistedLogEntries -> PersistedLogEntries
+--plesUnion (PersistedLogEntries les1) (PersistedLogEntries les2) = PersistedLogEntries $! Map.union les1 les2
+--{-# INLINE plesUnion #-}
 
 plesAddNew :: LogEntries -> PersistedLogEntries -> PersistedLogEntries
 plesAddNew les p@(PersistedLogEntries ples) = case lesMinIndex les of
   Nothing -> p
-  Just k -> PersistedLogEntries $! Map.insertWith (\n o -> lesUnion o n) k les ples
+  Just k -> case plesMaxIndex p of
+    pk | pk == Nothing || pk <= (Just k) -> PersistedLogEntries $! Map.insertWith (\n o -> lesUnion o n) k les ples
+    Just pk -> error $ "Invariant Error: plesAddNew les's minIndex (" ++ show k ++ ") is <= ples's (" ++ show pk ++ ")"
+    Nothing -> error $ "plesAddNew: pattern matcher can't introspect guards... I should be impossible to hit"
 {-# INLINE plesAddNew #-}
 
 decodeLEWire' :: Maybe ReceivedAt -> KeySet -> LEWire -> Either String LogEntry

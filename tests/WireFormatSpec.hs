@@ -3,11 +3,12 @@
 module WireFormatSpec where
 
 import Test.Hspec
-import qualified Data.Map as Map
+
+import qualified Data.Map.Strict as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Data.Sequence (Seq)
-import qualified Data.Sequence as Seq
+
+
 import Juno.Types
 
 spec :: Spec
@@ -138,12 +139,14 @@ cmdRPC1 = Command
   , _cmdClientId = nodeIdClient
   , _cmdRequestId = RequestId 0
   , _cmdEncryptGroup = Nothing
+  , _cmdCryptoVerified = UnVerified
   , _cmdProvenance = NewMsg }
 cmdRPC2 = Command
   { _cmdEntry = CommandEntry "CreateAccount foo"
   , _cmdClientId = nodeIdClient
   , _cmdRequestId = RequestId 1
   , _cmdEncryptGroup = Nothing
+  , _cmdCryptoVerified = UnVerified
   , _cmdProvenance = NewMsg }
 
 cmdSignedRPC1, cmdSignedRPC2 :: SignedRPC
@@ -190,8 +193,8 @@ logEntry2 = hashLogEntry (Just logEntry1) $ LogEntry
   , _leHash    = ""
   }
 
-leSeq, leSeqDecoded :: Seq LogEntry
-leSeq = Seq.fromList [logEntry1, logEntry2]
+leSeq, leSeqDecoded :: LogEntries
+leSeq = (\(Right v) -> v) $ checkLogEntries $ Map.fromList [(0,logEntry1),(1,logEntry2)]
 leSeqDecoded = (\(Right v) -> v) $ decodeLEWire Nothing keySet leWire
 
 leWire :: [LEWire]

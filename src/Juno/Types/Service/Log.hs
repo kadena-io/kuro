@@ -39,6 +39,7 @@ module Juno.Types.Service.Log
   -- for tesing
   , newEntriesToLog
   , hashNewEntry
+  , updateLogEntriesHashes
   ) where
 
 
@@ -282,17 +283,27 @@ applyCryptoVerify' m (LogEntries les) = LogEntries $! fmap (\le@LogEntry{..} -> 
 addLogEntriesAt :: LogIndex -> LogEntries -> LogState -> LogState
 addLogEntriesAt pli newLEs ls =
   let preceedingEntry = lookupEntry pli ls
-      ls' = LogEntries $ Map.union (_logEntries $ updateLogEntriesHashes preceedingEntry newLEs) (ls ^. lsVolatileLogEntries.logEntries)
+      existingEntries = lesGetSection Nothing (Just pli) (ls ^. lsVolatileLogEntries)
+      prepedLES = updateLogEntriesHashes preceedingEntry newLEs
+      alreadyStored = case lesMaxEntry prepedLES of
+        -- because incremental hashes, if our "new" ones have the same lastHash as whatever we have saved already, we've already stored the lot of them
+        Nothing -> error "Invariant Error: addLogEntriesAt called with an empty replicateLogEntries chunk"
+        Just lastLe -> case lesLookupEntry (_leLogIndex lastLe) (ls ^. lsVolatileLogEntries) of
+          Nothing -> False
+          Just ourLastLe -> _leHash ourLastLe == _leHash lastLe
+      ls' = lesUnion prepedLES existingEntries
       (lastIdx',lastTerm',lastHash') =
         if Map.null $ _logEntries ls'
         then error "Invariant Error: addLogEntries attempted called on an null map!"
         else let e = snd $ Map.findMax (ls' ^. logEntries) in (_leLogIndex e, _leTerm e, _leHash e)
-  in ls { _lsVolatileLogEntries = ls'
-        , _lsLastLogIndex = lastIdx'
-        , _lsLastLogHash = lastHash'
-        , _lsNextLogIndex = lastIdx' + 1
-        , _lsLastLogTerm = lastTerm'
-        }
+  in if alreadyStored
+     then ls -- because messages can come out of order/redundant it's possible that we've already replicated this chunk.
+     else ls { _lsVolatileLogEntries = ls'
+             , _lsLastLogIndex = lastIdx'
+             , _lsLastLogHash = lastHash'
+             , _lsNextLogIndex = lastIdx' + 1
+             , _lsLastLogTerm = lastTerm'
+             }
 {-# INLINE addLogEntriesAt #-}
 
 -- Since the only node to ever append a log entry is the Leader we can start keeping the logs in sync here

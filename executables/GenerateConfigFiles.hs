@@ -120,6 +120,7 @@ createClusterConfig debugFollower (privMap, pubMap) clientPubMap nid = Config
   , _apiPort              = 8000
   , _logSqlitePath        = "./log/" ++ BSC.unpack (unAlias $ _alias nid) ++ ".sqlite"
   , _enableAwsIntegration = False
+  , _entity               = EntityInfo "me"
   }
 
 createClientConfig :: Bool -> Map NodeId PublicKey -> (Map NodeId PrivateKey, Map NodeId PublicKey) -> NodeId -> Config
@@ -140,4 +141,5 @@ createClientConfig debugFollower clusterPubMap (privMap, pubMap) nid = Config
   , _apiPort              = 8000
   , _logSqlitePath        = "./log/" ++ BSC.unpack (unAlias $ _alias nid) ++ ".sqlite"
   , _enableAwsIntegration = False
+  , _entity               = EntityInfo "client"
   }

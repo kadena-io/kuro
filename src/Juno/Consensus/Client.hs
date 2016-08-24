@@ -25,6 +25,7 @@ import Juno.Runtime.MessageReceiver
 import Juno.Runtime.Timer
 import Juno.Types
 import Juno.Util.Util
+import Juno.Command.CommandLayer
 
 -- main entry point wired up by Simple.hs
 -- getEntry (readChan) useResult (writeChan) replace by
@@ -97,10 +98,8 @@ commandGetter getEntries cmdStatusMap' = do
       return (Command entry nid rid alias' Valid NewMsg)
 
     hardcodedTransfers :: NodeId -> Maybe Alias -> IO Command
-    hardcodedTransfers nid alias = nextRid nid (alias, transferCmdEntry)
+    hardcodedTransfers nid alias = nextRid nid (alias, mkTestPact)
 
-    transferCmdEntry :: CommandEntry
-    transferCmdEntry = (CommandEntry "transfer(Acct1->Acct2, 1 % 1)")
 
 setNextRequestId :: RequestId -> Raft RequestId
 setNextRequestId rid = do

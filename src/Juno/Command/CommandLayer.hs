@@ -75,7 +75,7 @@ applyLocal config mv bs = do
   r <- tryAny (runCommand
                (CommandEnv config Local)
                s
-               (applyPact bs))
+               (applyPactMessage bs))
   case r of
     Right (cr,_) -> return cr
     Left e ->
@@ -90,19 +90,27 @@ applyLogEntry e = do
     cmsg :: CommandMessage <- either (throwCmdEx . ("applyLogEntry: deserialize failed: " ++ ) . show) return $
             SZ.decode bs
     case cmsg of
-      PublicMessage m -> applyPact m
+      PublicMessage m -> do
+                    pk <- case firstOf (cmdProvenance.pDig.digPubkey) cmd of
+                            Nothing -> return [] -- really an error but this is still toy code
+                            Just k -> return [Pact.PublicKey (B16.encode $ exportPublic k)]
+                    applyRPC pk m
       PrivateMessage ct mt m -> applyPrivate ct mt m
 
-applyPact :: ByteString -> CommandM CommandResult
-applyPact m = do
-  pmsg <- either (throwCmdEx . ("applyPact: deserialize failed: " ++ ) . show) return $
+applyPactMessage :: ByteString -> CommandM CommandResult
+applyPactMessage m = do
+  pmsg <- either (throwCmdEx . ("applyPactMessage: deserialize failed: " ++ ) . show) return $
           SZ.decode m
   pk <- validateSig pmsg
-  case A.eitherDecode (fromStrict (_pmPayload pmsg)) of
-      Right (Exec pm) -> applyExec pm pk
-      Right (Continuation ym) -> applyContinuation ym pk
-      Right (Multisig mm) -> applyMultisig mm pk
-      Left err -> throwCmdEx $ "RPC deserialize failed: " ++ show err
+  applyRPC [pk] (_pmPayload pmsg)
+
+applyRPC :: [Pact.PublicKey] -> ByteString -> CommandM CommandResult
+applyRPC ks m =
+  case A.eitherDecode (fromStrict m) of
+      Right (Exec pm) -> applyExec pm ks
+      Right (Continuation ym) -> applyContinuation ym ks
+      Right (Multisig mm) -> applyMultisig mm ks
+      Left err -> throwCmdEx $ "RPC deserialize failed: " ++ show err ++ show m
 
 validateSig :: PactMessage -> CommandM Pact.PublicKey
 validateSig (PactMessage payload key sig)
@@ -121,8 +129,8 @@ parse Local code =
                       displayS (renderCompact (TF._errDoc f)) ""
 
 
-applyExec :: ExecMsg -> Pact.PublicKey -> CommandM CommandResult
-applyExec (ExecMsg code edata) pk = do
+applyExec :: ExecMsg -> [Pact.PublicKey] -> CommandM CommandResult
+applyExec (ExecMsg code edata) ks = do
   env <- ask
   let mode = _ceMode env
   exps <- parse (_ceMode env) code
@@ -133,7 +141,7 @@ applyExec (ExecMsg code edata) pk = do
   pureState <- use csPactState
   let iEvalState = fst $ runPurePact initEvalState def
       evalEnv = EvalEnv {
-                  _eeMsgSigs = S.singleton pk
+                  _eeMsgSigs = S.fromList ks
                 , _eeMsgBody = edata
                 , _eeTxId = fromMaybe 0 $ firstOf emTxId mode
                 , _eeEntity = view (ceConfig.ccEntity.entName) env
@@ -160,10 +168,10 @@ execTerms mode terms = do
   return er
 
 
-applyContinuation :: ContMsg -> Pact.PublicKey -> CommandM CommandResult
+applyContinuation :: ContMsg -> [Pact.PublicKey] -> CommandM CommandResult
 applyContinuation _ _ = throwCmdEx "Continuation not supported"
 
-applyMultisig :: MultisigMsg -> Pact.PublicKey -> CommandM CommandResult
+applyMultisig :: MultisigMsg -> [Pact.PublicKey] -> CommandM CommandResult
 applyMultisig _ _ = throwCmdEx "Multisig not supported"
 
 applyPrivate :: SessionCipherType -> MessageTags -> ByteString -> CommandM a
@@ -196,3 +204,12 @@ _publicRPC rpc li = do
                           (NodeId "" 0 "" (Alias ""))
                           0 Nothing Valid NewMsg) ""
   unCommandResult <$> runt le
+
+mkRPC :: ToRPC a => a ->  CommandEntry
+mkRPC = CommandEntry . SZ.encode . PublicMessage . toStrict . A.encode . A.toJSON . toRPC
+
+mkSimplePact :: Text -> CommandEntry
+mkSimplePact = mkRPC . (`ExecMsg` A.Null)
+
+mkTestPact :: CommandEntry
+mkTestPact = mkSimplePact "(use 'demo) (transfer \"Acct1\" \"Acct2\" (% 1 1))"

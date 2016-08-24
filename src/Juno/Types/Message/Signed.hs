@@ -5,7 +5,7 @@
 
 module Juno.Types.Message.Signed
   ( MsgType(..)
-  , Provenance(..)
+  , Provenance(..), pDig, pOrig, pTimeStamp
   , Digest(..), digNodeId, digSig, digPubkey, digType
   , SignedRPC(..)
   -- for testing & benchmarks
@@ -52,6 +52,7 @@ data Provenance =
 -- instance Serialize Provenance <== This is bait, if you uncomment it you've done something wrong
 -- We really want to be sure that Provenance from one Node isn't by accident transferred to another node.
 -- Without a Serialize instance, we can be REALLY sure.
+makeLenses ''Provenance
 
 -- | Type that is serialized and sent over the wire
 data SignedRPC = SignedRPC

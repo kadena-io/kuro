@@ -1,3 +1,4 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE BangPatterns #-}
 
@@ -11,16 +12,22 @@ import qualified Control.Concurrent.Lifted as CL
 import Control.Concurrent.Chan.Unagi
 import Control.Monad.Reader
 import qualified Data.ByteString.Char8 as BSC
+import qualified Data.ByteString.Lazy.Char8 as BSL
 import Data.Either ()
 import qualified Data.Map as Map
 import Text.Read (readMaybe)
 import System.IO
 import GHC.Int (Int64)
+import qualified Data.Text as T
+import Data.Aeson
 
 import Juno.Spec.Simple
-import Juno.Types
+import Juno.Types.Command
+import Juno.Types.Base
+import Juno.Types.Message.CMD
+import Juno.Command.CommandLayer
+import Juno.Command.Types
 
-import Apps.Juno.Parser
 
 prompt :: String
 prompt = "\ESC[0;31mhopper>> \ESC[0m"
@@ -62,63 +69,65 @@ showResult cmdStatusMap' rId pgm@(Just cnt) =
 
 --  -> OutChan CommandResult
 runREPL :: InChan (RequestId, [(Maybe Alias, CommandEntry)]) -> CommandMVarMap -> Maybe Alias -> MVar Bool -> IO ()
-runREPL toCommands' cmdStatusMap' alias' disableTimeouts = do
-  cmd <- readPrompt
-  case cmd of
-    "" -> runREPL toCommands' cmdStatusMap' alias' disableTimeouts
-    v | v == "sleep" -> threadDelay 5000000 >> runREPL toCommands' cmdStatusMap' alias' disableTimeouts
-    _ -> do
-      cmd' <- return $ BSC.pack cmd
-      case readAlias cmd' of
-        Just alias@(Just a') -> do
-          putStrLn $ "Encrypting all future commands for: " ++ show (unAlias a')
-          runREPL toCommands' cmdStatusMap' alias disableTimeouts
-        Just Nothing -> do
-          putStrLn "Encryption disabled: all future commands will be public"
-          runREPL toCommands' cmdStatusMap' Nothing disableTimeouts
-        Nothing -> do
+runREPL toCommands' cmdStatusMap' alias' disableTimeouts = loop where
+  loop = do
+    cmd <- readPrompt
+    case cmd of
+      "" -> loop
+      v | v == "sleep" -> threadDelay 5000000 >> loop
+      _ -> do
+          cmd' <- return $ BSC.pack cmd
           if take 11 cmd == "batch test:"
           then case readMaybe $ drop 11 cmd of
             Just n -> do
               rId <- liftIO $ setNextCmdRequestId cmdStatusMap'
               writeChan toCommands' (rId, [(alias', CommandEntry cmd')])
               --- this is the tracer round for timing purposes
-              putStrLn $ "Sending " ++ show n ++ " 'transfer(Acct1->Acct2, 1%1)' transactions batched"
+              putStrLn $ "Sending " ++ show n ++ " batched transactions"
               showTestingResult cmdStatusMap' (Just n)
-              runREPL toCommands' cmdStatusMap' alias' disableTimeouts
-            Nothing -> runREPL toCommands' cmdStatusMap' alias' disableTimeouts
+              loop
+            Nothing -> loop
           else if take 10 cmd == "many test:"
-          then do
+          then
             case readMaybe $ drop 10 cmd of
               Just n -> do
                 !cmds <- replicateM n
-                          (do rid <- setNextCmdRequestId cmdStatusMap'; return (rid, [(alias', CommandEntry "transfer(Acct1->Acct2, 1%1)")]))
+                          (do rid <- setNextCmdRequestId cmdStatusMap'
+                              return (rid, [(alias', mkTestPact)]))
                 writeList2Chan toCommands' cmds
                 --- this is the tracer round for timing purposes
-                putStrLn $ "Sending " ++ show n ++ " 'transfer(Acct1->Acct2, 1%1)' transactions individually"
+                putStrLn $ "Sending " ++ show n ++ " transactions individually"
                 showResult cmdStatusMap' (fst $ last cmds) (Just $ fromIntegral n)
-                runREPL toCommands' cmdStatusMap' alias' disableTimeouts
-              Nothing -> runREPL toCommands' cmdStatusMap' alias' disableTimeouts
+                loop
+              Nothing -> loop
           else if cmd == "disable timeout"
             then do
               _ <- swapMVar disableTimeouts True
               t <- readMVar disableTimeouts
               putStrLn $ "disableTimeouts: " ++ show t
-              runREPL toCommands' cmdStatusMap' alias' disableTimeouts
+              loop
           else if cmd == "enable timeout"
             then do
               _ <- swapMVar disableTimeouts False
               t <- readMVar disableTimeouts
               putStrLn $ "disableTimeouts: " ++ show t
-              runREPL toCommands' cmdStatusMap' alias' disableTimeouts
+              loop
+          else if cmd == "setup"
+             then do
+               code <- T.pack <$> readFile "demo/demo.pact"
+               (ej :: Either String Value) <- eitherDecode <$> liftIO (BSL.readFile "demo/demo.json")
+               case ej of
+                 Left err -> liftIO (putStrLn $ "ERROR: demo.json file invalid: " ++ show err) >> loop
+                 Right j -> do
+                   rId <- liftIO $ setNextCmdRequestId cmdStatusMap'
+                   writeChan toCommands' (rId, [(alias', mkRPC $ ExecMsg code j)])
+                   showResult cmdStatusMap' rId Nothing
+                   loop
           else do
-            case readHopper cmd' of
-              Left err -> putStrLn cmd >> putStrLn err >> runREPL toCommands' cmdStatusMap' alias' disableTimeouts
-              Right _ -> do
-                rId <- liftIO $ setNextCmdRequestId cmdStatusMap'
-                writeChan toCommands' (rId, [(alias', CommandEntry cmd')])
-                showResult cmdStatusMap' rId Nothing
-                runREPL toCommands' cmdStatusMap' alias' disableTimeouts
+            rId <- liftIO $ setNextCmdRequestId cmdStatusMap'
+            writeChan toCommands' (rId, [(alias', mkSimplePact $ T.pack cmd)])
+            showResult cmdStatusMap' rId Nothing
+            loop
 
 intervalOfNumerous :: Int64 -> Int64 -> String
 intervalOfNumerous cnt mics = let

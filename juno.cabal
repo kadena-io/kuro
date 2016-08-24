@@ -28,6 +28,8 @@ library
                      , Apps.Juno.Ledger
                      , Apps.Juno.Parser
                      , Apps.Juno.Repl
+                     , Juno.Command.Types
+                     , Juno.Command.CommandLayer
                      , Juno.Consensus.Api
                      , Juno.Consensus.Handle
                      , Juno.Consensus.Server

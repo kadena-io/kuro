@@ -9,7 +9,7 @@ packages:
   extra-dep: true
 - location:
     git: git@bitbucket.org:spopejoy/pact.git
-    commit: cc64141199fabd89fe9ba56c5227c855099b2e62
+    commit: 3345db78268f248b866d99710ec7913f2bc96979
   extra-dep: true
 
 
@@ -24,6 +24,7 @@ extra-deps:
 - megaparsec-4.2.0
 - safe-exceptions-0.1.4.0
 - unagi-chan-0.4.0.0
+- trifecta-1.6
 
 # Override default flag values for local packages and extra-deps
 # flags: []

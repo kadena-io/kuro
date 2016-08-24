@@ -114,7 +114,7 @@ compileFile :: FilePath -> IO (Either String HopliteTerm)
 compileFile f = do
   p <- TF.parseFromFileEx expr f
   case p of
-    (TF.Failure x) -> PP.putDoc x >> return (Left "Parse failed")
+    (TF.Failure x) -> PP.putDoc (TF._errDoc x) >> return (Left "Parse failed")
     (TF.Success t) -> return $ compile t
 
 

@@ -1,17 +1,16 @@
+{-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
 
 module Juno.Command.Types where
 
-import Control.Concurrent
 import Data.Default
 import Data.Aeson as A
 import Data.ByteString (ByteString)
-import Data.ByteString.Lazy (toStrict,fromStrict)
 import qualified Crypto.PubKey.Curve25519 as C2
 import Data.ByteArray.Extend
 import Data.Serialize as SZ hiding (get)
@@ -22,27 +21,18 @@ import Control.Exception.Safe
 import Data.Text.Encoding
 import Control.Applicative
 import Control.Lens hiding ((.=))
-import qualified Control.Lens as L
-import qualified Data.Set as S
 import Data.Maybe
-import qualified Text.Trifecta as TF
 import Text.Trifecta.Combinators (DeltaParsing(..))
 import qualified Data.Attoparsec.Text as AP
-import Control.Monad.Except
-import Data.Text (Text)
-
+import Prelude hiding (log,exp)
+import Data.Text
 
 import Pact.Types hiding (PublicKey)
-import qualified Pact.Types as Pact
 import Pact.Pure
-import Pact.Eval
-import Pact.Compile as Pact
 
 import Juno.Types.Log
-import Juno.Types.Base
+import Juno.Types.Base hiding (Term)
 import Juno.Types.Command
-import Juno.Types.Message hiding (RPC)
-
 
 
 
@@ -140,7 +130,7 @@ data ExecMsg = ExecMsg {
       _pmCode :: Text
     , _pmData :: Value
     }
-    deriving (Eq)
+    deriving (Eq,Generic)
 instance FromJSON ExecMsg where
     parseJSON =
         withObject "PactMsg" $ \o ->
@@ -198,12 +188,21 @@ instance FromJSON PactRPC where
             (Exec <$> o .: "exec") <|>
              (Yield <$> o .: "yield") <|>
              (Multisig <$> o .: "multisig")
+instance ToJSON PactRPC where
+    toJSON (Exec p) = object ["exec" .= p]
+    toJSON (Yield p) = object ["yield" .= p]
+    toJSON (Multisig p) = object ["multisig" .= p]
+
+class ToRPC a where
+    toRPC :: a -> PactRPC
+
+instance ToRPC ExecMsg where toRPC = Exec
+instance ToRPC YieldMsg where toRPC = Yield
+instance ToRPC MultisigMsg where toRPC = Multisig
 
 
 data EntityInfo = EntityInfo {
       _entName :: String
-    , _entPK :: EntPublicKey
-    , _entSK :: EntSecretKey
 }
 $(makeLenses ''EntityInfo)
 
@@ -256,12 +255,15 @@ instance (ToJSON a) => ToJSON (CommandSuccess a) where
         object [ "status" .= ("Success" :: String)
                , "result" .= a ]
 
-instance DeltaParsing (AP.Parser) where
+instance DeltaParsing AP.Parser where
     line = return mempty
     position = return mempty
-    slicedWith f a = a >>= return . (`f` mempty)
+    slicedWith f a = a <&> (`f` mempty)
     rend = return mempty
     restOfLine = return mempty
+
+type ApplyLogEntry = LogEntry -> IO CommandResult
+type ApplyLocal = ByteString -> IO CommandResult
 
 type CommandM a = ReaderT CommandEnv (StateT CommandState IO) a
 
@@ -271,117 +273,3 @@ runCommand e s a = runStateT (runReaderT a e) s
 
 throwCmdEx :: MonadThrow m => String -> m a
 throwCmdEx = throw . CommandException
-
-initCommandLayer :: CommandConfig -> IO (LogEntry -> IO CommandResult,
-                                         ByteString -> IO CommandResult)
-initCommandLayer config = do
-  mv <- newMVar def
-  return (applyTransactional config mv,applyLocal config mv)
-
-
-applyTransactional :: CommandConfig -> MVar CommandState -> LogEntry -> IO CommandResult
-applyTransactional config mv le = do
-  let logIndex = _leLogIndex le
-  s <- takeMVar mv
-  r <- tryAny (runCommand
-               (CommandEnv config (Transactional $ fromIntegral logIndex))
-               s
-               (applyLogEntry le))
-  case r of
-    Right (cr,s') -> do
-           putMVar mv s'
-           return cr
-    Left e ->
-        return $ jsonResult $
-               CommandError "Transaction execution failed" (Just $ show e)
-
-jsonResult :: ToJSON a => a -> CommandResult
-jsonResult = CommandResult . toStrict . A.encode
-
-applyLocal :: CommandConfig -> MVar CommandState -> ByteString -> IO CommandResult
-applyLocal config mv bs = do
-  s <- takeMVar mv
-  r <- tryAny (runCommand
-               (CommandEnv config Local)
-               s
-               (applyPact bs))
-  case r of
-    Right (cr,_) -> return cr
-    Left e ->
-        return $ jsonResult $
-               CommandError "Local execution failed" (Just $ show e)
-
-applyLogEntry :: LogEntry -> CommandM CommandResult
-applyLogEntry e = do
-    let
-        cmd = _leCommand e
-        bs = unCommandEntry $ _cmdEntry cmd
-    cmsg :: CommandMessage <- either (throwCmdEx . ("applyLogEntry: deserialize failed: " ++ ) . show) return $
-            SZ.decode bs
-    case cmsg of
-      PublicMessage m -> applyPact m
-      PrivateMessage ct mt m -> applyPrivate ct mt m
-
-applyPact :: ByteString -> CommandM CommandResult
-applyPact m = do
-  pmsg <- either (throwCmdEx . ("applyPact: deserialize failed: " ++ ) . show) return $
-          SZ.decode m
-  pk <- validateSig pmsg
-  case A.eitherDecode (fromStrict (_pmPayload pmsg)) of
-      Right (Exec pm) -> applyExec pm pk
-      Right (Yield ym) -> applyYield ym pk
-      Right (Multisig mm) -> applyMultisig mm pk
-      Left err -> throwCmdEx $ "RPC deserialize failed: " ++ show err
-
-validateSig :: PactMessage -> CommandM Pact.PublicKey
-validateSig (PactMessage payload key sig)
-    | valid payload key sig = return (Pact.PublicKey (exportPublic key)) -- TODO turn off with compile flags?
-    | otherwise = throwCmdEx "Signature verification failure"
-
-
-applyExec :: ExecMsg -> Pact.PublicKey -> CommandM CommandResult
-applyExec (ExecMsg code edata) pk = do
-  pactExp <- case AP.parseOnly Pact.expr code of --TF.parseString Pact.expr mempty code of
-           -- TF.Success s -> return s
-           -- TF.Failure f -> throwCmdEx $ "Pact parse failed: " ++ show f
-               Right s -> return s
-               Left e -> throwCmdEx $ "Pact parse failed: " ++ e
-  term <- case compile pactExp of
-            Right r -> return r
-            Left (i,e) -> throwCmdEx $ "Pact compile failed: " ++ show i ++ ": " ++ show e
-  pureState <- use csPactState
-  env <- ask
-  let iEvalState = fst $ runPurePact initEvalState def
-      evalEnv = EvalEnv {
-                  _eeMsgSigs = S.singleton pk
-                , _eeMsgBody = edata
-                , _eeTxId = fromMaybe 0 $ firstOf (ceMode.emTxId) env
-                , _eeEntity = view (ceConfig.ccEntity.entName) env
-                , _eePactStep = Nothing
-                }
-      transactional = view ceMode env /= Local
-      run = do
-        evalBeginTx
-        er <- catchError (eval term)
-             (\e -> when transactional evalRollbackTx >> throwError e)
-        when transactional (void evalCommitTx)
-        return er
-      ((r,_evalState'),pureState') = runPurePact (runEval iEvalState evalEnv run) pureState
-  case r of
-    Right t -> do
-           when transactional $ csPactState L..= pureState'
-           return $ jsonResult $ CommandSuccess $ show t -- TODO Term needs a ToJSON, Yield handling
-    Left e -> throwCmdEx $ "Exec failed: " ++ show e
-
-
-applyYield :: YieldMsg -> Pact.PublicKey -> CommandM CommandResult
-applyYield _ _ = throwCmdEx "Yield not supported"
-
-applyMultisig :: MultisigMsg -> Pact.PublicKey -> CommandM CommandResult
-applyMultisig _ _ = throwCmdEx "MultisigMsg not supported"
-
-applyPrivate :: SessionCipherType -> MessageTags -> ByteString -> CommandM a
-applyPrivate _ _ _ = throwCmdEx "Private messages not supported"
-
---mkPactMessage :: E2.PublicKey -> E2.PrivateKey -> ByteString -> PactMessage
---mkPactMessage pk sk bs = PactMessage bs (E2.exportPublic pk) (E2.sign bs sk pk)

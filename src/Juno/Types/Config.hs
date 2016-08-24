@@ -6,7 +6,7 @@
 module Juno.Types.Config
   ( Config(..), otherNodes, nodeId, electionTimeoutRange, heartbeatTimeout
   , enableDebug, publicKeys, clientPublicKeys, myPrivateKey, clientTimeoutLimit
-  , myPublicKey, batchTimeDelta, dontDebugFollower, apiPort, myEncryptionKey
+  , myPublicKey, batchTimeDelta, dontDebugFollower, apiPort
   , logSqlitePath, enableAwsIntegration,entity
   , KeySet(..), ksClient, ksCluster
   , EntityInfo(..),entName
@@ -43,7 +43,6 @@ data Config = Config
   , _clientPublicKeys     :: !(Map NodeId PublicKey)
   , _myPrivateKey         :: !PrivateKey
   , _myPublicKey          :: !PublicKey
-  , _myEncryptionKey      :: !EncryptionKey
   , _electionTimeoutRange :: !(Int,Int)
   , _heartbeatTimeout     :: !Int
   , _batchTimeDelta       :: !NominalDiffTime

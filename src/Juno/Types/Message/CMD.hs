@@ -4,7 +4,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 
 module Juno.Types.Message.CMD
-  ( Command(..), cmdEntry, cmdClientId, cmdRequestId, cmdProvenance, cmdEncryptGroup, cmdCryptoVerified
+  ( Command(..), cmdEntry, cmdClientId, cmdRequestId, cmdProvenance, cmdCryptoVerified
   , CryptoVerified(..)
   , verifyCmd
   , CommandBatch(..), cmdbBatch, cmdbProvenance
@@ -34,20 +34,19 @@ data Command = Command
   { _cmdEntry      :: !CommandEntry
   , _cmdClientId   :: !NodeId
   , _cmdRequestId  :: !RequestId
-  , _cmdEncryptGroup :: !(Maybe Alias)
   , _cmdCryptoVerified :: !CryptoVerified
   , _cmdProvenance :: !Provenance
   }
   deriving (Show, Eq, Ord, Generic)
 makeLenses ''Command
 
-data CMDWire = CMDWire !(CommandEntry, NodeId, RequestId, Maybe Alias)
+data CMDWire = CMDWire !(CommandEntry, NodeId, RequestId)
   deriving (Show, Generic)
 instance Serialize CMDWire
 
 instance WireFormat Command where
   toWire nid pubKey privKey Command{..} = case _cmdProvenance of
-    NewMsg -> let bdy = S.encode $ CMDWire (_cmdEntry, _cmdClientId, _cmdRequestId, _cmdEncryptGroup)
+    NewMsg -> let bdy = S.encode $ CMDWire (_cmdEntry, _cmdClientId, _cmdRequestId)
                   sig = sign bdy privKey pubKey
                   dig = Digest nid sig pubKey CMD
               in SignedRPC dig bdy
@@ -57,7 +56,7 @@ instance WireFormat Command where
         then error $ "Invariant Failure: attempting to decode " ++ show (_digType dig) ++ " with CMDWire instance"
         else case S.decode bdy of
             Left !err -> Left $! "Failure to decode CMDWire: " ++ err
-            Right (CMDWire !(ce,nid,rid,encGrp)) -> Right $! Command ce nid rid encGrp UnVerified $ ReceivedMsg dig bdy ts
+            Right (CMDWire !(ce,nid,rid)) -> Right $! Command ce nid rid UnVerified $ ReceivedMsg dig bdy ts
   {-# INLINE toWire #-}
   {-# INLINE fromWire #-}
 

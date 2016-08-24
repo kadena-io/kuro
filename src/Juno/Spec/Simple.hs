@@ -36,7 +36,13 @@ import System.Random
 
 import Juno.Consensus.Server
 import Juno.Consensus.Client
-import Juno.Types hiding (timeCache)
+import Juno.Types.Command
+import Juno.Types.Base
+import Juno.Types.Config
+import Juno.Types.Spec hiding (timeCache)
+import Juno.Types.Message.CMD
+import Juno.Types.Metric
+import Juno.Types.Dispatch
 import Juno.Util.Util (awsDashVar)
 import Juno.Messaging.ZMQ
 import Juno.Monitoring.Server (startMonitoring)
@@ -114,7 +120,7 @@ simpleRaftSpec :: ApplyFn
                -> (Metric -> IO ())
                -> (MVar CommandMap -> RequestId -> CommandStatus -> IO ())
                -> CommandMVarMap
-               -> Unagi.OutChan (RequestId, [(Maybe Alias, CommandEntry)]) --IO (RequestId, [CommandEntry])
+               -> Unagi.OutChan (RequestId, [CommandEntry]) --IO (RequestId, [CommandEntry])
                -> RaftSpec
 simpleRaftSpec applyFn debugFn pubMetricFn updateMapFn cmdMVarMap getCommands = RaftSpec
     {
@@ -167,7 +173,7 @@ resetAwsEnv awsEnabled = do
   awsDashVar awsEnabled "AppliedIndex" "Startup"
   awsDashVar awsEnabled "CommitIndex" "Startup"
 
-runClient :: (Command -> IO CommandResult) -> IO (RequestId, [(Maybe Alias, CommandEntry)]) -> CommandMVarMap -> MVar Bool -> IO ()
+runClient :: (Command -> IO CommandResult) -> IO (RequestId, [CommandEntry]) -> CommandMVarMap -> MVar Bool -> IO ()
 runClient _applyFn getEntries cmdStatusMap' disableTimeouts = do
   setLineBuffering
   rconf <- getConfig

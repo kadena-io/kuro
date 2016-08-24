@@ -21,7 +21,8 @@ import Snap.Core
 import Snap.CORS
 
 import Apps.Juno.ApiHandlers
-import Juno.Types hiding (Config)
+import Juno.Types.Command
+import Juno.Types.Base
 
 -- |
 -- Starts the API server which will listen on a port for incoming client
@@ -31,14 +32,14 @@ import Juno.Types hiding (Config)
 -- this channel, and is responisble for putting the data in the correct
 -- format for the protocol. For now when querying the only shared item
 -- sharedCmdStatusMap
-runApiServer :: InChan (RequestId, [(Maybe Alias, CommandEntry)]) -> CommandMVarMap -> Int -> IO ()
+runApiServer :: InChan (RequestId, [CommandEntry]) -> CommandMVarMap -> Int -> IO ()
 runApiServer toCommands sharedCmdStatusMap port = do
   putStrLn "Starting up server runApiServer"
   snapApiServer toCommands sharedCmdStatusMap port
   putStrLn "Server Started"
 
 -- TODO removed from App/client
-snapApiServer :: InChan (RequestId, [(Maybe Alias, CommandEntry)]) -> CommandMVarMap -> Int -> IO ()
+snapApiServer :: InChan (RequestId, [CommandEntry]) -> CommandMVarMap -> Int -> IO ()
 snapApiServer toCommands' cmdStatusMap' port = httpServe (serverConf port) $
     applyCORS defaultOptions $ methods [GET, POST]
     (ifTop (writeBS "kadena") <|>

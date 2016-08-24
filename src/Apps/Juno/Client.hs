@@ -23,7 +23,6 @@ import Data.Aeson
 
 import Juno.Spec.Simple
 import Juno.Types.Command
-import Juno.Types.Base
 import Juno.Types.Message.CMD
 import Juno.Command.CommandLayer
 import Juno.Command.Types
@@ -42,7 +41,7 @@ readPrompt :: IO String
 readPrompt = flushStr prompt >> getLine
 
 showTestingResult :: CommandMVarMap -> Maybe Int64 -> IO ()
-showTestingResult s p = do
+showTestingResult s p =
   threadDelay 1000000 >> do
     (CommandMap _ m) <- readMVar s
     showResult s (fst $ Map.findMax m) p
@@ -62,14 +61,14 @@ showResult cmdStatusMap' rId pgm@(Just cnt) =
     (CommandMap _ m) <- readMVar cmdStatusMap'
     case Map.lookup rId m of
       Nothing -> print $ "RequestId [" ++ show rId ++ "] not found."
-      Just (CmdApplied (CommandResult _x) lat) -> do
+      Just (CmdApplied (CommandResult _x) lat) ->
         putStrLn $ intervalOfNumerous cnt lat
       Just _ -> -- not applied yet, loop and wait
         showResult cmdStatusMap' rId pgm
 
 --  -> OutChan CommandResult
-runREPL :: InChan (RequestId, [(Maybe Alias, CommandEntry)]) -> CommandMVarMap -> Maybe Alias -> MVar Bool -> IO ()
-runREPL toCommands' cmdStatusMap' alias' disableTimeouts = loop where
+runREPL :: InChan (RequestId, [CommandEntry]) -> CommandMVarMap -> MVar Bool -> IO ()
+runREPL toCommands' cmdStatusMap' disableTimeouts = loop where
   loop = do
     cmd <- readPrompt
     case cmd of
@@ -81,7 +80,7 @@ runREPL toCommands' cmdStatusMap' alias' disableTimeouts = loop where
           then case readMaybe $ drop 11 cmd of
             Just n -> do
               rId <- liftIO $ setNextCmdRequestId cmdStatusMap'
-              writeChan toCommands' (rId, [(alias', CommandEntry cmd')])
+              writeChan toCommands' (rId, [CommandEntry cmd'])
               --- this is the tracer round for timing purposes
               putStrLn $ "Sending " ++ show n ++ " batched transactions"
               showTestingResult cmdStatusMap' (Just n)
@@ -93,7 +92,7 @@ runREPL toCommands' cmdStatusMap' alias' disableTimeouts = loop where
               Just n -> do
                 !cmds <- replicateM n
                           (do rid <- setNextCmdRequestId cmdStatusMap'
-                              return (rid, [(alias', mkTestPact)]))
+                              return (rid, [mkTestPact]))
                 writeList2Chan toCommands' cmds
                 --- this is the tracer round for timing purposes
                 putStrLn $ "Sending " ++ show n ++ " transactions individually"
@@ -120,12 +119,12 @@ runREPL toCommands' cmdStatusMap' alias' disableTimeouts = loop where
                  Left err -> liftIO (putStrLn $ "ERROR: demo.json file invalid: " ++ show err) >> loop
                  Right j -> do
                    rId <- liftIO $ setNextCmdRequestId cmdStatusMap'
-                   writeChan toCommands' (rId, [(alias', mkRPC $ ExecMsg code j)])
+                   writeChan toCommands' (rId, [mkRPC $ ExecMsg code j])
                    showResult cmdStatusMap' rId Nothing
                    loop
           else do
             rId <- liftIO $ setNextCmdRequestId cmdStatusMap'
-            writeChan toCommands' (rId, [(alias', mkSimplePact $ T.pack cmd)])
+            writeChan toCommands' (rId, [mkSimplePact $ T.pack cmd])
             showResult cmdStatusMap' rId Nothing
             loop
 
@@ -145,11 +144,11 @@ main = do
   cmdStatusMap' <- initCommandMap
   disableTimeouts <- newMVar False
   let -- getEntry :: (IO et)
-      getEntries :: IO (RequestId, [(Maybe Alias, CommandEntry)])
+      getEntries :: IO (RequestId, [CommandEntry])
       getEntries = readChan fromCommands
       -- applyFn :: et -> IO rt
       applyFn :: Command -> IO CommandResult
       applyFn _x = return $ CommandResult "Failure"
   void $ CL.fork $ runClient applyFn getEntries cmdStatusMap' disableTimeouts
   threadDelay 100000
-  runREPL toCommands cmdStatusMap' Nothing disableTimeouts
+  runREPL toCommands cmdStatusMap' disableTimeouts

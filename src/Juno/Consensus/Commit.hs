@@ -14,7 +14,6 @@ import Control.Monad.IO.Class
 import Data.Int (Int64)
 import Data.Thyme.Clock (UTCTime)
 
-import qualified Data.ByteString.Char8 as BSC
 import qualified Data.Map.Strict as Map
 import Data.Foldable (toList)
 import Data.Maybe (fromJust)
@@ -41,7 +40,7 @@ applyLogEntries les@(LogEntries leToApply) = do
     else debug "Applied log entries but did not send results?"
 
 logApplyLatency :: Command -> Raft ()
-logApplyLatency (Command _ _ _ _ _ provenance) = case provenance of
+logApplyLatency (Command _ _ _ _ provenance) = case provenance of
   NewMsg -> return ()
   ReceivedMsg _digest _orig mReceivedAt -> case mReceivedAt of
     Just (ReceivedAt arrived) -> do
@@ -53,25 +52,11 @@ applyCommand :: UTCTime -> LogEntry -> Raft (NodeId, CommandResponse)
 applyCommand tEnd le = do
   let cmd = _leCommand le
   apply <- view (rs.applyLogEntry)
-  me <- _alias <$> viewConfig nodeId
-  encKey <- viewConfig myEncryptionKey
   logApplyLatency cmd
-  result <- case decryptCommand me encKey cmd of
-              Left res -> return res
-              Right v -> liftIO $ apply $ set (leCommand.cmdEntry) v le
+  result <- liftIO $ apply le
   updateCmdStatusMap cmd result tEnd -- shared with the API and to query state
   replayMap %= Map.insert (_cmdClientId cmd, getCmdSigOrInvariantError "applyCommand" cmd) (Just result)
   (_cmdClientId cmd,) <$> makeCommandResponse tEnd cmd result
-
-decryptCommand :: Alias -> EncryptionKey -> Command -> Either CommandResult CommandEntry
-decryptCommand me encKey Command{..}
-    | _cmdEncryptGroup == Nothing = Right _cmdEntry
-    | Just me == _cmdEncryptGroup = case decrypt' encKey (unCommandEntry $ _cmdEntry) of
-        Right v -> Right $ CommandEntry v
-        Left err -> Left $ CommandResult $ BSC.pack $ "Failed to decrypt private Command: " ++ err
-    | otherwise = Left $ CommandResult "Not party to Private Command"
-  where
-    decrypt' _ v = Right v
 
 updateCmdStatusMap :: Command -> CommandResult -> UTCTime -> Raft ()
 updateCmdStatusMap cmd cmdResult tEnd = do

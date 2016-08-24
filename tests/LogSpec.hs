@@ -117,14 +117,12 @@ cmdRPC0 i = Command
   { _cmdEntry = CommandEntry "CreateAccount foo"
   , _cmdClientId = nodeIdClient
   , _cmdRequestId = RequestId $ fromIntegral i
-  , _cmdEncryptGroup = Nothing
   , _cmdCryptoVerified = Valid
   , _cmdProvenance = NewMsg }
 cmdRPC1 i = Command
   { _cmdEntry = CommandEntry "CreateAccount bar"
   , _cmdClientId = nodeIdClient
   , _cmdRequestId = RequestId $ fromIntegral i
-  , _cmdEncryptGroup = Nothing
   , _cmdCryptoVerified = Valid
   , _cmdProvenance = NewMsg }
 

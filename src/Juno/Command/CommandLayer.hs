@@ -202,7 +202,7 @@ _publicRPC rpc li = do
       pm = PublicMessage (SZ.encode p)
       le = LogEntry 0 li (Command (CommandEntry (SZ.encode pm))
                           (NodeId "" 0 "" (Alias ""))
-                          0 Nothing Valid NewMsg) ""
+                          0 Valid NewMsg) ""
   unCommandResult <$> runt le
 
 mkRPC :: ToRPC a => a ->  CommandEntry

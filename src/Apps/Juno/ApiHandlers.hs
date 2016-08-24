@@ -17,11 +17,11 @@ import qualified Data.Aeson as JSON
 import Snap.Core
 import System.Posix.Files
 import Apps.Juno.JsonTypes
-import Juno.Types hiding (CommandBatch)
-
+import Juno.Types.Command
+import Juno.Types.Base
 
 data ApiEnv = ApiEnv {
-      _aiToCommands :: InChan (RequestId, [(Maybe Alias, CommandEntry)]),
+      _aiToCommands :: InChan (RequestId, [CommandEntry]),
       _aiCmdStatusMap :: CommandMVarMap
 }
 
@@ -52,7 +52,7 @@ apiWrapper requestHandler = do
      Right cmdEntries -> do
          env <- ask
          reqestId@(RequestId rId) <- liftIO $ setNextCmdRequestId (_aiCmdStatusMap env)
-         liftIO $ writeChan (_aiToCommands env) (reqestId, (\c -> (Nothing, c)) <$> cmdEntries)
+         liftIO $ writeChan (_aiToCommands env) (reqestId, cmdEntries)
          (writeBS . BLC.toStrict . JSON.encode) $ commandResponseSuccess ((T.pack . show) rId) ""
      Left err -> writeBS $ BLC.toStrict err
 

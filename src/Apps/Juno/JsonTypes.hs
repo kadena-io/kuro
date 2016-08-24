@@ -18,7 +18,8 @@ import           Data.Text.Encoding as E
 import           Data.Text (Text)
 import           GHC.Generics
 
-import           Juno.Types (CommandStatus(..),CommandResult(..),RequestId(..))
+import Juno.Types.Command
+import Juno.Types.Base
 
 
 

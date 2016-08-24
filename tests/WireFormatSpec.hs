@@ -138,14 +138,12 @@ cmdRPC1 = Command
   { _cmdEntry = CommandEntry "CreateAccount foo"
   , _cmdClientId = nodeIdClient
   , _cmdRequestId = RequestId 0
-  , _cmdEncryptGroup = Nothing
   , _cmdCryptoVerified = UnVerified
   , _cmdProvenance = NewMsg }
 cmdRPC2 = Command
   { _cmdEntry = CommandEntry "CreateAccount foo"
   , _cmdClientId = nodeIdClient
   , _cmdRequestId = RequestId 1
-  , _cmdEncryptGroup = Nothing
   , _cmdCryptoVerified = UnVerified
   , _cmdProvenance = NewMsg }
 

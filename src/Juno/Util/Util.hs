@@ -120,7 +120,7 @@ dequeueEvent :: Raft Event
 dequeueEvent = view (dequeue) >>= \f -> liftIO f
 
 -- dequeue command from API interface
-dequeueCommand :: Raft (RequestId, [(Maybe Alias, CommandEntry)])
+dequeueCommand :: Raft (RequestId, [CommandEntry])
 dequeueCommand = view (rs.dequeueFromApi) >>= \f -> liftIO f
 
 logMetric :: Metric -> Raft ()

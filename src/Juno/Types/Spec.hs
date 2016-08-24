@@ -5,7 +5,7 @@
 
 module Juno.Types.Spec
   ( Raft
-  , RaftSpec(..)
+  , RaftSpec(..),ApplyFn
   , applyLogEntry , debugPrint, publishMetric, getTimestamp, random
   , viewConfig, readConfig, timerTarget, evidenceState, timeCache
   -- for API <-> Juno communication
@@ -46,15 +46,18 @@ import Juno.Types.Event
 import Juno.Types.Message
 import Juno.Types.Metric
 import Juno.Types.Comms
+import Juno.Types.Log
 import Juno.Types.Dispatch
 import Juno.Types.Service.Sender (SenderServiceChannel, ServiceRequest')
 import Juno.Types.Service.Log (QueryApi(..))
 import Juno.Types.Service.Evidence (PublishedEvidenceState, Evidence(ClearConvincedNodes))
 
+type ApplyFn = LogEntry -> IO CommandResult
+
 data RaftSpec = RaftSpec
   {
     -- ^ Function to apply a log entry to the state machine.
-    _applyLogEntry    :: Command -> IO CommandResult
+    _applyLogEntry    :: ApplyFn
 
     -- ^ Function to log a debug message (no newline).
   , _debugPrint       :: String -> IO ()

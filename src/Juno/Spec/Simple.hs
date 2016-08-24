@@ -4,7 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Juno.Spec.Simple
-  ( runJuno
+  ( runServer
   , runClient
   , RequestId
   , CommandStatus
@@ -42,6 +42,8 @@ import Juno.Messaging.ZMQ
 import Juno.Monitoring.Server (startMonitoring)
 import Juno.Runtime.Api.ApiServer
 import qualified Juno.Runtime.MessageReceiver as RENV
+import Juno.Command.CommandLayer
+import Juno.Command.Types
 
 data Options = Options
   {  optConfigFile :: FilePath
@@ -84,17 +86,17 @@ getConfig = do
     (_,_,errs)     -> mapM_ putStrLn errs >> exitFailure
 
 showDebug :: TimedFastLogger -> String -> IO ()
-showDebug fs m = fs (\t -> (toLogStr t) <> " " <> (toLogStr $ BSC.pack $ m) <> "\n")
+showDebug fs m = fs (\t -> toLogStr t <> " " <> toLogStr (BSC.pack m) <> "\n")
 
 noDebug :: String -> IO ()
 noDebug _ = return ()
 
-timeCache :: TimeZone -> (IO UTCTime) -> IO (IO FormattedTime)
+timeCache :: TimeZone -> IO UTCTime -> IO (IO FormattedTime)
 timeCache tz tc = mkAutoUpdate defaultUpdateSettings
   { updateAction = do
       t' <- tc
-      (ZonedTime (LocalTime d t) _) <- return $ view (zonedTime) (tz,t')
-      return $ BSC.pack $ (showGregorian d) ++ "T" ++ (take 12 $ show t)
+      (ZonedTime (LocalTime d t) _) <- return $ view zonedTime (tz,t')
+      return $ BSC.pack $ showGregorian d ++ "T" ++ take 12 (show t)
   , updateFreq = 1000}
 
 utcTimeCache :: IO (IO UTCTime)
@@ -102,12 +104,12 @@ utcTimeCache = mkAutoUpdate defaultUpdateSettings
   { updateAction = getCurrentTime
   , updateFreq = 1000}
 
-initSysLog :: (IO UTCTime) -> IO (TimedFastLogger)
+initSysLog :: IO UTCTime -> IO TimedFastLogger
 initSysLog tc = do
   tz <- getCurrentTimeZone
   fst <$> newTimedFastLogger (join $ timeCache tz tc) (LogStdout defaultBufSize)
 
-simpleRaftSpec :: (Command -> IO CommandResult)
+simpleRaftSpec :: ApplyFn
                -> (String -> IO ())
                -> (Metric -> IO ())
                -> (MVar CommandMap -> RequestId -> CommandStatus -> IO ())
@@ -166,13 +168,13 @@ resetAwsEnv awsEnabled = do
   awsDashVar awsEnabled "CommitIndex" "Startup"
 
 runClient :: (Command -> IO CommandResult) -> IO (RequestId, [(Maybe Alias, CommandEntry)]) -> CommandMVarMap -> MVar Bool -> IO ()
-runClient applyFn getEntries cmdStatusMap' disableTimeouts = do
+runClient _applyFn getEntries cmdStatusMap' disableTimeouts = do
   setLineBuffering
   rconf <- getConfig
   resetAwsEnv (rconf ^. enableAwsIntegration)
   utcTimeCache' <- utcTimeCache
   fs <- initSysLog utcTimeCache'
-  let debugFn = if (rconf ^. enableDebug) then showDebug fs else noDebug
+  let debugFn = if rconf ^. enableDebug then showDebug fs else noDebug
   pubMetric <- startMonitoring rconf
   dispatch <- initDispatch
   me <- return $ rconf ^. nodeId
@@ -181,8 +183,8 @@ runClient applyFn getEntries cmdStatusMap' disableTimeouts = do
   -- STUBs mocking
   (_, stubGetApiCommands) <- Unagi.newChan
   let raftSpec = simpleRaftSpec
-                   (liftIO . applyFn)
-                   (debugFn)
+                   (const (return $ CommandResult ""))
+                   debugFn
                    (liftIO . pubMetric)
                    updateCmdMapFn
                    cmdStatusMap'
@@ -195,11 +197,13 @@ runClient applyFn getEntries cmdStatusMap' disableTimeouts = do
 --   shared state between API and protocol: sharedCmdStatusMap
 --   comminication channel btw API and protocol:
 --   [API write/place command -> toCommands] [getApiCommands -> juno read/poll command]
-runJuno :: (Command -> IO CommandResult) -> Unagi.InChan (RequestId, [(Maybe Alias, CommandEntry)])
-        -> Unagi.OutChan (RequestId, [(Maybe Alias, CommandEntry)]) -> CommandMVarMap -> IO ()
-runJuno applyFn toCommands getApiCommands sharedCmdStatusMap = do
+runServer :: IO ()
+runServer = do
   setLineBuffering
+  (toCommands, getApiCommands) <- Unagi.newChan
+  sharedCmdStatusMap <- initCommandMap
   rconf <- getConfig
+  (applyFn,_) <- initCommandLayer (CommandConfig (_entity rconf))
   resetAwsEnv (rconf ^. enableAwsIntegration)
   me <- return $ rconf ^. nodeId
   oNodes <- return $ Set.toList $ Set.delete me $ Set.union (rconf ^. otherNodes) (Map.keysSet $ rconf ^. clientPublicKeys)
@@ -211,14 +215,14 @@ runJuno applyFn toCommands getApiCommands sharedCmdStatusMap = do
 
   utcTimeCache' <- utcTimeCache
   fs <- initSysLog utcTimeCache'
-  let debugFn = if (rconf ^. enableDebug) then showDebug fs else noDebug
+  let debugFn = if rconf ^. enableDebug then showDebug fs else noDebug
 
   -- each node has its own snap monitoring server
   pubMetric <- startMonitoring rconf
   runMsgServer dispatch me oNodes debugFn -- ZMQ
   let raftSpec = simpleRaftSpec
                    (liftIO . applyFn)
-                   (debugFn)
+                   debugFn
                    (liftIO . pubMetric)
                    updateCmdMapFn
                    sharedCmdStatusMap

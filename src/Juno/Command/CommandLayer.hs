@@ -36,12 +36,14 @@ import Pact.Compile as Pact
 import Juno.Types.Log
 import Juno.Types.Base hiding (Term)
 import Juno.Types.Command
+import Juno.Types.Spec hiding (applyLogEntry)
 import Juno.Types.Message hiding (RPC)
 import Juno.Command.Types
+import Juno.Types.Config
 
 
 
-initCommandLayer :: CommandConfig -> IO (ApplyLogEntry,ApplyLocal)
+initCommandLayer :: CommandConfig -> IO (ApplyFn,ApplyLocal)
 initCommandLayer config = do
   mv <- newMVar def
   return (applyTransactional config mv,applyLocal config mv)
@@ -107,9 +109,6 @@ validateSig (PactMessage payload key sig)
     | valid payload key sig = return (Pact.PublicKey (exportPublic key)) -- TODO turn off with compile flags?
     | otherwise = throwCmdEx "Signature verification failure"
 
-log :: String -> CommandM ()
-log s = view (ceConfig.ccDebug) >>= \f -> liftIO (f s)
-
 parse :: ExecutionMode -> Text -> CommandM [Exp]
 parse (Transactional _) code =
     case AP.parseOnly Pact.exprs code of
@@ -132,7 +131,6 @@ applyExec (ExecMsg code edata) pk = do
             Right r -> return r
             Left (i,e) -> throwCmdEx $ "Pact compile failed: " ++ show i ++ ": " ++ show e
   pureState <- use csPactState
-  log ("applyExec: " ++ show (map abbrev terms))
   let iEvalState = fst $ runPurePact initEvalState def
       evalEnv = EvalEnv {
                   _eeMsgSigs = S.singleton pk
@@ -181,7 +179,7 @@ _sk :: PrivateKey
 _sk = fromJust $ importPrivate $ fst $ B16.decode "2ca45751578698d73759b44feeea38391cd4136bb8265cd3a36f488cbadf8eb7"
 
 _config :: CommandConfig
-_config = CommandConfig (EntityInfo "me") putStrLn
+_config = CommandConfig (EntityInfo "me")
 
 _localRPC :: ToRPC a => a -> IO ByteString
 _localRPC rpc = do

@@ -7,8 +7,9 @@ module Juno.Types.Config
   ( Config(..), otherNodes, nodeId, electionTimeoutRange, heartbeatTimeout
   , enableDebug, publicKeys, clientPublicKeys, myPrivateKey, clientTimeoutLimit
   , myPublicKey, batchTimeDelta, dontDebugFollower, apiPort, myEncryptionKey
-  , logSqlitePath, enableAwsIntegration
+  , logSqlitePath, enableAwsIntegration,entity
   , KeySet(..), ksClient, ksCluster
+  , EntityInfo(..),entName
   ) where
 
 import Control.Monad (mzero)
@@ -24,6 +25,16 @@ import Data.Aeson.Types (defaultOptions,Options(..))
 import GHC.Generics hiding (from)
 
 import Juno.Types.Base
+
+
+data EntityInfo = EntityInfo {
+      _entName :: String
+} deriving (Eq,Show,Generic)
+$(makeLenses ''EntityInfo)
+instance ToJSON EntityInfo where
+  toJSON = genericToJSON defaultOptions { fieldLabelModifier = drop 4 }
+instance FromJSON EntityInfo where
+  parseJSON = genericParseJSON defaultOptions { fieldLabelModifier = drop 4 }
 
 data Config = Config
   { _otherNodes           :: !(Set NodeId)
@@ -42,6 +53,7 @@ data Config = Config
   , _apiPort              :: !Int
   , _logSqlitePath        :: !FilePath
   , _enableAwsIntegration :: !Bool
+  , _entity               :: EntityInfo
   }
   deriving (Show, Generic)
 makeLenses ''Config

@@ -41,19 +41,19 @@ runLogService dispatch dbg dbPath keySet' = do
       dbg "[LogThread] Persistence Disabled"
       return Nothing
   cryptoMvar <- newTVarIO Idle
-  env <- return $ LogEnv
-    { _logQueryChannel = (dispatch ^. Dispatch.logService)
-    , _internalEvent = (dispatch ^. Dispatch.internalEvent)
-    , _evidence = (dispatch ^. Dispatch.evidence)
+  env <- return LogEnv
+    { _logQueryChannel = dispatch ^. Dispatch.logService
+    , _internalEvent = dispatch ^. Dispatch.internalEvent
+    , _evidence = dispatch ^. Dispatch.evidence
     , _debugPrint = dbg
     , _keySet = keySet'
     , _cryptoWorkerTVar = cryptoMvar
     , _dbConn = dbConn'
     }
-  link <$> tinyCryptoWorker keySet' dbg (dispatch ^. Dispatch.logService) cryptoMvar
+  void (link <$> tinyCryptoWorker keySet' dbg (dispatch ^. Dispatch.logService) cryptoMvar)
   initLogState' <- case dbConn' of
     Just conn' -> syncLogsFromDisk (dispatch ^. Dispatch.internalEvent) conn'
-    Nothing -> return $ initLogState
+    Nothing -> return initLogState
   void $ runRWST handle env initLogState'
 
 debug :: String -> LogThread ()
@@ -83,7 +83,7 @@ runQuery (Update ul) = do
       toPersist <- getUnpersisted <$> get
       case toPersist of
         Just logs -> do
-          lsLastPersisted' <- return (_leLogIndex $ snd $ Map.findMax $ (logs ^. logEntries))
+          lsLastPersisted' <- return (_leLogIndex $ snd $ Map.findMax (logs ^. logEntries))
           lsLastPersisted .= lsLastPersisted'
           lsPersistedLogEntries %= plesAddNew logs
           lsVolatileLogEntries %= lesGetSection (Just $ lsLastPersisted' + 1) Nothing
@@ -154,19 +154,19 @@ syncLogsFromDisk internalEvent' conn = do
     Just log' -> do
       liftIO $ writeComm internalEvent' $ InternalEvent $ ApplyLogEntries logs
       (Just minIdx) <- return $ lesMinIndex logs
-      return $ LogState
+      return LogState
         { _lsVolatileLogEntries = LogEntries Map.empty
         , _lsPersistedLogEntries = PersistedLogEntries $ Map.singleton minIdx logs
         , _lsLastApplied = startIndex
         , _lsLastLogIndex = _leLogIndex log'
         , _lsLastLogHash = _leHash log'
-        , _lsNextLogIndex = (_leLogIndex log') + 1
+        , _lsNextLogIndex = _leLogIndex log' + 1
         , _lsCommitIndex = _leLogIndex log'
         , _lsLastPersisted = _leLogIndex log'
         , _lsLastCryptoVerified = _leLogIndex log'
         , _lsLastLogTerm = _leTerm log'
         }
-    Nothing -> return $ initLogState
+    Nothing -> return initLogState
 
 tellJunoToApplyLogEntries :: LogThread ()
 tellJunoToApplyLogEntries = do

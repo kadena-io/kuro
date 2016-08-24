@@ -30,9 +30,9 @@ import Data.Text
 import Pact.Types hiding (PublicKey)
 import Pact.Pure
 
-import Juno.Types.Log
 import Juno.Types.Base hiding (Term)
 import Juno.Types.Command
+import Juno.Types.Config
 
 
 type EntSecretKey = C2.SecretKey
@@ -164,15 +164,9 @@ instance ToRPC ContMsg where toRPC = Continuation
 instance ToRPC MultisigMsg where toRPC = Multisig
 
 
-data EntityInfo = EntityInfo {
-      _entName :: String
-}
-$(makeLenses ''EntityInfo)
-
 
 data CommandConfig = CommandConfig {
       _ccEntity :: EntityInfo
-    , _ccDebug :: String -> IO ()
     }
 $(makeLenses ''CommandConfig)
 
@@ -225,7 +219,6 @@ instance DeltaParsing AP.Parser where
     rend = return mempty
     restOfLine = return mempty
 
-type ApplyLogEntry = LogEntry -> IO CommandResult
 type ApplyLocal = ByteString -> IO CommandResult
 
 type CommandM a = ReaderT CommandEnv (StateT CommandState IO) a

@@ -1,3 +1,4 @@
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -27,7 +28,7 @@ import qualified Juno.Service.Log as Log
 applyLogEntries :: LogEntries -> Raft ()
 applyLogEntries les@(LogEntries leToApply) = do
   now <- view (rs.getTimestamp) >>= liftIO
-  results <- mapM (applyCommand now . _leCommand) (Map.elems leToApply)
+  results <- mapM (applyCommand now) (Map.elems leToApply)
   r <- use nodeRole
   commitIndex' <- return $ fromJust $ Log.lesMaxIndex les
   logMetric $ MetricAppliedIndex commitIndex'
@@ -48,18 +49,19 @@ logApplyLatency (Command _ _ _ _ _ provenance) = case provenance of
       logMetric $ MetricApplyLatency $ fromIntegral $ interval arrived now
     Nothing -> return ()
 
-applyCommand :: UTCTime -> Command -> Raft (NodeId, CommandResponse)
-applyCommand tEnd cmd@Command{..} = do
+applyCommand :: UTCTime -> LogEntry -> Raft (NodeId, CommandResponse)
+applyCommand tEnd le = do
+  let cmd = _leCommand le
   apply <- view (rs.applyLogEntry)
   me <- _alias <$> viewConfig nodeId
   encKey <- viewConfig myEncryptionKey
   logApplyLatency cmd
   result <- case decryptCommand me encKey cmd of
               Left res -> return res
-              Right v -> liftIO $ apply $ cmd {_cmdEntry = v }
+              Right v -> liftIO $ apply $ set (leCommand.cmdEntry) v le
   updateCmdStatusMap cmd result tEnd -- shared with the API and to query state
-  replayMap %= Map.insert (_cmdClientId, getCmdSigOrInvariantError "applyCommand" cmd) (Just result)
-  ((,) _cmdClientId) <$> makeCommandResponse tEnd cmd result
+  replayMap %= Map.insert (_cmdClientId cmd, getCmdSigOrInvariantError "applyCommand" cmd) (Just result)
+  (_cmdClientId cmd,) <$> makeCommandResponse tEnd cmd result
 
 decryptCommand :: Alias -> EncryptionKey -> Command -> Either CommandResult CommandEntry
 decryptCommand me encKey Command{..}

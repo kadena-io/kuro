@@ -41,7 +41,7 @@ runApiServer toCommands sharedCmdStatusMap port = do
 snapApiServer :: InChan (RequestId, [(Maybe Alias, CommandEntry)]) -> CommandMVarMap -> Int -> IO ()
 snapApiServer toCommands' cmdStatusMap' port = httpServe (serverConf port) $
     applyCORS defaultOptions $ methods [GET, POST]
-    (ifTop (writeBS "use /hopper for commands") <|>
+    (ifTop (writeBS "kadena") <|>
      route [ ("/", runReaderT apiRoutes (ApiEnv toCommands' cmdStatusMap'))] -- api/juno/v1
     )
 

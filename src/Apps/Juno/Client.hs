@@ -30,7 +30,7 @@ import Juno.Command.Types
 
 
 prompt :: String
-prompt = "\ESC[0;31mhopper>> \ESC[0m"
+prompt = "\ESC[0;31mpact>> \ESC[0m"
 
 promptGreen :: String
 promptGreen = "\ESC[0;32mresult>> \ESC[0m"

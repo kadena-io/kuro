@@ -4,79 +4,31 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveAnyClass #-}
 
-module Apps.Juno.JsonTypes where
+module Apps.Juno.JsonTypes
+    (commandResponseSuccess,commandResponseFailure
+    ,cmdStatus2PollResult,cmdStatusError
+    ,PollPayloadRequest(..),PollPayload(..),PollResponse(..),PollResult(..)
+    ) where
 
-import           Control.Applicative
 import           Control.Monad (mzero)
 import           Data.Aeson as JSON
-import           Data.Aeson.Types (Options(..),parseMaybe)
-import           Data.Char (isSpace)
-import           Data.Ratio
+import           Data.Aeson.Types (Options(..))
 import qualified Data.Text as T
 import           Data.Text.Encoding as E
 import           Data.Text (Text)
-import qualified Data.ByteString.Char8 as BSC
-import qualified Data.ByteString.Lazy.Char8 as BLC
 import           GHC.Generics
-import           Text.Read (readMaybe)
 
 import           Juno.Types (CommandStatus(..),CommandResult(..),RequestId(..))
 
-newtype JRational = JRational { jratio :: Ratio Integer } deriving (Eq, Generic, Show)
 
--- Typeclass for Rational to encode and decode to and from JRational -> (10%1)
--- instead of the Aeson Rational Typeclass {"numerator":n, "denominator":d}
---
--- JSON.decode $ BLC.pack "\"10%1\"" :: Maybe JRational
-instance FromJSON JRational where
-
-  parseJSON = JSON.withText "Rational n%d" $ \obj -> do
-    nums <- mapM parseNum $ numStrs obj
-    parseRational nums
-   where
-    numStrs s = T.unpack <$> T.splitOn "%" s
-    parseNum str = case readMaybe str of
-          Nothing -> fail $ "found notanum: " ++ str
-          Just num -> return num
-    parseRational nums =
-      case nums of
-        [x, y] -> return $ JRational (x % y)
-        _ -> fail "found the wrong number of args to a rational! Should be in form n%d."
-
-instance ToJSON JRational where
-  toJSON (JRational r) = String $ (T.pack . removeSpaces . show) r
-   where
-      removeSpaces str = filter (not . isSpace) str
-  {-# INLINE toJSON #-}
-
-removeUnderscore :: String -> String
-removeUnderscore = drop 1
 
 data Digest = Digest { _hash :: Text, _key :: Text } deriving (Eq, Generic, Show)
 
 instance ToJSON Digest where
-    toJSON = genericToJSON $ defaultOptions { fieldLabelModifier = removeUnderscore }
+    toJSON = genericToJSON $ defaultOptions { fieldLabelModifier = drop 1 }
 instance FromJSON Digest where
-    parseJSON  = genericParseJSON $ defaultOptions { fieldLabelModifier = removeUnderscore }
+    parseJSON  = genericParseJSON $ defaultOptions { fieldLabelModifier = drop 1 }
 
-
-data AccountPayload = AccountPayload { _account :: Text } deriving (Eq, Generic, Show)
-
-instance ToJSON AccountPayload where
-    toJSON = genericToJSON $ defaultOptions { fieldLabelModifier = removeUnderscore }
-instance FromJSON AccountPayload where
-    parseJSON = genericParseJSON $ defaultOptions { fieldLabelModifier = removeUnderscore }
-
-
-data CreateAccountRequest = CreateAccountRequest {
-      _payload :: AccountPayload,
-      _digest :: Digest
-    } deriving (Eq, Generic, Show)
-
-instance ToJSON CreateAccountRequest where
-    toJSON = genericToJSON $ defaultOptions { fieldLabelModifier = removeUnderscore }
-instance FromJSON CreateAccountRequest where
-    parseJSON = genericParseJSON $ defaultOptions { fieldLabelModifier = removeUnderscore }
 
 data CommandResponse = CommandResponse {
       _status :: Text
@@ -85,9 +37,9 @@ data CommandResponse = CommandResponse {
     } deriving (Eq, Generic, Show)
 
 instance ToJSON CommandResponse where
-    toJSON = genericToJSON $ defaultOptions { fieldLabelModifier = removeUnderscore }
+    toJSON = genericToJSON $ defaultOptions { fieldLabelModifier = drop 1 }
 instance FromJSON CommandResponse where
-    parseJSON = genericParseJSON $ defaultOptions { fieldLabelModifier = removeUnderscore }
+    parseJSON = genericParseJSON $ defaultOptions { fieldLabelModifier = drop 1 }
 
 commandResponseSuccess :: Text -> Text -> CommandResponse
 commandResponseSuccess cid msg = CommandResponse "Success" cid msg
@@ -95,44 +47,15 @@ commandResponseSuccess cid msg = CommandResponse "Success" cid msg
 commandResponseFailure :: Text -> Text -> CommandResponse
 commandResponseFailure cid msg = CommandResponse "Failure" cid msg
 
--- | AccountAdjust adding/substracting money from and existing account
--- { "payload": { "account": "TSLA", "amount": 100%1 }, "digest": { "hash": "myhash", "key": "string" } }
-data AccountAdjustPayload = AccountAdjustPayload {
-      _adjustAccount :: Text
-    , _adjustAmount  :: JRational } deriving (Eq, Generic, Show)
-
-instance ToJSON AccountAdjustPayload where
-    toJSON (AccountAdjustPayload account amount) = object ["account" .= account
-                                                          , "amount" .= amount]
-instance FromJSON AccountAdjustPayload where
-    parseJSON (Object v) = AccountAdjustPayload <$>
-                             v .: "account" <*>
-                             v .: "amount"
-    parseJSON _ = mzero
-
-data AccountAdjustRequest = AccountAdjustRequest {
-      _adjustAccountPayload :: AccountAdjustPayload,
-      _adjustAccountDigest :: Digest
-    } deriving (Eq, Generic, Show)
-
-instance ToJSON AccountAdjustRequest where
-    toJSON (AccountAdjustRequest payload' digest') = object ["payload" .= payload'
-                                                            , "digest" .= digest']
-instance FromJSON AccountAdjustRequest where
-    parseJSON (Object v) = AccountAdjustRequest <$>
-                             v .: "payload" <*>
-                             v .: "digest"
-    parseJSON _ = mzero
-
 -- | Polling for commands
 data PollPayload = PollPayload {
   _cmdids :: [Text]
   } deriving (Eq, Generic, Show)
 
 instance ToJSON PollPayload where
-  toJSON = genericToJSON $ defaultOptions { fieldLabelModifier = removeUnderscore }
+  toJSON = genericToJSON $ defaultOptions { fieldLabelModifier = drop 1 }
 instance FromJSON PollPayload where
-  parseJSON = genericParseJSON $ defaultOptions { fieldLabelModifier = removeUnderscore }
+  parseJSON = genericParseJSON $ defaultOptions { fieldLabelModifier = drop 1 }
 
 data PollPayloadRequest = PollPayloadRequest {
   _pollPayload :: PollPayload,
@@ -200,135 +123,4 @@ data PollResponse = PollResponse { _results :: [PollResult] }
   deriving (Eq, Generic, Show)
 
 instance ToJSON PollResponse where
-  toJSON = genericToJSON $ defaultOptions { fieldLabelModifier = removeUnderscore }
-
--- {
--- "payload": {
---   "filter": "string"
--- },
--- "digest": {
---   "hash": "string",
---   "key": "string"
--- }
-data QueryJson = QueryJson {  _queryAcct :: Maybe Text
-                            , _queryTx :: Maybe Integer
-                            , _querySender :: Maybe Text
-                            , _queryReceiver :: Maybe Text
-                            } deriving (Eq, Generic, Show)
-instance ToJSON QueryJson where
-  toJSON (QueryJson acct tx sender receiver) = object [
-                                                "account" .= Just acct
-                                               , "tx" .= Just tx
-                                               , "sender" .= Just sender
-                                               , "receiver" .= Just receiver
-                                               ]
-instance FromJSON QueryJson where
-  parseJSON (Object v) = QueryJson <$> v .: "account"
-                                   <*> v .: "tx"
-                                   <*> v .: "sender"
-                                   <*> v .: "receiver"
-  parseJSON _ = mzero
-
-
-data LedgerQueryBody = LedgerQueryBody { _filter :: QueryJson }
-                       deriving (Show, Generic, Eq)
-
-instance ToJSON LedgerQueryBody where
-    toJSON (LedgerQueryBody fil) = object ["filter" .= fil]
-instance FromJSON LedgerQueryBody where
-     parseJSON (Object v) = LedgerQueryBody <$> v .: "filter"
-     parseJSON _ = mzero
-
-data LedgerQueryRequest = LedgerQueryRequest {
-      payload :: LedgerQueryBody,
-      digest :: Digest
-    } deriving (Show, Generic, Eq)
-instance ToJSON LedgerQueryRequest where
-  toJSON (LedgerQueryRequest payload' digest') = object ["payload" .= payload', "digest" .= digest']
-instance FromJSON LedgerQueryRequest where
-  parseJSON (Object v) = LedgerQueryRequest <$> v .: "payload"
-                                            <*> v .: "digest"
-  parseJSON _ = mzero
-
--- Transact
---
--- "payload": {
---   "code": "string",
---   "data": {}
--- },
--- "digest": {
---   "hash": "string",
---   "key": "string"
--- }
--- {"data":"","code":"transfer(000->100->101->102->103->003, 100%1)"}
-data TransactBody = TransactBody { _txCode :: Text, _txData :: Text } deriving (Show, Eq)
-instance ToJSON TransactBody where
-    toJSON (TransactBody code txData) = object ["code" .= code, "data" .= txData]
-instance FromJSON TransactBody where
-    parseJSON (Object v) = TransactBody <$> v .: "code"
-                                        <*> v .: "data"
-    parseJSON _ = mzero
-
-data TransactRequest = TransactRequest { _txPayload :: TransactBody
-                                       , _txDigest :: Digest
-                                       } deriving (Show, Eq)
-instance ToJSON TransactRequest where
-    toJSON (TransactRequest payload' digest') = object ["payload" .= payload'
-                                                       , "digest" .= digest']
-instance FromJSON TransactRequest where
-    parseJSON (Object v) = TransactRequest <$> v .: "payload"
-                                           <*> v .: "digest"
-    parseJSON _ = mzero
-
--- {
--- "payload": {
---   "cmds": ["string"]
--- },
--- "digest": {
---   "hash": "string",
---   "key": "string"
--- }
-data CommandBatch = CommandBatch {
-      _batchCmds :: [Text]
-    } deriving (Eq,Show,Ord)
-
-instance ToJSON CommandBatch where
-    toJSON (CommandBatch cmds) = object ["cmds" .= cmds]
-instance FromJSON CommandBatch where
-     parseJSON (Object v) = CommandBatch <$> v .: "cmds"
-     parseJSON _ = mzero
-
-data CommandBatchRequest = CommandBatchRequest {
-      cmdBatchpayload :: CommandBatch,
-      cmdBatchdigest :: Digest
-    } deriving (Show, Generic, Eq)
-
-instance ToJSON CommandBatchRequest where
-  toJSON (CommandBatchRequest payload' digest') = object ["payload" .= payload'
-                                                         , "digest" .= digest']
-instance FromJSON CommandBatchRequest where
-  parseJSON (Object v) = CommandBatchRequest <$> v .: "payload"
-                                             <*> v .: "digest"
-  parseJSON _ = mzero
-
-mJsonBsToCommand :: BLC.ByteString -> Maybe BSC.ByteString
-mJsonBsToCommand bs = JSON.decode bs >>= \v ->
-                      (mAdjustAccount <$> tryParse v) <|>
-                      (mAdjustCreateAcct <$> tryParse v) <|>
-                      (mtransact <$> tryParse v)
-  where
-
-    tryParse v = parseMaybe parseJSON v
-
-    mAdjustAccount (AccountAdjustPayload acct amt) =
-        let JRational r = amt
-        in BSC.pack $ "AdjustAccount " ++  T.unpack acct ++ " " ++ show r
-
-    mAdjustCreateAcct (AccountPayload acct) =
-        BSC.pack $ "CreateAccount " ++  T.unpack acct
-
-    mtransact (TransactBody code _) =
-        BSC.pack $ T.unpack code
-
-
---
+  toJSON = genericToJSON $ defaultOptions { fieldLabelModifier = drop 1 }

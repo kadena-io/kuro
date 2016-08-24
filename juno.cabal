@@ -20,14 +20,9 @@ source-repository head
 
 library
   exposed-modules:     Apps.Juno.Server
-                     , Apps.Juno.Command
                      , Apps.Juno.Client
                      , Apps.Juno.JsonTypes
-                     , Apps.Juno.ApiDemoHandler
                      , Apps.Juno.ApiHandlers
-                     , Apps.Juno.Ledger
-                     , Apps.Juno.Parser
-                     , Apps.Juno.Repl
                      , Juno.Command.Types
                      , Juno.Command.CommandLayer
                      , Juno.Consensus.Api
@@ -43,12 +38,6 @@ library
                      , Juno.Consensus.Handle.ElectionTimeout
                      , Juno.Consensus.Handle.HeartbeatTimeout
                      , Juno.Consensus.Handle.Revolution
-                     , Juno.Hoplite.Eval
-                     , Juno.Hoplite.Heap
-                     , Juno.Hoplite.STExcept
-                     , Juno.Hoplite.Term
-                     , Juno.Hoplite.Transmatic
-                     , Juno.Hoplite.Types
                      , Juno.Messaging.ZMQ
                      , Juno.Monitoring.EkgJson
                      , Juno.Monitoring.EkgMonitor
@@ -88,8 +77,7 @@ library
                      , Juno.Types.Spec
                      , Juno.Util.Combinator
                      , Juno.Util.Util
-                     , Schwifty.Swift.M105.Types
-                     , Schwifty.Swift.M105.Parser
+
   build-depends:       aeson
                      , aeson-pretty
                      , ansi-wl-pprint
@@ -200,20 +188,7 @@ executable junoclient
   ghc-prof-options:    -fprof-auto -fprof-auto-calls
   default-language:    Haskell2010
 
-executable junorepl
-  main-is:             JunoRepl.hs
-  build-depends:       base < 5
-                     , juno
-  hs-source-dirs:      executables
-  ghc-options:         -Wall -threaded -rtsopts
-  ghc-prof-options:    -fprof-auto -fprof-auto-calls
-  default-language:    Haskell2010
-
 test-suite hspec
-  other-modules:       ParserSpec
-                     , EvidenceSpec
-                     , WireFormatSpec
-                     , JsonTypesSpec
   type: exitcode-stdio-1.0
   main-is: hspec.hs
   hs-source-dirs: tests

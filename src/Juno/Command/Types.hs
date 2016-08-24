@@ -35,43 +35,6 @@ import Juno.Types.Base hiding (Term)
 import Juno.Types.Command
 
 
-
-{-
-
-RPC - plaintext command RPC.
-SSK - shared symmetric key, which may be iterated as SSK', SSK'' ...
-PSK - pre-shared key, identifying the node entity
-SO - session object (NoiseState in cacophony, something else in n-way). Iterable.
-ST - session tag. E.g., 12 zero-bytes encrypted with current SSK. Iterable.
-
-Encryption Modes:
-- None
-- DisjointPlain: n-way encryption using plaintext identifiers, for simulating private interaction
-- TwoWay: two-way encryption using Noise.
-- NWay: 3 or greater-way encryption TBD.
-
-Encrypted message handling:
-
-1. ByteBuffer received. Switch on mode:
- a. None: proceed to deserializing RPC.
- b. [Any other mode]: determine message type and handle.
-   i. Session init + encrypted message: do Session Init (2).
-   ii. Just encrypted message. Decrypt (3).
-2. Session Init.
- Session init bundles a normal encrypted message for a session with a header containing
- one or more dummy messages. On receipt of any session init message recipient must try
- to decrypt dummy messages; success indicates that the recipient will be able to treat
- the bundled transaction message as a first-message in a normal session, and decrypt it.
-3. Decryption.
- a. Determine session (if new session skip this step).
-    Session tag (ST) will accompany payload ciphertext which is used to look up SO in store.
- b. Use SO to decrypt RPC, producing SO'.
- c. Encrypt ST for SO, ST' for SO' and use these ciphertexts to index SO, SO' in store.
- d. Expire old SOs as necessary.
- e. Deserialize RPC.
-
--}
-
 type EntSecretKey = C2.SecretKey
 type EntPublicKey = C2.PublicKey
 
@@ -138,18 +101,18 @@ instance FromJSON ExecMsg where
 instance ToJSON ExecMsg where
     toJSON (ExecMsg c d) = object [ "code" .= c, "data" .= d]
 
-data YieldMsg = YieldMsg {
-      _ymTxId :: TxId
-    , _ymStep :: Int
-    , _ymRollback :: Bool
+data ContMsg = ContMsg {
+      _cmTxId :: TxId
+    , _cmStep :: Int
+    , _cmRollback :: Bool
     }
     deriving (Eq)
-instance FromJSON YieldMsg where
+instance FromJSON ContMsg where
     parseJSON =
-        withObject "YieldMsg" $ \o ->
-            YieldMsg <$> o .: "txid" <*> o .: "step" <*> o .: "rollback"
-instance ToJSON YieldMsg where
-    toJSON (YieldMsg t s r) = object [ "txid" .= t, "step" .= s, "rollback" .= r]
+        withObject "ContMsg" $ \o ->
+            ContMsg <$> o .: "txid" <*> o .: "step" <*> o .: "rollback"
+instance ToJSON ContMsg where
+    toJSON (ContMsg t s r) = object [ "txid" .= t, "step" .= s, "rollback" .= r]
 
 data MultisigMsg = MultisigMsg {
       _mmTxId :: TxId
@@ -179,25 +142,25 @@ instance Serialize PactMessage
 
 data PactRPC =
     Exec ExecMsg |
-    Yield YieldMsg |
+    Continuation ContMsg |
     Multisig MultisigMsg
     deriving (Eq)
 instance FromJSON PactRPC where
     parseJSON =
         withObject "RPC" $ \o ->
             (Exec <$> o .: "exec") <|>
-             (Yield <$> o .: "yield") <|>
+             (Continuation <$> o .: "yield") <|>
              (Multisig <$> o .: "multisig")
 instance ToJSON PactRPC where
     toJSON (Exec p) = object ["exec" .= p]
-    toJSON (Yield p) = object ["yield" .= p]
+    toJSON (Continuation p) = object ["yield" .= p]
     toJSON (Multisig p) = object ["multisig" .= p]
 
 class ToRPC a where
     toRPC :: a -> PactRPC
 
 instance ToRPC ExecMsg where toRPC = Exec
-instance ToRPC YieldMsg where toRPC = Yield
+instance ToRPC ContMsg where toRPC = Continuation
 instance ToRPC MultisigMsg where toRPC = Multisig
 
 
@@ -273,3 +236,41 @@ runCommand e s a = runStateT (runReaderT a e) s
 
 throwCmdEx :: MonadThrow m => String -> m a
 throwCmdEx = throw . CommandException
+
+
+
+{-
+
+RPC - plaintext command RPC.
+SSK - shared symmetric key, which may be iterated as SSK', SSK'' ...
+PSK - pre-shared key, identifying the node entity
+SO - session object (NoiseState in cacophony, something else in n-way). Iterable.
+ST - session tag. E.g., 12 zero-bytes encrypted with current SSK. Iterable.
+
+Encryption Modes:
+- None
+- Plain: n-way encryption using plaintext identifiers, for simulating private interaction
+- TwoWay: two-way encryption using Noise.
+- NWay: 3 or greater-way encryption TBD.
+
+Encrypted message handling:
+
+1. ByteBuffer received. Switch on mode:
+ a. None: proceed to deserializing RPC.
+ b. [Any other mode]: determine message type and handle.
+   i. Session init + encrypted message: do Session Init (2).
+   ii. Just encrypted message. Decrypt (3).
+2. Session Init.
+ Session init bundles a normal encrypted message for a session with a header containing
+ one or more dummy messages. On receipt of any session init message recipient must try
+ to decrypt dummy messages; success indicates that the recipient will be able to treat
+ the bundled transaction message as a first-message in a normal session, and decrypt it.
+3. Decryption.
+ a. Determine session (if new session skip this step).
+    Session tag (ST) will accompany payload ciphertext which is used to look up SO in store.
+ b. Use SO to decrypt RPC, producing SO'.
+ c. Encrypt ST for SO, ST' for SO' and use these ciphertexts to index SO, SO' in store.
+ d. Expire old SOs as necessary.
+ e. Deserialize RPC.
+
+-}

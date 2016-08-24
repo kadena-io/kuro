@@ -98,7 +98,7 @@ applyPact m = do
   pk <- validateSig pmsg
   case A.eitherDecode (fromStrict (_pmPayload pmsg)) of
       Right (Exec pm) -> applyExec pm pk
-      Right (Yield ym) -> applyYield ym pk
+      Right (Continuation ym) -> applyContinuation ym pk
       Right (Multisig mm) -> applyMultisig mm pk
       Left err -> throwCmdEx $ "RPC deserialize failed: " ++ show err
 
@@ -141,7 +141,7 @@ applyExec (ExecMsg code edata) pk = do
                 , _eeEntity = view (ceConfig.ccEntity.entName) env
                 , _eePactStep = Nothing
                 }
-      ((r,_evalState'),pureState') =
+      ((r,_rEvalState),pureState') =
           runPurePact (runEval iEvalState evalEnv
                        (execTerms mode terms)) pureState
   case r of
@@ -162,11 +162,11 @@ execTerms mode terms = do
   return er
 
 
-applyYield :: YieldMsg -> Pact.PublicKey -> CommandM CommandResult
-applyYield _ _ = throwCmdEx "Yield not supported"
+applyContinuation :: ContMsg -> Pact.PublicKey -> CommandM CommandResult
+applyContinuation _ _ = throwCmdEx "Continuation not supported"
 
 applyMultisig :: MultisigMsg -> Pact.PublicKey -> CommandM CommandResult
-applyMultisig _ _ = throwCmdEx "MultisigMsg not supported"
+applyMultisig _ _ = throwCmdEx "Multisig not supported"
 
 applyPrivate :: SessionCipherType -> MessageTags -> ByteString -> CommandM a
 applyPrivate _ _ _ = throwCmdEx "Private messages not supported"
@@ -188,3 +188,13 @@ _localRPC rpc = do
   (_,runl) <- initCommandLayer _config
   let p = mkPactMessage _pk _sk (toRPC rpc)
   unCommandResult <$> runl (SZ.encode p)
+
+_publicRPC :: ToRPC a => a -> LogIndex -> IO ByteString
+_publicRPC rpc li = do
+  (runt,_) <- initCommandLayer _config
+  let p = mkPactMessage _pk _sk (toRPC rpc)
+      pm = PublicMessage (SZ.encode p)
+      le = LogEntry 0 li (Command (CommandEntry (SZ.encode pm))
+                          (NodeId "" 0 "" (Alias ""))
+                          0 Nothing Valid NewMsg) ""
+  unCommandResult <$> runt le

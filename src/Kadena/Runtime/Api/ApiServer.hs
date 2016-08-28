@@ -5,11 +5,11 @@ module Kadena.Runtime.Api.ApiServer
   ) where
 
 -- | Api server is the interface between outside clients
---   and the internal Kadena/Raft protocol.
+--   and the internal Kadena/Consensus protocol.
 --   Responible for:
 --   * listening for incoming Commands
 --   * managing RequestId
---   * check status of command, i.e. communication between API server and Raft (MVar for now, but this could be redis or another key value store running on every node
+--   * check status of command, i.e. communication between API server and Consensus (MVar for now, but this could be redis or another key value store running on every node
 --   * Parse Commands, and change CommandEntry -> [Command (with nodeId)] .. should this happen here? Or should that be in the protocol?
 
 import Control.Applicative

@@ -95,7 +95,7 @@ handleRequestVote RequestVote{..} = do
 --  (target,) <$> createRequestVoteResponse term' lastLogIndex' myNodeId' target vote
 
 
-handle :: RequestVote -> KD.Raft ()
+handle :: RequestVote -> KD.Consensus ()
 handle rv = do
   s <- get
   mv <- queryLogs $ Set.fromList [Log.GetMaxIndex, Log.GetLastLogTerm]

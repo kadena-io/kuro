@@ -24,7 +24,7 @@ import qualified Kadena.Service.Sender as Sender
 import qualified Kadena.Service.Log as Log
 
 
-applyLogEntries :: LogEntries -> Raft ()
+applyLogEntries :: LogEntries -> Consensus ()
 applyLogEntries les@(LogEntries leToApply) = do
   now <- view (rs.getTimestamp) >>= liftIO
   results <- mapM (applyCommand now) (Map.elems leToApply)
@@ -39,7 +39,7 @@ applyLogEntries les@(LogEntries leToApply) = do
         else debug $ "Applied " ++ show (length results) ++ " CMD(s)"
     else debug "Applied log entries but did not send results?"
 
-logApplyLatency :: Command -> Raft ()
+logApplyLatency :: Command -> Consensus ()
 logApplyLatency (Command _ _ _ _ provenance) = case provenance of
   NewMsg -> return ()
   ReceivedMsg _digest _orig mReceivedAt -> case mReceivedAt of
@@ -48,7 +48,7 @@ logApplyLatency (Command _ _ _ _ provenance) = case provenance of
       logMetric $ MetricApplyLatency $ fromIntegral $ interval arrived now
     Nothing -> return ()
 
-applyCommand :: UTCTime -> LogEntry -> Raft (NodeId, CommandResponse)
+applyCommand :: UTCTime -> LogEntry -> Consensus (NodeId, CommandResponse)
 applyCommand tEnd le = do
   let cmd = _leCommand le
   apply <- view (rs.applyLogEntry)
@@ -58,7 +58,7 @@ applyCommand tEnd le = do
   replayMap %= Map.insert (_cmdClientId cmd, getCmdSigOrInvariantError "applyCommand" cmd) (Just result)
   (_cmdClientId cmd,) <$> makeCommandResponse tEnd cmd result
 
-updateCmdStatusMap :: Command -> CommandResult -> UTCTime -> Raft ()
+updateCmdStatusMap :: Command -> CommandResult -> UTCTime -> Consensus ()
 updateCmdStatusMap cmd cmdResult tEnd = do
   rid <- return $ _cmdRequestId cmd
   mvarMap <- view (rs.cmdStatusMap)
@@ -68,7 +68,7 @@ updateCmdStatusMap cmd cmdResult tEnd = do
     Just (ReceivedAt tStart) -> interval tStart tEnd
   liftIO $ void $ updateMapFn mvarMap rid (CmdApplied cmdResult lat)
 
-makeCommandResponse :: UTCTime -> Command -> CommandResult -> Raft CommandResponse
+makeCommandResponse :: UTCTime -> Command -> CommandResult -> Consensus CommandResponse
 makeCommandResponse tEnd cmd result = do
   nid <- viewConfig nodeId
   mlid <- use currentLeader
@@ -88,7 +88,7 @@ makeCommandResponse' nid mlid Command{..} result lat = CommandResponse
 
 
 -- TODO: replicate metrics integration in Evidence
---logCommitChange :: LogIndex -> LogIndex -> Raft ()
+--logCommitChange :: LogIndex -> LogIndex -> Consensus ()
 --logCommitChange before after
 --  | after > before = do
 --      logMetric $ MetricCommitIndex after
@@ -104,7 +104,7 @@ makeCommandResponse' nid mlid Command{..} result lat = CommandResponse
 --      lastCommitTime ?= now
 --  | otherwise = return ()
 --
---updateCommitIndex' :: Raft Bool
+--updateCommitIndex' :: Consensus Bool
 --updateCommitIndex' = do
 --  proof <- use commitProof
 --  -- We don't need a quorum of AER's, but quorum-1 because we check against our own logs (thus assumes +1 at the start)

@@ -23,7 +23,7 @@ import qualified Kadena.Consensus.Handle.RequestVote as PureRequestVote
 import qualified Kadena.Consensus.Handle.RequestVoteResponse as PureRequestVoteResponse
 import qualified Kadena.Consensus.Handle.Revolution as PureRevolution
 
-handleEvents :: Raft ()
+handleEvents :: Consensus ()
 handleEvents = forever $ do
   timerTarget' <- use timerTarget
   -- we use the MVar to preempt a backlog of messages when under load. This happens during a large 'many test'
@@ -43,7 +43,7 @@ handleEvents = forever $ do
     Tick tock'                    -> liftIO (pprintTock tock') >>= debug
 
 -- TODO: prune out AER's from RPC if possible
-handleRPC :: RPC -> Raft ()
+handleRPC :: RPC -> Consensus ()
 handleRPC rpc = case rpc of
   AE' ae          -> PureAppendEntries.handle ae
   AER' aer        -> error $ "Invariant Error: AER received by Consensus Service" ++ show aer

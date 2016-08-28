@@ -119,7 +119,7 @@ handleCommandBatch CommandBatch{..} = do
     Follower -> IAmFollower $ filterBatch bloom _cmdbBatch
     Candidate -> IAmCandidate
 
-handleSingleCommand :: Command -> KD.Raft ()
+handleSingleCommand :: Command -> KD.Consensus ()
 handleSingleCommand cmd = do
   c <- KD.readConfig
   s <- get
@@ -144,10 +144,10 @@ handleSingleCommand cmd = do
       es <- view KD.evidenceState >>= liftIO
       when (Sender.willBroadcastAE quorumSize' (es ^. Ev.pesNodeStates) (es ^. Ev.pesConvincedNodes)) resetHeartbeatTimer
 
-handle :: Command -> KD.Raft ()
+handle :: Command -> KD.Consensus ()
 handle cmd = handleSingleCommand cmd
 
-handleBatch :: CommandBatch -> KD.Raft ()
+handleBatch :: CommandBatch -> KD.Consensus ()
 handleBatch cmdb@CommandBatch{..} = do
   debug "Received Command Batch"
   c <- KD.readConfig

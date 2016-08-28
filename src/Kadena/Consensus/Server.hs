@@ -1,6 +1,6 @@
 module Kadena.Consensus.Server
-  ( runRaftServer
-  , runPrimedRaftServer
+  ( runConsensusServer
+  , runPrimedConsensusServer
   ) where
 
 import Control.Concurrent (newEmptyMVar)
@@ -25,8 +25,8 @@ import qualified Kadena.Service.Sender as Sender
 import qualified Kadena.Service.Log as Log
 import qualified Kadena.Service.Evidence as Ev
 
-runPrimedRaftServer :: ReceiverEnv -> Config -> RaftSpec -> RaftState -> IO UTCTime -> IO ()
-runPrimedRaftServer renv rconf spec rstate timeCache' = do
+runPrimedConsensusServer :: ReceiverEnv -> Config -> ConsensusSpec -> ConsensusState -> IO UTCTime -> IO ()
+runPrimedConsensusServer renv rconf spec rstate timeCache' = do
   let csize = 1 + Set.size (rconf ^. otherNodes)
       qsize = getQuorumSize csize
   void $ runMessageReceiver renv
@@ -48,16 +48,16 @@ runPrimedRaftServer renv rconf spec rstate timeCache' = do
   link =<< (async $ foreverTick (_evidence      $ _dispatch renv) 1000000 (Ev.Tick))
   runRWS_
     raft
-    (mkRaftEnv rconf' csize qsize spec (_dispatch renv) timerTarget' timeCache' mEvState mLeaderNoFollowers)
+    (mkConsensusEnv rconf' csize qsize spec (_dispatch renv) timerTarget' timeCache' mEvState mLeaderNoFollowers)
     rstate
 
-runRaftServer :: ReceiverEnv -> Config -> RaftSpec -> IO UTCTime -> IO ()
-runRaftServer renv rconf spec timeCache' = do
+runConsensusServer :: ReceiverEnv -> Config -> ConsensusSpec -> IO UTCTime -> IO ()
+runConsensusServer renv rconf spec timeCache' = do
   timerTarget' <- newEmptyMVar
-  runPrimedRaftServer renv rconf spec (initialRaftState timerTarget') timeCache'
+  runPrimedConsensusServer renv rconf spec (initialConsensusState timerTarget') timeCache'
 
 -- THREAD: SERVER MAIN
-raft :: Raft ()
+raft :: Consensus ()
 raft = do
   la <- Log.hasQueryResult Log.LastApplied <$> (queryLogs $ Set.singleton Log.GetLastApplied)
   when (startIndex /= la) $ debug $ "Launch Sequence: disk sync replayed, Commit Index now " ++ show la

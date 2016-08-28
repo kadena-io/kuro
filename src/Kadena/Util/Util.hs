@@ -62,19 +62,19 @@ seqIndex s i =
 getQuorumSize :: Int -> Int
 getQuorumSize n = 1 + floor (fromIntegral n / 2 :: Float)
 
-queryLogs :: Set Log.AtomicQuery -> Raft (Map Log.AtomicQuery Log.QueryResult)
+queryLogs :: Set Log.AtomicQuery -> Consensus (Map Log.AtomicQuery Log.QueryResult)
 queryLogs q = do
   enqueueLogQuery' <- view enqueueLogQuery
   mv <- liftIO newEmptyMVar
   liftIO . enqueueLogQuery' $ Log.Query q mv
   liftIO $ takeMVar mv
 
-updateLogs :: UpdateLogs -> Raft ()
+updateLogs :: UpdateLogs -> Consensus ()
 updateLogs q = do
   enqueueLogQuery' <- view enqueueLogQuery
   liftIO . enqueueLogQuery' $ Log.Update q
 
-debug :: String -> Raft ()
+debug :: String -> Consensus ()
 debug s = do
   dbg <- view (rs.debugPrint)
   role' <- use nodeRole
@@ -84,13 +84,13 @@ debug s = do
     Follower -> liftIO $ when (not dontDebugFollower') $ dbg $ "[Kadena|\ESC[0;32mFOLLOWER\ESC[0m]: " ++ s
     Candidate -> liftIO $ dbg $ "[Kadena|\ESC[1;33mCANDIDATE\ESC[0m]: " ++ s
 
-randomRIO :: R.Random a => (a,a) -> Raft a
+randomRIO :: R.Random a => (a,a) -> Consensus a
 randomRIO rng = view (rs.random) >>= \f -> liftIO $ f rng -- R.randomRIO
 
 runRWS_ :: MonadIO m => RWST r w s m a -> r -> s -> m ()
 runRWS_ ma r s = void $ runRWST ma r s
 
-enqueueRequest :: Sender.ServiceRequest -> Raft ()
+enqueueRequest :: Sender.ServiceRequest -> Consensus ()
 enqueueRequest s = do
   sendMsg <- view sendMessage
   conf <- readConfig
@@ -108,42 +108,42 @@ enqueueRequest s = do
   liftIO $ sendMsg $ Sender.ServiceRequest' ss s
 
 -- no state update
-enqueueEvent :: Event -> Raft ()
+enqueueEvent :: Event -> Consensus ()
 enqueueEvent event = view (enqueue) >>= \f -> liftIO $ f event
   -- lift $ writeChan ein event
 
-enqueueEventLater :: Int -> Event -> Raft CL.ThreadId
+enqueueEventLater :: Int -> Event -> Consensus CL.ThreadId
 enqueueEventLater t event = view (enqueueLater) >>= \f -> liftIO $ f t event
 
 -- no state update
-dequeueEvent :: Raft Event
+dequeueEvent :: Consensus Event
 dequeueEvent = view (dequeue) >>= \f -> liftIO f
 
 -- dequeue command from API interface
-dequeueCommand :: Raft (RequestId, [CommandEntry])
+dequeueCommand :: Consensus (RequestId, [CommandEntry])
 dequeueCommand = view (rs.dequeueFromApi) >>= \f -> liftIO f
 
-logMetric :: Metric -> Raft ()
+logMetric :: Metric -> Consensus ()
 logMetric metric = view (rs.publishMetric) >>= \f -> liftIO $ f metric
 
-logStaticMetrics :: Raft ()
+logStaticMetrics :: Consensus ()
 logStaticMetrics = do
   logMetric . MetricNodeId =<< viewConfig nodeId
   logMetric . MetricClusterSize =<< view clusterSize
   logMetric . MetricQuorumSize =<< view quorumSize
 
 
-setTerm :: Term -> Raft ()
+setTerm :: Term -> Consensus ()
 setTerm t = do
   term .= t
   logMetric $ MetricTerm t
 
-setRole :: Role -> Raft ()
+setRole :: Role -> Consensus ()
 setRole newRole = do
   nodeRole .= newRole
   logMetric $ MetricRole newRole
 
-setCurrentLeader :: Maybe NodeId -> Raft ()
+setCurrentLeader :: Maybe NodeId -> Consensus ()
 setCurrentLeader mNode = do
   currentLeader .= mNode
   logMetric $ MetricCurrentLeader mNode

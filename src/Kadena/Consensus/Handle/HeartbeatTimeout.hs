@@ -37,7 +37,7 @@ handleHeartbeatTimeout s = do
               else return IsLeader
     _ -> return NotLeader
 
-handle :: String -> KD.Raft ()
+handle :: String -> KD.Consensus ()
 handle msg = do
   s <- get
   leaderWithoutFollowers' <- hasElectionTimerLeaderFired

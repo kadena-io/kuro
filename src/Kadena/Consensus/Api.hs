@@ -24,7 +24,7 @@ import Kadena.Consensus.Client (clientSendRPC)
 -- TODO do we need all this? can we just enqueueEvent directly?
 -- get commands with getEntry and put them on the event queue to be sent
 -- THREAD: CLIENT COMMAND
-apiReceiver :: Raft ()
+apiReceiver :: Consensus ()
 apiReceiver = do
   nid <- viewConfig nodeId
   forever $ do
@@ -36,7 +36,7 @@ apiReceiver = do
                                           let missiles = replicate (batchSize cmd) $ hardcodedTransfers nid cmdMap
                                           liftIO $ sequence missiles
                _ -> liftIO $ sequence $ fmap ((nextRid nid) cmdMap) cmdEntries
-    -- set current requestId in Raft to the value associated with this request.
+    -- set current requestId in Consensus to the value associated with this request.
     rid' <- setNextRequestId' rid
     liftIO (modifyMVar_ cmdMap (\(CommandMap n m) -> return $ CommandMap n (Map.insert rid CmdAccepted m)))
     -- hack set the head to the org rid
@@ -71,15 +71,15 @@ setNextCmdRequestId' cmdMapMvar = do
   return nextId
 
 -- This should be broken now? This node might not be the leader.
-setNextRequestId' :: RequestId -> Raft RequestId
+setNextRequestId' :: RequestId -> Consensus RequestId
 setNextRequestId' rid = do
   currentRequestId .= rid
   use currentRequestId
 
 -- | Always send CommandBatches, a single Command is a batch of size 1.
--- Sends to the leader, knows the leader because running in Raft
+-- Sends to the leader, knows the leader because running in Consensus
 -- THREAD: CLIENT MAIN. updates state
-clientSendCommandBatch' :: CommandBatch -> Raft ()
+clientSendCommandBatch' :: CommandBatch -> Consensus ()
 clientSendCommandBatch' cmdb@CommandBatch{..} = do
   mlid <- use currentLeader
   case mlid of
@@ -97,7 +97,7 @@ clientSendCommandBatch' cmdb@CommandBatch{..} = do
 
 -- THREAD: CLIENT MAIN. updates state
 -- If the client doesn't know the leader? Then set leader to first node, the client will be updated with the real leaderId when it receives a command response.
-setLeaderToFirst' :: Raft ()
+setLeaderToFirst' :: Consensus ()
 setLeaderToFirst' = do
   nodes <- viewConfig otherNodes
   when (Set.null nodes) $ error "the client has no nodes to send requests to"

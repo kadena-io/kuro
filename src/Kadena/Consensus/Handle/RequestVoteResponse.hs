@@ -72,7 +72,7 @@ checkElection votes = do
   else return $ UpdateYesVotes votes
 
 
-handle :: RequestVoteResponse -> KD.Raft ()
+handle :: RequestVoteResponse -> KD.Consensus ()
 handle m = do
   r <- ask
   s <- get
@@ -98,7 +98,7 @@ handle m = do
 
 
 -- THREAD: SERVER MAIN. updates state
-becomeLeader :: KD.Raft ()
+becomeLeader :: KD.Consensus ()
 becomeLeader = do
   setRole Leader
   setCurrentLeader . Just =<< KD.viewConfig KD.nodeId
@@ -113,7 +113,7 @@ becomeLeader = do
   resetHeartbeatTimer
   resetElectionTimerLeader
 
-revertToLastQuorumState :: KD.Raft ()
+revertToLastQuorumState :: KD.Consensus ()
 revertToLastQuorumState = do
   setRole Follower
   setCurrentLeader Nothing

@@ -161,7 +161,7 @@ appendLogEntries pli newEs
         tell ["replicated LogEntry(s): " ++ (show $ _rleMinLogIdx rle) ++ " through " ++ (show $ _rleMaxLogIdx rle)]
         return $ Commit replay rle
 
-applyNewLeader :: CheckForNewLeaderOut -> KD.Raft ()
+applyNewLeader :: CheckForNewLeaderOut -> KD.Consensus ()
 applyNewLeader LeaderUnchanged = return ()
 applyNewLeader NewLeaderConfirmed{..} = do
   setTerm _stateRsUpdateTerm
@@ -170,11 +170,11 @@ applyNewLeader NewLeaderConfirmed{..} = do
   view KD.informEvidenceServiceOfElection >>= liftIO
   setRole _stateRole
 
-logHashChange :: ByteString -> KD.Raft ()
+logHashChange :: ByteString -> KD.Consensus ()
 logHashChange mLastHash = do
   logMetric $ KD.MetricHash mLastHash
 
-handle :: AppendEntries -> KD.Raft ()
+handle :: AppendEntries -> KD.Consensus ()
 handle ae = do
   r <- ask
   s <- get
@@ -217,7 +217,7 @@ handle ae = do
       -- Ignoring this is safe because if we have an out of touch leader they will step down after 2x maxElectionTimeouts if it receives no valid AER
       -- TODO: change this behavior to be if it hasn't heard from a quorum in 2x maxElectionTimeouts
 
-createAppendEntriesResponse :: Bool -> Bool -> LogIndex -> ByteString -> KD.Raft AppendEntriesResponse
+createAppendEntriesResponse :: Bool -> Bool -> LogIndex -> ByteString -> KD.Consensus AppendEntriesResponse
 createAppendEntriesResponse success convinced maxIndex' lastLogHash' = do
   ct <- use KD.term
   myNodeId' <- KD.viewConfig KD.nodeId

@@ -108,7 +108,7 @@ selfVoteProvenance rvr = do
   (SignedRPC dig bdy) <- return $ toWire nodeId' myPublicKey' myPrivateKey' rvr
   return $ ReceivedMsg dig bdy Nothing
 
-handle :: String -> KD.Raft ()
+handle :: String -> KD.Consensus ()
 handle msg = do
   c <- KD.readConfig
   s <- get
@@ -143,7 +143,7 @@ handle msg = do
                view KD.informEvidenceServiceOfElection >>= liftIO
                resetElectionTimer
 
-castLazyVote :: Term -> NodeId -> LogIndex -> KD.Raft ()
+castLazyVote :: Term -> NodeId -> LogIndex -> KD.Consensus ()
 castLazyVote lazyTerm' lazyCandidate' lazyLastLogIndex' = do
   setTerm lazyTerm'
   setVotedFor (Just lazyCandidate')
@@ -156,7 +156,7 @@ castLazyVote lazyTerm' lazyCandidate' lazyLastLogIndex' = do
   resetElectionTimer
 
 -- THREAD: SERVER MAIN. updates state
-setVotedFor :: Maybe NodeId -> KD.Raft ()
+setVotedFor :: Maybe NodeId -> KD.Consensus ()
 setVotedFor mvote = do
   KD.votedFor .= mvote
 

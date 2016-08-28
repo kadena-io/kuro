@@ -134,7 +134,7 @@ intervalOfNumerous cnt mics = let
   perSec = ceiling (fromIntegral cnt / interval')
   in "Completed in " ++ show (interval' :: Double) ++ "sec (" ++ show (perSec::Integer) ++ " per sec)"
 
--- | Runs a 'Raft nt String String mt'.
+-- | Runs a 'Consensus nt String String mt'.
 -- Simple fixes nt to 'HostPort' and mt to 'String'.
 main :: IO ()
 main = do

@@ -115,14 +115,14 @@ initSysLog tc = do
   tz <- getCurrentTimeZone
   fst <$> newTimedFastLogger (join $ timeCache tz tc) (LogStdout defaultBufSize)
 
-simpleRaftSpec :: ApplyFn
+simpleConsensusSpec :: ApplyFn
                -> (String -> IO ())
                -> (Metric -> IO ())
                -> (MVar CommandMap -> RequestId -> CommandStatus -> IO ())
                -> CommandMVarMap
                -> Unagi.OutChan (RequestId, [CommandEntry]) --IO (RequestId, [CommandEntry])
-               -> RaftSpec
-simpleRaftSpec applyFn debugFn pubMetricFn updateMapFn cmdMVarMap getCommands = RaftSpec
+               -> ConsensusSpec
+simpleConsensusSpec applyFn debugFn pubMetricFn updateMapFn cmdMVarMap getCommands = ConsensusSpec
     {
       -- apply log entries to the state machine, given by caller
       _applyLogEntry   = applyFn
@@ -188,7 +188,7 @@ runClient _applyFn getEntries cmdStatusMap' disableTimeouts = do
   runMsgServer dispatch me oNodes debugFn -- ZMQ
   -- STUBs mocking
   (_, stubGetApiCommands) <- Unagi.newChan
-  let raftSpec = simpleRaftSpec
+  let raftSpec = simpleConsensusSpec
                    (const (return $ CommandResult ""))
                    debugFn
                    (liftIO . pubMetric)
@@ -197,7 +197,7 @@ runClient _applyFn getEntries cmdStatusMap' disableTimeouts = do
                    stubGetApiCommands
   restartTurbo <- newEmptyMVar
   let receiverEnv = simpleReceiverEnv dispatch rconf debugFn restartTurbo
-  runRaftClient receiverEnv getEntries cmdStatusMap' rconf raftSpec disableTimeouts utcTimeCache'
+  runConsensusClient receiverEnv getEntries cmdStatusMap' rconf raftSpec disableTimeouts utcTimeCache'
 
 -- | sets up and runs both API and raft protocol
 --   shared state between API and protocol: sharedCmdStatusMap
@@ -226,7 +226,7 @@ runServer = do
   -- each node has its own snap monitoring server
   pubMetric <- startMonitoring rconf
   runMsgServer dispatch me oNodes debugFn -- ZMQ
-  let raftSpec = simpleRaftSpec
+  let raftSpec = simpleConsensusSpec
                    (liftIO . applyFn)
                    debugFn
                    (liftIO . pubMetric)
@@ -235,4 +235,4 @@ runServer = do
                    getApiCommands
   restartTurbo <- newEmptyMVar
   let receiverEnv = simpleReceiverEnv dispatch rconf debugFn restartTurbo
-  runRaftServer receiverEnv rconf raftSpec utcTimeCache'
+  runConsensusServer receiverEnv rconf raftSpec utcTimeCache'

@@ -2,7 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Kadena.Consensus.Client
-  ( runRaftClient
+  ( runConsensusClient
   , clientSendRPC
   ) where
 
@@ -30,15 +30,15 @@ import Kadena.Command.CommandLayer
 -- main entry point wired up by Simple.hs
 -- getEntry (readChan) useResult (writeChan) replace by
 -- CommandMVarMap (MVar shared with App client)
-runRaftClient :: ReceiverEnv
+runConsensusClient :: ReceiverEnv
               -> IO (RequestId, [CommandEntry])
               -> CommandMVarMap
               -> Config
-              -> RaftSpec
+              -> ConsensusSpec
               -> MVar Bool
               -> IO UTCTime
               -> IO ()
-runRaftClient renv getEntries cmdStatusMap' rconf spec@RaftSpec{..} disableTimeouts timeCache' = do
+runConsensusClient renv getEntries cmdStatusMap' rconf spec@ConsensusSpec{..} disableTimeouts timeCache' = do
   let csize = Set.size $ rconf ^. otherNodes
       qsize = getQuorumSize csize
   -- TODO: do we really need currentRequestId in state any longer, doing this to keep them in sync
@@ -50,14 +50,14 @@ runRaftClient renv getEntries cmdStatusMap' rconf spec@RaftSpec{..} disableTimeo
   mLeaderNoFollowers <- newEmptyMVar
   runRWS_
     (raftClient (lift getEntries) cmdStatusMap' disableTimeouts)
-    (mkRaftEnv rconf' csize qsize spec (_dispatch renv) timerTarget' timeCache' mEvState mLeaderNoFollowers)
+    (mkConsensusEnv rconf' csize qsize spec (_dispatch renv) timerTarget' timeCache' mEvState mLeaderNoFollowers)
     -- TODO: because UTC can flow backwards, this request ID is problematic:
-    (initialRaftState timerTarget') {_currentRequestId = rid} -- only use currentLeader and logEntries
+    (initialConsensusState timerTarget') {_currentRequestId = rid} -- only use currentLeader and logEntries
 
 -- TODO: don't run in raft, own monad stack
 -- StateT ClientState (ReaderT ClientEnv IO)
 -- THREAD: CLIENT MAIN
-raftClient :: Raft (RequestId, [CommandEntry]) -> CommandMVarMap -> MVar Bool -> Raft ()
+raftClient :: Consensus (RequestId, [CommandEntry]) -> CommandMVarMap -> MVar Bool -> Consensus ()
 raftClient getEntries cmdStatusMap' disableTimeouts = do
   nodes <- viewConfig otherNodes
   when (Set.null nodes) $ error "The client has no nodes to send requests to."
@@ -68,7 +68,7 @@ raftClient getEntries cmdStatusMap' disableTimeouts = do
 
 -- get commands with getEntry and put them on the event queue to be sent
 -- THREAD: CLIENT COMMAND
-commandGetter :: Raft (RequestId, [CommandEntry]) -> CommandMVarMap -> Raft ()
+commandGetter :: Consensus (RequestId, [CommandEntry]) -> CommandMVarMap -> Consensus ()
 commandGetter getEntries cmdStatusMap' = do
   nid <- viewConfig nodeId
   forever $ do
@@ -80,7 +80,7 @@ commandGetter getEntries cmdStatusMap' = do
                      let missiles = replicate (batchSize cmd) $ hardcodedTransfers nid
                      liftIO $ sequence missiles
                _ -> liftIO $ sequence $ fmap (nextRid nid) cmdEntries
-    -- set current requestId in Raft to the value associated with this request.
+    -- set current requestId in Consensus to the value associated with this request.
     rid' <- setNextRequestId rid
     liftIO (modifyMVar_ cmdStatusMap' (\(CommandMap n m) -> return $ CommandMap n (Map.insert rid CmdAccepted m)))
     -- hack set the head to the org rid
@@ -101,13 +101,13 @@ commandGetter getEntries cmdStatusMap' = do
     hardcodedTransfers nid = nextRid nid mkTestPact
 
 
-setNextRequestId :: RequestId -> Raft RequestId
+setNextRequestId :: RequestId -> Consensus RequestId
 setNextRequestId rid = do
   currentRequestId .= rid
   use currentRequestId
 
 -- THREAD: CLIENT MAIN. updates state
-clientHandleEvents :: CommandMVarMap -> MVar Bool -> Raft ()
+clientHandleEvents :: CommandMVarMap -> MVar Bool -> Consensus ()
 clientHandleEvents cmdStatusMap' disableTimeouts = forever $ do
   timerTarget' <- use timerTarget
   -- we use the MVar to preempt a backlog of messages when under load. This happens during a large 'many test'
@@ -139,14 +139,14 @@ clientHandleEvents cmdStatusMap' disableTimeouts = forever $ do
 
 -- THREAD: CLIENT MAIN. updates state
 -- If the client doesn't know the leader? Then set leader to first node, the client will be updated with the real leaderId when it receives a command response.
-setLeaderToFirst :: Raft ()
+setLeaderToFirst :: Consensus ()
 setLeaderToFirst = do
   nodes <- viewConfig otherNodes
   when (Set.null nodes) $ error "the client has no nodes to send requests to"
   setCurrentLeader $ Just $ Set.findMin nodes
 
 -- THREAD: CLIENT MAIN. updates state.
-setLeaderToNext :: Raft ()
+setLeaderToNext :: Consensus ()
 setLeaderToNext = do
   mlid <- use currentLeader
   nodes <- viewConfig otherNodes
@@ -157,7 +157,7 @@ setLeaderToNext = do
     Nothing -> setLeaderToFirst
 
 -- THREAD: CLIENT MAIN. updates state
-clientSendCommand :: Command -> MVar Bool -> Raft ()
+clientSendCommand :: Command -> MVar Bool -> Consensus ()
 clientSendCommand cmd@Command{..} disableTimeouts = do
   mlid <- use currentLeader
   disableTimeouts' <- liftIO $ readMVar disableTimeouts
@@ -176,7 +176,7 @@ clientSendCommand cmd@Command{..} disableTimeouts = do
       clientSendCommand cmd disableTimeouts
 
 -- THREAD: CLIENT MAIN. updates state
-clientSendCommandBatch :: CommandBatch -> MVar Bool -> Raft ()
+clientSendCommandBatch :: CommandBatch -> MVar Bool -> Consensus ()
 clientSendCommandBatch cmdb@CommandBatch{..} disableTimeouts = do
   mlid <- use currentLeader
   disableTimeouts' <- liftIO $ readMVar disableTimeouts
@@ -197,7 +197,7 @@ clientSendCommandBatch cmdb@CommandBatch{..} disableTimeouts = do
 
 -- THREAD: CLIENT MAIN. updates state
 -- Command has been applied
-clientHandleCommandResponse :: CommandMVarMap -> CommandResponse -> MVar Bool -> Raft ()
+clientHandleCommandResponse :: CommandMVarMap -> CommandResponse -> MVar Bool -> Consensus ()
 clientHandleCommandResponse cmdStatusMap' CommandResponse{..} disableTimeouts = do
   prs <- use pendingRequests
   cLeader <- use currentLeader
@@ -222,7 +222,7 @@ clientHandleCommandResponse cmdStatusMap' CommandResponse{..} disableTimeouts = 
           then resetHeartbeatTimer
           else cancelTimer
 
-clientSendRPC :: NodeId -> RPC -> Raft ()
+clientSendRPC :: NodeId -> RPC -> Consensus ()
 clientSendRPC target rpc = do
   send <- view clientSendMsg
   myNodeId' <- viewConfig nodeId

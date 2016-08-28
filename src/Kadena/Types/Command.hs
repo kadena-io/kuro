@@ -48,6 +48,6 @@ newtype CommandResult = CommandResult { unCommandResult :: ByteString }
   deriving (Show, Eq, Ord, Generic, Serialize)
 
 data CommandStatus = CmdSubmitted -- client sets when sending command
-                   | CmdAccepted  -- Raft client has recieved command and submitted
+                   | CmdAccepted  -- Consensus client has recieved command and submitted
                    | CmdApplied { result :: CommandResult, cmdaLatencty :: Int64 }  -- We have a result
                    deriving (Show)

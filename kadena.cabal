@@ -1,8 +1,8 @@
-name:                juno
+name:                kadena
 version:             0.0.0.2
 synopsis:            Bynzantine Fault Tolerant Raft
 description:         An implementation of a Byzantine Fault Tolerant Raft protocol.
-homepage:            https://github.com/buckie/juno
+homepage:            https://github.com/buckie/kadena
 author:              Chris Copeland, Will Martino
 maintainer:          chrisnc@cs.stanford.edu, wjmartino@gmail.com
 copyright:           Copyright (C) 2014-2015 Chris Copeland, Copyright 2015-2016 (C) Will Martino
@@ -16,7 +16,7 @@ cabal-version:       >=1.20
 
 source-repository head
   type:     git
-  location: git@github.com:buckie/juno.git
+  location: git@github.com:buckie/kadena.git
 
 library
   exposed-modules:     Apps.Kadena.Server
@@ -163,7 +163,7 @@ executable genconfs
                      , directory
                      , ed25519-donna
                      , filepath
-                     , juno
+                     , kadena
                      , network
                      , thyme
                      , yaml
@@ -171,19 +171,19 @@ executable genconfs
   ghc-options:         -Wall -threaded -rtsopts
   default-language:    Haskell2010
 
-executable junoserver
+executable kadenaserver
   main-is:             KadenaServer.hs
   build-depends:       base < 5
-                     , juno
+                     , kadena
   hs-source-dirs:      executables
   ghc-options:         -Wall -threaded -rtsopts
   ghc-prof-options:    -fprof-auto -fprof-auto-calls
   default-language:    Haskell2010
 
-executable junoclient
+executable kadenaclient
   main-is:             KadenaClient.hs
   build-depends:       base < 5
-                     , juno
+                     , kadena
   hs-source-dirs:      executables
   ghc-options:         -Wall -threaded -rtsopts
   ghc-prof-options:    -fprof-auto -fprof-auto-calls
@@ -192,6 +192,9 @@ executable junoclient
 test-suite hspec
   type: exitcode-stdio-1.0
   main-is: hspec.hs
+  other-modules:       EvidenceSpec
+                     , LogSpec
+                     , WireFormatSpec
   hs-source-dirs: tests
   default-language: Haskell2010
   build-depends:
@@ -204,5 +207,5 @@ test-suite hspec
                      , parallel
                      , lens
                      , hspec
-                     , juno
+                     , kadena
                      , text >= 1.2.0.0 && < 1.3

@@ -248,7 +248,7 @@ tellKadenaToResetLeaderNoFollowersTimeout = do
 --
 --updateLNextIndex :: LogIndex
 --                 -> (Map.Map NodeId LogIndex -> Map.Map NodeId LogIndex)
---                 -> Raft ()
+--                 -> Consensus ()
 --updateLNextIndex myCommitIndex f = do
 --  lNextIndex %= f
 --  lni <- use lNextIndex
@@ -261,5 +261,5 @@ tellKadenaToResetLeaderNoFollowersTimeout = do
 --
 --setLNextIndex :: LogIndex
 --              -> Map.Map NodeId LogIndex
---              -> Raft ()
+--              -> Consensus ()
 --setLNextIndex myCommitIndex = updateLNextIndex myCommitIndex . const

@@ -4,22 +4,22 @@
 {-# LANGUAGE TemplateHaskell #-}
 
 module Kadena.Types.Spec
-  ( Raft
-  , RaftSpec(..),ApplyFn
+  ( Consensus
+  , ConsensusSpec(..),ApplyFn
   , applyLogEntry , debugPrint, publishMetric, getTimestamp, random
   , viewConfig, readConfig, timerTarget, evidenceState, timeCache
   -- for API <-> Kadena communication
   , dequeueFromApi ,cmdStatusMap, updateCmdMap
-  , RaftEnv(..), cfg, enqueueLogQuery, clusterSize, quorumSize, rs
+  , ConsensusEnv(..), cfg, enqueueLogQuery, clusterSize, quorumSize, rs
   , enqueue, enqueueMultiple, dequeue, enqueueLater, killEnqueued
   , sendMessage, clientSendMsg, mResetLeaderNoFollowers
   , informEvidenceServiceOfElection
-  , RaftState(..), initialRaftState
+  , ConsensusState(..), initialConsensusState
   , nodeRole, term, votedFor, lazyVote, currentLeader, ignoreLeader
   , timerThread, replayMap, cYesVotes, cPotentialVotes, lastCommitTime, numTimeouts
   , pendingRequests, currentRequestId, timeSinceLastAER, cmdBloomFilter
   , Event(..)
-  , mkRaftEnv
+  , mkConsensusEnv
   ) where
 
 -- timeSinceLastAER, lNextIndex, lConvinced, commitProof
@@ -57,7 +57,7 @@ import Kadena.Types.Service.Evidence (PublishedEvidenceState, Evidence(ClearConv
 
 type ApplyFn = LogEntry -> IO CommandResult
 
-data RaftSpec = RaftSpec
+data ConsensusSpec = ConsensusSpec
   {
     -- ^ Function to apply a log entry to the state machine.
     _applyLogEntry    :: ApplyFn
@@ -71,17 +71,17 @@ data RaftSpec = RaftSpec
 
   , _random           :: forall a . Random a => (a, a) -> IO a
 
-  -- ^ How the API communicates with Raft, later could be redis w/e, etc.
+  -- ^ How the API communicates with Consensus, later could be redis w/e, etc.
   , _updateCmdMap     :: MVar CommandMap -> RequestId -> CommandStatus -> IO ()
 
-  -- ^ Same mvar map as _updateCmdMVarMap needs to run in Raft m
+  -- ^ Same mvar map as _updateCmdMVarMap needs to run in Consensus m
   , _cmdStatusMap     :: CommandMVarMap
 
   , _dequeueFromApi   :: IO (RequestId, [CommandEntry])
   }
-makeLenses (''RaftSpec)
+makeLenses (''ConsensusSpec)
 
-data RaftState = RaftState
+data ConsensusState = ConsensusState
   { _nodeRole         :: Role
   , _term             :: Term
   , _votedFor         :: Maybe NodeId
@@ -102,10 +102,10 @@ data RaftState = RaftState
   , _currentRequestId :: RequestId
   , _numTimeouts      :: Int
   }
-makeLenses ''RaftState
+makeLenses ''ConsensusState
 
-initialRaftState :: MVar Event -> RaftState
-initialRaftState timerTarget' = RaftState
+initialConsensusState :: MVar Event -> ConsensusState
+initialConsensusState timerTarget' = ConsensusState
 {-role-}                Follower
 {-term-}                startTerm
 {-votedFor-}            Nothing
@@ -124,14 +124,14 @@ initialRaftState timerTarget' = RaftState
 {-currentRequestId-}    0
 {-numTimeouts-}         0
 
-type Raft = RWST (RaftEnv) () RaftState IO
+type Consensus = RWST (ConsensusEnv) () ConsensusState IO
 
-data RaftEnv = RaftEnv
+data ConsensusEnv = ConsensusEnv
   { _cfg              :: IORef Config
   , _enqueueLogQuery  :: QueryApi -> IO ()
   , _clusterSize      :: Int
   , _quorumSize       :: Int
-  , _rs               :: RaftSpec
+  , _rs               :: ConsensusSpec
   , _sendMessage      :: ServiceRequest' -> IO ()
   , _enqueue          :: Event -> IO ()
   , _enqueueMultiple  :: [Event] -> IO ()
@@ -144,20 +144,20 @@ data RaftEnv = RaftEnv
   , _mResetLeaderNoFollowers :: MVar ResetLeaderNoFollowersTimeout
   , _informEvidenceServiceOfElection :: IO ()
   }
-makeLenses ''RaftEnv
+makeLenses ''ConsensusEnv
 
-mkRaftEnv
+mkConsensusEnv
   :: IORef Config
   -> Int
   -> Int
-  -> RaftSpec
+  -> ConsensusSpec
   -> Dispatch
   -> MVar Event
   -> (IO UTCTime)
   -> MVar PublishedEvidenceState
   -> MVar ResetLeaderNoFollowersTimeout
-  -> RaftEnv
-mkRaftEnv conf' cSize qSize rSpec dispatch timerTarget' timeCache' mEs mResetLeaderNoFollowers' = RaftEnv
+  -> ConsensusEnv
+mkConsensusEnv conf' cSize qSize rSpec dispatch timerTarget' timeCache' mEs mResetLeaderNoFollowers' = ConsensusEnv
     { _cfg = conf'
     , _enqueueLogQuery = writeComm ls'
     , _clusterSize = cSize
@@ -196,10 +196,10 @@ sendMsg outboxWrite og = do
   writeComm outboxWrite og
   yield
 
-readConfig :: Raft Config
+readConfig :: Consensus Config
 readConfig = view cfg >>= liftIO . readIORef
 
-viewConfig :: Getting r Config r -> Raft r
+viewConfig :: Getting r Config r -> Consensus r
 viewConfig l = do
   (c :: Config) <- view cfg >>= liftIO . readIORef
   return $ view l c

@@ -50,7 +50,7 @@ handleRevolution rev@Revolution{..} = do
       _ -> return RevolutionCalledOnNonLeader
   else return UnknownNode
 
-handle :: Revolution -> KD.Raft ()
+handle :: Revolution -> KD.Consensus ()
 handle msg = do
   s <- get
   (out,l) <- runReaderT (runWriterT (handleRevolution msg)) $

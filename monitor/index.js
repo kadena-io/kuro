@@ -37,7 +37,7 @@ class App extends React.Component {
     return (
       <div className="app">
         <h1 className="cluster-header">
-          JUNO CLUSTER
+          KADENA CLUSTER
           <div className="border-underline" />
         </h1>
         <div className="float-section">

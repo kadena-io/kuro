@@ -27,10 +27,10 @@ data ApiEnv = ApiEnv {
 
 apiRoutes :: ReaderT ApiEnv Snap ()
 apiRoutes = route [
-              ("api/juno/v1/transact", apiWrapper transact)
-             --,("api/juno/v1/local", apiWrapper local)
-             --,("api/juno/v1/cmd/batch", cmdBatch)
-             ,("api/juno/v1/poll", pollForResults)
+              ("api/kadena/v1/transact", apiWrapper transact)
+             --,("api/kadena/v1/local", apiWrapper local)
+             --,("api/kadena/v1/cmd/batch", cmdBatch)
+             ,("api/kadena/v1/poll", pollForResults)
             ,("ui",serveUI)
              ]
 
@@ -62,7 +62,7 @@ transact = Right . (:[]) . CommandEntry . BLC.toStrict
 
 -- TODO: _aiCmdStatusMap needs to be updated by Kadena protocol this is never updated
 -- poll for a list of cmdIds, returning the applied results or error
--- see juno/jmeter/juno_API_jmeter_test.jmx
+-- see kadena/jmeter/kadena_API_jmeter_test.jmx
 pollForResults :: ReaderT ApiEnv Snap ()
 pollForResults = do
     maybePoll <- JSON.decode <$> readRequestBody 1000000

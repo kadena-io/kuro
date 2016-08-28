@@ -46,7 +46,7 @@ class Node extends React.Component {
 
     const countPoints = points[selectedTime];
     const commitIndices = data
-      .map(datum => datum.juno.consensus.commit_index.val)
+      .map(datum => datum.kadena.consensus.commit_index.val)
       .slice(-(points[selectedTime] + 1));
     const firstValue = commitIndices[0];
 

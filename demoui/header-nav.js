@@ -13,7 +13,7 @@ export default function HeaderNav(props) {
 	  <div className="rad-top-nav-container">
       <form onSubmit={props.handleKadenaUrlSubmit}>
       Kadena Node:&nbsp;
-      <input size="60" type="text" value={props.junoUrl} onChange={props.handleKadenaUrlChange}/>
+      <input size="60" type="text" value={props.kadenaUrl} onChange={props.handleKadenaUrlChange}/>
       <input type="submit" value="Change"/>
       </form>
 	</div>

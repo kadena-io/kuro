@@ -202,7 +202,7 @@ runClient _applyFn getEntries cmdStatusMap' disableTimeouts = do
 -- | sets up and runs both API and raft protocol
 --   shared state between API and protocol: sharedCmdStatusMap
 --   comminication channel btw API and protocol:
---   [API write/place command -> toCommands] [getApiCommands -> juno read/poll command]
+--   [API write/place command -> toCommands] [getApiCommands -> kadena read/poll command]
 runServer :: IO ()
 runServer = do
   setLineBuffering

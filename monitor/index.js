@@ -78,7 +78,7 @@ class App extends React.Component {
       mode: 'cors'
     }).then(response => response.json())
       .then(newDatum => {
-        const nodeDatum = newDatum.juno.node;
+        const nodeDatum = newDatum.kadena.node;
         const id = nodeDatum.id.val;
         const role = nodeDatum.role.val;
         const appliedIndex = nodeDatum.applied_index.val;

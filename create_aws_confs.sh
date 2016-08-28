@@ -7,28 +7,28 @@ else
     mkdir aws-conf
 fi
 
-aws ec2 describe-instances --filter Name=tag:Name,Values=junoserver \
+aws ec2 describe-instances --filter Name=tag:Name,Values=kadenaserver \
   | grep '"PrivateIpAddress"' \
   | sed 's/[^(0-9).]//g' \
-  | uniq | sort > aws-conf/junoservers.privateIp
+  | uniq | sort > aws-conf/kadenaservers.privateIp
 
-aws ec2 describe-instances --filter Name=tag:Name,Values=junoclient \
+aws ec2 describe-instances --filter Name=tag:Name,Values=kadenaclient \
   | grep '"PrivateIpAddress"' \
   | sed 's/[^(0-9).]//g' \
-  | uniq | sort > aws-conf/junoclient.privateIp
+  | uniq | sort > aws-conf/kadenaclient.privateIp
 
-stack exec -- genconfs --aws aws-conf/junoservers.privateIp aws-conf/junoclient.privateIp
+stack exec -- genconfs --aws aws-conf/kadenaservers.privateIp aws-conf/kadenaclient.privateIp
 
-for ip in `cat aws-conf/junoservers.privateIp`; do
+for ip in `cat aws-conf/kadenaservers.privateIp`; do
     idir="aws-conf/${ip}"
     mkdir -p $idir/conf
     conf="${ip}-cluster-aws.yaml"
     script="${idir}/start.sh"
     mv aws-conf/$conf $idir/conf/$conf
     echo "#!/bin/sh
-nohup ./junoserver +RTS -N -T -RTS -c conf/${conf} --apiPort 8000 --disablePersistence >> ./${ip}-output.log 2>&1 &
+nohup ./kadenaserver +RTS -N -T -RTS -c conf/${conf} --apiPort 8000 --disablePersistence >> ./${ip}-output.log 2>&1 &
 " > $script
     chmod +x $script
 done
 
-echo 'make sure you have run `stack install` from juno and have `~/.local/bin` in your path (or have run `cd ~ ; ln -s .local/bin/* . `)'
+echo 'make sure you have run `stack install` from kadena and have `~/.local/bin` in your path (or have run `cd ~ ; ln -s .local/bin/* . `)'

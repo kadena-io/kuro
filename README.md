@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/buckie/juno.svg?branch=develop)](https://travis-ci.org/buckie/juno)
+[![Build Status](https://travis-ci.org/buckie/kadena.svg?branch=develop)](https://travis-ci.org/buckie/kadena)
 
 
 <h1 align="center">Kadena</h1>
@@ -270,7 +270,7 @@ Build requirements:
 * `haskell-stack`: `cabal build` will work as well, but `demo/start.sh` uses `stack exec` explicitly
 * `zeromq-4`: messaging backend (I use zeromq-4.1.3 but any zeromq >= 4.1.3 && < 5 should work)
 * `tmux`: `demo/start.sh` creates a new tmux window and partitions it into multiple panes. NB: if you are using tmux >= 2.1 then you cannot launch the demo from from inside a tmux session (or have other sessions running).
-* `rlwrap`: used in `junoclient.sh` to make things more pleasant
+* `rlwrap`: used in `kadenaclient.sh` to make things more pleasant
 
 For those not using stack, please see stack.yaml for non-hackage deps. Otherwise:
 

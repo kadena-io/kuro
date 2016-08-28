@@ -43,7 +43,7 @@ class App extends React.Component {
 
     this.state = {
       currentPane: initPane,
-      junoUrl: '/api'
+      kadenaUrl: '/api'
     };
 
   }
@@ -73,7 +73,7 @@ class App extends React.Component {
     e.preventDefault();
     if (this.state.swiftText == null || this.state.swiftText == "") { return; }
     this.setState({ submitResponse: { status: "Sending ..." }});
-    fetch(`${this.state.junoUrl}/swift-submit`, {
+    fetch(`${this.state.kadenaUrl}/swift-submit`, {
       method: 'POST',
       mode: 'cors',
       headers: { 'Content-Type': 'text/plain' },
@@ -86,7 +86,7 @@ class App extends React.Component {
   }
 
   fetchTx(transId,branch) {
-    fetch(`${this.state.junoUrl}/ledger-query?tx=${transId}`, {
+    fetch(`${this.state.kadenaUrl}/ledger-query?tx=${transId}`, {
       method: 'get',
       mode: 'cors'
     }).then(response => response.json())
@@ -100,7 +100,7 @@ class App extends React.Component {
   }
 
   fetchNostro() {
-    fetch(`${this.state.junoUrl}/ledger-query?account=${londonNostro}`, {
+    fetch(`${this.state.kadenaUrl}/ledger-query?account=${londonNostro}`, {
       method: 'get',
       mode: 'cors'
     }).then(response => response.json())
@@ -111,7 +111,7 @@ class App extends React.Component {
   }
 
   fetchBranch(branch) {
-    fetch(`${this.state.junoUrl}/ledger-query?account=${branch}`, {
+    fetch(`${this.state.kadenaUrl}/ledger-query?account=${branch}`, {
       method: 'get',
       mode: 'cors'
     }).then(response => response.json())
@@ -126,13 +126,13 @@ class App extends React.Component {
   }
 
 handleKadenaUrlChange(e) {
-  this.setState({junoUrl: e.target.value});
+  this.setState({kadenaUrl: e.target.value});
 }
 
 handleKadenaUrlSubmit(e) {
   e.preventDefault();
   const s = {currentPane: this.state.currentPane,
-             junoUrl: this.state.junoUrl}
+             kadenaUrl: this.state.kadenaUrl}
   this.resetState(s);
 
 }

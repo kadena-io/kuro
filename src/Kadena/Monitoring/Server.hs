@@ -32,22 +32,22 @@ startMonitoring config = do
   let awsDashVar' = awsDashVar (config ^. enableAwsIntegration)
 
   -- Consensus
-  termGauge <- getGauge "juno.consensus.term" ekg
-  commitIndexGauge <- getGauge "juno.consensus.commit_index" ekg
-  commitPeriodDist <- getDistribution "juno.consensus.commit_period" ekg
-  currentLeaderLabel <- getLabel "juno.consensus.current_leader" ekg
-  hashLabel <- getLabel "juno.consensus.hash" ekg
+  termGauge <- getGauge "kadena.consensus.term" ekg
+  commitIndexGauge <- getGauge "kadena.consensus.commit_index" ekg
+  commitPeriodDist <- getDistribution "kadena.consensus.commit_period" ekg
+  currentLeaderLabel <- getLabel "kadena.consensus.current_leader" ekg
+  hashLabel <- getLabel "kadena.consensus.hash" ekg
   -- Node
-  nodeIdLabel <- getLabel "juno.node.id" ekg
-  hostLabel <- getLabel "juno.node.host" ekg
-  portGauge <- getGauge "juno.node.port" ekg
-  roleLabel <- getLabel "juno.node.role" ekg
-  appliedIndexGauge <- getGauge "juno.node.applied_index" ekg
-  applyLatencyDist <- getDistribution "juno.node.apply_latency" ekg
+  nodeIdLabel <- getLabel "kadena.node.id" ekg
+  hostLabel <- getLabel "kadena.node.host" ekg
+  portGauge <- getGauge "kadena.node.port" ekg
+  roleLabel <- getLabel "kadena.node.role" ekg
+  appliedIndexGauge <- getGauge "kadena.node.applied_index" ekg
+  applyLatencyDist <- getDistribution "kadena.node.apply_latency" ekg
   -- Cluster
-  clusterSizeGauge <- getGauge "juno.cluster.size" ekg
-  quorumSizeGauge <- getGauge "juno.cluster.quorum_size" ekg
-  availableSizeGauge <- getGauge "juno.cluster.available_size" ekg
+  clusterSizeGauge <- getGauge "kadena.cluster.size" ekg
+  quorumSizeGauge <- getGauge "kadena.cluster.quorum_size" ekg
+  availableSizeGauge <- getGauge "kadena.cluster.available_size" ekg
 
   return $ \case
     -- Consensus

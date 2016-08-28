@@ -15,6 +15,7 @@ import Control.Monad.Writer.Strict
 
 import Data.ByteString (ByteString)
 
+import qualified Data.BloomFilter as Bloom
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
@@ -158,7 +159,7 @@ appendLogEntries pli newEs
         replay <- return $ Map.fromList $ fmap
           (\LogEntry{_leCommand = c@Command{..}} -> ((_cmdClientId, getCmdSigOrInvariantError "appendLogEntries" c), Nothing))
           (Map.elems (newEs ^. Log.logEntries))
-        tell ["replicated LogEntry(s): " ++ (show $ _rleMinLogIdx rle) ++ " through " ++ (show $ _rleMaxLogIdx rle)]
+        tell ["replicated LogEntry(s): " ++ show (_rleMinLogIdx rle) ++ " through " ++ show (_rleMaxLogIdx rle)]
         return $ Commit replay rle
 
 applyNewLeader :: CheckForNewLeaderOut -> KD.Consensus ()
@@ -185,7 +186,7 @@ handle ae = do
               (KD._term s)
               (KD._currentLeader s)
               (KD._ignoreLeader s)
-              (logAtAEsLastLogIdx)
+              logAtAEsLastLogIdx
               (KD._quorumSize r)
   (AppendEntriesOut{..}, l) <- runReaderT (runWriterT (handleAppendEntries ae)) ape
   unless (commitIndex' == _prevLogIndex ae && length l == 1) $ mapM_ debug l
@@ -205,9 +206,10 @@ handle ae = do
         (Commit rMap rle) -> do
           updateLogs $ Log.ULReplicate rle
           newMv <- queryLogs $ Set.singleton Log.GetLastLogHash
-          newLastLogHash' <- return $ Log.hasQueryResult Log.LastLogHash newMv
+          newLastLogHash' <- return $! Log.hasQueryResult Log.LastLogHash newMv
           logHashChange newLastLogHash'
           KD.replayMap %= Map.union rMap
+          KD.cmdBloomFilter %= Bloom.insertList (Set.toList $ Map.keysSet rMap)
           enqueueRequest Sender.BroadcastAER
         DoNothing -> enqueueRequest Sender.BroadcastAER
       -- This NEEDS to be last, otherwise we can have an election fire when we are are transmitting proof/accessing the logs

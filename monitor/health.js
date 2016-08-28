@@ -5,12 +5,12 @@ const width = 500;
 const height = 40;
 
 function clusterStatus(data) {
-  const cluster = data.juno.cluster;
+  const cluster = data.kadena.cluster;
   return {
     quorum: cluster.quorum_size.val,
     avail: cluster.available_size.val,
     size: cluster.size.val,
-    term: data.juno.consensus.term.val,
+    term: data.kadena.consensus.term.val,
   };
 }
 

@@ -1,7 +1,7 @@
 import React from 'react';
 
 function consensusStatus(data) {
-  const consensus = data.juno.consensus;
+  const consensus = data.kadena.consensus;
   return {
     commit_index: consensus.commit_index.val,
     commit_period: consensus.commit_period.val,

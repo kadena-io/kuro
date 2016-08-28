@@ -43,7 +43,7 @@ snapApiServer :: InChan (RequestId, [CommandEntry]) -> CommandMVarMap -> Int -> 
 snapApiServer toCommands' cmdStatusMap' port = httpServe (serverConf port) $
     applyCORS defaultOptions $ methods [GET, POST]
     (ifTop (writeBS "kadena") <|>
-     route [ ("/", runReaderT apiRoutes (ApiEnv toCommands' cmdStatusMap'))] -- api/juno/v1
+     route [ ("/", runReaderT apiRoutes (ApiEnv toCommands' cmdStatusMap'))] -- api/kadena/v1
     )
 
 serverConf :: MonadSnap m => Int -> Config m a

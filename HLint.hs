@@ -1,11 +1,9 @@
 import "hint" HLint.HLint
-ignore "Eta reduce"
-ignore "Reduce duplication"
-ignore "Avoid lambda"
 
--- in between, should fix eventually,
---but make relating to original coq development more subtle
--- but also doesnt really matter
-ignore "Redundant if"
-ignore "Use fromMaybe"
-ignore "Use list comprehension"
+ignore "Eta reduce"
+ignore "Use let"
+ignore "Use import/export shortcut"
+ignore "Use import/export shortcut"
+ignore "Use import/export shortcut"
+ignore "Redundant $"
+ignore "Redundant do"

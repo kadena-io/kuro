@@ -174,7 +174,7 @@ handleBatch cmdb@CommandBatch{..} = do
         updateLogs $ ULNew $ NewLogEntries (JT._term s) falsePositive
         enqueueRequest $ Sender.BroadcastAE Sender.OnlySendIfFollowersAreInSync
         enqueueRequest $ Sender.BroadcastAER
-      unless (null responseToOldCmds) $ do
+      unless (null responseToOldCmds) $
         enqueueRequest $ Sender.SendCommandResults responseToOldCmds
       JT.replayMap .= updatedReplayMap
       JT.cmdBloomFilter .= updateBloom newEntries (JT._cmdBloomFilter s)
@@ -185,19 +185,11 @@ handleBatch cmdb@CommandBatch{..} = do
       when (isJust lid) $ do
         enqueueRequest $ Sender.ForwardCommandToLeader (fromJust lid) newEntries
       PostProcessingResult{..} <- return $! postProcessBatch (JT._nodeId c) lid (JT._replayMap s) alreadySeen
-      unless (null falsePositive) $ do
+      unless (null falsePositive) $
         enqueueRequest $ Sender.ForwardCommandToLeader (fromJust lid) falsePositive
-      unless (null responseToOldCmds) $ do
+      unless (null responseToOldCmds) $
         enqueueRequest $ Sender.SendCommandResults responseToOldCmds
     IAmCandidate -> return () -- TODO: we should probably respond with something like "availability event"
-
-
---replyServicing :: BatchProcessing -> JT.Raft (Maybe [Command])
---replyServicing BatchProcessing{..} = do
---  replays <- use JT._replayMap
---  (falsePositive, prepedCMDRs) <- return $!
---    partitionEithers $! (\Command{..} -> Map.lookup (_cmdClientId, ) replays) <$> serviceAlreadySeen
-
 
 data PostProcessingResult = PostProcessingResult
   { falsePositive :: ![Command]
@@ -210,12 +202,12 @@ postProcessBatch nid mlid replays cs = go cs (PostProcessingResult [] [] replays
   where
     cmdSig c = getCmdSigOrInvariantError "postProcessBatch" c
     go [] bp = bp { falsePositive = reverse $ falsePositive bp }
-    go (cmd@Command{..}:cmds) bp = case (Map.lookup (_cmdClientId, cmdSig cmd) replays) of
+    go (cmd@Command{..}:cmds) bp = case Map.lookup (_cmdClientId, cmdSig cmd) replays of
       Just (Just result) -> go cmds bp {
-        responseToOldCmds = (_cmdClientId, makeCommandResponse' nid mlid cmd result 1) : (responseToOldCmds bp) }
+        responseToOldCmds = (_cmdClientId, makeCommandResponse' nid mlid cmd result 1) : responseToOldCmds bp }
       Just Nothing       -> go cmds bp
       _ | isNothing mlid -> go cmds bp
-      Nothing -> go cmds $ bp { falsePositive = cmd : (falsePositive bp)
+      Nothing -> go cmds $ bp { falsePositive = cmd : falsePositive bp
                               , updatedReplayMap = Map.insert (_cmdClientId, cmdSig cmd) Nothing $ updatedReplayMap bp }
 {-# INLINE postProcessBatch #-}
 

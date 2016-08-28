@@ -11,9 +11,9 @@ export default function HeaderNav(props) {
 				</div>
 				<a href="#" className="rad-logo-hidden">Payments Ledger</a>
 	  <div className="rad-top-nav-container">
-      <form onSubmit={props.handleJunoUrlSubmit}>
-      Juno Node:&nbsp;
-      <input size="60" type="text" value={props.junoUrl} onChange={props.handleJunoUrlChange}/>
+      <form onSubmit={props.handleKadenaUrlSubmit}>
+      Kadena Node:&nbsp;
+      <input size="60" type="text" value={props.junoUrl} onChange={props.handleKadenaUrlChange}/>
       <input type="submit" value="Change"/>
       </form>
 	</div>

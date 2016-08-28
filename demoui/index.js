@@ -125,11 +125,11 @@ class App extends React.Component {
 
   }
 
-handleJunoUrlChange(e) {
+handleKadenaUrlChange(e) {
   this.setState({junoUrl: e.target.value});
 }
 
-handleJunoUrlSubmit(e) {
+handleKadenaUrlSubmit(e) {
   e.preventDefault();
   const s = {currentPane: this.state.currentPane,
              junoUrl: this.state.junoUrl}
@@ -140,8 +140,8 @@ handleJunoUrlSubmit(e) {
   render() {
     return (
         <div className="app">
-        <HeaderNav handleJunoUrlChange={e=>this.handleJunoUrlChange(e)}
-           handleJunoUrlSubmit={this.handleJunoUrlSubmit}
+        <HeaderNav handleKadenaUrlChange={e=>this.handleKadenaUrlChange(e)}
+           handleKadenaUrlSubmit={this.handleKadenaUrlSubmit}
            {...this.state} />
         <Sidebar handleChangePane={(pane)=>this.handleChangePane(pane)} {...this.state} />
         <Detail acctInfo={acctInfo}

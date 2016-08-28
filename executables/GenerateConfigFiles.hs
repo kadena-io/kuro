@@ -19,7 +19,7 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.ByteString.Char8 as BSC
 
-import Juno.Types
+import Kadena.Types
 
 nodes :: [NodeId]
 nodes = iterate (\n@(NodeId h p _ _) -> n {_port = p + 1

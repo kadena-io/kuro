@@ -8,8 +8,8 @@ import Control.Lens
 import Data.Maybe (fromJust)
 import qualified Data.Map.Strict as Map
 
-import Juno.Types
-import Juno.Types.Service.Log hiding (keySet)
+import Kadena.Types
+import Kadena.Types.Service.Log hiding (keySet)
 
 spec :: Spec
 spec = do

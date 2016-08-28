@@ -1,0 +1,208 @@
+name:                juno
+version:             0.0.0.2
+synopsis:            Bynzantine Fault Tolerant Raft
+description:         An implementation of a Byzantine Fault Tolerant Raft protocol.
+homepage:            https://github.com/buckie/juno
+author:              Chris Copeland, Will Martino
+maintainer:          chrisnc@cs.stanford.edu, wjmartino@gmail.com
+copyright:           Copyright (C) 2014-2015 Chris Copeland, Copyright 2015-2016 (C) Will Martino
+
+license:             BSD3
+license-file:        LICENSE
+
+category:            Network
+build-type:          Simple
+cabal-version:       >=1.20
+
+source-repository head
+  type:     git
+  location: git@github.com:buckie/juno.git
+
+library
+  exposed-modules:     Apps.Kadena.Server
+                     , Apps.Kadena.Client
+                     , Apps.Kadena.JsonTypes
+                     , Apps.Kadena.ApiHandlers
+                     , Kadena.Command.Types
+                     , Kadena.Command.CommandLayer
+                     , Kadena.Consensus.Api
+                     , Kadena.Consensus.Handle
+                     , Kadena.Consensus.Server
+                     , Kadena.Consensus.Client
+                     , Kadena.Consensus.Commit
+                     , Kadena.Consensus.Handle.Types
+                     , Kadena.Consensus.Handle.AppendEntries
+                     , Kadena.Consensus.Handle.Command
+                     , Kadena.Consensus.Handle.RequestVote
+                     , Kadena.Consensus.Handle.RequestVoteResponse
+                     , Kadena.Consensus.Handle.ElectionTimeout
+                     , Kadena.Consensus.Handle.HeartbeatTimeout
+                     , Kadena.Consensus.Handle.Revolution
+                     , Kadena.Messaging.ZMQ
+                     , Kadena.Monitoring.EkgJson
+                     , Kadena.Monitoring.EkgMonitor
+                     , Kadena.Monitoring.EkgSnap
+                     , Kadena.Monitoring.Server
+                     , Kadena.Persistence.SQLite
+                     , Kadena.Runtime.Api.ApiServer
+                     , Kadena.Runtime.MessageReceiver
+                     , Kadena.Runtime.Role
+                     , Kadena.Runtime.Timer
+                     , Kadena.Service.Log
+                     , Kadena.Service.Sender
+                     , Kadena.Service.Evidence
+                     , Kadena.Spec.Simple
+                     , Kadena.Types
+                     , Kadena.Types.Base
+                     , Kadena.Types.Command
+                     , Kadena.Types.Comms
+                     , Kadena.Types.Config
+                     , Kadena.Types.Dispatch
+                     , Kadena.Types.Event
+                     , Kadena.Types.Evidence
+                     , Kadena.Types.Log
+                     , Kadena.Types.Message
+                     , Kadena.Types.Message.Signed
+                     , Kadena.Types.Message.CMD
+                     , Kadena.Types.Message.CMDR
+                     , Kadena.Types.Message.AE
+                     , Kadena.Types.Message.AER
+                     , Kadena.Types.Message.RV
+                     , Kadena.Types.Message.RVR
+                     , Kadena.Types.Message.REV
+                     , Kadena.Types.Metric
+                     , Kadena.Types.Service.Evidence
+                     , Kadena.Types.Service.Sender
+                     , Kadena.Types.Service.Log
+                     , Kadena.Types.Spec
+                     , Kadena.Util.Combinator
+                     , Kadena.Util.Util
+
+  build-depends:       aeson
+                     , aeson-pretty
+                     , ansi-wl-pprint
+                     , array
+                     , async
+                     , attoparsec
+                     , auto-update
+                     , base < 5
+                     , base16-bytestring
+                     , base64-bytestring >= 1.0.0.1 && < 1.1
+                     , blake2
+                     , bloomfilter
+                     , bound
+                     , bytestring
+                     , cacophony
+                     , cereal >= 0.4.1.1
+                     , containers
+                     , criterion
+                     , crypto-api
+                     , cryptonite
+                     , data-default
+                     , deepseq >= 1.4.1.1
+                     , ed25519-donna
+                     , ekg >= 0.4 && < 0.5
+                     , ekg-core >= 0.1.1.0 && < 0.2
+                     , ekg-json
+                     , enclosed-exceptions
+                     , exceptions
+                     , fast-logger
+                     , filepath
+                     , ghc-prim
+                     , hspec
+                     , lens >= 4.13
+                     , lifted-base
+                     , lz4
+                     , megaparsec >= 4.2.0 && < 4.3
+                     , monad-control
+                     , monad-loops
+                     , monad-par
+                     , mtl
+                     , mtl-compat
+                     , network
+                     , pact == 0.0.1
+                     , parallel
+                     , parsers
+                     , prelude-extras
+                     , primitive
+                     , process
+                     , random
+                     , safe-exceptions >= 0.1.4.0
+                     , semigroups
+                     , snap-core
+                     , snap-core-cors
+                     , snap-server
+                     , sqlite-simple
+                     , stm
+                     , text >= 1.2.0.0 && < 1.3
+                     , thyme
+                     , time
+                     , transformers
+                     , trifecta
+                     , unagi-chan
+                     , unix >= 2.7.1.0
+                     , unordered-containers
+                     , utf8-string >= 1.0.1.1
+                     , vector >= 0.11.0.0
+                     , vector-space >= 0.10.2 && < 0.11
+                     , wreq
+                     , yaml
+                     , zeromq4-haskell >= 0.6.3
+                     , zlib
+  hs-source-dirs:      src
+  ghc-options:         -Wall -fno-warn-unused-do-bind -O2 -with-rtsopts="-N4"
+  ghc-prof-options:    -fprof-auto -fprof-auto-calls
+  default-language:    Haskell2010
+
+executable genconfs
+  main-is:             GenerateConfigFiles.hs
+  build-depends:       base < 5
+                     , bytestring
+                     , containers
+                     , crypto-api
+                     , directory
+                     , ed25519-donna
+                     , filepath
+                     , juno
+                     , network
+                     , thyme
+                     , yaml
+  hs-source-dirs:      executables
+  ghc-options:         -Wall -threaded -rtsopts
+  default-language:    Haskell2010
+
+executable junoserver
+  main-is:             KadenaServer.hs
+  build-depends:       base < 5
+                     , juno
+  hs-source-dirs:      executables
+  ghc-options:         -Wall -threaded -rtsopts
+  ghc-prof-options:    -fprof-auto -fprof-auto-calls
+  default-language:    Haskell2010
+
+executable junoclient
+  main-is:             KadenaClient.hs
+  build-depends:       base < 5
+                     , juno
+  hs-source-dirs:      executables
+  ghc-options:         -Wall -threaded -rtsopts
+  ghc-prof-options:    -fprof-auto -fprof-auto-calls
+  default-language:    Haskell2010
+
+test-suite hspec
+  type: exitcode-stdio-1.0
+  main-is: hspec.hs
+  hs-source-dirs: tests
+  default-language: Haskell2010
+  build-depends:
+                       base
+                     , aeson
+                     , bytestring
+                     , cereal
+                     , containers
+                     , crypto-api
+                     , parallel
+                     , lens
+                     , hspec
+                     , juno
+                     , text >= 1.2.0.0 && < 1.3

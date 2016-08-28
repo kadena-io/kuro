@@ -9,7 +9,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 
 
-import Juno.Types
+import Kadena.Types
 
 spec :: Spec
 spec = describe "WireFormat RoundTrips" testWireRoundtrip

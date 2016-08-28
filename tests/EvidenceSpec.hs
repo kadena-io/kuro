@@ -20,10 +20,10 @@ import Test.Hspec
 --import System.IO.Unsafe
 --import qualified Data.Serialize as S
 --
---import Juno.Types
---import qualified Juno.Types.Log as Log
---import qualified Juno.Types.Service.Log as Log
---import qualified Juno.Service.Evidence as Ev
+--import Kadena.Types
+--import qualified Kadena.Types.Log as Log
+--import qualified Kadena.Types.Service.Log as Log
+--import qualified Kadena.Service.Evidence as Ev
 --
 
 spec :: Spec

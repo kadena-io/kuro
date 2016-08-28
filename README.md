@@ -1,18 +1,18 @@
 [![Build Status](https://travis-ci.org/buckie/juno.svg?branch=develop)](https://travis-ci.org/buckie/juno)
 
 
-<h1 align="center">Juno</h1>
+<h1 align="center">Kadena</h1>
 <h6 align="center">Byzantine Fault Tolerant Raft With Smart Contracts</h6>
 
 #### New Features in 0.0.0.2 Release (2016 April 29)
 
-* **[Performance Improvements](#performance-and-crypto-new-april-2016)**: Juno can achieve consensus for **2000 commits/second**; with client/gateway batching performance jumps to to **~4000/sec**. See demo gif for details.
+* **[Performance Improvements](#performance-and-crypto-new-april-2016)**: Kadena can achieve consensus for **2000 commits/second**; with client/gateway batching performance jumps to to **~4000/sec**. See demo gif for details.
 
 * **Massively Parallel:**
-    Juno scales near-optimally with core count.
+    Kadena scales near-optimally with core count.
 
 * **Upgraded Crypto:**
-    Juno now uses the state-of-the art [ed25519-donna](https://github.com/floodyberry/ed25519-donna/) library for lightning-fast crypto.
+    Kadena now uses the state-of-the art [ed25519-donna](https://github.com/floodyberry/ed25519-donna/) library for lightning-fast crypto.
 
 * **Major State Machine Refactor** modeling each RPC of the Raft state machine into distinct monads
 
@@ -41,13 +41,13 @@ See [Performance and Crypto](#performance-and-crypto-new-april-2016) for full de
 
 ## Introduction
 
-Juno is a BFT Consensus-based Distributed Cryptoledger providing an alternative to current Blockchain-based Smart-Contract systems.
+Kadena is a BFT Consensus-based Distributed Cryptoledger providing an alternative to current Blockchain-based Smart-Contract systems.
 
 Blockchain-based approaches to Smart Contract systems are a mismatch for many enterprise applications, as they are purpose-built for *anonymous participation*, necessitating computationally-intensive solutions fault-tolerance and consensus (ie mining, proof-of-stake). Enterprise applications generally have no need to support anonymous actors, so the utility of using consensus algorithms like Paxos or Raft is clear. However no clear solution exists that can provide the Byzantine fault-tolerant (BFT) features of a blockchain on a consensus platform.
 
-Enter Juno, "hardening" the [Raft][Raft] consensus protocol with BFT features. Juno started as a fork of the [Tangaroa][Tangaroa Paper] project, which sought to enhance Raft with BFT features like crypto-signatures of all messages, incremental hashing, and independent commit-proof verification.
+Enter Kadena, "hardening" the [Raft][Raft] consensus protocol with BFT features. Kadena started as a fork of the [Tangaroa][Tangaroa Paper] project, which sought to enhance Raft with BFT features like crypto-signatures of all messages, incremental hashing, and independent commit-proof verification.
 
-With its "BFT-hardened" Raft, Juno achieves vastly greater throughput than traditional Blockchain-based approaches. Our demo shows latencies in the 5ms range (compared with seconds or minutes in Blockchain solutions) and throughput upward of 2000 transactions a second.
+With its "BFT-hardened" Raft, Kadena achieves vastly greater throughput than traditional Blockchain-based approaches. Our demo shows latencies in the 5ms range (compared with seconds or minutes in Blockchain solutions) and throughput upward of 2000 transactions a second.
 
 ## First Principles
 
@@ -90,7 +90,7 @@ One can think of ledger entries as simple messages meant for some other system t
 What consensus provides is a means for ordering these messages, which are then fed into some other system.
 There are multiple families of algorithms capable of this.
 
-For Juno, we have chosen the Raft protocol as our starting point.
+For Kadena, we have chosen the Raft protocol as our starting point.
 Raft is a Paxos variant designed for understandability.
 Simply put, it provides a method for a cluster of servers to elect a Leader as well as a method for replacing the Leader if it goes down.
 Once a Leader is selected, it orders messages that it receives & distributes the messages to Followers for replication and application to a state machine.
@@ -119,7 +119,7 @@ For instance, it is completely serializable and deterministic -- both core featu
 Moreover, it has a model of the price of execution stems; while a great idea, we believe this was poorly executed.
 There are several ways that Ethereum can be made better, e.g. a module system.
 
-The language that Juno runs for its replicated state machine is [Hopper][Hopper].
+The language that Kadena runs for its replicated state machine is [Hopper][Hopper].
 Though still in early development, it will have the following features when completed:
 
 * Declarative/Functional
@@ -135,7 +135,7 @@ Though still in early development, it will have the following features when comp
 ### #4 Immutable Ledger
 
 Blockchain solves this problem via Merkle Trees.
-In Juno, we don't have the ability to have a forked chain (due to the guarantees that Raft provides) and have opted instead for an incrementally hashed log of entries, a la Tangaroa.
+In Kadena, we don't have the ability to have a forked chain (due to the guarantees that Raft provides) and have opted instead for an incrementally hashed log of entries, a la Tangaroa.
 
 It provides a fast way of validating the log of entries and a persistent record of anything of issue that has gone in the past, whether intentional, mistaken or malicious.
 This last bit is key, as in enterprise there are usually regulations or legal contracts surrounding transactions and the ledger provides irrefutable proof of everything that has taken place.
@@ -199,7 +199,7 @@ Depending on the hardware, `batch test:8000` can yield a throughput in excess of
 
 #### 3. Leader/Adaptive Batching
 
-When the cluster receives messages one-by-one, Juno employs an adaptive batching strategy to maximize performance. This is demonstrated in the demo by issuing `many test:N`.
+When the cluster receives messages one-by-one, Kadena employs an adaptive batching strategy to maximize performance. This is demonstrated in the demo by issuing `many test:N`.
 
 `many test:N` also replicates a single dollar transfer (i.e. `transfer(Acct1->Acct2, 1%1)`) `N` times, but dispatches each command to the cluster as an individual message.
 The cluster leader can then detect increasing numbers of messages accumulating in the inbound queue, and create large batches to submit to consensus.
@@ -242,7 +242,7 @@ Full crypto takes place for each and every command and cluster message. Here is 
 
 ## Roadmap
 
-Juno is still very much in a prototype phase: the demo runs without any persistence, for instance, meaning a full restart of all nodes erases all history. Our focus is on consensus performance currently so there is still much work to do! Such as:
+Kadena is still very much in a prototype phase: the demo runs without any persistence, for instance, meaning a full restart of all nodes erases all history. Our focus is on consensus performance currently so there is still much work to do! Such as:
 
 * Persistence (log and RSM)
 * RSM signed snapshots
@@ -251,7 +251,7 @@ Juno is still very much in a prototype phase: the demo runs without any persiste
 
 ### Thanks & References
 
-Juno is indebted to the ground-breaking work and open-source code by the Tangaroa authors for which we are deeply grateful. We have touched pretty much every line of code so this is no longer a simple Tangaroa fork -- but the original design is still in there, reflecting all the things @chrisnc and @hongxia got so very much right.
+Kadena is indebted to the ground-breaking work and open-source code by the Tangaroa authors for which we are deeply grateful. We have touched pretty much every line of code so this is no longer a simple Tangaroa fork -- but the original design is still in there, reflecting all the things @chrisnc and @hongxia got so very much right.
 
 A (less huge but still large) thanks to [Verdi Raft] as well. Their demo was the inspiration for one posted above -- very clever.
 

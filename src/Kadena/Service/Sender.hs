@@ -30,7 +30,7 @@ import Data.Serialize
 
 import Data.Thyme.Clock (UTCTime, getCurrentTime)
 
-import qualified Kadena.Types as JT
+import qualified Kadena.Types as KD
 import Kadena.Types.Service.Sender as X
 import qualified Kadena.Types.Service.Evidence as Ev
 import qualified Kadena.Types.Service.Log as Log
@@ -39,25 +39,25 @@ import Kadena.Types hiding (debugPrint, RaftState(..), Config(..)
   , myPublicKey, myPrivateKey, otherNodes, nodeRole, term, Event(..), logService)
 
 
-runSenderService :: Dispatch -> JT.Config -> (String -> IO ()) -> MVar Ev.PublishedEvidenceState -> IO ()
+runSenderService :: Dispatch -> KD.Config -> (String -> IO ()) -> MVar Ev.PublishedEvidenceState -> IO ()
 runSenderService dispatch conf debugFn mPubEvState = do
   s <- return $ ServiceEnv
-    { _myNodeId = conf ^. JT.nodeId
+    { _myNodeId = conf ^. KD.nodeId
     , _nodeRole = Follower
-    , _otherNodes = conf ^. JT.otherNodes
+    , _otherNodes = conf ^. KD.otherNodes
     , _currentLeader = Nothing
     , _currentTerm = startTerm
-    , _myPublicKey = conf ^. JT.myPublicKey
-    , _myPrivateKey = conf ^. JT.myPrivateKey
+    , _myPublicKey = conf ^. KD.myPublicKey
+    , _myPrivateKey = conf ^. KD.myPrivateKey
     , _yesVotes = Set.empty
     , _debugPrint = debugFn
     , _aeReplicationLogLimit = 8000
     -- Comm Channels
     , _serviceRequestChan = dispatch ^. senderService
-    , _outboundGeneral = dispatch ^. JT.outboundGeneral
-    , _outboundAerRvRvr = dispatch ^. JT.outboundAerRvRvr
+    , _outboundGeneral = dispatch ^. KD.outboundGeneral
+    , _outboundAerRvRvr = dispatch ^. KD.outboundAerRvRvr
     -- Log Storage
-    , _logService = dispatch ^. JT.logService
+    , _logService = dispatch ^. KD.logService
     , _getEvidenceState = readMVar mPubEvState
     }
   void $ liftIO $ runReaderT serviceRequests s

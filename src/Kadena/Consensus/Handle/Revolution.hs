@@ -16,7 +16,7 @@ import qualified Data.Map as Map
 import Kadena.Consensus.Handle.Types
 import Kadena.Util.Util (debug, getRevSigOrInvariantError)
 
-import qualified Kadena.Types as JT
+import qualified Kadena.Types as KD
 
 data RevolutionEnv = RevolutionEnv {
     _lazyVote         :: Maybe (Term, NodeId, LogIndex) -- Handler
@@ -50,22 +50,22 @@ handleRevolution rev@Revolution{..} = do
       _ -> return RevolutionCalledOnNonLeader
   else return UnknownNode
 
-handle :: Revolution -> JT.Raft ()
+handle :: Revolution -> KD.Raft ()
 handle msg = do
   s <- get
   (out,l) <- runReaderT (runWriterT (handleRevolution msg)) $
                RevolutionEnv
-                 (JT._lazyVote s)
-                 (JT._currentLeader s)
-                 (JT._replayMap s)
+                 (KD._lazyVote s)
+                 (KD._currentLeader s)
+                 (KD._replayMap s)
   mapM_ debug l
   case out of
     UnknownNode -> return ()
     RevolutionCalledOnNonLeader -> return ()
     IgnoreLeader{..} -> do
-      JT.replayMap %= Map.insert _deleteReplayMapEntry Nothing
-      JT.ignoreLeader .= True
+      KD.replayMap %= Map.insert _deleteReplayMapEntry Nothing
+      KD.ignoreLeader .= True
     IgnoreLeaderAndClearLazyVote{..} -> do
-      JT.replayMap %= Map.insert _deleteReplayMapEntry Nothing
-      JT.lazyVote .= Nothing
-      JT.ignoreLeader .= True
+      KD.replayMap %= Map.insert _deleteReplayMapEntry Nothing
+      KD.lazyVote .= Nothing
+      KD.ignoreLeader .= True

@@ -25,7 +25,7 @@ import Kadena.Consensus.Commit (makeCommandResponse')
 import Kadena.Consensus.Handle.Types
 import Kadena.Util.Util (getCmdSigOrInvariantError, updateLogs, enqueueRequest, debug)
 import Kadena.Runtime.Timer (resetHeartbeatTimer)
-import qualified Kadena.Types as JT
+import qualified Kadena.Types as KD
 
 import qualified Kadena.Service.Sender as Sender
 import qualified Kadena.Service.Evidence as Ev
@@ -119,17 +119,17 @@ handleCommandBatch CommandBatch{..} = do
     Follower -> IAmFollower $ filterBatch bloom _cmdbBatch
     Candidate -> IAmCandidate
 
-handleSingleCommand :: Command -> JT.Raft ()
+handleSingleCommand :: Command -> KD.Raft ()
 handleSingleCommand cmd = do
-  c <- JT.readConfig
+  c <- KD.readConfig
   s <- get
   (out,_) <- runReaderT (runWriterT (handleCommand cmd)) $
-             CommandEnv (JT._nodeRole s)
-                        (JT._term s)
-                        (JT._currentLeader s)
-                        (JT._replayMap s)
-                        (JT._nodeId c)
-                        (JT._cmdBloomFilter s)
+             CommandEnv (KD._nodeRole s)
+                        (KD._term s)
+                        (KD._currentLeader s)
+                        (KD._replayMap s)
+                        (KD._nodeId c)
+                        (KD._cmdBloomFilter s)
   case out of
     UnknownLeader -> return () -- TODO: we should probably respond with something like "availability event"
     AlreadySeen -> return () -- TODO: we should probably respond with something like "transaction still pending"
@@ -137,54 +137,54 @@ handleSingleCommand cmd = do
     (SendCommandResponse cid res) -> enqueueRequest $ Sender.SendCommandResults [(cid,res)]
     (CommitAndPropagate newEntry replayKey) -> do
       updateLogs $ ULNew newEntry
-      JT.replayMap %= Map.insert replayKey Nothing
+      KD.replayMap %= Map.insert replayKey Nothing
       enqueueRequest $ Sender.BroadcastAE Sender.OnlySendIfFollowersAreInSync
       enqueueRequest $ Sender.BroadcastAER
-      quorumSize' <- view JT.quorumSize
-      es <- view JT.evidenceState >>= liftIO
+      quorumSize' <- view KD.quorumSize
+      es <- view KD.evidenceState >>= liftIO
       when (Sender.willBroadcastAE quorumSize' (es ^. Ev.pesNodeStates) (es ^. Ev.pesConvincedNodes)) resetHeartbeatTimer
 
-handle :: Command -> JT.Raft ()
+handle :: Command -> KD.Raft ()
 handle cmd = handleSingleCommand cmd
 
-handleBatch :: CommandBatch -> JT.Raft ()
+handleBatch :: CommandBatch -> KD.Raft ()
 handleBatch cmdb@CommandBatch{..} = do
   debug "Received Command Batch"
-  c <- JT.readConfig
+  c <- KD.readConfig
   s <- get
-  lid <- return $ JT._currentLeader s
-  ct <- return $ JT._term s
+  lid <- return $ KD._currentLeader s
+  ct <- return $ KD._term s
   (out,_) <- runReaderT (runWriterT (handleCommandBatch cmdb)) $
-             CommandEnv (JT._nodeRole s)
+             CommandEnv (KD._nodeRole s)
                         ct
                         lid
-                        (JT._replayMap s)
-                        (JT._nodeId c)
-                        (JT._cmdBloomFilter s)
+                        (KD._replayMap s)
+                        (KD._nodeId c)
+                        (KD._cmdBloomFilter s)
   debug "Finished processing command batch"
   case out of
     IAmLeader BatchProcessing{..} -> do
-      updateLogs $ ULNew $ NewLogEntries (JT._term s) newEntries
+      updateLogs $ ULNew $ NewLogEntries (KD._term s) newEntries
       unless (null newEntries) $ do
         enqueueRequest $ Sender.BroadcastAE Sender.OnlySendIfFollowersAreInSync
         enqueueRequest $ Sender.BroadcastAER
-      PostProcessingResult{..} <- return $! postProcessBatch (JT._nodeId c) lid (JT._replayMap s) alreadySeen
+      PostProcessingResult{..} <- return $! postProcessBatch (KD._nodeId c) lid (KD._replayMap s) alreadySeen
       -- Bloom filters can give false positives but most of the time the commands will be new, so we do a second pass to double check
       unless (null falsePositive) $ do
-        updateLogs $ ULNew $ NewLogEntries (JT._term s) falsePositive
+        updateLogs $ ULNew $ NewLogEntries (KD._term s) falsePositive
         enqueueRequest $ Sender.BroadcastAE Sender.OnlySendIfFollowersAreInSync
         enqueueRequest $ Sender.BroadcastAER
       unless (null responseToOldCmds) $
         enqueueRequest $ Sender.SendCommandResults responseToOldCmds
-      JT.replayMap .= updatedReplayMap
-      JT.cmdBloomFilter .= updateBloom newEntries (JT._cmdBloomFilter s)
-      quorumSize' <- view JT.quorumSize
-      es <- view JT.evidenceState >>= liftIO
+      KD.replayMap .= updatedReplayMap
+      KD.cmdBloomFilter .= updateBloom newEntries (KD._cmdBloomFilter s)
+      quorumSize' <- view KD.quorumSize
+      es <- view KD.evidenceState >>= liftIO
       when (Sender.willBroadcastAE quorumSize' (es ^. Ev.pesNodeStates) (es ^. Ev.pesConvincedNodes)) resetHeartbeatTimer
     IAmFollower BatchProcessing{..} -> do
       when (isJust lid) $ do
         enqueueRequest $ Sender.ForwardCommandToLeader (fromJust lid) newEntries
-      PostProcessingResult{..} <- return $! postProcessBatch (JT._nodeId c) lid (JT._replayMap s) alreadySeen
+      PostProcessingResult{..} <- return $! postProcessBatch (KD._nodeId c) lid (KD._replayMap s) alreadySeen
       unless (null falsePositive) $
         enqueueRequest $ Sender.ForwardCommandToLeader (fromJust lid) falsePositive
       unless (null responseToOldCmds) $

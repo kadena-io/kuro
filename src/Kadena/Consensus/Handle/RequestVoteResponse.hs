@@ -19,7 +19,7 @@ import qualified Kadena.Service.Log as Log
 import Kadena.Runtime.Timer (resetHeartbeatTimer, resetElectionTimerLeader,
                            resetElectionTimer)
 import Kadena.Util.Util
-import qualified Kadena.Types as JT
+import qualified Kadena.Types as KD
 
 data RequestVoteResponseEnv = RequestVoteResponseEnv {
       _myNodeId :: NodeId
@@ -72,56 +72,56 @@ checkElection votes = do
   else return $ UpdateYesVotes votes
 
 
-handle :: RequestVoteResponse -> JT.Raft ()
+handle :: RequestVoteResponse -> KD.Raft ()
 handle m = do
   r <- ask
   s <- get
   mni <- Log.hasQueryResult Log.MaxIndex <$> (queryLogs $ Set.fromList [Log.GetMaxIndex])
-  myNodeId' <- JT.viewConfig JT.nodeId
+  myNodeId' <- KD.viewConfig KD.nodeId
   (o,l) <- runReaderT (runWriterT (handleRequestVoteResponse m))
            (RequestVoteResponseEnv
             (myNodeId')
-            (JT._nodeRole s)
-            (JT._term s)
+            (KD._nodeRole s)
+            (KD._term s)
             (mni)
-            (JT._cYesVotes s)
-            (JT._quorumSize r))
+            (KD._cYesVotes s)
+            (KD._quorumSize r))
   mapM_ debug l
   case o of
     BecomeLeader vs -> do
-             JT.cYesVotes .= vs
+             KD.cYesVotes .= vs
              becomeLeader
-    UpdateYesVotes vs -> JT.cYesVotes .= vs
-    DeletePotentialVote n -> JT.cPotentialVotes %= Set.delete n
+    UpdateYesVotes vs -> KD.cYesVotes .= vs
+    DeletePotentialVote n -> KD.cPotentialVotes %= Set.delete n
     NoAction -> return ()
     RevertToFollower -> revertToLastQuorumState
 
 
 -- THREAD: SERVER MAIN. updates state
-becomeLeader :: JT.Raft ()
+becomeLeader :: KD.Raft ()
 becomeLeader = do
   setRole Leader
-  setCurrentLeader . Just =<< JT.viewConfig JT.nodeId
+  setCurrentLeader . Just =<< KD.viewConfig KD.nodeId
 --  mv <- queryLogs $ Set.fromList [Log.GetEntryCount, Log.GetCommitIndex]
 --  ni <- return $ Log.hasQueryResult Log.EntryCount mv
 --  ci <- return $ Log.hasQueryResult Log.CommitIndex mv
---  lNextIndex' <- Map.fromSet (const $ LogIndex ni) <$> JT.viewConfig JT.otherNodes
+--  lNextIndex' <- Map.fromSet (const $ LogIndex ni) <$> KD.viewConfig KD.otherNodes
 --  setLNextIndex ci lNextIndex'
---  JT.lConvinced .= Set.empty
+--  KD.lConvinced .= Set.empty
   enqueueRequest $ Sender.EstablishDominance
-  view JT.informEvidenceServiceOfElection >>= liftIO
+  view KD.informEvidenceServiceOfElection >>= liftIO
   resetHeartbeatTimer
   resetElectionTimerLeader
 
-revertToLastQuorumState :: JT.Raft ()
+revertToLastQuorumState :: KD.Raft ()
 revertToLastQuorumState = do
   setRole Follower
   setCurrentLeader Nothing
-  JT.ignoreLeader .= False
+  KD.ignoreLeader .= False
   lastEntry' <- Log.hasQueryResult Log.LastEntry <$> (queryLogs $ Set.singleton Log.GetLastEntry)
-  setTerm . maybe JT.startTerm JT._leTerm $ lastEntry'
-  JT.votedFor .= Nothing
-  JT.cYesVotes .= Set.empty
-  JT.cPotentialVotes .= Set.empty
-  view JT.informEvidenceServiceOfElection >>= liftIO
+  setTerm . maybe KD.startTerm KD._leTerm $ lastEntry'
+  KD.votedFor .= Nothing
+  KD.cYesVotes .= Set.empty
+  KD.cPotentialVotes .= Set.empty
+  view KD.informEvidenceServiceOfElection >>= liftIO
   resetElectionTimer

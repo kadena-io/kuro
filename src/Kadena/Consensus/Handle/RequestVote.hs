@@ -17,7 +17,7 @@ import qualified Data.Set as Set
 import Kadena.Util.Util (debug, enqueueRequest, queryLogs)
 import qualified Kadena.Service.Sender as Sender
 import qualified Kadena.Service.Log as Log
-import qualified Kadena.Types as JT
+import qualified Kadena.Types as KD
 
 import Kadena.Consensus.Handle.Types
 
@@ -95,21 +95,21 @@ handleRequestVote RequestVote{..} = do
 --  (target,) <$> createRequestVoteResponse term' lastLogIndex' myNodeId' target vote
 
 
-handle :: RequestVote -> JT.Raft ()
+handle :: RequestVote -> KD.Raft ()
 handle rv = do
   s <- get
   mv <- queryLogs $ Set.fromList [Log.GetMaxIndex, Log.GetLastLogTerm]
   let rve = RequestVoteEnv
-              (JT._term s)
-              (JT._votedFor s)
-              (JT._lazyVote s)
-              (JT._currentLeader s)
-              (JT._ignoreLeader s)
+              (KD._term s)
+              (KD._votedFor s)
+              (KD._lazyVote s)
+              (KD._currentLeader s)
+              (KD._ignoreLeader s)
               (Log.hasQueryResult Log.MaxIndex mv)
               (Log.hasQueryResult Log.LastLogTerm mv)
   (rvo, l) <- runReaderT (runWriterT (handleRequestVote rv)) rve
   mapM_ debug l
   case rvo of
     NoAction -> return ()
-    UpdateLazyVote stateUpdate -> JT.lazyVote .= Just stateUpdate
+    UpdateLazyVote stateUpdate -> KD.lazyVote .= Just stateUpdate
     ReplyToRPCSender{..} -> enqueueRequest $ Sender.BroadcastRVR _targetNode _lastLogIndex _vote

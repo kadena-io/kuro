@@ -24,7 +24,7 @@ import Kadena.Consensus.Handle.Types
 import Kadena.Service.Sender (createAppendEntriesResponse')
 import Kadena.Runtime.Timer (resetElectionTimer)
 import Kadena.Util.Util
-import qualified Kadena.Types as JT
+import qualified Kadena.Types as KD
 
 
 import qualified Kadena.Service.Sender as Sender
@@ -100,7 +100,7 @@ handleAppendEntries ae@AppendEntries{..} = do
           --}
     _ | not ignoreLeader' && _aeTerm >= currentTerm' -> do -- see TODO about setTerm
       tell ["sending unconvinced response for AE received from "
-           ++ show (JT.unAlias $ _alias $ _digNodeId $ _pDig $ _aeProvenance)
+           ++ show (KD.unAlias $ _alias $ _digNodeId $ _pDig $ _aeProvenance)
            ++ " for " ++ show (_aeTerm, _prevLogIndex)
            ++ " with " ++ show (Log.lesCnt _aeEntries)
            ++ " entries; my term is " ++ show currentTerm']
@@ -150,7 +150,7 @@ appendLogEntries :: (MonadWriter [String] m, MonadReader AppendEntriesEnv m)
                  => LogIndex -> LogEntries -> m ValidResponse
 appendLogEntries pli newEs
   | Log.lesNull newEs = return DoNothing
-  | otherwise = case JT.toReplicateLogEntries pli newEs of
+  | otherwise = case KD.toReplicateLogEntries pli newEs of
       Left err -> do
           tell ["Failure to Append Logs: " ++ err]
           return SendFailureResponse
@@ -161,20 +161,20 @@ appendLogEntries pli newEs
         tell ["replicated LogEntry(s): " ++ (show $ _rleMinLogIdx rle) ++ " through " ++ (show $ _rleMaxLogIdx rle)]
         return $ Commit replay rle
 
-applyNewLeader :: CheckForNewLeaderOut -> JT.Raft ()
+applyNewLeader :: CheckForNewLeaderOut -> KD.Raft ()
 applyNewLeader LeaderUnchanged = return ()
 applyNewLeader NewLeaderConfirmed{..} = do
   setTerm _stateRsUpdateTerm
-  JT.ignoreLeader .= _stateIgnoreLeader
+  KD.ignoreLeader .= _stateIgnoreLeader
   setCurrentLeader $ Just _stateCurrentLeader
-  view JT.informEvidenceServiceOfElection >>= liftIO
+  view KD.informEvidenceServiceOfElection >>= liftIO
   setRole _stateRole
 
-logHashChange :: ByteString -> JT.Raft ()
+logHashChange :: ByteString -> KD.Raft ()
 logHashChange mLastHash = do
-  logMetric $ JT.MetricHash mLastHash
+  logMetric $ KD.MetricHash mLastHash
 
-handle :: AppendEntries -> JT.Raft ()
+handle :: AppendEntries -> KD.Raft ()
 handle ae = do
   r <- ask
   s <- get
@@ -182,24 +182,24 @@ handle ae = do
   logAtAEsLastLogIdx <- return $ Log.hasQueryResult (Log.SomeEntry $ _prevLogIndex ae) mv
   commitIndex' <- return $ Log.hasQueryResult Log.CommitIndex mv
   let ape = AppendEntriesEnv
-              (JT._term s)
-              (JT._currentLeader s)
-              (JT._ignoreLeader s)
+              (KD._term s)
+              (KD._currentLeader s)
+              (KD._ignoreLeader s)
               (logAtAEsLastLogIdx)
-              (JT._quorumSize r)
+              (KD._quorumSize r)
   (AppendEntriesOut{..}, l) <- runReaderT (runWriterT (handleAppendEntries ae)) ape
   unless (commitIndex' == _prevLogIndex ae && length l == 1) $ mapM_ debug l
   applyNewLeader _newLeaderAction
   case _result of
     Ignore -> do
       debug $ "Ignoring AE from "
-            ++ show (JT.unAlias $ _alias $ _digNodeId $ _pDig $ _aeProvenance ae )
+            ++ show (KD.unAlias $ _alias $ _digNodeId $ _pDig $ _aeProvenance ae )
             ++ " for " ++ show (_prevLogIndex $ ae)
             ++ " with " ++ show (Log.lesCnt $ _aeEntries ae) ++ " entries."
       return ()
     SendUnconvincedResponse{..} -> enqueueRequest $ Sender.SingleAER _responseLeaderId False False
     ValidLeaderAndTerm{..} -> do
-      JT.lazyVote .= Nothing
+      KD.lazyVote .= Nothing
       case _validReponse of
         SendFailureResponse -> enqueueRequest $ Sender.SingleAER _responseLeaderId False True
         (Commit rMap rle) -> do
@@ -207,20 +207,20 @@ handle ae = do
           newMv <- queryLogs $ Set.singleton Log.GetLastLogHash
           newLastLogHash' <- return $ Log.hasQueryResult Log.LastLogHash newMv
           logHashChange newLastLogHash'
-          JT.replayMap %= Map.union rMap
+          KD.replayMap %= Map.union rMap
           enqueueRequest Sender.BroadcastAER
         DoNothing -> enqueueRequest Sender.BroadcastAER
       -- This NEEDS to be last, otherwise we can have an election fire when we are are transmitting proof/accessing the logs
       -- It's rare but under load and given enough time, this will happen.
-      when (JT._nodeRole s /= Leader) resetElectionTimer
+      when (KD._nodeRole s /= Leader) resetElectionTimer
       -- This `when` fixes a funky bug. If the leader receives an AE from itself it will reset its election timer (which can kill the leader).
       -- Ignoring this is safe because if we have an out of touch leader they will step down after 2x maxElectionTimeouts if it receives no valid AER
       -- TODO: change this behavior to be if it hasn't heard from a quorum in 2x maxElectionTimeouts
 
-createAppendEntriesResponse :: Bool -> Bool -> LogIndex -> ByteString -> JT.Raft AppendEntriesResponse
+createAppendEntriesResponse :: Bool -> Bool -> LogIndex -> ByteString -> KD.Raft AppendEntriesResponse
 createAppendEntriesResponse success convinced maxIndex' lastLogHash' = do
-  ct <- use JT.term
-  myNodeId' <- JT.viewConfig JT.nodeId
+  ct <- use KD.term
+  myNodeId' <- KD.viewConfig KD.nodeId
   case createAppendEntriesResponse' success convinced ct myNodeId' maxIndex' lastLogHash' of
     AER' aer -> return aer
     _ -> error "deep invariant error: crtl-f for createAppendEntriesResponse"

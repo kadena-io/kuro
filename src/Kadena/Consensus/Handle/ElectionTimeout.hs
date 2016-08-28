@@ -22,7 +22,7 @@ import qualified Kadena.Service.Log as Log
 import Kadena.Runtime.Timer (resetElectionTimer, hasElectionTimerLeaderFired)
 import Kadena.Util.Util
 
-import qualified Kadena.Types as JT
+import qualified Kadena.Types as KD
 
 data ElectionTimeoutEnv = ElectionTimeoutEnv {
       _nodeRole :: Role
@@ -108,22 +108,22 @@ selfVoteProvenance rvr = do
   (SignedRPC dig bdy) <- return $ toWire nodeId' myPublicKey' myPrivateKey' rvr
   return $ ReceivedMsg dig bdy Nothing
 
-handle :: String -> JT.Raft ()
+handle :: String -> KD.Raft ()
 handle msg = do
-  c <- JT.readConfig
+  c <- KD.readConfig
   s <- get
   leaderWithoutFollowers' <- hasElectionTimerLeaderFired
   maxIndex' <- Log.hasQueryResult Log.MaxIndex <$> (queryLogs $ Set.singleton Log.GetMaxIndex)
   (out,l) <- runReaderT (runWriterT (handleElectionTimeout msg)) $
              ElectionTimeoutEnv
-             (JT._nodeRole s)
-             (JT._term s)
-             (JT._lazyVote s)
-             (JT._nodeId c)
-             (JT._otherNodes c)
+             (KD._nodeRole s)
+             (KD._term s)
+             (KD._lazyVote s)
+             (KD._nodeId c)
+             (KD._otherNodes c)
              leaderWithoutFollowers'
-             (JT._myPrivateKey c)
-             (JT._myPublicKey c)
+             (KD._myPrivateKey c)
+             (KD._myPublicKey c)
              (maxIndex')
   mapM_ debug l
   case out of
@@ -137,18 +137,18 @@ handle msg = do
                setTerm _newTerm
                setVotedFor (Just _myNodeId)
                selfYesVote <- return $ createRequestVoteResponse _myNodeId _myNodeId _newTerm _lastLogIndex True
-               JT.cYesVotes .= Set.singleton selfYesVote
-               JT.cPotentialVotes.= _potentialVotes
+               KD.cYesVotes .= Set.singleton selfYesVote
+               KD.cPotentialVotes.= _potentialVotes
                enqueueRequest $ Sender.BroadcastRV
-               view JT.informEvidenceServiceOfElection >>= liftIO
+               view KD.informEvidenceServiceOfElection >>= liftIO
                resetElectionTimer
 
-castLazyVote :: Term -> NodeId -> LogIndex -> JT.Raft ()
+castLazyVote :: Term -> NodeId -> LogIndex -> KD.Raft ()
 castLazyVote lazyTerm' lazyCandidate' lazyLastLogIndex' = do
   setTerm lazyTerm'
   setVotedFor (Just lazyCandidate')
-  JT.lazyVote .= Nothing
-  JT.ignoreLeader .= False
+  KD.lazyVote .= Nothing
+  KD.ignoreLeader .= False
   setCurrentLeader Nothing
   enqueueRequest $ Sender.BroadcastRVR lazyCandidate' lazyLastLogIndex' True
   -- TODO: we need to verify that this is correct. It seems that a RVR (so a vote) is sent every time an election timeout fires.
@@ -156,9 +156,9 @@ castLazyVote lazyTerm' lazyCandidate' lazyLastLogIndex' = do
   resetElectionTimer
 
 -- THREAD: SERVER MAIN. updates state
-setVotedFor :: Maybe NodeId -> JT.Raft ()
+setVotedFor :: Maybe NodeId -> KD.Raft ()
 setVotedFor mvote = do
-  JT.votedFor .= mvote
+  KD.votedFor .= mvote
 
 createRequestVoteResponse :: NodeId -> NodeId -> Term -> LogIndex -> Bool -> RequestVoteResponse
 createRequestVoteResponse me' target' term' logIndex' vote =

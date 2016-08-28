@@ -11,12 +11,15 @@ import Control.Lens
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer
+import Control.Parallel.Strategies
 
-
+import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 
+import Data.BloomFilter (Bloom)
+import qualified Data.BloomFilter as Bloom
 import Data.Maybe (isNothing, isJust, fromJust)
-
+import Data.Either (partitionEithers)
 import Juno.Consensus.Commit (makeCommandResponse')
 
 import Juno.Consensus.Handle.Types
@@ -33,6 +36,7 @@ data CommandEnv = CommandEnv {
     , _currentLeader :: Maybe NodeId
     , _replayMap :: Map.Map (NodeId, Signature) (Maybe CommandResult)
     , _nodeId :: NodeId
+    , _cmdBloomFilter :: Bloom (NodeId,Signature)
 }
 makeLenses ''CommandEnv
 
@@ -51,8 +55,7 @@ data CommandOut =
 
 data BatchProcessing = BatchProcessing
   { newEntries :: ![Command]
-  , serviceAlreadySeen :: ![(NodeId, CommandResponse)]
-  , updatedReplays :: !(Map.Map (NodeId, Signature) (Maybe CommandResult))
+  , alreadySeen :: ![Command]
   } deriving (Show, Eq)
 
 data CommandBatchOut =
@@ -92,32 +95,28 @@ handleCommand cmd@Command{..} = do
       -- anything
       return UnknownLeader
 
-filterBatch :: NodeId -> Maybe NodeId -> Map.Map (NodeId, Signature) (Maybe CommandResult) -> [Command] -> BatchProcessing
-filterBatch nid mlid replays cs = go cs (BatchProcessing [] [] replays)
+filterBatch :: Bloom (NodeId, Signature) -> [Command] -> BatchProcessing
+filterBatch bfilter cs = BatchProcessing brandNew likelySeen
   where
     cmdSig c = getCmdSigOrInvariantError "handleCommand" c
-    -- TODO: this suck that I have to reverse the list at the end...
-    go [] bp = bp { newEntries = reverse $ newEntries bp }
-    go (cmd@Command{..}:cmds) bp = case (Map.lookup (_cmdClientId, cmdSig cmd) replays) of
-      Just (Just result) -> go cmds bp {
-        serviceAlreadySeen = (_cmdClientId, makeCommandResponse' nid mlid cmd result 1) : (serviceAlreadySeen bp) }
-      -- We drop the command if the message is pending application or we don't know who to forward to
-      Just Nothing       -> go cmds bp
-      _ | isNothing mlid -> go cmds bp
-      Nothing -> go cmds bp { newEntries = cmd : (newEntries bp)
-                            , updatedReplays = Map.insert (_cmdClientId, cmdSig cmd) Nothing $ updatedReplays bp }
+    probablyAlreadySaw cmd@Command{..} =
+      -- forcing the inside of an either is notoriously hard. in' is trying to at least force the majority of the work
+      let in' = Bloom.elem (_cmdClientId, cmdSig cmd) bfilter
+          res = if in'
+            then Left cmd
+            else Right cmd
+      in in' `seq` res
+    (likelySeen, brandNew) = partitionEithers $! ((probablyAlreadySaw <$> cs) `using` parListN 100 rseq)
 {-# INLINE filterBatch #-}
 
 handleCommandBatch :: (MonadReader CommandEnv m,MonadWriter [String] m) => CommandBatch -> m CommandBatchOut
 handleCommandBatch CommandBatch{..} = do
   tell ["got a command RPC"]
   r <- view nodeRole
-  mlid <- view currentLeader
-  replays <- view replayMap
-  nid <- view nodeId
+  bloom <- view cmdBloomFilter
   return $! case r of
-    Leader -> IAmLeader $ filterBatch nid mlid replays _cmdbBatch
-    Follower -> IAmFollower $ filterBatch nid mlid replays _cmdbBatch
+    Leader -> IAmLeader $ filterBatch bloom _cmdbBatch
+    Follower -> IAmFollower $ filterBatch bloom _cmdbBatch
     Candidate -> IAmCandidate
 
 handleSingleCommand :: Command -> JT.Raft ()
@@ -130,6 +129,7 @@ handleSingleCommand cmd = do
                         (JT._currentLeader s)
                         (JT._replayMap s)
                         (JT._nodeId c)
+                        (JT._cmdBloomFilter s)
   case out of
     UnknownLeader -> return () -- TODO: we should probably respond with something like "availability event"
     AlreadySeen -> return () -- TODO: we should probably respond with something like "transaction still pending"
@@ -160,19 +160,68 @@ handleBatch cmdb@CommandBatch{..} = do
                         lid
                         (JT._replayMap s)
                         (JT._nodeId c)
+                        (JT._cmdBloomFilter s)
   debug "Finished processing command batch"
   case out of
     IAmLeader BatchProcessing{..} -> do
       updateLogs $ ULNew $ NewLogEntries (JT._term s) newEntries
-      JT.replayMap .= updatedReplays
       unless (null newEntries) $ do
         enqueueRequest $ Sender.BroadcastAE Sender.OnlySendIfFollowersAreInSync
         enqueueRequest $ Sender.BroadcastAER
-      unless (null serviceAlreadySeen) $ enqueueRequest $ Sender.SendCommandResults serviceAlreadySeen
+      PostProcessingResult{..} <- return $! postProcessBatch (JT._nodeId c) lid (JT._replayMap s) alreadySeen
+      -- Bloom filters can give false positives but most of the time the commands will be new, so we do a second pass to double check
+      unless (null falsePositive) $ do
+        updateLogs $ ULNew $ NewLogEntries (JT._term s) falsePositive
+        enqueueRequest $ Sender.BroadcastAE Sender.OnlySendIfFollowersAreInSync
+        enqueueRequest $ Sender.BroadcastAER
+      unless (null responseToOldCmds) $ do
+        enqueueRequest $ Sender.SendCommandResults responseToOldCmds
+      JT.replayMap .= updatedReplayMap
+      JT.cmdBloomFilter .= updateBloom newEntries (JT._cmdBloomFilter s)
       quorumSize' <- view JT.quorumSize
       es <- view JT.evidenceState >>= liftIO
       when (Sender.willBroadcastAE quorumSize' (es ^. Ev.pesNodeStates) (es ^. Ev.pesConvincedNodes)) resetHeartbeatTimer
     IAmFollower BatchProcessing{..} -> do
-      when (isJust lid) $ enqueueRequest $ Sender.ForwardCommandToLeader (fromJust lid) newEntries
-      unless (null serviceAlreadySeen) $ enqueueRequest $ Sender.SendCommandResults serviceAlreadySeen
+      when (isJust lid) $ do
+        enqueueRequest $ Sender.ForwardCommandToLeader (fromJust lid) newEntries
+      PostProcessingResult{..} <- return $! postProcessBatch (JT._nodeId c) lid (JT._replayMap s) alreadySeen
+      unless (null falsePositive) $ do
+        enqueueRequest $ Sender.ForwardCommandToLeader (fromJust lid) falsePositive
+      unless (null responseToOldCmds) $ do
+        enqueueRequest $ Sender.SendCommandResults responseToOldCmds
     IAmCandidate -> return () -- TODO: we should probably respond with something like "availability event"
+
+
+--replyServicing :: BatchProcessing -> JT.Raft (Maybe [Command])
+--replyServicing BatchProcessing{..} = do
+--  replays <- use JT._replayMap
+--  (falsePositive, prepedCMDRs) <- return $!
+--    partitionEithers $! (\Command{..} -> Map.lookup (_cmdClientId, ) replays) <$> serviceAlreadySeen
+
+
+data PostProcessingResult = PostProcessingResult
+  { falsePositive :: ![Command]
+  , responseToOldCmds :: ![(NodeId, CommandResponse)]
+  , updatedReplayMap :: !(Map (NodeId,Signature) (Maybe CommandResult))
+  } deriving (Eq, Show)
+
+postProcessBatch :: NodeId -> Maybe NodeId -> Map.Map (NodeId, Signature) (Maybe CommandResult) -> [Command] -> PostProcessingResult
+postProcessBatch nid mlid replays cs = go cs (PostProcessingResult [] [] replays)
+  where
+    cmdSig c = getCmdSigOrInvariantError "postProcessBatch" c
+    go [] bp = bp { falsePositive = reverse $ falsePositive bp }
+    go (cmd@Command{..}:cmds) bp = case (Map.lookup (_cmdClientId, cmdSig cmd) replays) of
+      Just (Just result) -> go cmds bp {
+        responseToOldCmds = (_cmdClientId, makeCommandResponse' nid mlid cmd result 1) : (responseToOldCmds bp) }
+      Just Nothing       -> go cmds bp
+      _ | isNothing mlid -> go cmds bp
+      Nothing -> go cmds $ bp { falsePositive = cmd : (falsePositive bp)
+                              , updatedReplayMap = Map.insert (_cmdClientId, cmdSig cmd) Nothing $ updatedReplayMap bp }
+{-# INLINE postProcessBatch #-}
+
+updateBloom :: [Command] -> Bloom (NodeId, Signature) -> Bloom (NodeId, Signature)
+updateBloom firstPass oldBloom = Bloom.insertList (grabKey <$> firstPass) oldBloom
+  where
+    cmdSig c = getCmdSigOrInvariantError "updateBloom" c
+    grabKey cmd@Command{..} = (_cmdClientId, cmdSig cmd)
+{-# INLINE updateBloom #-}

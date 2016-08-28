@@ -89,6 +89,7 @@ library
                      , base16-bytestring
                      , base64-bytestring >= 1.0.0.1 && < 1.1
                      , blake2
+                     , bloomfilter
                      , bound
                      , bytestring
                      , cacophony

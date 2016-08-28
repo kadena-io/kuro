@@ -17,7 +17,7 @@ module Juno.Types.Spec
   , RaftState(..), initialRaftState
   , nodeRole, term, votedFor, lazyVote, currentLeader, ignoreLeader
   , timerThread, replayMap, cYesVotes, cPotentialVotes, lastCommitTime, numTimeouts
-  , pendingRequests, currentRequestId, timeSinceLastAER
+  , pendingRequests, currentRequestId, timeSinceLastAER, cmdBloomFilter
   , Event(..)
   , mkRaftEnv
   ) where
@@ -30,6 +30,9 @@ import Control.Monad (when,void)
 import Control.Monad.IO.Class
 import Control.Monad.RWS.Strict (RWST)
 
+import Data.BloomFilter (Bloom)
+import qualified Data.BloomFilter as Bloom
+import qualified Data.BloomFilter.Hash as BHashes
 import Data.IORef
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -88,6 +91,7 @@ data RaftState = RaftState
   , _timerThread      :: Maybe ThreadId
   , _timerTarget      :: MVar Event
   , _replayMap        :: Map (NodeId, Signature) (Maybe CommandResult)
+  , _cmdBloomFilter   :: Bloom (NodeId, Signature)
   , _cYesVotes        :: Set RequestVoteResponse
   , _cPotentialVotes  :: Set NodeId
   , _timeSinceLastAER :: Int
@@ -111,6 +115,7 @@ initialRaftState timerTarget' = RaftState
 {-timerThread-}         Nothing
 {-timerTarget-}         timerTarget'
 {-replayMap-}           Map.empty
+{-cmdBloomFilter-}      (Bloom.empty (\(n,Sig s) -> BHashes.cheapHashes 3 (_fullAddr n, s)) 536870912)
 {-cYesVotes-}           Set.empty
 {-cPotentialVotes-}     Set.empty
 {-timeSinceLastAER-}    0

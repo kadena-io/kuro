@@ -8,7 +8,6 @@
 
 module Kadena.Command.Types where
 
-import Data.Default
 import Data.Aeson as A
 import Data.ByteString (ByteString)
 import qualified Crypto.PubKey.Curve25519 as C2
@@ -172,8 +171,8 @@ $(makeLenses ''CommandConfig)
 
 data CommandState = CommandState {
       _csPactState :: PureState
+    , _csRefStore :: RefStore
     }
-instance Default CommandState where def = CommandState def
 $(makeLenses ''CommandState)
 
 

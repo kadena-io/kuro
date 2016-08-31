@@ -9,13 +9,12 @@ import Data.Aeson as A
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy (toStrict,fromStrict)
 import qualified Data.ByteString.Base16 as B16
-import Data.Serialize as SZ hiding (get)
+import Data.Serialize as SZ hiding (get,put)
 import Control.Monad.State
 import Control.Monad.Reader
 import Control.Exception.Safe
 import Control.Applicative
 import Control.Lens hiding ((.=))
-import qualified Control.Lens as L
 import qualified Data.Set as S
 import Data.Maybe
 import qualified Text.Trifecta as TF
@@ -23,15 +22,17 @@ import qualified Data.Attoparsec.Text as AP
 import Control.Monad.Except
 import Data.Text (Text,unpack)
 import Prelude hiding (log,exp)
+import qualified Data.HashMap.Strict as HM
 import Text.PrettyPrint.ANSI.Leijen (renderCompact,displayS)
 
 
 
 import Pact.Types hiding (PublicKey)
 import qualified Pact.Types as Pact
-import Pact.Pure
+import Pact.Pure hiding (throwError)
 import Pact.Eval
 import Pact.Compile as Pact
+import Pact.Native
 
 import Kadena.Types.Log
 import Kadena.Types.Base hiding (Term)
@@ -45,7 +46,8 @@ import Kadena.Types.Config
 
 initCommandLayer :: CommandConfig -> IO (ApplyFn,ApplyLocal)
 initCommandLayer config = do
-  mv <- newMVar def
+  nds <- fst <$> runPurePact nativeDefs def
+  mv <- newMVar (CommandState def (RefStore nds HM.empty))
   return (applyTransactional config mv,applyLocal config mv)
 
 
@@ -138,25 +140,27 @@ applyExec (ExecMsg code edata) ks = do
   terms <- forM exps $ \exp -> case compile exp of
             Right r -> return r
             Left (i,e) -> throwCmdEx $ "Pact compile failed: " ++ show i ++ ": " ++ show e
-  pureState <- use csPactState
-  let iEvalState = fst $ runPurePact initEvalState def
-      evalEnv = EvalEnv {
-                  _eeMsgSigs = S.fromList ks
+  (CommandState pureState refStore) <- get
+  let evalEnv = EvalEnv {
+                  _eeRefStore = refStore
+                , _eeMsgSigs = S.fromList ks
                 , _eeMsgBody = edata
                 , _eeTxId = fromMaybe 0 $ firstOf emTxId mode
                 , _eeEntity = view (ceConfig.ccEntity.entName) env
                 , _eePactStep = Nothing
                 }
-      ((r,_rEvalState),pureState') =
-          runPurePact (runEval iEvalState evalEnv
-                       (execTerms mode terms)) pureState
+  ((r,rEvalState'),pureState') <-
+          liftIO (runPurePact (runEval def evalEnv
+                               (execTerms mode terms)) pureState)
   case r of
     Right t -> do
-           when (mode /= Local) $ csPactState L..= pureState'
+           when (mode /= Local) $
+                put (CommandState pureState' $
+                     over rsModules (HM.union (HM.fromList (_rsNew (_evalRefs rEvalState')))) refStore)
            return $ jsonResult $ CommandSuccess t -- TODO Yield handling
     Left e -> throwCmdEx $ "Exec failed: " ++ show e
 
-execTerms :: ExecutionMode -> [Term String] -> Eval PurePact (Term String)
+execTerms :: ExecutionMode -> [Term Name] -> Eval PurePact (Term Name)
 execTerms mode terms = do
   evalBeginTx
   er <- catchError
@@ -212,4 +216,4 @@ mkSimplePact :: Text -> CommandEntry
 mkSimplePact = mkRPC . (`ExecMsg` A.Null)
 
 mkTestPact :: CommandEntry
-mkTestPact = mkSimplePact "(use 'demo) (transfer \"Acct1\" \"Acct2\" (% 1 1))"
+mkTestPact = mkSimplePact "(demo.transfer \"Acct1\" \"Acct2\" (% 1 1))"

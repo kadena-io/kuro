@@ -23,6 +23,7 @@ import Control.Monad (mzero)
 import Crypto.Ed25519.Pure ( PublicKey, PrivateKey, Signature(..), sign, valid
                            , importPublic, importPrivate, exportPublic, exportPrivate)
 
+import Data.Maybe (fromMaybe)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as BSC
@@ -50,7 +51,7 @@ newtype Alias = Alias { unAlias :: BSC.ByteString }
   deriving (Eq, Ord, Generic, Serialize)
 
 instance Show Alias where
-  show (Alias a) = "Alias: " ++ (BSC.unpack a)
+  show (Alias a) = "Alias: " ++ BSC.unpack a
 
 instance ToJSON Alias where
   toJSON = toJSON . decodeUtf8 . unAlias
@@ -152,10 +153,10 @@ instance FromJSON (Map NodeId PrivateKey) where
 -- length = 32. For the record, if the getByteString 32 works the imports will not fail
 instance Serialize PublicKey where
   put s = S.putByteString (exportPublic s)
-  get = maybe (error "Invalid PubKey") id . importPublic <$> S.getByteString (32::Int)
+  get = fromMaybe (error "Invalid PubKey") . importPublic <$> S.getByteString (32::Int)
 instance Serialize PrivateKey where
   put s = S.putByteString (exportPrivate s)
-  get = maybe (error "Invalid PubKey") id . importPrivate <$> S.getByteString (32::Int)
+  get = fromMaybe (error "Invalid PubKey") . importPrivate <$> S.getByteString (32::Int)
 
 -- | UTCTime from Thyme of when ZMQ received the message
 newtype ReceivedAt = ReceivedAt {_unReceivedAt :: UTCTime}

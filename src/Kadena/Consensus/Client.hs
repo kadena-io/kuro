@@ -6,7 +6,7 @@ module Kadena.Consensus.Client
   , clientSendRPC
   ) where
 
-import Control.Concurrent (MVar, modifyMVar_, readMVar, newEmptyMVar, tryTakeMVar)
+import Control.Concurrent
 import qualified Control.Concurrent.Lifted as CL
 import Control.Lens hiding (Index)
 import Control.Monad.RWS
@@ -48,11 +48,13 @@ runConsensusClient renv getEntries cmdStatusMap' rconf spec@ConsensusSpec{..} di
   timerTarget' <- newEmptyMVar
   mEvState <- newEmptyMVar
   mLeaderNoFollowers <- newEmptyMVar
+  initState <- return (initialConsensusState timerTarget')
+  mPubConsensus' <- newMVar (pubConsensusFromState initState)
   runRWS_
     (raftClient (lift getEntries) cmdStatusMap' disableTimeouts)
-    (mkConsensusEnv rconf' csize qsize spec (_dispatch renv) timerTarget' timeCache' mEvState mLeaderNoFollowers)
+    (mkConsensusEnv rconf' csize qsize spec (_dispatch renv) timerTarget' timeCache' mEvState mLeaderNoFollowers mPubConsensus')
     -- TODO: because UTC can flow backwards, this request ID is problematic:
-    (initialConsensusState timerTarget') {_currentRequestId = rid} -- only use currentLeader and logEntries
+    initState {_currentRequestId = rid} -- only use currentLeader and logEntries
 
 -- TODO: don't run in raft, own monad stack
 -- StateT ClientState (ReaderT ClientEnv IO)

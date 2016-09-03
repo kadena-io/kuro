@@ -1,50 +1,97 @@
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Kadena.Runtime.Api.ApiServer
-  (runApiServer
-  ) where
-
--- | Api server is the interface between outside clients
---   and the internal Kadena/Consensus protocol.
---   Responible for:
---   * listening for incoming Commands
---   * managing RequestId
---   * check status of command, i.e. communication between API server and Consensus (MVar for now, but this could be redis or another key value store running on every node
---   * Parse Commands, and change CommandEntry -> [Command (with nodeId)] .. should this happen here? Or should that be in the protocol?
-
-import Control.Applicative
+    where
 import Control.Concurrent.Chan.Unagi
 import Control.Monad.Reader
+import Data.Aeson hiding (defaultOptions)
+import qualified Data.ByteString.Char8 as BS
+import Control.Lens
+import Data.Monoid
+import Prelude hiding (log)
 
-import Snap.Http.Server
+import Snap.Http.Server as Snap
 import Snap.Core
 import Snap.CORS
 
-import Apps.Kadena.ApiHandlers
 import Kadena.Types.Command
 import Kadena.Types.Base
+import Kadena.Types.Comms
+import Kadena.Types.Message
+import Kadena.Types.Event
+import Kadena.Types.Service.Sender
+import Kadena.Types.Config as Config
 
--- |
--- Starts the API server which will listen on a port for incoming client
--- commands (raw commands are written to the `toCommands` channel) in the form:
--- `"AdjustAccount " ++ T.unpack acct ++ " " ++ show (toRational amt)`.
--- The Kadena / raft protocol will be initialized with out/read side of the
--- this channel, and is responisble for putting the data in the correct
--- format for the protocol. For now when querying the only shared item
--- sharedCmdStatusMap
-runApiServer :: InChan (RequestId, [CommandEntry]) -> CommandMVarMap -> Int -> IO ()
-runApiServer toCommands sharedCmdStatusMap port = do
+
+data ApiEnv = ApiEnv {
+      _aiToCommands :: InChan (RequestId, [CommandEntry])
+    , _aiCmdStatusMap :: CommandMVarMap
+    , _aiLog :: String -> IO ()
+    , _aiEvents :: SenderServiceChannel
+    , _aiConfig :: Config.Config
+}
+makeLenses ''ApiEnv
+
+
+runApiServer :: SenderServiceChannel -> Config.Config -> (String -> IO ()) -> InChan (RequestId, [CommandEntry]) -> CommandMVarMap -> Int -> IO ()
+runApiServer chan conf logFn toCommands sharedCmdStatusMap port = do
   putStrLn "Starting up server runApiServer"
-  snapApiServer toCommands sharedCmdStatusMap port
-  putStrLn "Server Started"
+  httpServe (serverConf port) $
+    applyCORS defaultOptions $ methods [GET, POST] $
+    route [ ("api", runReaderT api (ApiEnv toCommands sharedCmdStatusMap logFn chan conf))]
 
--- TODO removed from App/client
-snapApiServer :: InChan (RequestId, [CommandEntry]) -> CommandMVarMap -> Int -> IO ()
-snapApiServer toCommands' cmdStatusMap' port = httpServe (serverConf port) $
-    applyCORS defaultOptions $ methods [GET, POST]
-    (ifTop (writeBS "kadena") <|>
-     route [ ("/", runReaderT apiRoutes (ApiEnv toCommands' cmdStatusMap'))] -- api/kadena/v1
-    )
+api :: ReaderT ApiEnv Snap ()
+api = route [
+              ("send-public",sendPublic)
+             ]
 
-serverConf :: MonadSnap m => Int -> Config m a
-serverConf port = setErrorLog (ConfigFileLog "log/error.log") $ setAccessLog (ConfigFileLog "log/access.log") $ setPort port defaultConfig
+log :: String -> ReaderT ApiEnv Snap ()
+log s = view aiLog >>= \f -> liftIO (f s)
+
+die :: Int -> BS.ByteString -> ReaderT ApiEnv Snap t
+die code msg = do
+  let s = "Error " <> BS.pack (show code) <> ": " <> msg
+  writeBS s
+  log (BS.unpack s)
+  withResponse (finishWith . setResponseStatus code "Error")
+
+readJSON :: FromJSON t => ReaderT ApiEnv Snap t
+readJSON = do
+  r <- eitherDecode <$> readRequestBody 1000000
+  case r of
+    Right v -> return v
+    Left e -> die 400 (BS.pack e)
+
+sendPublic :: ReaderT ApiEnv Snap ()
+sendPublic = undefined
+
+
+serverConf :: MonadSnap m => Int -> Snap.Config m a
+serverConf port = setErrorLog (ConfigFileLog "log/error.log") $
+                  setAccessLog (ConfigFileLog "log/access.log") $
+                  setPort port defaultConfig
+
+
+{-
+enqueueRPC :: RPC -> ReaderT ApiEnv Snap ()
+enqueueRPC m = do
+  env <- ask
+  let conf = _aiConfig env
+      signed = rpcToSignedRPC (_nodeId conf) (_myPublicKey conf) (_myPrivateKey conf) m
+  liftIO $ writeComm (_aiEvents env) (InternalEvent (ERPC signed))
+-}
+
+{-
+clientSendRPC :: NodeId -> RPC -> Consensus ()
+clientSendRPC target rpc = do
+  send <- view clientSendMsg
+  myNodeId' <- viewConfig nodeId
+  privKey <- viewConfig myPrivateKey
+  pubKey <- viewConfig myPublicKey
+  sRpc <- return $ rpcToSignedRPC myNodeId' pubKey privKey rpc
+  debug $ "Issuing direct msg: " ++ show (_digType $ _sigDigest sRpc) ++ " to " ++ show (unAlias $ _alias target)
+  liftIO $! send $! directMsg [(target, encode sRpc)]
+-}

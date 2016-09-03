@@ -3,7 +3,7 @@ module Kadena.Consensus.Server
   , runPrimedConsensusServer
   ) where
 
-import Control.Concurrent (newEmptyMVar)
+import Control.Concurrent
 import Control.Concurrent.Async
 import qualified Control.Concurrent.Lifted as CL
 import Control.Lens
@@ -35,6 +35,7 @@ runPrimedConsensusServer renv rconf spec rstate timeCache' = do
   -- EvidenceService Environment
   mEvState <- newEmptyMVar
   mLeaderNoFollowers <- newEmptyMVar
+  mPubConsensus' <- newMVar (pubConsensusFromState rstate)
   evEnv <- return $! Ev.initEvidenceEnv (_dispatch renv) (RENV._debugPrint renv) rconf' mEvState mLeaderNoFollowers
 
   link =<< (async $ Log.runLogService (_dispatch renv) (RENV._debugPrint renv) (rconf ^. logSqlitePath) (RENV._keySet renv))
@@ -48,7 +49,8 @@ runPrimedConsensusServer renv rconf spec rstate timeCache' = do
   link =<< (async $ foreverTick (_evidence      $ _dispatch renv) 1000000 (Ev.Tick))
   runRWS_
     raft
-    (mkConsensusEnv rconf' csize qsize spec (_dispatch renv) timerTarget' timeCache' mEvState mLeaderNoFollowers)
+    (mkConsensusEnv rconf' csize qsize spec (_dispatch renv)
+                    timerTarget' timeCache' mEvState mLeaderNoFollowers mPubConsensus')
     rstate
 
 runConsensusServer :: ReceiverEnv -> Config -> ConsensusSpec -> IO UTCTime -> IO ()

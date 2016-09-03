@@ -217,7 +217,7 @@ runServer = do
   -- Start The Api Server, communicates with the Kadena protocol via sharedCmdStatusMap
   -- API interface will run on 800{nodeNum} for now, where the nodeNum for 10003 is 3
   let myApiPort = rconf ^. apiPort -- passed in on startup (default 8000): `--apiPort 8001`
-  void $ CL.fork $ runApiServer toCommands sharedCmdStatusMap myApiPort
+  void $ CL.fork $ undefined -- runApiServer toCommands sharedCmdStatusMap myApiPort
 
   utcTimeCache' <- utcTimeCache
   fs <- initSysLog utcTimeCache'

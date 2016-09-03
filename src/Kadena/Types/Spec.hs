@@ -12,7 +12,7 @@ module Kadena.Types.Spec
   , dequeueFromApi ,cmdStatusMap, updateCmdMap
   , ConsensusEnv(..), cfg, enqueueLogQuery, clusterSize, quorumSize, rs
   , enqueue, enqueueMultiple, dequeue, enqueueLater, killEnqueued
-  , sendMessage, clientSendMsg, mResetLeaderNoFollowers
+  , sendMessage, clientSendMsg, mResetLeaderNoFollowers, mPubConsensus
   , informEvidenceServiceOfElection
   , ConsensusState(..), initialConsensusState
   , nodeRole, term, votedFor, lazyVote, currentLeader, ignoreLeader
@@ -20,13 +20,14 @@ module Kadena.Types.Spec
   , pendingRequests, currentRequestId, timeSinceLastAER, cmdBloomFilter
   , Event(..)
   , mkConsensusEnv
+  , PublishedConsensus(..),pcLeader,pcRole,pcTerm
   ) where
 
 -- timeSinceLastAER, lNextIndex, lConvinced, commitProof
 
 import Control.Concurrent (MVar, ThreadId, killThread, yield, forkIO, threadDelay, tryPutMVar, tryTakeMVar, readMVar)
 import Control.Lens hiding (Index, (|>))
-import Control.Monad (when,void)
+import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.RWS.Strict (RWST)
 
@@ -56,6 +57,14 @@ import Kadena.Types.Service.Log (QueryApi(..))
 import Kadena.Types.Service.Evidence (PublishedEvidenceState, Evidence(ClearConvincedNodes))
 
 type ApplyFn = LogEntry -> IO CommandResult
+
+data PublishedConsensus = PublishedConsensus
+    {
+      _pcLeader :: Maybe NodeId
+    , _pcRole :: Role
+    , _pcTerm :: Term
+    }
+makeLenses ''PublishedConsensus
 
 data ConsensusSpec = ConsensusSpec
   {
@@ -124,25 +133,26 @@ initialConsensusState timerTarget' = ConsensusState
 {-currentRequestId-}    0
 {-numTimeouts-}         0
 
-type Consensus = RWST (ConsensusEnv) () ConsensusState IO
+type Consensus = RWST ConsensusEnv () ConsensusState IO
 
 data ConsensusEnv = ConsensusEnv
-  { _cfg              :: IORef Config
-  , _enqueueLogQuery  :: QueryApi -> IO ()
-  , _clusterSize      :: Int
-  , _quorumSize       :: Int
-  , _rs               :: ConsensusSpec
-  , _sendMessage      :: ServiceRequest' -> IO ()
-  , _enqueue          :: Event -> IO ()
-  , _enqueueMultiple  :: [Event] -> IO ()
-  , _enqueueLater     :: Int -> Event -> IO ThreadId
-  , _killEnqueued     :: ThreadId -> IO ()
-  , _dequeue          :: IO Event
-  , _clientSendMsg    :: OutboundGeneral -> IO ()
-  , _evidenceState    :: IO PublishedEvidenceState
-  , _timeCache        :: IO UTCTime
-  , _mResetLeaderNoFollowers :: MVar ResetLeaderNoFollowersTimeout
-  , _informEvidenceServiceOfElection :: IO ()
+  { _cfg              :: !(IORef Config)
+  , _enqueueLogQuery  :: !(QueryApi -> IO ())
+  , _clusterSize      :: !Int
+  , _quorumSize       :: !Int
+  , _rs               :: !ConsensusSpec
+  , _sendMessage      :: !(ServiceRequest' -> IO ())
+  , _enqueue          :: !(Event -> IO ())
+  , _enqueueMultiple  :: !([Event] -> IO ())
+  , _enqueueLater     :: !(Int -> Event -> IO ThreadId)
+  , _killEnqueued     :: !(ThreadId -> IO ())
+  , _dequeue          :: !(IO Event)
+  , _clientSendMsg    :: !(OutboundGeneral -> IO ())
+  , _evidenceState    :: !(IO PublishedEvidenceState)
+  , _timeCache        :: !(IO UTCTime)
+  , _mResetLeaderNoFollowers :: !(MVar ResetLeaderNoFollowersTimeout)
+  , _informEvidenceServiceOfElection :: !(IO ())
+  , _mPubConsensus    :: !(MVar PublishedConsensus)
   }
 makeLenses ''ConsensusEnv
 
@@ -153,11 +163,12 @@ mkConsensusEnv
   -> ConsensusSpec
   -> Dispatch
   -> MVar Event
-  -> (IO UTCTime)
+  -> IO UTCTime
   -> MVar PublishedEvidenceState
   -> MVar ResetLeaderNoFollowersTimeout
+  -> MVar PublishedConsensus
   -> ConsensusEnv
-mkConsensusEnv conf' cSize qSize rSpec dispatch timerTarget' timeCache' mEs mResetLeaderNoFollowers' = ConsensusEnv
+mkConsensusEnv conf' cSize qSize rSpec dispatch timerTarget' timeCache' mEs mResetLeaderNoFollowers' mPubConsensus' = ConsensusEnv
     { _cfg = conf'
     , _enqueueLogQuery = writeComm ls'
     , _clusterSize = cSize
@@ -174,7 +185,7 @@ mkConsensusEnv conf' cSize qSize rSpec dispatch timerTarget' timeCache' mEs mRes
         forkIO $ do
           threadDelay t
           b <- tryPutMVar timerTarget' e
-          when (not b) (putStrLn "Failed to update timer MVar")
+          unless b (putStrLn "Failed to update timer MVar")
           -- TODO: what if it's already taken?
     , _killEnqueued = killThread
     , _dequeue = _unInternalEvent <$> readComm ie'
@@ -183,6 +194,7 @@ mkConsensusEnv conf' cSize qSize rSpec dispatch timerTarget' timeCache' mEs mRes
     , _timeCache = timeCache'
     , _mResetLeaderNoFollowers = mResetLeaderNoFollowers'
     , _informEvidenceServiceOfElection = writeComm ev' ClearConvincedNodes
+    , _mPubConsensus = mPubConsensus'
     }
   where
     g' = dispatch ^. senderService

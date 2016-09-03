@@ -23,10 +23,11 @@ module Kadena.Util.Util
   , getRevSigOrInvariantError
   , enqueueRequest
   , awsDashVar
+  , pubConsensusFromState
   ) where
 
 
-import Control.Concurrent (forkIO)
+import Control.Concurrent (forkIO,swapMVar)
 import Control.Lens
 import Control.Monad.RWS.Strict
 import Control.Concurrent (takeMVar, newEmptyMVar)
@@ -81,7 +82,7 @@ debug s = do
   dontDebugFollower' <- viewConfig dontDebugFollower
   case role' of
     Leader -> liftIO $ dbg $ "[Kadena|\ESC[0;34mLEADER\ESC[0m]: " ++ s
-    Follower -> liftIO $ when (not dontDebugFollower') $ dbg $ "[Kadena|\ESC[0;32mFOLLOWER\ESC[0m]: " ++ s
+    Follower -> liftIO $ unless dontDebugFollower' $ dbg $ "[Kadena|\ESC[0;32mFOLLOWER\ESC[0m]: " ++ s
     Candidate -> liftIO $ dbg $ "[Kadena|\ESC[1;33mCANDIDATE\ESC[0m]: " ++ s
 
 randomRIO :: R.Random a => (a,a) -> Consensus a
@@ -109,15 +110,15 @@ enqueueRequest s = do
 
 -- no state update
 enqueueEvent :: Event -> Consensus ()
-enqueueEvent event = view (enqueue) >>= \f -> liftIO $ f event
+enqueueEvent event = view enqueue >>= \f -> liftIO $ f event
   -- lift $ writeChan ein event
 
 enqueueEventLater :: Int -> Event -> Consensus CL.ThreadId
-enqueueEventLater t event = view (enqueueLater) >>= \f -> liftIO $ f t event
+enqueueEventLater t event = view enqueueLater >>= \f -> liftIO $ f t event
 
 -- no state update
 dequeueEvent :: Consensus Event
-dequeueEvent = view (dequeue) >>= \f -> liftIO f
+dequeueEvent = view dequeue >>= \f -> liftIO f
 
 -- dequeue command from API interface
 dequeueCommand :: Consensus (RequestId, [CommandEntry])
@@ -132,6 +133,15 @@ logStaticMetrics = do
   logMetric . MetricClusterSize =<< view clusterSize
   logMetric . MetricQuorumSize =<< view quorumSize
 
+
+publishConsensus :: Consensus ()
+publishConsensus = do
+  cs <- get
+  p <- view mPubConsensus
+  liftIO $ void $ swapMVar p $ pubConsensusFromState cs
+
+pubConsensusFromState :: ConsensusState -> PublishedConsensus
+pubConsensusFromState ConsensusState {..} = PublishedConsensus _currentLeader _nodeRole _term
 
 setTerm :: Term -> Consensus ()
 setTerm t = do

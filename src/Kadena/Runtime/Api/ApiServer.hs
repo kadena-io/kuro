@@ -5,6 +5,7 @@
 
 module Kadena.Runtime.Api.ApiServer
     where
+import Control.Concurrent
 import Control.Concurrent.Chan.Unagi
 import Control.Monad.Reader
 import Data.Aeson hiding (defaultOptions)
@@ -24,24 +25,26 @@ import Kadena.Types.Message
 import Kadena.Types.Event
 import Kadena.Types.Service.Sender
 import Kadena.Types.Config as Config
+import Kadena.Types.Spec
 
 
 data ApiEnv = ApiEnv {
-      _aiToCommands :: InChan (RequestId, [CommandEntry])
-    , _aiCmdStatusMap :: CommandMVarMap
+     _aiCmdStatusMap :: CommandMVarMap
     , _aiLog :: String -> IO ()
     , _aiEvents :: SenderServiceChannel
     , _aiConfig :: Config.Config
+    , _mPubConsensus :: MVar PublishedConsensus
 }
 makeLenses ''ApiEnv
 
 
-runApiServer :: SenderServiceChannel -> Config.Config -> (String -> IO ()) -> InChan (RequestId, [CommandEntry]) -> CommandMVarMap -> Int -> IO ()
-runApiServer chan conf logFn toCommands sharedCmdStatusMap port = do
-  putStrLn "Starting up server runApiServer"
+runApiServer :: SenderServiceChannel -> Config.Config -> (String -> IO ()) ->
+                CommandMVarMap -> Int -> MVar PublishedConsensus -> IO ()
+runApiServer chan conf logFn sharedCmdStatusMap port mPubConsensus' = do
+  putStrLn "runApiServer: startup"
   httpServe (serverConf port) $
     applyCORS defaultOptions $ methods [GET, POST] $
-    route [ ("api", runReaderT api (ApiEnv toCommands sharedCmdStatusMap logFn chan conf))]
+    route [ ("api", runReaderT api (ApiEnv sharedCmdStatusMap logFn chan conf mPubConsensus'))]
 
 api :: ReaderT ApiEnv Snap ()
 api = route [

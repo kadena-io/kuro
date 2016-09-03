@@ -11,7 +11,7 @@ module Kadena.Spec.Simple
   ) where
 
 import Control.AutoUpdate (mkAutoUpdate, defaultUpdateSettings,updateAction,updateFreq)
-import Control.Concurrent (modifyMVar_, MVar, newEmptyMVar)
+import Control.Concurrent
 import qualified Control.Concurrent.Chan.Unagi as Unagi
 import qualified Control.Concurrent.Lifted as CL
 import Control.Lens
@@ -43,7 +43,7 @@ import Kadena.Types.Spec hiding (timeCache)
 import Kadena.Types.Message.CMD
 import Kadena.Types.Metric
 import Kadena.Types.Dispatch
-import Kadena.Util.Util (awsDashVar)
+import Kadena.Util.Util (awsDashVar,pubConsensusFromState)
 import Kadena.Messaging.ZMQ
 import Kadena.Monitoring.Server (startMonitoring)
 import Kadena.Runtime.Api.ApiServer
@@ -199,10 +199,7 @@ runClient _applyFn getEntries cmdStatusMap' disableTimeouts = do
   let receiverEnv = simpleReceiverEnv dispatch rconf debugFn restartTurbo
   runConsensusClient receiverEnv getEntries cmdStatusMap' rconf raftSpec disableTimeouts utcTimeCache'
 
--- | sets up and runs both API and raft protocol
---   shared state between API and protocol: sharedCmdStatusMap
---   comminication channel btw API and protocol:
---   [API write/place command -> toCommands] [getApiCommands -> kadena read/poll command]
+
 runServer :: IO ()
 runServer = do
   setLineBuffering
@@ -214,10 +211,6 @@ runServer = do
   me <- return $ rconf ^. nodeId
   oNodes <- return $ Set.toList $ Set.delete me $ Set.union (rconf ^. otherNodes) (Map.keysSet $ rconf ^. clientPublicKeys)
   dispatch <- initDispatch
-  -- Start The Api Server, communicates with the Kadena protocol via sharedCmdStatusMap
-  -- API interface will run on 800{nodeNum} for now, where the nodeNum for 10003 is 3
-  let myApiPort = rconf ^. apiPort -- passed in on startup (default 8000): `--apiPort 8001`
-  void $ CL.fork $ undefined -- runApiServer toCommands sharedCmdStatusMap myApiPort
 
   utcTimeCache' <- utcTimeCache
   fs <- initSysLog utcTimeCache'
@@ -234,5 +227,9 @@ runServer = do
                    sharedCmdStatusMap
                    getApiCommands
   restartTurbo <- newEmptyMVar
-  let receiverEnv = simpleReceiverEnv dispatch rconf debugFn restartTurbo
-  runConsensusServer receiverEnv rconf raftSpec utcTimeCache'
+  receiverEnv <- return $ simpleReceiverEnv dispatch rconf debugFn restartTurbo
+  timerTarget' <- newEmptyMVar
+  rstate <- return $ initialConsensusState timerTarget'
+  mPubConsensus' <- newMVar (pubConsensusFromState rstate)
+  void $ CL.fork $ runApiServer (_senderService dispatch) rconf debugFn sharedCmdStatusMap (_apiPort rconf) mPubConsensus'
+  runPrimedConsensusServer receiverEnv rconf raftSpec rstate utcTimeCache' mPubConsensus'

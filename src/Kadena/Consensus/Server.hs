@@ -1,6 +1,5 @@
 module Kadena.Consensus.Server
-  ( runConsensusServer
-  , runPrimedConsensusServer
+  ( runPrimedConsensusServer
   ) where
 
 import Control.Concurrent
@@ -23,8 +22,9 @@ import qualified Kadena.Service.Sender as Sender
 import qualified Kadena.Service.Log as Log
 import qualified Kadena.Service.Evidence as Ev
 
-runPrimedConsensusServer :: ReceiverEnv -> Config -> ConsensusSpec -> ConsensusState -> IO UTCTime -> IO ()
-runPrimedConsensusServer renv rconf spec rstate timeCache' = do
+runPrimedConsensusServer :: ReceiverEnv -> Config -> ConsensusSpec -> ConsensusState ->
+                            IO UTCTime -> MVar PublishedConsensus -> IO ()
+runPrimedConsensusServer renv rconf spec rstate timeCache' mPubConsensus' = do
   let csize = 1 + Set.size (rconf ^. otherNodes)
       qsize = getQuorumSize csize
   void $ runMessageReceiver renv
@@ -33,7 +33,7 @@ runPrimedConsensusServer renv rconf spec rstate timeCache' = do
   -- EvidenceService Environment
   mEvState <- newEmptyMVar
   mLeaderNoFollowers <- newEmptyMVar
-  mPubConsensus' <- newMVar (pubConsensusFromState rstate)
+
   evEnv <- return $! Ev.initEvidenceEnv (_dispatch renv) (RENV._debugPrint renv) rconf' mEvState mLeaderNoFollowers
 
   link =<< (async $ Log.runLogService (_dispatch renv) (RENV._debugPrint renv) (rconf ^. logSqlitePath) (RENV._keySet renv))
@@ -50,11 +50,6 @@ runPrimedConsensusServer renv rconf spec rstate timeCache' = do
     (mkConsensusEnv rconf' csize qsize spec (_dispatch renv)
                     timerTarget' timeCache' mEvState mLeaderNoFollowers mPubConsensus')
     rstate
-
-runConsensusServer :: ReceiverEnv -> Config -> ConsensusSpec -> IO UTCTime -> IO ()
-runConsensusServer renv rconf spec timeCache' = do
-  timerTarget' <- newEmptyMVar
-  runPrimedConsensusServer renv rconf spec (initialConsensusState timerTarget') timeCache'
 
 -- THREAD: SERVER MAIN
 raft :: Consensus ()

@@ -5,7 +5,6 @@ module Kadena.Consensus.Server
 
 import Control.Concurrent (newEmptyMVar)
 import Control.Concurrent.Async
-import qualified Control.Concurrent.Lifted as CL
 import Control.Lens
 import Control.Monad
 
@@ -13,7 +12,6 @@ import qualified Data.Set as Set
 import Data.IORef
 import Data.Thyme.Clock (UTCTime)
 
-import Kadena.Consensus.Api (apiReceiver)
 import Kadena.Consensus.Handle
 import Kadena.Runtime.MessageReceiver
 import qualified Kadena.Runtime.MessageReceiver as RENV
@@ -62,6 +60,5 @@ raft = do
   la <- Log.hasQueryResult Log.LastApplied <$> (queryLogs $ Set.singleton Log.GetLastApplied)
   when (startIndex /= la) $ debug $ "Launch Sequence: disk sync replayed, Commit Index now " ++ show la
   logStaticMetrics
-  void $ CL.fork apiReceiver     -- THREAD: waits for cmds from API, signs and sends to leader.
   resetElectionTimer
   handleEvents

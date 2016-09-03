@@ -21,6 +21,7 @@ import Kadena.Types.Base
 import Kadena.Types.Config
 import Kadena.Types.Message.Signed
 
+-- TODO: perhaps add leaderId into the AER's to protect against a possible attack vector of dual leaders where followers still come to consensus
 data AppendEntriesResponse = AppendEntriesResponse
   { _aerTerm       :: !Term
   , _aerNodeId     :: !NodeId
@@ -38,8 +39,7 @@ instance Ord AppendEntriesResponse where
   -- Node matters most (apples to apples)
   -- Term supersedes index always
   -- Index is really what we're after for how Set AER is used
-  -- Hash matters more than verified due to conflict resolution
-  -- Then verified, which is metadata really, because if everything up to that point is the same then the one that already ran through crypto is more valuable
+  -- Hash matters least
   -- After that it doesn't matter.
   (AppendEntriesResponse t n s c i h p) <= (AppendEntriesResponse t' n' s' c' i' h' p') =
     (n,t,i,h,s,c,p) <= (n',t',i',h',s',c',p')
@@ -71,7 +71,7 @@ instance WireFormat AppendEntriesResponse where
   {-# INLINE fromWire #-}
 
 aerDecodeNoVerify :: (ReceivedAt, SignedRPC) -> Either String AppendEntriesResponse
-aerDecodeNoVerify (ts, (SignedRPC !dig !bdy)) = case S.decode bdy of
+aerDecodeNoVerify (ts, SignedRPC !dig !bdy) = case S.decode bdy of
   Left !err -> Left $! "Failure to decode AERWire: " ++ err
   Right (AERWire !(t,nid,s',c,i,h)) -> Right $! AppendEntriesResponse t nid s' c i h $ ReceivedMsg dig bdy $ Just ts
 

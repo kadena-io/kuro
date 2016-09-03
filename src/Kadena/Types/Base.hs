@@ -83,7 +83,7 @@ startIndex :: LogIndex
 startIndex = LogIndex (-1)
 
 newtype RequestId = RequestId {_unRequestId :: Int64}
-  deriving (Show, Read, Eq, Ord, Enum, Num, Generic, Serialize)
+  deriving (Show, Read, Eq, Ord, Enum, Num, Generic, Serialize, Real, Integral, ToJSON, FromJSON)
 
 startRequestId :: RequestId
 startRequestId = RequestId 0

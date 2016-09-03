@@ -13,7 +13,6 @@ module Kadena.Util.Util
   , runRWS_
   , enqueueEvent, enqueueEventLater
   , dequeueEvent
-  , dequeueCommand
   , logMetric
   , logStaticMetrics
   , setTerm
@@ -24,6 +23,7 @@ module Kadena.Util.Util
   , enqueueRequest
   , awsDashVar
   , pubConsensusFromState
+  , fromMaybeM
   ) where
 
 
@@ -120,9 +120,6 @@ enqueueEventLater t event = view enqueueLater >>= \f -> liftIO $ f t event
 dequeueEvent :: Consensus Event
 dequeueEvent = view dequeue >>= \f -> liftIO f
 
--- dequeue command from API interface
-dequeueCommand :: Consensus (RequestId, [CommandEntry])
-dequeueCommand = view (rs.dequeueFromApi) >>= \f -> liftIO f
 
 logMetric :: Metric -> Consensus ()
 logMetric metric = view (rs.publishMetric) >>= \f -> liftIO $ f metric
@@ -133,6 +130,9 @@ logStaticMetrics = do
   logMetric . MetricClusterSize =<< view clusterSize
   logMetric . MetricQuorumSize =<< view quorumSize
 
+
+fromMaybeM :: Monad m => m b -> Maybe b -> m b
+fromMaybeM errM = maybe errM (return $!)
 
 publishConsensus :: Consensus ()
 publishConsensus = do
@@ -146,16 +146,19 @@ pubConsensusFromState ConsensusState {..} = PublishedConsensus _currentLeader _n
 setTerm :: Term -> Consensus ()
 setTerm t = do
   term .= t
+  publishConsensus
   logMetric $ MetricTerm t
 
 setRole :: Role -> Consensus ()
 setRole newRole = do
   nodeRole .= newRole
+  publishConsensus
   logMetric $ MetricRole newRole
 
 setCurrentLeader :: Maybe NodeId -> Consensus ()
 setCurrentLeader mNode = do
   currentLeader .= mNode
+  publishConsensus
   logMetric $ MetricCurrentLeader mNode
 
 getCmdSigOrInvariantError :: String -> Command -> Signature

@@ -28,8 +28,8 @@ apiReceiver :: Consensus ()
 apiReceiver = do
   nid <- viewConfig nodeId
   forever $ do
-    cmdMap <- view (rs.cmdStatusMap)
-    (rid@(RequestId _), cmdEntries) <- dequeueCommand
+    cmdMap <- undefined -- view (rs.cmdStatusMap)
+    (rid@(RequestId _), cmdEntries) <- undefined -- dequeueCommand
     -- support for special REPL command "> batch test:5000", runs hardcoded batch job
     cmds' <- case cmdEntries of
                CommandEntry cmd:[] | SB8.take 11 cmd == "batch test:" -> do

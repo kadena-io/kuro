@@ -24,6 +24,7 @@ import Data.Thyme.Clock (UTCTime, getCurrentTime)
 import Data.Thyme.LocalTime
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.Map as Map
+import qualified Data.Map.Strict as MS
 import qualified Data.Set as Set
 import qualified Data.Yaml as Y
 
@@ -118,28 +119,24 @@ initSysLog tc = do
 simpleConsensusSpec :: ApplyFn
                -> (String -> IO ())
                -> (Metric -> IO ())
-               -> (MVar CommandMap -> RequestId -> CommandStatus -> IO ())
-               -> CommandMVarMap
-               -> Unagi.OutChan (RequestId, [CommandEntry]) --IO (RequestId, [CommandEntry])
+               -> MVar (MS.Map RequestId AppliedCommand)
                -> ConsensusSpec
-simpleConsensusSpec applyFn debugFn pubMetricFn updateMapFn cmdMVarMap getCommands = ConsensusSpec
+simpleConsensusSpec applyFn debugFn pubMetricFn appliedCmdMap = ConsensusSpec
     {
-      -- apply log entries to the state machine, given by caller
+
       _applyLogEntry   = applyFn
-      -- use the debug function given by the caller
+
     , _debugPrint      = debugFn
-      -- publish a 'Metric' to EKG
+
     , _publishMetric   = pubMetricFn
-      -- get the current time in UTC
+
     , _getTimestamp = liftIO getCurrentTime
-     -- _random :: forall a . Random a => (a, a) -> m a
+
     , _random = liftIO . randomRIO
-    -- _enqueue :: InChan (Event nt et rt) -> Event nt et rt -> m ()
-    , _updateCmdMap = updateMapFn
 
-    , _cmdStatusMap = cmdMVarMap
+    , _enqueueApplied = (\a -> modifyMVar_ appliedCmdMap
+                               (\m -> return $! MS.insert (_acRequestId a) a m))
 
-    , _dequeueFromApi = liftIO $ Unagi.readChan getCommands
     }
 
 simpleReceiverEnv :: Dispatch
@@ -153,13 +150,6 @@ simpleReceiverEnv dispatch conf debugFn restartTurbo' = RENV.ReceiverEnv
   debugFn
   restartTurbo'
 
-updateCmdMapFn :: MonadIO m => MVar CommandMap -> RequestId -> CommandStatus -> m ()
-updateCmdMapFn cmdMapMvar rid cmdStatus =
-    liftIO (modifyMVar_ cmdMapMvar
-     (\(CommandMap nextRid map') ->
-          return $ CommandMap nextRid (Map.insert rid cmdStatus map')
-     )
-    )
 
 setLineBuffering :: IO ()
 setLineBuffering = do
@@ -188,13 +178,13 @@ runClient _applyFn getEntries cmdStatusMap' disableTimeouts = do
   runMsgServer dispatch me oNodes debugFn -- ZMQ
   -- STUBs mocking
   (_, stubGetApiCommands) <- Unagi.newChan
-  let raftSpec = simpleConsensusSpec
+  let raftSpec = undefined {- simpleConsensusSpec
                    (const (return $ CommandResult ""))
                    debugFn
                    (liftIO . pubMetric)
                    updateCmdMapFn
                    cmdStatusMap'
-                   stubGetApiCommands
+                   stubGetApiCommands -}
   restartTurbo <- newEmptyMVar
   let receiverEnv = simpleReceiverEnv dispatch rconf debugFn restartTurbo
   runConsensusClient receiverEnv getEntries cmdStatusMap' rconf raftSpec disableTimeouts utcTimeCache'
@@ -203,8 +193,8 @@ runClient _applyFn getEntries cmdStatusMap' disableTimeouts = do
 runServer :: IO ()
 runServer = do
   setLineBuffering
-  (toCommands, getApiCommands) <- Unagi.newChan
-  sharedCmdStatusMap <- initCommandMap
+  (toApplied, fromApplied) <- Unagi.newChan
+  mAppliedMap <- newMVar MS.empty
   rconf <- getConfig
   (applyFn,_) <- initCommandLayer (CommandConfig (_entity rconf))
   resetAwsEnv (rconf ^. enableAwsIntegration)
@@ -223,13 +213,12 @@ runServer = do
                    (liftIO . applyFn)
                    debugFn
                    (liftIO . pubMetric)
-                   updateCmdMapFn
-                   sharedCmdStatusMap
-                   getApiCommands
+                   mAppliedMap
+
   restartTurbo <- newEmptyMVar
   receiverEnv <- return $ simpleReceiverEnv dispatch rconf debugFn restartTurbo
   timerTarget' <- newEmptyMVar
   rstate <- return $ initialConsensusState timerTarget'
   mPubConsensus' <- newMVar (pubConsensusFromState rstate)
-  void $ CL.fork $ runApiServer (_senderService dispatch) rconf debugFn sharedCmdStatusMap (_apiPort rconf) mPubConsensus'
+  void $ CL.fork $ runApiServer dispatch rconf debugFn mAppliedMap (_apiPort rconf) mPubConsensus'
   runPrimedConsensusServer receiverEnv rconf raftSpec rstate utcTimeCache' mPubConsensus'

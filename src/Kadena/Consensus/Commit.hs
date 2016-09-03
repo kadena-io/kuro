@@ -61,12 +61,11 @@ applyCommand tEnd le = do
 updateCmdStatusMap :: Command -> CommandResult -> UTCTime -> Consensus ()
 updateCmdStatusMap cmd cmdResult tEnd = do
   rid <- return $ _cmdRequestId cmd
-  mvarMap <- view (rs.cmdStatusMap)
-  updateMapFn <- view (rs.updateCmdMap)
   lat <- return $ case _pTimeStamp $ _cmdProvenance cmd of
     Nothing -> 1 -- don't want a div by zero error downstream and this is for demo purposes
     Just (ReceivedAt tStart) -> interval tStart tEnd
-  liftIO $ void $ updateMapFn mvarMap rid (CmdApplied cmdResult lat)
+  view (rs.enqueueApplied) >>= \f -> liftIO (f (AppliedCommand cmdResult lat rid))
+
 
 makeCommandResponse :: UTCTime -> Command -> CommandResult -> Consensus CommandResponse
 makeCommandResponse tEnd cmd result = do

@@ -23,7 +23,7 @@ publicKeys:
   - 882fa24af859026cf55f053f873fd7576989f7528722c507d2fe03cb5f199dc4
 heartbeatTimeout: 1000000
 dontDebugFollower: false
-apiPort: 8000
+apiPort: 8001
 clientPublicKeys:
 - - alias: node0
     fullAddr: tcp://127.0.0.1:10000

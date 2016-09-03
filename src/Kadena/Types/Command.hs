@@ -1,3 +1,4 @@
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveGeneric #-}
 
@@ -7,6 +8,7 @@ module Kadena.Types.Command
   , CommandStatus(..)
   , CommandMap(..), CommandMVarMap, initCommandMap, setNextCmdRequestId
   , EncryptionKey(..)
+  , AppliedCommand(..),acResult,acLatency,acRequestId
   ) where
 
 import Control.Concurrent (MVar, newMVar, takeMVar, putMVar)
@@ -18,6 +20,7 @@ import Data.Thyme.Clock
 import Data.Thyme.Time.Core (unUTCTime, toMicroseconds)
 import GHC.Generics hiding (from)
 import GHC.Int (Int64)
+import Control.Lens (makeLenses)
 
 import Kadena.Types.Base
 
@@ -51,3 +54,10 @@ data CommandStatus = CmdSubmitted -- client sets when sending command
                    | CmdAccepted  -- Consensus client has recieved command and submitted
                    | CmdApplied { result :: CommandResult, cmdaLatencty :: Int64 }  -- We have a result
                    deriving (Show)
+
+data AppliedCommand = AppliedCommand {
+      _acResult :: CommandResult
+    , _acLatency :: Int64
+    , _acRequestId :: RequestId
+    } deriving (Eq,Show)
+makeLenses ''AppliedCommand

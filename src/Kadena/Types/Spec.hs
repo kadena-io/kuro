@@ -9,7 +9,7 @@ module Kadena.Types.Spec
   , applyLogEntry , debugPrint, publishMetric, getTimestamp, random
   , viewConfig, readConfig, timerTarget, evidenceState, timeCache
   -- for API <-> Kadena communication
-  , dequeueFromApi ,cmdStatusMap, updateCmdMap
+  , enqueueApplied
   , ConsensusEnv(..), cfg, enqueueLogQuery, clusterSize, quorumSize, rs
   , enqueue, enqueueMultiple, dequeue, enqueueLater, killEnqueued
   , sendMessage, clientSendMsg, mResetLeaderNoFollowers, mPubConsensus
@@ -42,6 +42,7 @@ import qualified Data.Set as Set
 import Data.Thyme.Clock
 import Data.Thyme.Time.Core ()
 import System.Random (Random)
+import Data.Int
 
 import Kadena.Types.Base
 import Kadena.Types.Command
@@ -69,24 +70,19 @@ makeLenses ''PublishedConsensus
 data ConsensusSpec = ConsensusSpec
   {
     -- ^ Function to apply a log entry to the state machine.
-    _applyLogEntry    :: ApplyFn
+    _applyLogEntry    :: !ApplyFn
 
     -- ^ Function to log a debug message (no newline).
-  , _debugPrint       :: String -> IO ()
+  , _debugPrint       :: !(String -> IO ())
 
-  , _publishMetric    :: Metric -> IO ()
+  , _publishMetric    :: !(Metric -> IO ())
 
-  , _getTimestamp     :: IO UTCTime
+  , _getTimestamp     :: !(IO UTCTime)
 
-  , _random           :: forall a . Random a => (a, a) -> IO a
+  , _random           :: !(forall a . Random a => (a, a) -> IO a)
 
-  -- ^ How the API communicates with Consensus, later could be redis w/e, etc.
-  , _updateCmdMap     :: MVar CommandMap -> RequestId -> CommandStatus -> IO ()
+  , _enqueueApplied   :: !(AppliedCommand -> IO ())
 
-  -- ^ Same mvar map as _updateCmdMVarMap needs to run in Consensus m
-  , _cmdStatusMap     :: CommandMVarMap
-
-  , _dequeueFromApi   :: IO (RequestId, [CommandEntry])
   }
 makeLenses (''ConsensusSpec)
 

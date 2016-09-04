@@ -5,14 +5,11 @@
 
 module Kadena.Spec.Simple
   ( runServer
-  , runClient
   , RequestId
-  , CommandStatus
   ) where
 
 import Control.AutoUpdate (mkAutoUpdate, defaultUpdateSettings,updateAction,updateFreq)
 import Control.Concurrent
-import qualified Control.Concurrent.Chan.Unagi as Unagi
 import qualified Control.Concurrent.Lifted as CL
 import Control.Lens
 import Control.Monad
@@ -36,12 +33,10 @@ import System.Log.FastLogger
 import System.Random
 
 import Kadena.Consensus.Server
-import Kadena.Consensus.Client
 import Kadena.Types.Command
 import Kadena.Types.Base
 import Kadena.Types.Config
 import Kadena.Types.Spec hiding (timeCache)
-import Kadena.Types.Message.CMD
 import Kadena.Types.Metric
 import Kadena.Types.Dispatch
 import Kadena.Util.Util (awsDashVar,pubConsensusFromState)
@@ -163,37 +158,10 @@ resetAwsEnv awsEnabled = do
   awsDashVar awsEnabled "AppliedIndex" "Startup"
   awsDashVar awsEnabled "CommitIndex" "Startup"
 
-runClient :: (Command -> IO CommandResult) -> IO (RequestId, [CommandEntry]) -> CommandMVarMap -> MVar Bool -> IO ()
-runClient _applyFn getEntries cmdStatusMap' disableTimeouts = do
-  setLineBuffering
-  rconf <- getConfig
-  resetAwsEnv (rconf ^. enableAwsIntegration)
-  utcTimeCache' <- utcTimeCache
-  fs <- initSysLog utcTimeCache'
-  let debugFn = if rconf ^. enableDebug then showDebug fs else noDebug
-  pubMetric <- startMonitoring rconf
-  dispatch <- initDispatch
-  me <- return $ rconf ^. nodeId
-  oNodes <- return $ Set.toList $ Set.delete me $ Set.union (rconf ^. otherNodes) (Map.keysSet $ rconf ^. clientPublicKeys)
-  runMsgServer dispatch me oNodes debugFn -- ZMQ
-  -- STUBs mocking
-  (_, stubGetApiCommands) <- Unagi.newChan
-  let raftSpec = undefined {- simpleConsensusSpec
-                   (const (return $ CommandResult ""))
-                   debugFn
-                   (liftIO . pubMetric)
-                   updateCmdMapFn
-                   cmdStatusMap'
-                   stubGetApiCommands -}
-  restartTurbo <- newEmptyMVar
-  let receiverEnv = simpleReceiverEnv dispatch rconf debugFn restartTurbo
-  runConsensusClient receiverEnv getEntries cmdStatusMap' rconf raftSpec disableTimeouts utcTimeCache'
-
 
 runServer :: IO ()
 runServer = do
   setLineBuffering
-  (toApplied, fromApplied) <- Unagi.newChan
   mAppliedMap <- newMVar MS.empty
   rconf <- getConfig
   (applyFn,_) <- initCommandLayer (CommandConfig (_entity rconf))

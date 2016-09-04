@@ -162,16 +162,3 @@ enqueueRPC m = do
     liftIO $ writeComm (_inboundCMD $ _aiDispatch env) $ InboundCMD (ReceivedAt ts, signedRPC)
   else liftIO $ writeComm (_outboundGeneral $ _aiDispatch env) $
        directMsg [(ldr,SZ.encode signedRPC)]
-
-
-{-
-clientSendRPC :: NodeId -> RPC -> Consensus ()
-clientSendRPC target rpc = do
-  send <- view clientSendMsg
-  myNodeId' <- viewConfig nodeId
-  privKey <- viewConfig myPrivateKey
-  pubKey <- viewConfig myPublicKey
-  sRpc <- return $ rpcToSignedRPC myNodeId' pubKey privKey rpc
-  debug $ "Issuing direct msg: " ++ show (_digType $ _sigDigest sRpc) ++ " to " ++ show (unAlias $ _alias target)
-  liftIO $! send $! directMsg [(target, encode sRpc)]
--}

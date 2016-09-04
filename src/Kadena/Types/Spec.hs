@@ -16,8 +16,8 @@ module Kadena.Types.Spec
   , informEvidenceServiceOfElection
   , ConsensusState(..), initialConsensusState
   , nodeRole, term, votedFor, lazyVote, currentLeader, ignoreLeader
-  , timerThread, replayMap, cYesVotes, cPotentialVotes, lastCommitTime, numTimeouts
-  , pendingRequests, currentRequestId, timeSinceLastAER, cmdBloomFilter
+  , timerThread, replayMap, cYesVotes, cPotentialVotes, lastCommitTime
+  , timeSinceLastAER, cmdBloomFilter
   , Event(..)
   , mkConsensusEnv
   , PublishedConsensus(..),pcLeader,pcRole,pcTerm
@@ -42,7 +42,6 @@ import qualified Data.Set as Set
 import Data.Thyme.Clock
 import Data.Thyme.Time.Core ()
 import System.Random (Random)
-import Data.Int
 
 import Kadena.Types.Base
 import Kadena.Types.Command
@@ -102,10 +101,6 @@ data ConsensusState = ConsensusState
   , _timeSinceLastAER :: Int
   -- used for metrics
   , _lastCommitTime   :: Maybe UTCTime
-  -- used by clients
-  , _pendingRequests  :: Map RequestId Command
-  , _currentRequestId :: RequestId
-  , _numTimeouts      :: Int
   }
 makeLenses ''ConsensusState
 
@@ -125,9 +120,6 @@ initialConsensusState timerTarget' = ConsensusState
 {-cPotentialVotes-}     Set.empty
 {-timeSinceLastAER-}    0
 {-lastCommitTime-}      Nothing
-{-pendingRequests-}     Map.empty
-{-currentRequestId-}    0
-{-numTimeouts-}         0
 
 type Consensus = RWST ConsensusEnv () ConsensusState IO
 

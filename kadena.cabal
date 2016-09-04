@@ -21,14 +21,10 @@ source-repository head
 library
   exposed-modules:     Apps.Kadena.Server
                      , Apps.Kadena.Client
-                     , Apps.Kadena.JsonTypes
-                     , Apps.Kadena.ApiHandlers
                      , Kadena.Command.Types
                      , Kadena.Command.CommandLayer
-                     , Kadena.Consensus.Api
                      , Kadena.Consensus.Handle
                      , Kadena.Consensus.Server
-                     , Kadena.Consensus.Client
                      , Kadena.Consensus.Commit
                      , Kadena.Consensus.Handle.Types
                      , Kadena.Consensus.Handle.AppendEntries

@@ -5,6 +5,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE BangPatterns #-}
 
 module Kadena.Runtime.Api.ApiServer
     where
@@ -100,17 +101,17 @@ sendPublic :: Api ()
 sendPublic = do
   (bs,_ :: PactRPC) <- readJSON
   (cmd,rid) <- mkPublicCommand bs
-  enqueueRPC $ CMD' cmd
+  enqueueRPC $! CMD' cmd
   writeResponse $ SubmitSuccess [rid]
 
 
 sendPublicBatch :: Api ()
 sendPublicBatch = do
-  (_,cs) <- fmap cmds <$> readJSON
-  (cmds,rids) <- foldM (\(cms,rids) c -> do
-                    (cd,rid) <- mkPublicCommand (toStrict $ encode c)
-                    return (cd:cms,rid:rids)) ([],[]) cs
-  enqueueRPC $ CMDB' $ CommandBatch (reverse cmds) NewMsg
+  (_,!cs) <- fmap cmds <$> readJSON
+  (!cmds,!rids) <- foldM (\(cms,rids) c -> do
+                    (cd,rid) <- mkPublicCommand $! toStrict $! encode c
+                    return $! (cd:cms,rid:rids)) ([],[]) cs
+  enqueueRPC $! CMDB' $! CommandBatch (reverse cmds) NewMsg
   writeResponse $ SubmitSuccess (reverse rids)
 
 
@@ -144,7 +145,7 @@ mkPublicCommand :: BS.ByteString -> Api (Command,RequestId)
 mkPublicCommand bs = do
   rid <- view aiNextRequestId >>= \f -> liftIO f
   nid <- view (aiConfig.nodeId)
-  return (Command (CommandEntry . SZ.encode . PublicMessage $ bs) nid rid Valid NewMsg,rid)
+  return $! (Command (CommandEntry $! SZ.encode $! PublicMessage $! bs) nid rid Valid NewMsg,rid)
 
 
 enqueueRPC :: RPC -> Api ()
@@ -154,11 +155,11 @@ enqueueRPC m = do
   PublishedConsensus {..} <- fromMaybeM (die 500 "Invariant error: consensus unavailable") =<<
                                liftIO (tryReadMVar (_aiPubConsensus env))
   ldr <- fromMaybeM (die 500 "System unavaiable, please try again later") _pcLeader
-  signedRPC <- return $ rpcToSignedRPC (_nodeId conf)
+  signedRPC <- return $! rpcToSignedRPC (_nodeId conf)
                         (Config._myPublicKey conf) (Config._myPrivateKey conf) m -- TODO api signing
   if _nodeId conf == ldr
   then do -- dispatch internally if we're leader, otherwise send outbound
     ts <- liftIO getCurrentTime
-    liftIO $ writeComm (_inboundCMD $ _aiDispatch env) $ InboundCMD (ReceivedAt ts, signedRPC)
-  else liftIO $ writeComm (_outboundGeneral $ _aiDispatch env) $
+    liftIO $ writeComm (_inboundCMD $ _aiDispatch env) $! InboundCMD (ReceivedAt ts, signedRPC)
+  else liftIO $ writeComm (_outboundGeneral $ _aiDispatch env) $!
        directMsg [(ldr,SZ.encode signedRPC)]

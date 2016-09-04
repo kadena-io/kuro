@@ -53,6 +53,7 @@ library
                      , Kadena.Service.Evidence
                      , Kadena.Spec.Simple
                      , Kadena.Types
+                     , Kadena.Types.Api
                      , Kadena.Types.Base
                      , Kadena.Types.Command
                      , Kadena.Types.Comms
@@ -111,6 +112,7 @@ library
                      , ghc-prim
                      , hspec
                      , lens >= 4.13
+                     , lens-aeson
                      , lifted-base
                      , lz4
                      , megaparsec >= 4.2.0 && < 4.3

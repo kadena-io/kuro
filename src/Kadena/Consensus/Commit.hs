@@ -9,7 +9,6 @@ module Kadena.Consensus.Commit
 where
 
 import Control.Lens
-import Control.Monad
 import Control.Monad.IO.Class
 import Data.Int (Int64)
 import Data.Thyme.Clock (UTCTime)

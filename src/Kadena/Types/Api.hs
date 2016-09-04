@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -5,31 +6,39 @@
 
 module Kadena.Types.Api where
 
-import Control.Concurrent.Chan.Unagi
-import Control.Monad.Reader
-import Data.Aeson hiding (defaultOptions)
-import qualified Data.ByteString.Char8 as BS
-import Control.Lens
-import Data.Monoid
-import Prelude hiding (log)
+import Data.Aeson
+import Control.Lens hiding ((.=))
+import Data.Text (pack)
+import GHC.Generics
+import Data.Int
 
-import Snap.Http.Server as Snap
-import Snap.Core
-import Snap.CORS
-
-import Kadena.Types.Command
 import Kadena.Types.Base
-import Kadena.Types.Comms
-import Kadena.Types.Message
-import Kadena.Types.Event
-import Kadena.Types.Service.Sender
-import Kadena.Types.Config as Config
+import Kadena.Command.Types
 
-data ApiEnv = ApiEnv {
-      _aiToCommands :: InChan (RequestId, [CommandEntry])
-    , _aiCmdStatusMap :: CommandMVarMap
-    , _aiLog :: String -> IO ()
-    , _aiEvents :: SenderServiceChannel
-    , _aiConfig :: Config.Config
-}
-makeLenses ''ApiEnv
+data PollRequest = PollRequest {
+      requestIds :: [RequestId]
+    } deriving (Eq,Show,Generic)
+instance FromJSON PollRequest
+instance ToJSON PollRequest
+
+data Batch = Batch {
+      cmds :: [PactRPC]
+    } deriving (Eq,Show,Generic)
+instance FromJSON Batch
+instance ToJSON Batch
+
+
+data SubmitSuccess = SubmitSuccess { _ssRequestIds :: [RequestId] }
+makeLenses ''SubmitSuccess
+
+instance ToJSON SubmitSuccess where
+    toJSON (SubmitSuccess rids) =
+        object [ "status" .= pack "Success", "requestIds" .= rids ]
+instance FromJSON SubmitSuccess where
+    parseJSON = withObject "BatchSuccess" $ \o -> SubmitSuccess <$> o .: "requestIds"
+
+data PollSuccessEntry = PollSuccessEntry {
+      latency :: Int64
+    , response :: Value
+    } deriving (Eq,Show,Generic)
+instance FromJSON PollSuccessEntry

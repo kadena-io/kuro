@@ -23,8 +23,6 @@ import Snap.Http.Server as Snap
 import Snap.Core
 import qualified Data.Map.Strict as M
 import Snap.CORS
-import Data.Text (pack)
-import GHC.Generics
 
 import Kadena.Types.Command
 import Kadena.Types.Base
@@ -35,6 +33,7 @@ import Kadena.Types.Spec
 import Kadena.Command.Types
 import Kadena.Types.Dispatch
 import Kadena.Util.Util
+import Kadena.Types.Api
 
 
 data ApiEnv = ApiEnv {
@@ -47,15 +46,6 @@ data ApiEnv = ApiEnv {
 }
 makeLenses ''ApiEnv
 
-data PollRequest = PollRequest {
-      requestIds :: [RequestId]
-    } deriving (Eq,Show,Generic)
-instance FromJSON PollRequest
-
-data Batch = Batch {
-      cmds :: [PactRPC]
-    } deriving (Eq,Show,Generic)
-instance FromJSON Batch
 
 type Api a = ReaderT ApiEnv Snap a
 
@@ -111,7 +101,8 @@ sendPublic = do
   (bs,_ :: PactRPC) <- readJSON
   (cmd,rid) <- mkPublicCommand bs
   enqueueRPC $ CMD' cmd
-  writeResponse $ object [ "status" .= pack "Success", "requestId" .= rid ]
+  writeResponse $ SubmitSuccess [rid]
+
 
 sendPublicBatch :: Api ()
 sendPublicBatch = do
@@ -120,7 +111,7 @@ sendPublicBatch = do
                     (cd,rid) <- mkPublicCommand (toStrict $ encode c)
                     return (cd:cms,rid:rids)) ([],[]) cs
   enqueueRPC $ CMDB' $ CommandBatch (reverse cmds) NewMsg
-  writeResponse $ object [ "status" .= pack "Success", "requestIds" .= reverse rids ]
+  writeResponse $ SubmitSuccess (reverse rids)
 
 
 poll :: Api ()

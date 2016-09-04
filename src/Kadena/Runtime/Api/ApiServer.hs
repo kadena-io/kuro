@@ -9,7 +9,6 @@
 module Kadena.Runtime.Api.ApiServer
     where
 import Control.Concurrent
-import Control.Concurrent.Chan.Unagi
 import Control.Monad.Reader
 import Data.Aeson hiding (defaultOptions)
 import qualified Data.ByteString.Char8 as BS
@@ -31,7 +30,6 @@ import Kadena.Types.Command
 import Kadena.Types.Base
 import Kadena.Types.Comms
 import Kadena.Types.Message
-import Kadena.Types.Event
 import Kadena.Types.Config as Config
 import Kadena.Types.Spec
 import Kadena.Command.Types
@@ -47,12 +45,17 @@ data ApiEnv = ApiEnv {
     , _aiPubConsensus :: MVar PublishedConsensus
     , _aiNextRequestId :: IO RequestId
 }
+makeLenses ''ApiEnv
 
 data PollRequest = PollRequest {
-      requestId :: RequestId
+      requestIds :: [RequestId]
     } deriving (Eq,Show,Generic)
-makeLenses ''ApiEnv
 instance FromJSON PollRequest
+
+data Batch = Batch {
+      cmds :: [PactRPC]
+    } deriving (Eq,Show,Generic)
+instance FromJSON Batch
 
 type Api a = ReaderT ApiEnv Snap a
 
@@ -74,7 +77,8 @@ runApiServer dispatch conf logFn appliedMap port mPubConsensus' = do
 
 api :: Api ()
 api = route [
-       ("public",sendPublic)
+       ("public/send",sendPublic)
+      ,("public/batch",sendPublicBatch)
       ,("poll",poll)
       ]
 
@@ -104,24 +108,52 @@ writeResponse j = setJSON >> writeLBS (encode j)
 
 sendPublic :: Api ()
 sendPublic = do
-  (bs,_) :: (BS.ByteString,PactRPC) <- readJSON
-  rid <- view aiNextRequestId >>= \f -> liftIO f
-  nid <- view (aiConfig.nodeId)
-  enqueueRPC $ CMD' (Command (CommandEntry . SZ.encode . PublicMessage $ bs) nid rid Valid NewMsg)
+  (bs,_ :: PactRPC) <- readJSON
+  (cmd,rid) <- mkPublicCommand bs
+  enqueueRPC $ CMD' cmd
   writeResponse $ object [ "status" .= pack "Success", "requestId" .= rid ]
+
+sendPublicBatch :: Api ()
+sendPublicBatch = do
+  (_,cs) <- fmap cmds <$> readJSON
+  (cmds,rids) <- foldM (\(cms,rids) c -> do
+                    (cd,rid) <- mkPublicCommand (toStrict $ encode c)
+                    return (cd:cms,rid:rids)) ([],[]) cs
+  enqueueRPC $ CMDB' $ CommandBatch (reverse cmds) NewMsg
+  writeResponse $ object [ "status" .= pack "Success", "requestIds" .= reverse rids ]
+
 
 poll :: Api ()
 poll = do
-  (_,rid) <- fmap requestId <$> readJSON
-  r <- view aiApplied >>= liftIO . tryReadMVar >>= fromMaybeM (die 500 "Results unavailable") <&> M.lookup rid
-  case r of
-    Nothing -> writeResponse $ object ["status" .= pack "Failure", "message" .= pack "Response not found"]
-    Just (AppliedCommand (CommandResult cr) _lat _) -> setJSON >> writeBS cr
+  (_,rids) <- fmap requestIds <$> readJSON
+  m <- view aiApplied >>= liftIO . tryReadMVar >>= fromMaybeM (die 500 "Results unavailable")
+  setJSON
+  writeBS "{ \"status\": \"Success\", \"responses\": ["
+  forM_ (zip rids [(0 :: Int)..]) $ \(rid@RequestId {..},i) -> do
+         when (i>0) $ writeBS ", "
+         writeBS "{ \"requestId\": "
+         writeBS (BS.pack (show _unRequestId))
+         writeBS ", \"response\": "
+         case M.lookup rid m of
+           Nothing -> writeBS "{ \"status\": \"Not Found\" }"
+           Just (AppliedCommand (CommandResult cr) lat _) -> do
+                               writeBS cr
+                               writeBS ", \"latency\": "
+                               writeBS (BS.pack (show lat))
+         writeBS "}"
+  writeBS "] }"
+
 
 serverConf :: MonadSnap m => Int -> Snap.Config m a
 serverConf port = setErrorLog (ConfigFileLog "log/error.log") $
                   setAccessLog (ConfigFileLog "log/access.log") $
                   setPort port defaultConfig
+
+mkPublicCommand :: BS.ByteString -> Api (Command,RequestId)
+mkPublicCommand bs = do
+  rid <- view aiNextRequestId >>= \f -> liftIO f
+  nid <- view (aiConfig.nodeId)
+  return (Command (CommandEntry . SZ.encode . PublicMessage $ bs) nid rid Valid NewMsg,rid)
 
 
 enqueueRPC :: RPC -> Api ()
@@ -132,7 +164,7 @@ enqueueRPC m = do
                                liftIO (tryReadMVar (_aiPubConsensus env))
   ldr <- fromMaybeM (die 500 "System unavaiable, please try again later") _pcLeader
   signedRPC <- return $ rpcToSignedRPC (_nodeId conf)
-                        (Config._myPublicKey conf) (Config._myPrivateKey conf) m -- TODO
+                        (Config._myPublicKey conf) (Config._myPrivateKey conf) m -- TODO api signing
   if _nodeId conf == ldr
   then do -- dispatch internally if we're leader, otherwise send outbound
     ts <- liftIO getCurrentTime

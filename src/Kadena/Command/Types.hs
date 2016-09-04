@@ -92,7 +92,7 @@ data ExecMsg = ExecMsg {
       _pmCode :: Text
     , _pmData :: Value
     }
-    deriving (Eq,Generic)
+    deriving (Eq,Generic,Show)
 instance FromJSON ExecMsg where
     parseJSON =
         withObject "PactMsg" $ \o ->
@@ -105,7 +105,7 @@ data ContMsg = ContMsg {
     , _cmStep :: Int
     , _cmRollback :: Bool
     }
-    deriving (Eq)
+    deriving (Eq,Show)
 instance FromJSON ContMsg where
     parseJSON =
         withObject "ContMsg" $ \o ->
@@ -115,7 +115,7 @@ instance ToJSON ContMsg where
 
 data MultisigMsg = MultisigMsg {
       _mmTxId :: TxId
-    } deriving (Eq)
+    } deriving (Eq,Show)
 instance FromJSON MultisigMsg where
     parseJSON =
         withObject "MultisigMsg" $ \o ->
@@ -143,7 +143,7 @@ data PactRPC =
     Exec ExecMsg |
     Continuation ContMsg |
     Multisig MultisigMsg
-    deriving (Eq)
+    deriving (Eq,Show)
 instance FromJSON PactRPC where
     parseJSON =
         withObject "RPC" $ \o ->

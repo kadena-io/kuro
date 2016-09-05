@@ -57,21 +57,21 @@ sendCmd cmd = do
   s <- use server
   r <- liftIO $ post ("http://" ++ s ++ "/api/public/send") (toJSON (Exec (ExecMsg (T.pack cmd) Null)))
   rids <- view (responseBody.ssRequestIds) <$> asJSON r
-  showResult' 100 rids Nothing
+  showResult 10000 rids Nothing
 
 batchTest :: Int -> String -> StateT ReplState IO ()
 batchTest n cmd = do
   s <- use server
   r <- liftIO $ post ("http://" ++ s ++ "/api/public/batch") (toJSON (Batch (replicate n (Exec (ExecMsg (T.pack cmd) Null)))))
   rids <- view (responseBody.ssRequestIds) <$> asJSON r
-  showResult' 100 rids (Just (fromIntegral n))
+  showResult (n * 200) rids (Just (fromIntegral n))
 
 manyTest :: Int -> String -> StateT ReplState IO ()
 manyTest n cmd = do
   s <- use server
   rs <- replicateM n $ liftIO $ post ("http://" ++ s ++ "/api/public/send") (toJSON (Exec (ExecMsg (T.pack cmd) Null)))
   rids <- view (responseBody.ssRequestIds) <$> asJSON (last rs)
-  showResult' 100 rids (Just (fromIntegral n))
+  showResult (n * 200) rids (Just (fromIntegral n))
 
 setup :: StateT ReplState IO ()
 setup = do
@@ -83,18 +83,20 @@ setup = do
       s <- use server
       r <- liftIO $ post ("http://" ++ s ++ "/api/public/send") (toJSON (Exec (ExecMsg code j)))
       rids <- view (responseBody.ssRequestIds) <$> asJSON r
-      showResult' 100 rids Nothing
+      showResult 10000 rids Nothing
 
 
 
 
 
-showResult' :: Int -> [RequestId] -> Maybe Int64 -> StateT ReplState IO ()
-showResult' tdelay rids countm = loop (0 :: Int) where
+showResult :: Int -> [RequestId] -> Maybe Int64 -> StateT ReplState IO ()
+showResult _ [] _ = return ()
+showResult tdelay rids countm = loop (0 :: Int) where
     loop c = do
+      threadDelay tdelay
       when (c > 100) $ flushStrLn "Timeout"
       s <- use server
-      r <- liftIO $ post ("http://" ++ s ++ "/api/poll") (toJSON (PollRequest rids))
+      r <- liftIO $ post ("http://" ++ s ++ "/api/poll") (toJSON (PollRequest [last rids]))
       v <- asValue r
       case toListOf (responseBody.key "responses".values) v of
         [] -> flushStrLn $ "Error: no results received: " ++ show r
@@ -103,14 +105,13 @@ showResult' tdelay rids countm = loop (0 :: Int) where
                 case countm of
                   Nothing -> flushStrLn (BSL.unpack (encode rsp))
                   Just cnt -> flushStrLn $ intervalOfNumerous cnt lat
-            Left _ -> threadDelay tdelay >> loop (succ c)
+            Left _ ->  loop (succ c)
 
 
 
 
---  -> OutChan CommandResult
-runREPL' :: StateT ReplState IO ()
-runREPL' = forever $ handle (\(SomeException e) -> flushStrLn $ "Exception: " ++ show e) $ do
+runREPL :: StateT ReplState IO ()
+runREPL = forever $ handle (\(SomeException e) -> flushStrLn $ "Exception: " ++ show e) $ do
   cmd <- readPrompt
   bcmd <- use batchCmd
   case cmd of
@@ -139,7 +140,6 @@ intervalOfNumerous cnt mics = let
   perSec = ceiling (fromIntegral cnt / interval')
   in "Completed in " ++ show (interval' :: Double) ++ "sec (" ++ show (perSec::Integer) ++ " per sec)"
 
--- | Runs a 'Consensus nt String String mt'.
--- Simple fixes nt to 'HostPort' and mt to 'String'.
+
 main :: IO ()
-main = void $ _run runREPL'
+main = void $ _run runREPL

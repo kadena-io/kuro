@@ -18,7 +18,7 @@ import GHC.Int (Int64)
 import qualified Data.Text as T
 import Data.Aeson hiding ((.=))
 import Data.Aeson.Lens
-import Data.Aeson.Types hiding ((.=))
+import Data.Aeson.Types hiding ((.=),parse)
 import Control.Monad.State
 import Network.Wreq
 import Control.Lens
@@ -46,8 +46,11 @@ flushStr str = liftIO (putStr str >> hFlush stdout)
 flushStrLn :: MonadIO m => String -> m ()
 flushStrLn str = liftIO (putStrLn str >> hFlush stdout)
 
-readPrompt :: StateT ReplState IO String
-readPrompt = use server >>= flushStr . prompt >> liftIO getLine
+readPrompt :: StateT ReplState IO (Maybe String)
+readPrompt = do
+  use server >>= flushStr . prompt
+  e <- liftIO $ isEOF
+  if e then return Nothing else Just <$> liftIO getLine
 
 _run :: StateT ReplState m a -> m (a, ReplState)
 _run a = runStateT a (ReplState "localhost:8000" "(demo.transfer \"Acct1\" \"Acct2\" (% 1 1))")
@@ -111,27 +114,36 @@ showResult tdelay rids countm = loop (0 :: Int) where
 
 
 runREPL :: StateT ReplState IO ()
-runREPL = forever $ handle (\(SomeException e) -> flushStrLn $ "Exception: " ++ show e) $ do
-  cmd <- readPrompt
-  bcmd <- use batchCmd
-  case cmd of
-      "" -> return ()
-      "sleep" -> threadDelay 5000000
-      "cmd?" -> use batchCmd >>= flushStrLn
-      "setup" -> setup
-      _ | take 11 cmd == "batch test:" ->
-          case readMaybe $ drop 11 cmd of
-            Just n -> batchTest n bcmd
-            Nothing -> return ()
-        | take 10 cmd == "many test:" ->
-            case readMaybe $ drop 10 cmd of
-              Just n -> manyTest n bcmd
+runREPL = loop True
+  where
+    loop go =
+        when go $ catch run (\(SomeException e) ->
+                             flushStrLn ("Exception: " ++ show e) >> loop True)
+    run = do
+      cmd' <- readPrompt
+      case cmd' of
+        Nothing -> loop False
+        Just cmd -> parse cmd >> loop True
+    parse cmd = do
+      bcmd <- use batchCmd
+      case cmd of
+        "sleep" -> threadDelay 5000000
+        "cmd?" -> use batchCmd >>= flushStrLn
+        "setup" -> setup
+        _ | take 11 cmd == "batch test:" ->
+            case readMaybe $ drop 11 cmd of
+              Just n -> batchTest n bcmd
               Nothing -> return ()
-        | take 7 cmd == "server:" ->
-            server .= drop 7 cmd
-        | take 4 cmd == "cmd:" ->
-            batchCmd .= drop 4 cmd
-        | otherwise ->  sendCmd cmd
+          | take 10 cmd == "many test:" ->
+              case readMaybe $ drop 10 cmd of
+                Just n -> manyTest n bcmd
+                Nothing -> return ()
+          | take 7 cmd == "server:" ->
+              server .= drop 7 cmd
+          | take 4 cmd == "cmd:" ->
+              batchCmd .= drop 4 cmd
+          | otherwise ->  sendCmd cmd
+
 
 
 intervalOfNumerous :: Int64 -> Int64 -> String

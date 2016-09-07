@@ -2,16 +2,16 @@
 rm ./log/*.sqlite
 tmux new-window
 tmux split-window -h
-tmux send-keys 'stack exec -- kadenaserver +RTS -N4 -T -RTS -c conf/10000-cluster.yaml --apiPort 8000' C-m
+tmux send-keys '$HOME/.local/bin/kadenaserver +RTS -N4 -T -RTS -c conf/10000-cluster.yaml --apiPort 8000 2>/dev/null' C-m
 sleep 1
 tmux split-window -v -p 75
-tmux send-keys 'stack exec -- kadenaserver +RTS -N4 -T -RTS -c conf/10001-cluster.yaml --apiPort 8001' C-m
+tmux send-keys '$HOME/.local/bin/kadenaserver +RTS -N4 -T -RTS -c conf/10001-cluster.yaml --apiPort 8001 2>/dev/null' C-m
 sleep 1
 tmux split-window -v -p 66
-tmux send-keys 'stack exec -- kadenaserver +RTS -N4 -T -RTS -c conf/10002-cluster.yaml --apiPort 8002' C-m
+tmux send-keys '$HOME/.local/bin/kadenaserver +RTS -N4 -T -RTS -c conf/10002-cluster.yaml --apiPort 8002 2>/dev/null' C-m
 sleep 1
 tmux split-window -v -p 50
-tmux send-keys 'stack exec -- kadenaserver +RTS -N4 -T -RTS -c conf/10003-cluster.yaml --apiPort 8003' C-m
+tmux send-keys '$HOME/.local/bin/kadenaserver +RTS -N4 -T -RTS -c conf/10003-cluster.yaml --apiPort 8003 2>/dev/null' C-m
 sleep 1
 tmux select-pane -L
 tmux send-keys './kadenaclient.sh'

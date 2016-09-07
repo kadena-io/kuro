@@ -85,7 +85,7 @@ die code msg = do
 
 readJSON :: FromJSON t => Api (BS.ByteString,t)
 readJSON = do
-  b <- readRequestBody 1000000
+  b <- readRequestBody 1000000000
   let r = eitherDecode b
   case r of
     Right v -> return (toStrict b,v)

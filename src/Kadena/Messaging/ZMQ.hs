@@ -11,7 +11,7 @@ module Kadena.Messaging.ZMQ (
 
 import Control.Lens
 import Control.Exception.Base
-import Control.Concurrent (forkIO, threadDelay, yield)
+import Control.Concurrent (forkIO, yield, newEmptyMVar, takeMVar, putMVar)
 import qualified Control.Concurrent.Async as Async
 import Control.Monad.State.Strict
 import System.ZMQ4.Monadic
@@ -42,18 +42,21 @@ runMsgServer dispatch me addrList debug = void $ forkIO $ forever $ do
   outboxRead <- return $ dispatch ^. outboundGeneral
   aerRvRvrRead <- return $ dispatch ^. outboundAerRvRvr
 
+  semephory <- newEmptyMVar -- this MVar is for coordinating the lighting of ZMQ. There's an annoying segfault/malloc error that I think is caused by ZMQ.
+
   zmqGeneralThread <- Async.async $ runZMQ $ do
     -- ZMQ Pub Thread
     zmqPub <- async $ do
       liftIO $ debug $ zmqGenPub ++ "launch!"
       pubSock <- socket Pub
       _ <- bind pubSock $ nodeIdToZmqAddr me
+      liftIO $ putMVar semephory ()
       forever $ do
         !msgs <- liftIO (_unOutboundGeneral <$> readComm outboxRead) >>= return . fmap sealEnvelope
         --liftIO $ debug $ "[ZMQ_GENERAL_PUB] publishing msg to: " ++ show (NonEmpty.head msg)
         mapM_ (sendMulti pubSock) msgs
 
-    liftIO $ threadDelay 100000 -- to be sure that the receive side is up first
+    liftIO $ void $ takeMVar semephory
 
     zmqSub <- async $ do
       subSocket <- socket Sub
@@ -65,6 +68,7 @@ runMsgServer dispatch me addrList debug = void $ forkIO $ forever $ do
           _ <- connect subSocket $ nodeIdToZmqAddr $ addr
           liftIO $ debug $  zmqGenSub ++ "made sub socket for: " ++ (show $ nodeIdToZmqAddr addr )
           ) addrList
+      liftIO $ putMVar semephory ()
       forever $ do
         env <- openEnvelope <$> receiveMulti subSocket
         ts <- liftIO getCurrentTime
@@ -102,6 +106,7 @@ runMsgServer dispatch me addrList debug = void $ forkIO $ forever $ do
     liftIO $ debug $ "[Zmq|Gen] exiting"
     return $ Right ()
 
+  liftIO $ void $ takeMVar semephory
   -- TODO: research if running two ZMQ's is better for scaling/speed than one with more sockets
   -- My gut tells me that it's either the same or faster to have a dedicated instance a load that scales n^2
   -- This one will run on port (+5000)
@@ -111,12 +116,13 @@ runMsgServer dispatch me addrList debug = void $ forkIO $ forever $ do
       liftIO $ debug $ zmqAerPub ++ "launch!"
       pubSock <- socket Pub
       _ <- bind pubSock $ nodeIdToZmqAddr $ me { _port = 5000 + _port me }
+      liftIO $ putMVar semephory ()
       forever $ do
         !msgs <- liftIO (_unOutboundAerRvRvr <$> readComm aerRvRvrRead) >>= return . fmap sealEnvelope
         --liftIO $ debug $ zmqAerPub ++ "publishing msg to: " ++ show (NonEmpty.head msg)
         mapM_ (sendMulti pubSock) msgs
 
-    liftIO $ threadDelay 100000 -- to be sure that the receive side is up first
+    liftIO $ void $ takeMVar semephory
 
     zmqSub <- async $ do
       subSocket <- socket Sub
@@ -126,6 +132,7 @@ runMsgServer dispatch me addrList debug = void $ forkIO $ forever $ do
           _ <- connect subSocket $ nodeIdToZmqAddr $ addr { _port = 5000 + _port addr }
           liftIO $ debug $  zmqAerSub ++ "made sub socket for: " ++ (show $ nodeIdToZmqAddr $ addr { _port = 5000 + _port addr })
           ) addrList
+      liftIO $ putMVar semephory ()
       forever $ do
         env <- openEnvelope <$> receiveMulti subSocket
         ts <- liftIO getCurrentTime

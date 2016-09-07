@@ -8,28 +8,30 @@ module Apps.Kadena.Client
   ( main
   ) where
 
+import Control.Monad.State
+import Control.Lens
+import Control.Monad.Catch
 import Control.Concurrent.Lifted (threadDelay)
-import Control.Monad.Reader
+
+import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Lazy.Char8 as BSL
+import Data.Maybe (fromJust, fromMaybe)
+import qualified Data.HashMap.Strict as HMap
 import Data.Either ()
-import Text.Read (readMaybe)
-import System.IO
-import GHC.Int (Int64)
-import qualified Data.Text as T
 import Data.Aeson hiding ((.=))
 import Data.Aeson.Lens
 import Data.Aeson.Types hiding ((.=),parse)
-import Control.Monad.State
+import qualified Data.Yaml as Y
+import Text.Read (readMaybe)
+import qualified Data.Text as T
+
 import Network.Wreq
-import Control.Lens
-import Control.Monad.Catch
+import System.IO
+import GHC.Int (Int64)
 
 import Kadena.Types.Base
 import Kadena.Command.Types
 import Kadena.Types.Api
-
-
-
 
 data ReplState = ReplState {
       _server :: String
@@ -106,11 +108,31 @@ showResult tdelay rids countm = loop (0 :: Int) where
         rs -> case parseEither parseJSON (last rs) of
             Right (PollSuccessEntry lat rsp) ->
                 case countm of
-                  Nothing -> flushStrLn (BSL.unpack (encode rsp))
+--                  Nothing -> flushStrLn (BS8.unpack (Y.encode rsp))
+                  Nothing -> flushStrLn $ fromMaybe (BS8.unpack (Y.encode rsp)) (pprintBalances rsp)
                   Just cnt -> flushStrLn $ intervalOfNumerous cnt lat
             Left _ ->  loop (succ c)
 
 
+pprintBalances :: Value -> Maybe String
+pprintBalances v = do
+  let headerRow =    "Account   | Balance      | Last Change  | Data Payload\n"
+                  ++ "------------------------------------------------------\n"
+      acctRow acctName v' = do
+        amt <- v' ^? key "amount" >>= return . (filter (\a -> a /= '\n' && a /= '.')) . BS8.unpack . Y.encode >>= \v2 -> return $ v2 ++ take (12 - length v2) (repeat ' ')
+        lastChange <- v' ^? key "balance" >>= return . (filter (\a -> a /= '\n' && a /= '.')) . BS8.unpack . Y.encode >>= \v2 -> return $ v2 ++ take (12 - length v2) (repeat ' ')
+        dataPay <- v' ^? key "data" >>= return . (filter (\a -> a /= '\n' && a /= '.')) . BS8.unpack . Y.encode
+        return $ acctName ++ " | " ++ lastChange ++ " | " ++ amt ++ " | " ++ dataPay ++ "\n"
+  (res :: Value) <- v ^? key "result"
+  case res of
+    Object res' | HMap.size res' == 2 -> do
+      acct1 <- (res ^? key "Acct1") >>= acctRow "Acct1    "
+      acct2 <- (res ^? key "Acct2") >>= acctRow "Acct2    "
+      return $ headerRow ++ acct1 ++ acct2
+    _ -> Nothing
+
+_sampleBalances :: Value
+_sampleBalances = fromJust $ decode "{\"status\": \"Success\",\"result\": {\"Acct1\": {\"amount\": \"-1%1\",\"data\": {\"transfer-to\": \"Acct2\"},\"balance\": \"87000%1\"},\"Acct2\": {\"amount\": \"1%1\",\"data\": {\"transfer-from\": \"Acct1\"},\"balance\": \"13000%1\"}}}"
 
 
 runREPL :: StateT ReplState IO ()

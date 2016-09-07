@@ -22,7 +22,7 @@ module Kadena.Types.Service.Sender
   , SenderService
   , ServiceEnv(..), myNodeId, currentLeader, currentTerm, myPublicKey
   , myPrivateKey, yesVotes, debugPrint, serviceRequestChan, outboundGeneral, outboundAerRvRvr
-  , logService, otherNodes, nodeRole, getEvidenceState
+  , logService, otherNodes, nodeRole, getEvidenceState, publishMetric
   ) where
 
 import Control.Lens
@@ -35,6 +35,7 @@ import qualified Control.Concurrent.Chan.Unagi as Unagi
 import Data.Set (Set)
 
 import Kadena.Types.Base
+import Kadena.Types.Metric
 import Kadena.Types.Message
 import Kadena.Types.Comms
 import Kadena.Types.Service.Log (LogServiceChannel)
@@ -104,16 +105,17 @@ data ServiceEnv = ServiceEnv
   , _myPublicKey :: !PublicKey
   , _myPrivateKey :: !PrivateKey
   , _yesVotes :: !(Set RequestVoteResponse)
-  , _debugPrint :: (String -> IO ())
+  , _debugPrint :: !(String -> IO ())
   , _aeReplicationLogLimit :: Int
   -- Comm Channels
-  , _serviceRequestChan :: SenderServiceChannel
-  , _outboundGeneral :: OutboundGeneralChannel
-  , _outboundAerRvRvr :: OutboundAerRvRvrChannel
+  , _serviceRequestChan :: !SenderServiceChannel
+  , _outboundGeneral :: !OutboundGeneralChannel
+  , _outboundAerRvRvr :: !OutboundAerRvRvrChannel
   -- Log Storage
-  , _logService :: LogServiceChannel
+  , _logService :: !LogServiceChannel
   -- Evidence Thread's Published State
-  , _getEvidenceState :: IO PublishedEvidenceState
+  , _getEvidenceState :: !(IO PublishedEvidenceState)
+  , _publishMetric :: !(Metric -> IO ())
   }
 makeLenses ''ServiceEnv
 

@@ -33,14 +33,16 @@ initEvidenceEnv :: Dispatch
                 -> IORef Config
                 -> MVar PublishedEvidenceState
                 -> MVar ResetLeaderNoFollowersTimeout
+                -> (Metric -> IO ())
                 -> EvidenceEnv
-initEvidenceEnv dispatch debugFn' mConfig' mPubStateTo' mResetLeaderNoFollowers' = EvidenceEnv
+initEvidenceEnv dispatch debugFn' mConfig' mPubStateTo' mResetLeaderNoFollowers' publishMetric' = EvidenceEnv
   { _logService = dispatch ^. Dispatch.logService
   , _evidence = dispatch ^. Dispatch.evidence
   , _mResetLeaderNoFollowers = mResetLeaderNoFollowers'
   , _mConfig = mConfig'
   , _mPubStateTo = mPubStateTo'
   , _debugFn = debugFn'
+  , _publishMetric = publishMetric'
   }
 
 rebuildState :: Maybe EvidenceState -> EvidenceProcEnv (EvidenceState)

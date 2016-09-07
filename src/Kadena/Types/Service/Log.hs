@@ -22,7 +22,7 @@ module Kadena.Types.Service.Log
   , QueryApi(..)
   , evalQuery
   , CryptoWorkerStatus(..)
-  , LogEnv(..), logQueryChannel, internalEvent, debugPrint, dbConn, evidence, keySet
+  , LogEnv(..), logQueryChannel, internalEvent, debugPrint, dbConn, evidence, keySet, publishMetric
   , cryptoWorkerTVar
   , HasQueryResult(..)
   , LogThread
@@ -64,6 +64,7 @@ import Database.SQLite.Simple (Connection(..))
 import GHC.Generics
 
 import Kadena.Types.Base
+import Kadena.Types.Metric
 import Kadena.Types.Config (KeySet(..))
 import Kadena.Types.Log
 import qualified Kadena.Types.Log as X
@@ -523,7 +524,7 @@ instance HasQueryResult LastLogTerm Term where
     _ -> error "Invariant Error: hasQueryResult LastLogTerm failed to find LastLogTerm"
   {-# INLINE hasQueryResult #-}
 
-instance HasQueryResult EntriesAfter (LogEntries) where
+instance HasQueryResult EntriesAfter LogEntries where
   hasQueryResult (EntriesAfter li cnt) m = case Map.lookup (GetEntriesAfter li cnt) m of
     Just (QrEntriesAfter v) -> v
     _ -> error "Invariant Error: hasQueryResult EntriesAfter failed to find EntriesAfter"
@@ -558,13 +559,14 @@ data CryptoWorkerStatus =
   deriving (Show, Eq)
 
 data LogEnv = LogEnv
-  { _logQueryChannel :: LogServiceChannel
-  , _internalEvent :: InternalEventChannel
-  , _evidence :: EvidenceChannel
-  , _keySet :: KeySet
-  , _cryptoWorkerTVar :: TVar CryptoWorkerStatus
-  , _debugPrint :: (String -> IO ())
-  , _dbConn :: Maybe Connection }
+  { _logQueryChannel :: !LogServiceChannel
+  , _internalEvent :: !InternalEventChannel
+  , _evidence :: !EvidenceChannel
+  , _keySet :: !KeySet
+  , _cryptoWorkerTVar :: !(TVar CryptoWorkerStatus)
+  , _debugPrint :: !(String -> IO ())
+  , _dbConn :: !(Maybe Connection)
+  , _publishMetric :: !(Metric -> IO ())}
 makeLenses ''LogEnv
 
-type LogThread = RWST LogEnv () (LogState) IO
+type LogThread = RWST LogEnv () LogState IO

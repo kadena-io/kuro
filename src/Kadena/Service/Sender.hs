@@ -38,9 +38,14 @@ import Kadena.Types hiding (debugPrint, ConsensusState(..), Config(..)
   , Consensus, ConsensusSpec(..), nodeId, sendMessage, outboundGeneral, outboundAerRvRvr
   , myPublicKey, myPrivateKey, otherNodes, nodeRole, term, Event(..), logService)
 
-
-runSenderService :: Dispatch -> KD.Config -> (String -> IO ()) -> MVar Ev.PublishedEvidenceState -> IO ()
-runSenderService dispatch conf debugFn mPubEvState = do
+runSenderService
+  :: Dispatch
+  -> KD.Config
+  -> (String -> IO ())
+  -> (Metric -> IO ())
+  -> MVar Ev.PublishedEvidenceState
+  -> IO ()
+runSenderService dispatch conf debugFn publishMetric' mPubEvState = do
   s <- return $ ServiceEnv
     { _myNodeId = conf ^. KD.nodeId
     , _nodeRole = Follower
@@ -59,6 +64,7 @@ runSenderService dispatch conf debugFn mPubEvState = do
     -- Log Storage
     , _logService = dispatch ^. KD.logService
     , _getEvidenceState = readMVar mPubEvState
+    , _publishMetric = publishMetric'
     }
   void $ liftIO $ runReaderT serviceRequests s
 

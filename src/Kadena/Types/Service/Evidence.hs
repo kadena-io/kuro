@@ -10,9 +10,8 @@ module Kadena.Types.Service.Evidence
   , EvidenceChannel(..)
   , EvidenceEnv(..)
   , logService, evidence, mConfig, mPubStateTo, mResetLeaderNoFollowers
-  -- TODO: re-integrate EKG when Evidence Service is finished and hspec tests are written
-  --, publishMetric
   , debugFn
+  , publishMetric
   , CommitCheckResult(..)
   , module X
   ) where
@@ -27,22 +26,22 @@ import qualified Data.Set as Set
 import Data.Thyme.Clock
 
 import Kadena.Types.Base as X
+import Kadena.Types.Metric as X
 import Kadena.Types.Config as X
 import Kadena.Types.Message as X
 import Kadena.Types.Comms as X
 import Kadena.Types.Evidence as X
 import Kadena.Types.Event (ResetLeaderNoFollowersTimeout)
---import Kadena.Types.Metric (Metric)
 import Kadena.Types.Service.Log (LogServiceChannel)
 
 data EvidenceEnv = EvidenceEnv
-  { _logService :: LogServiceChannel
-  , _evidence :: EvidenceChannel
-  , _mResetLeaderNoFollowers :: MVar ResetLeaderNoFollowersTimeout
-  , _mConfig :: IORef Config
-  , _mPubStateTo :: MVar PublishedEvidenceState
-  , _debugFn :: (String -> IO ())
---  , _publishMetric :: Metric -> IO ()
+  { _logService :: !LogServiceChannel
+  , _evidence :: !EvidenceChannel
+  , _mResetLeaderNoFollowers :: !(MVar ResetLeaderNoFollowersTimeout)
+  , _mConfig :: !(IORef Config)
+  , _mPubStateTo :: !(MVar PublishedEvidenceState)
+  , _debugFn :: !(String -> IO ())
+  , _publishMetric :: !(Metric -> IO ())
   }
 makeLenses ''EvidenceEnv
 

@@ -27,6 +27,10 @@ runPrimedConsensusServer :: ReceiverEnv -> Config -> ConsensusSpec -> ConsensusS
 runPrimedConsensusServer renv rconf spec rstate timeCache' mPubConsensus' = do
   let csize = 1 + Set.size (rconf ^. otherNodes)
       qsize = getQuorumSize csize
+      publishMetric' = (spec ^. publishMetric)
+  publishMetric' $ MetricClusterSize csize
+  publishMetric' $ MetricAvailableSize csize
+  publishMetric' $ MetricQuorumSize qsize
   void $ runMessageReceiver renv
   rconf' <- newIORef rconf
   timerTarget' <- return $ (rstate ^. timerTarget)
@@ -34,10 +38,10 @@ runPrimedConsensusServer renv rconf spec rstate timeCache' mPubConsensus' = do
   mEvState <- newEmptyMVar
   mLeaderNoFollowers <- newEmptyMVar
 
-  evEnv <- return $! Ev.initEvidenceEnv (_dispatch renv) (RENV._debugPrint renv) rconf' mEvState mLeaderNoFollowers
+  evEnv <- return $! Ev.initEvidenceEnv (_dispatch renv) (RENV._debugPrint renv) rconf' mEvState mLeaderNoFollowers publishMetric'
 
-  link =<< (async $ Log.runLogService (_dispatch renv) (RENV._debugPrint renv) (rconf ^. logSqlitePath) (RENV._keySet renv))
-  link =<< (async $ Sender.runSenderService (_dispatch renv) rconf (RENV._debugPrint renv) mEvState)
+  link =<< (async $ Log.runLogService (_dispatch renv) (RENV._debugPrint renv) publishMetric' (rconf ^. logSqlitePath) (RENV._keySet renv))
+  link =<< (async $ Sender.runSenderService (_dispatch renv) rconf (RENV._debugPrint renv) publishMetric' mEvState)
   link =<< (async $ Ev.runEvidenceService evEnv)
   -- This helps for testing, we'll send tocks every second to inflate the logs when we see weird pauses right before an election
   -- forever (writeComm (_internalEvent $ _dispatch renv) (InternalEvent $ Tock $ t) >> threadDelay 1000000)

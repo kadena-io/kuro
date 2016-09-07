@@ -25,14 +25,20 @@ import Data.Thyme.Clock
 import Database.SQLite.Simple (Connection(..))
 
 import Kadena.Types.Comms
+import Kadena.Types.Metric
 import Kadena.Persistence.SQLite
 import Kadena.Types.Service.Log as X
 import qualified Kadena.Types.Service.Evidence as Ev
 import qualified Kadena.Types.Dispatch as Dispatch
 import Kadena.Types (startIndex, Event(ApplyLogEntries), Dispatch, interval)
 
-runLogService :: Dispatch -> (String -> IO()) -> FilePath -> KeySet -> IO ()
-runLogService dispatch dbg dbPath keySet' = do
+runLogService :: Dispatch
+              -> (String -> IO())
+              -> (Metric -> IO())
+              -> FilePath
+              -> KeySet
+              -> IO ()
+runLogService dispatch dbg publishMetric' dbPath keySet' = do
   dbConn' <- if not (null dbPath)
     then do
       dbg $ "[LogThread] Database Connection Opened: " ++ dbPath
@@ -49,6 +55,7 @@ runLogService dispatch dbg dbPath keySet' = do
     , _keySet = keySet'
     , _cryptoWorkerTVar = cryptoMvar
     , _dbConn = dbConn'
+    , _publishMetric = publishMetric'
     }
   void (link <$> tinyCryptoWorker keySet' dbg (dispatch ^. Dispatch.logService) cryptoMvar)
   initLogState' <- case dbConn' of
@@ -75,7 +82,7 @@ runQuery (Query aq mv) = do
   qr <- return $ Map.fromSet (`evalQuery` a') aq
   liftIO $ putMVar mv qr
 runQuery (Update ul) = do
-  modify (\a' -> updateLogs ul a')
+  modify (updateLogs ul)
   updateEvidenceCache ul
   dbConn' <- view dbConn
   case dbConn' of
@@ -135,7 +142,8 @@ updateEvidenceCache (ULReplicate _) = updateEvidenceCache' >> tellTinyCryptoWork
 updateEvidenceCache (UpdateVerified _) = do
   tellKadenaToApplyLogEntries
   view cryptoWorkerTVar >>= liftIO . atomically . (`writeTVar` Idle) >> tellTinyCryptoWorkerToDoMore
-updateEvidenceCache (ULCommitIdx _) = tellKadenaToApplyLogEntries
+updateEvidenceCache (ULCommitIdx _) =
+  tellKadenaToApplyLogEntries
 
 -- For pattern matching totality checking goodness
 updateEvidenceCache' :: LogThread ()
@@ -177,6 +185,8 @@ tellKadenaToApplyLogEntries = do
       lsLastApplied .= appliedIndex'
       view internalEvent >>= liftIO . (`writeComm` (InternalEvent $ ApplyLogEntries unappliedEntries'))
       debug $ "informing Kadena to apply up to: " ++ show appliedIndex'
+      publishMetric' <- view publishMetric
+      liftIO $ publishMetric' $ MetricCommitIndex appliedIndex'
     Nothing -> return ()
 
 tellTinyCryptoWorkerToDoMore :: LogThread ()

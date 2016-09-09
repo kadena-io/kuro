@@ -14,7 +14,7 @@ module Kadena.Consensus.Handle.Types (
   -- * RPC
   , AppendEntries(..)
   , AppendEntriesResponse(..)
-  , RequestVote(..)
+  , RequestVote(..), rvTerm, rvCandidateId, rvLastLogIndex, rvLastLogTerm, rvProvenance
   , RequestVoteResponse(..)
   , Command(..)
   , CommandResponse(..)
@@ -33,6 +33,8 @@ module Kadena.Consensus.Handle.Types (
   , NewLogEntries(..), nleTerm, nleEntries
   , UpdateCommitIndex(..), uci
   , UpdateLogs(..)
+  , LazyVote(..), lvVoteFor, lvAllReceived
+  , HeardFromLeader(..), hflLeaderId, hflYourRvSig, hflLastLogIndex, hflLastLogTerm
   ) where
 
 -- This module exists so we don't need to do a bunch of selective/hiding imports

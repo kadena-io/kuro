@@ -95,7 +95,7 @@ serviceRequests = do
           SingleAER{..} -> sendAppendEntriesResponse _srFor _srSuccess _srConvinced
           BroadcastAER -> sendAllAppendEntriesResponse
           BroadcastRV -> sendAllRequestVotes
-          BroadcastRVR{..} -> sendRequestVoteResponse _srCandidate _srLastLogIndex _srVote
+          BroadcastRVR{..} -> sendRequestVoteResponse _srCandidate _srHeardFromLeader _srVote
           SendCommandResults{..} -> sendResults _srResults
           ForwardCommandToLeader{..} -> mapM_ (sendRPC _srFor . CMD') _srCommands
       Tick t -> liftIO (pprintTock t) >>= debug
@@ -279,11 +279,11 @@ sendAllAppendEntriesResponse = do
   edTime <- liftIO $ getCurrentTime
   debug $ "pub AER taking " ++ show (interval stTime edTime) ++ "mics to construct"
 
-sendRequestVoteResponse :: NodeId -> LogIndex -> Bool -> SenderService ()
-sendRequestVoteResponse target logIndex' vote = do
+sendRequestVoteResponse :: NodeId -> Maybe HeardFromLeader -> Bool -> SenderService ()
+sendRequestVoteResponse target heardFromLeader vote = do
   term' <- view currentTerm
   myNodeId' <- view myNodeId
-  sendAerRvRvr $! RVR' $! RequestVoteResponse term' logIndex' myNodeId' vote target NewMsg
+  sendAerRvRvr $! RVR' $! RequestVoteResponse term' heardFromLeader myNodeId' vote target NewMsg
 
 sendResults :: [(NodeId, CommandResponse)] -> SenderService ()
 sendResults results = do

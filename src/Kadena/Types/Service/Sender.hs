@@ -8,7 +8,6 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -75,7 +74,7 @@ data ServiceRequest =
     BroadcastRV |
     BroadcastRVR
     { _srCandidate :: !NodeId
-    , _srLastLogIndex :: !LogIndex
+    , _srHeardFromLeader :: !(Maybe HeardFromLeader)
     , _srVote :: !Bool} |
     SendCommandResults
     { _srResults :: ![(NodeId, CommandResponse)]} |

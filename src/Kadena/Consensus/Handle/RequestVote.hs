@@ -13,6 +13,7 @@ import Control.Monad.Writer.Strict
 import Control.Monad.State (get)
 
 import qualified Data.Set as Set
+import qualified Data.Map.Strict as Map
 
 import Kadena.Util.Util (debug, enqueueRequest, queryLogs)
 import qualified Kadena.Service.Sender as Sender
@@ -25,7 +26,7 @@ data RequestVoteEnv = RequestVoteEnv {
 -- Old Constructors
     _term             :: Term
   , _votedFor         :: Maybe NodeId
-  , _lazyVote         :: Maybe (Term, NodeId, LogIndex)
+  , _lazyVote         :: Maybe LazyVote
   , _currentLeader    :: Maybe NodeId
   , _ignoreLeader     :: Bool
   , _lastLogIndexIn   :: LogIndex
@@ -34,13 +35,13 @@ data RequestVoteEnv = RequestVoteEnv {
 makeLenses ''RequestVoteEnv
 
 data RequestVoteOut = NoAction
-                    | UpdateLazyVote { _stateCastLazyVote :: (Term, NodeId, LogIndex) }
-                    | ReplyToRPCSender { _targetNode :: NodeId
-                                       , _lastLogIndex :: LogIndex
+                    | UpdateLazyVote { _updateLazyVote :: !LazyVote}
+                    | ReplyToRPCSender { _targetNode :: !NodeId
+                                       , _lastLogIndex :: !(Maybe HeardFromLeader)
                                        , _vote :: Bool }
 
 handleRequestVote :: (MonadWriter [String] m, MonadReader RequestVoteEnv m) => RequestVote -> m RequestVoteOut
-handleRequestVote RequestVote{..} = do
+handleRequestVote rv@RequestVote{..} = do
   tell ["got a requestVote RPC for " ++ show _rvTerm]
   votedFor' <- view votedFor
   term' <- view term
@@ -48,6 +49,7 @@ handleRequestVote RequestVote{..} = do
   ignoreLeader' <- view ignoreLeader
   lli <- view lastLogIndexIn
   llt <- view lastTerm
+  let hfl = mkHeardFromLeader currentLeader' _rvProvenance llt lli
   case votedFor' of
     _      | ignoreLeader' && currentLeader' == Just _rvCandidateId -> return NoAction
       -- don't respond to a candidate if they were leader and a client
@@ -56,44 +58,52 @@ handleRequestVote RequestVote{..} = do
     _      | _rvTerm < term' -> do
       -- this is an old candidate
       tell ["this is for an old term"]
-      return $ ReplyToRPCSender _rvCandidateId lli False
+      return $ ReplyToRPCSender _rvCandidateId hfl False
 
     Just c | c == _rvCandidateId && _rvTerm == term' -> do
       -- already voted for this candidate in this term
       tell ["already voted for this candidate"]
-      return $ ReplyToRPCSender _rvCandidateId lli True
+      return $ ReplyToRPCSender _rvCandidateId Nothing True
 
     Just _ | _rvTerm == term' -> do
       -- already voted for a different candidate in this term
       tell ["already voted for a different candidate"]
-      return $ ReplyToRPCSender _rvCandidateId lli False
+      return $ ReplyToRPCSender _rvCandidateId Nothing False
 
     _ | _rvLastLogIndex < lli -> do
       tell ["Candidate has an out of date log, so vote no immediately"]
-      return $ ReplyToRPCSender _rvCandidateId lli False
+      return $ ReplyToRPCSender _rvCandidateId hfl False
 
     _ | (_rvLastLogTerm, _rvLastLogIndex) >= (llt, lli) -> do
       lv <- view lazyVote
       case lv of
-        Just (t, _, _) | t >= _rvTerm -> do
-          tell ["would vote lazily, but already voted lazily for candidate in same or higher term"]
-          return NoAction
-        Just _ -> do
-          tell ["replacing lazy vote"]
-          return $ UpdateLazyVote (_rvTerm, _rvCandidateId, lli)
         Nothing -> do
           tell ["haven't voted, (lazily) voting for this candidate"]
-          return $ UpdateLazyVote (_rvTerm, _rvCandidateId, lli)
+          return $ UpdateLazyVote $ LazyVote rv (Map.singleton (rv ^. rvCandidateId) rv)
+        Just lv'
+          | (lv' ^. lvVoteFor.rvTerm) >= _rvTerm -> do
+              tell ["would vote lazily, but already voted lazily for candidate in same or higher term"]
+              return $ UpdateLazyVote lv'
+                -- if we already have an RV for this nodeId then compare the terms, biased towards always keeping the newer one
+                { _lvAllReceived = Map.insertWith (\old new -> if (old ^. rvTerm) > (new ^. rvTerm) then old else new) (rv ^. rvCandidateId) rv (lv' ^. lvAllReceived) }
+          | otherwise -> do
+              tell ["replacing lazy vote"]
+              return $ UpdateLazyVote $ LazyVote
+                { _lvVoteFor = rv
+                , _lvAllReceived = Map.insert (rv ^. rvCandidateId) rv (lv' ^. lvAllReceived) }
     _ -> do
       tell ["haven't voted, but my log is better than this candidate's"]
-      return $ ReplyToRPCSender _rvCandidateId lli False
+      return $ ReplyToRPCSender _rvCandidateId hfl False
 
---createRequestVoteResponse' :: (MonadWriter [String] m, MonadReader RequestVoteEnv m) => NodeId -> LogIndex -> Bool -> m (NodeId, RequestVoteResponse)
---createRequestVoteResponse' target lastLogIndex' vote = do
---  term' <- view term
---  myNodeId' <- view myNodeId
---  (target,) <$> createRequestVoteResponse term' lastLogIndex' myNodeId' target vote
-
+mkHeardFromLeader :: Maybe NodeId -> Provenance -> Term -> LogIndex -> Maybe HeardFromLeader
+mkHeardFromLeader _ NewMsg _ _ = error $ "Invariant Error: RV that is a new message encountered in mkHeardFromLeader"
+mkHeardFromLeader Nothing _ _ _= Nothing
+mkHeardFromLeader (Just leader') ReceivedMsg{..} term' lli' = Just $ HeardFromLeader
+  { _hflLeaderId = leader'
+  , _hflYourRvSig = _pDig ^. KD.digSig
+  , _hflLastLogIndex = lli'
+  , _hflLastLogTerm = term'
+  }
 
 handle :: RequestVote -> KD.Consensus ()
 handle rv = do
@@ -112,4 +122,4 @@ handle rv = do
   case rvo of
     NoAction -> return ()
     UpdateLazyVote stateUpdate -> KD.lazyVote .= Just stateUpdate
-    ReplyToRPCSender{..} -> enqueueRequest $ Sender.BroadcastRVR _targetNode _lastLogIndex _vote
+    ReplyToRPCSender{..} -> enqueueRequest $ Sender.BroadcastRVR _targetNode Nothing _vote

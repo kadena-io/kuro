@@ -88,7 +88,7 @@ makeLenses (''ConsensusSpec)
 
 data LazyVote = LazyVote
   { _lvVoteFor :: !RequestVote
-  , _lvAllReceived :: !(Set RequestVote)
+  , _lvAllReceived :: !(Map NodeId RequestVote)
   } deriving (Show, Eq)
 makeLenses ''LazyVote
 

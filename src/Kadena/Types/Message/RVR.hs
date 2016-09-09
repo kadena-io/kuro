@@ -1,18 +1,24 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module Kadena.Types.Message.RVR
   ( RequestVoteResponse(..)
   , rvrTerm
-  , rvrCurLogIndex
+  , rvrHeardFromLeader
   , rvrNodeId
   , voteGranted
   , rvrCandidateId
   , rvrProvenance
   , toSetRvr
   , decodeRVRWire
+  , HeardFromLeader(..)
+  , hflLeaderId
+  , hflYourRvSig
+  , hflLastLogIndex
+  , hflLastLogTerm
   ) where
 
 import Control.Lens
@@ -27,9 +33,17 @@ import Kadena.Types.Base
 import Kadena.Types.Config
 import Kadena.Types.Message.Signed
 
+data HeardFromLeader = HeardFromLeader
+  { _hflLeaderId :: !NodeId
+  , _hflYourRvSig :: !Signature
+  , _hflLastLogIndex :: !LogIndex
+  , _hflLastLogTerm :: !Term
+  } deriving (Show, Eq, Ord, Generic, Serialize)
+makeLenses ''HeardFromLeader
+
 data RequestVoteResponse = RequestVoteResponse
   { _rvrTerm        :: !Term
-  , _rvrCurLogIndex :: !LogIndex
+  , _rvrHeardFromLeader :: !(Maybe HeardFromLeader)
   , _rvrNodeId      :: !NodeId
   , _voteGranted    :: !Bool
   , _rvrCandidateId :: !NodeId
@@ -38,13 +52,13 @@ data RequestVoteResponse = RequestVoteResponse
   deriving (Show, Eq, Ord, Generic)
 makeLenses ''RequestVoteResponse
 
-data RVRWire = RVRWire (Term,LogIndex,NodeId,Bool,NodeId)
+data RVRWire = RVRWire (Term,Maybe HeardFromLeader,NodeId,Bool,NodeId)
   deriving (Show, Generic)
 instance Serialize RVRWire
 
 instance WireFormat RequestVoteResponse where
   toWire nid pubKey privKey RequestVoteResponse{..} = case _rvrProvenance of
-    NewMsg -> let bdy = S.encode $ RVRWire (_rvrTerm,_rvrCurLogIndex,_rvrNodeId,_voteGranted,_rvrCandidateId)
+    NewMsg -> let bdy = S.encode $ RVRWire (_rvrTerm,_rvrHeardFromLeader,_rvrNodeId,_voteGranted,_rvrCandidateId)
                   sig = sign bdy privKey pubKey
                   dig = Digest nid sig pubKey RVR
               in SignedRPC dig bdy

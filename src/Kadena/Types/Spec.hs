@@ -21,6 +21,7 @@ module Kadena.Types.Spec
   , Event(..)
   , mkConsensusEnv
   , PublishedConsensus(..),pcLeader,pcRole,pcTerm
+  , LazyVote(..), lvVoteFor, lvAllReceived
   ) where
 
 -- timeSinceLastAER, lNextIndex, lConvinced, commitProof
@@ -85,22 +86,28 @@ data ConsensusSpec = ConsensusSpec
   }
 makeLenses (''ConsensusSpec)
 
+data LazyVote = LazyVote
+  { _lvVoteFor :: !RequestVote
+  , _lvAllReceived :: !(Set RequestVote)
+  } deriving (Show, Eq)
+makeLenses ''LazyVote
+
 data ConsensusState = ConsensusState
-  { _nodeRole         :: Role
-  , _term             :: Term
-  , _votedFor         :: Maybe NodeId
-  , _lazyVote         :: Maybe (Term, NodeId, LogIndex)
-  , _currentLeader    :: Maybe NodeId
-  , _ignoreLeader     :: Bool
-  , _timerThread      :: Maybe ThreadId
-  , _timerTarget      :: MVar Event
-  , _replayMap        :: Map (NodeId, Signature) (Maybe CommandResult)
-  , _cmdBloomFilter   :: Bloom (NodeId, Signature)
-  , _cYesVotes        :: Set RequestVoteResponse
-  , _cPotentialVotes  :: Set NodeId
-  , _timeSinceLastAER :: Int
+  { _nodeRole         :: !Role
+  , _term             :: !Term
+  , _votedFor         :: !(Maybe NodeId)
+  , _lazyVote         :: !(Maybe LazyVote)
+  , _currentLeader    :: !(Maybe NodeId)
+  , _ignoreLeader     :: !Bool
+  , _timerThread      :: !(Maybe ThreadId)
+  , _timerTarget      :: !(MVar Event)
+  , _replayMap        :: !(Map (NodeId, Signature) (Maybe CommandResult))
+  , _cmdBloomFilter   :: !(Bloom (NodeId, Signature))
+  , _cYesVotes        :: !(Set RequestVoteResponse)
+  , _cPotentialVotes  :: !(Set NodeId)
+  , _timeSinceLastAER :: !Int
   -- used for metrics
-  , _lastCommitTime   :: Maybe UTCTime
+  , _lastCommitTime   :: !(Maybe UTCTime)
   }
 makeLenses ''ConsensusState
 

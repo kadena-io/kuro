@@ -6,7 +6,7 @@
 
  (defun create-account (address)
    (insert 'demo-accounts address
-         { "balance": (% 0 1), "amount": (% 0 1), "data": "Created account" }))
+         { "balance": 0.0, "amount": 0.0, "data": "Created account" }))
 
  (defun transfer (src dest amount)
    "transfer AMOUNT from SRC to DEST"
@@ -41,5 +41,5 @@
 (create-table 'demo-accounts 'demo)
 
 (create-account "Acct1")
-(fund-account "Acct1" (% 100000 1))
+(fund-account "Acct1" 100000.0)
 (create-account "Acct2")

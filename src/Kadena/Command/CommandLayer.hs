@@ -29,7 +29,7 @@ import Text.PrettyPrint.ANSI.Leijen (renderCompact,displayS)
 
 import Pact.Types hiding (PublicKey)
 import qualified Pact.Types as Pact
-import Pact.Pure hiding (throwError)
+import Pact.Pure
 import Pact.Eval
 import Pact.Compile as Pact
 import Pact.Native
@@ -216,4 +216,4 @@ mkSimplePact :: Text -> CommandEntry
 mkSimplePact = mkRPC . (`ExecMsg` A.Null)
 
 mkTestPact :: CommandEntry
-mkTestPact = mkSimplePact "(demo.transfer \"Acct1\" \"Acct2\" (% 1 1))"
+mkTestPact = mkSimplePact "(demo.transfer \"Acct1\" \"Acct2\" 1.0)"

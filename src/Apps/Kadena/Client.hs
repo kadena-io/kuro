@@ -55,7 +55,7 @@ readPrompt = do
   if e then return Nothing else Just <$> liftIO getLine
 
 _run :: StateT ReplState m a -> m (a, ReplState)
-_run a = runStateT a (ReplState "localhost:8000" "(demo.transfer \"Acct1\" \"Acct2\" (% 1 1))")
+_run a = runStateT a (ReplState "localhost:8000" "(demo.transfer \"Acct1\" \"Acct2\" 1.00)")
 
 sendCmd :: String -> StateT ReplState IO ()
 sendCmd cmd = do
@@ -119,9 +119,9 @@ pprintBalances v = do
   let headerRow =    "Account   | Balance      | Last Change  | Data Payload\n"
                   ++ "------------------------------------------------------\n"
       acctRow acctName v' = do
-        amt <- v' ^? key "amount" >>= return . (filter (\a -> a /= '\n' && a /= '.')) . BS8.unpack . Y.encode >>= \v2 -> return $ v2 ++ take (12 - length v2) (repeat ' ')
-        lastChange <- v' ^? key "balance" >>= return . (filter (\a -> a /= '\n' && a /= '.')) . BS8.unpack . Y.encode >>= \v2 -> return $ v2 ++ take (12 - length v2) (repeat ' ')
-        dataPay <- v' ^? key "data" >>= return . (filter (\a -> a /= '\n' && a /= '.')) . BS8.unpack . Y.encode
+        amt <- v' ^? key "amount" >>= Just . BSL.unpack . encode >>= \v2 -> return $ v2 ++ take (12 - length v2) (repeat ' ')
+        lastChange <- v' ^? key "balance" >>= Just . BSL.unpack . encode >>= \v2 -> return $ v2 ++ take (12 - length v2) (repeat ' ')
+        dataPay <- v' ^? key "data" >>= Just . BSL.unpack . encode
         return $ acctName ++ " | " ++ lastChange ++ " | " ++ amt ++ " | " ++ dataPay ++ "\n"
   (res :: Value) <- v ^? key "result"
   case res of
@@ -132,7 +132,7 @@ pprintBalances v = do
     _ -> Nothing
 
 _sampleBalances :: Value
-_sampleBalances = fromJust $ decode "{\"status\": \"Success\",\"result\": {\"Acct1\": {\"amount\": \"-1%1\",\"data\": {\"transfer-to\": \"Acct2\"},\"balance\": \"87000%1\"},\"Acct2\": {\"amount\": \"1%1\",\"data\": {\"transfer-from\": \"Acct1\"},\"balance\": \"13000%1\"}}}"
+_sampleBalances = fromJust $ decode "{\"status\": \"Success\",\"result\": {\"Acct1\": {\"amount\": \"-1.0\",\"data\": {\"transfer-to\": \"Acct2\"},\"balance\": \"87000.0\"},\"Acct2\": {\"amount\": \"1.0\",\"data\": {\"transfer-from\": \"Acct1\"},\"balance\": \"13000.0\"}}}"
 
 
 runREPL :: StateT ReplState IO ()

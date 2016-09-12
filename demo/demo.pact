@@ -22,7 +22,7 @@
 
  (defun read-account (id)
    "Read data for account ID"
-   (read 'demo-accounts id 'balance 'amount 'data))
+   (+ { "account": id } (read 'demo-accounts id 'balance 'amount 'data)))
 
  (defun check-balance (balance amount)
    (enforce (<= amount balance) "Insufficient funds"))
@@ -33,8 +33,8 @@
            , "data": "Admin account funding" }))
 
  (defun read-all ()
-   { "Acct1": (read-account "Acct1")
-   , "Acct2": (read-account "Acct2")})
+   (map (read-account) (keys 'demo-accounts)))
+
 
 )
 

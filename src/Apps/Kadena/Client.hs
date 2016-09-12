@@ -16,7 +16,7 @@ import Control.Concurrent.Lifted (threadDelay)
 import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Lazy.Char8 as BSL
 import Data.Maybe (fromJust, fromMaybe)
-import qualified Data.HashMap.Strict as HMap
+import qualified Data.HashMap.Strict as HM
 import Data.Either ()
 import Data.Aeson hiding ((.=))
 import Data.Aeson.Lens
@@ -24,6 +24,8 @@ import Data.Aeson.Types hiding ((.=),parse)
 import qualified Data.Yaml as Y
 import Text.Read (readMaybe)
 import qualified Data.Text as T
+import Data.Foldable
+import Data.List
 
 import Network.Wreq
 import System.IO
@@ -108,31 +110,33 @@ showResult tdelay rids countm = loop (0 :: Int) where
         rs -> case parseEither parseJSON (last rs) of
             Right (PollSuccessEntry lat rsp) ->
                 case countm of
---                  Nothing -> flushStrLn (BS8.unpack (Y.encode rsp))
-                  Nothing -> flushStrLn $ fromMaybe (BS8.unpack (Y.encode rsp)) (pprintBalances rsp)
+                  Nothing -> flushStrLn $ fromMaybe (BS8.unpack (Y.encode rsp)) (pprintResult rsp)
                   Just cnt -> flushStrLn $ intervalOfNumerous cnt lat
             Left _ ->  loop (succ c)
 
 
-pprintBalances :: Value -> Maybe String
-pprintBalances v = do
-  let headerRow =    "Account   | Balance      | Last Change  | Data Payload\n"
-                  ++ "------------------------------------------------------\n"
-      acctRow acctName v' = do
-        amt <- v' ^? key "amount" >>= Just . BSL.unpack . encode >>= \v2 -> return $ v2 ++ take (12 - length v2) (repeat ' ')
-        lastChange <- v' ^? key "balance" >>= Just . BSL.unpack . encode >>= \v2 -> return $ v2 ++ take (12 - length v2) (repeat ' ')
-        dataPay <- v' ^? key "data" >>= Just . BSL.unpack . encode
-        return $ acctName ++ " | " ++ lastChange ++ " | " ++ amt ++ " | " ++ dataPay ++ "\n"
-  (res :: Value) <- v ^? key "result"
-  case res of
-    Object res' | HMap.size res' == 2 -> do
-      acct1 <- (res ^? key "Acct1") >>= acctRow "Acct1    "
-      acct2 <- (res ^? key "Acct2") >>= acctRow "Acct2    "
-      return $ headerRow ++ acct1 ++ acct2
-    _ -> Nothing
+pprintResult :: Value -> Maybe String
+pprintResult v = do
+  let valKeys rs = either (const Nothing) id $ foldl' checkKeys (Right Nothing) rs
+      checkKeys (Right Nothing) (Object o) = Right $ Just $ sort $ HM.keys o
+      checkKeys r@(Right (Just ks)) (Object o) | sort (HM.keys o) == ks = r
+      checkKeys _ _ = Left ()
+      fill l s = s ++ replicate (l - length s) ' '
+      colwidth = 12
+      colify cw ss = intercalate " | " (map (fill cw) ss)
+      render = BSL.unpack . encode
+  o <- return $ toListOf (key "result" . values) v
+  ks <- valKeys o
+  h1 <- return $ colify colwidth (map T.unpack ks)
+  hr <- return $ replicate (length h1) '-'
+  rows <- return $ (`map` o) $ \(Object r) ->
+          intercalate " | " (map (fill colwidth . render . (r HM.!)) ks)
+  return (intercalate "\n" (h1:hr:rows))
 
-_sampleBalances :: Value
-_sampleBalances = fromJust $ decode "{\"status\": \"Success\",\"result\": {\"Acct1\": {\"amount\": \"-1.0\",\"data\": {\"transfer-to\": \"Acct2\"},\"balance\": \"87000.0\"},\"Acct2\": {\"amount\": \"1.0\",\"data\": {\"transfer-from\": \"Acct1\"},\"balance\": \"13000.0\"}}}"
+
+_s2 :: Value
+_s2 = fromJust $ decode "{\"status\":\"Success\",\"result\":[{\"amount\":100000.0,\"data\":\"Admin account funding\",\"balance\":100000.0,\"account\":\"Acct1\"},{\"amount\":0.0,\"data\":\"Created account\",\"balance\":0.0,\"account\":\"Acct2\"}]}"
+
 
 
 runREPL :: StateT ReplState IO ()
@@ -145,6 +149,7 @@ runREPL = loop True
       cmd' <- readPrompt
       case cmd' of
         Nothing -> loop False
+        Just "" -> loop True
         Just cmd -> parse cmd >> loop True
     parse cmd = do
       bcmd <- use batchCmd

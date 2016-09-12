@@ -27,7 +27,7 @@ import qualified Kadena.Types as KD
 data ElectionTimeoutEnv = ElectionTimeoutEnv {
       _nodeRole :: Role
     , _term :: Term
-    , _lazyVote :: Maybe (Term,NodeId,LogIndex)
+    , _lazyVote :: Maybe LazyVote
     , _nodeId :: NodeId
     , _otherNodes :: Set.Set NodeId
     , _leaderWithoutFollowers :: Bool
@@ -42,13 +42,11 @@ data ElectionTimeoutOut =
     VoteForLazyCandidate {
       _newTerm :: Term
     , _lazyCandidate :: NodeId
-    , _lastLogIndex :: LogIndex
     , _myLazyVote :: Bool
     } |
     AbdicateAndLazyVote {
       _newTerm :: Term
     , _lazyCandidate :: NodeId
-    , _lastLogIndex :: LogIndex
     , _myLazyVote :: Bool
     } |
     BecomeCandidate {
@@ -69,15 +67,15 @@ handleElectionTimeout s = do
   then do
     lv <- view lazyVote
     case lv of
-      Just (lazyTerm, lazyCandidate, lastLogIndex') -> do
-        return $ VoteForLazyCandidate lazyTerm lazyCandidate lastLogIndex' True
+      Just LazyVote{..} -> do
+        return $ VoteForLazyCandidate (_lvVoteFor ^. rvTerm) (_lvVoteFor ^. rvCandidateId) True
       Nothing -> becomeCandidate
   else if r == Leader && leaderWithoutFollowers'
        then do
             lv <- view lazyVote
             case lv of
-              Just (lazyTerm, lazyCandidate, lastLogIndex') -> do
-                return $ AbdicateAndLazyVote lazyTerm lazyCandidate lastLogIndex' True
+              Just LazyVote{..} -> do
+                return $ AbdicateAndLazyVote (_lvVoteFor ^. rvTerm) (_lvVoteFor ^. rvCandidateId) True
               Nothing -> becomeCandidate
        else return AlreadyLeader
 
@@ -87,8 +85,8 @@ becomeCandidate = do
   tell ["becoming candidate"]
   newTerm <- (+1) <$> view term
   me <- view nodeId
-  maxIndex' <- view maxIndex
-  selfVote <- return $ createRequestVoteResponse me me newTerm maxIndex' True
+  selfVote <- return $ createRequestVoteResponse me me newTerm True
+  -- TODO: Track Sig for RV/initialize invalidCandidateResults
   provenance <- selfVoteProvenance selfVote
   potentials <- view otherNodes
   return $ BecomeCandidate
@@ -130,27 +128,27 @@ handle msg = do
     AlreadyLeader -> return ()
     -- this is for handling the leader w/o followers case only
     AbdicateAndLazyVote {..} -> do
-      castLazyVote _newTerm _lazyCandidate _lastLogIndex
-    VoteForLazyCandidate {..} -> castLazyVote _newTerm _lazyCandidate _lastLogIndex
+      castLazyVote _newTerm _lazyCandidate
+    VoteForLazyCandidate {..} -> castLazyVote _newTerm _lazyCandidate
     BecomeCandidate {..} -> do
                setRole _newRole
                setTerm _newTerm
                setVotedFor (Just _myNodeId)
-               selfYesVote <- return $ createRequestVoteResponse _myNodeId _myNodeId _newTerm _lastLogIndex True
+               selfYesVote <- return $ createRequestVoteResponse _myNodeId _myNodeId _newTerm True
                KD.cYesVotes .= Set.singleton selfYesVote
                KD.cPotentialVotes.= _potentialVotes
                enqueueRequest $ Sender.BroadcastRV
                view KD.informEvidenceServiceOfElection >>= liftIO
                resetElectionTimer
 
-castLazyVote :: Term -> NodeId -> LogIndex -> KD.Consensus ()
-castLazyVote lazyTerm' lazyCandidate' lazyLastLogIndex' = do
+castLazyVote :: Term -> NodeId -> KD.Consensus ()
+castLazyVote lazyTerm' lazyCandidate' = do
   setTerm lazyTerm'
   setVotedFor (Just lazyCandidate')
   KD.lazyVote .= Nothing
   KD.ignoreLeader .= False
   setCurrentLeader Nothing
-  enqueueRequest $ Sender.BroadcastRVR lazyCandidate' lazyLastLogIndex' True
+  enqueueRequest $ Sender.BroadcastRVR lazyCandidate' Nothing True
   -- TODO: we need to verify that this is correct. It seems that a RVR (so a vote) is sent every time an election timeout fires.
   -- However, should that be the case? I think so, as you shouldn't vote for multiple people in the same election. Still though...
   resetElectionTimer
@@ -160,6 +158,6 @@ setVotedFor :: Maybe NodeId -> KD.Consensus ()
 setVotedFor mvote = do
   KD.votedFor .= mvote
 
-createRequestVoteResponse :: NodeId -> NodeId -> Term -> LogIndex -> Bool -> RequestVoteResponse
-createRequestVoteResponse me' target' term' logIndex' vote =
-  RequestVoteResponse term' logIndex' me' vote target' NewMsg
+createRequestVoteResponse :: NodeId -> NodeId -> Term -> Bool -> RequestVoteResponse
+createRequestVoteResponse me' target' term' vote =
+  RequestVoteResponse term' Nothing me' vote target' NewMsg

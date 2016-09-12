@@ -17,11 +17,12 @@ module Kadena.Types.Spec
   , ConsensusState(..), initialConsensusState
   , nodeRole, term, votedFor, lazyVote, currentLeader, ignoreLeader
   , timerThread, replayMap, cYesVotes, cPotentialVotes, lastCommitTime
-  , timeSinceLastAER, cmdBloomFilter
+  , timeSinceLastAER, cmdBloomFilter, invalidCandidateResults
   , Event(..)
   , mkConsensusEnv
   , PublishedConsensus(..),pcLeader,pcRole,pcTerm
   , LazyVote(..), lvVoteFor, lvAllReceived
+  , InvalidCandidateResults(..), icrMyReqVoteSig, icrNoVotes
   ) where
 
 -- timeSinceLastAER, lNextIndex, lConvinced, commitProof
@@ -86,6 +87,12 @@ data ConsensusSpec = ConsensusSpec
   }
 makeLenses (''ConsensusSpec)
 
+data InvalidCandidateResults = InvalidCandidateResults
+  { _icrMyReqVoteSig :: !Signature
+  , _icrNoVotes :: !Int
+  } deriving (Show, Eq)
+makeLenses ''InvalidCandidateResults
+
 data LazyVote = LazyVote
   { _lvVoteFor :: !RequestVote
   , _lvAllReceived :: !(Map NodeId RequestVote)
@@ -108,6 +115,8 @@ data ConsensusState = ConsensusState
   , _timeSinceLastAER :: !Int
   -- used for metrics
   , _lastCommitTime   :: !(Maybe UTCTime)
+  -- used only during Candidate State
+  , _invalidCandidateResults :: !(Maybe InvalidCandidateResults)
   }
 makeLenses ''ConsensusState
 
@@ -127,6 +136,7 @@ initialConsensusState timerTarget' = ConsensusState
 {-cPotentialVotes-}     Set.empty
 {-timeSinceLastAER-}    0
 {-lastCommitTime-}      Nothing
+{-invalidCandidateResults-} Nothing
 
 type Consensus = RWST ConsensusEnv () ConsensusState IO
 

@@ -31,7 +31,7 @@ spec = describe "Evidence Service" testEvidence
 
 testEvidence :: Spec
 testEvidence = do
-  it "Evidence Unit Tests are no implemented yet!" $ True `shouldBe` True
+  it "Evidence Unit Tests are not implemented yet!" $ True `shouldBe` True
 --
 --
 --nodeIdLeader, nodeIdFollower, nodeIdClient :: NodeId

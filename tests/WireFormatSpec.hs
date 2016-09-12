@@ -77,15 +77,6 @@ testWireRoundtrip = do
               { _pDig = _sigDigest rvSignedRPC
               , _pOrig = _sigBody rvSignedRPC
               , _pTimeStamp = Nothing}})
-  it "Revolution" $
-    fromWire Nothing keySet revSignedRPC
-      `shouldBe`
-        (Right $ revRPC {
-            _revProvenance = ReceivedMsg
-              { _pDig = _sigDigest revSignedRPC
-              , _pOrig = _sigBody revSignedRPC
-              , _pTimeStamp = Nothing}})
-
 
 -- ##########################################################
 -- ####### All the stuff we need to actually run this #######
@@ -205,7 +196,7 @@ leWire = encodeLEWire nodeIdLeader pubKeyLeader privKeyLeader leSeq
 rvrRPC1, rvrRPC2 :: RequestVoteResponse
 rvrRPC1 = RequestVoteResponse
   { _rvrTerm        = Term 0
-  , _rvrCurLogIndex = LogIndex (-1)
+  , _rvrHeardFromLeader = Nothing
   , _rvrNodeId      = nodeIdLeader
   , _voteGranted    = True
   , _rvrCandidateId = nodeIdLeader
@@ -213,7 +204,7 @@ rvrRPC1 = RequestVoteResponse
   }
 rvrRPC2 = RequestVoteResponse
   { _rvrTerm        = Term 0
-  , _rvrCurLogIndex = LogIndex (-1)
+  , _rvrHeardFromLeader = Nothing
   , _rvrNodeId      = nodeIdFollower
   , _voteGranted    = True
   , _rvrCandidateId = nodeIdLeader
@@ -285,17 +276,3 @@ rvRPC = RequestVote
 
 rvSignedRPC :: SignedRPC
 rvSignedRPC = toWire nodeIdLeader pubKeyLeader privKeyLeader rvRPC
-
--- ##########
--- Revolution
--- ##########
-revRPC :: Revolution
-revRPC = Revolution
-  { _revClientId   = nodeIdClient
-  , _revLeaderId   = nodeIdLeader
-  , _revRequestId  = RequestId 2
-  , _revProvenance = NewMsg
-  }
-
-revSignedRPC :: SignedRPC
-revSignedRPC = toWire nodeIdClient pubKeyClient privKeyClient revRPC

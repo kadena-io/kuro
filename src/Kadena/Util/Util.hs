@@ -19,7 +19,6 @@ module Kadena.Util.Util
   , setRole
   , setCurrentLeader
   , getCmdSigOrInvariantError
-  , getRevSigOrInvariantError
   , enqueueRequest
   , awsDashVar
   , pubConsensusFromState
@@ -165,10 +164,4 @@ getCmdSigOrInvariantError :: String -> Command -> Signature
 getCmdSigOrInvariantError where' s@Command{..} = case _cmdProvenance of
   NewMsg -> error $ where'
     ++ ": This should be unreachable, somehow an AE got through with a LogEntry that contained an unsigned Command" ++ show s
-  ReceivedMsg{..} -> _digSig _pDig
-
-getRevSigOrInvariantError :: String -> Revolution -> Signature
-getRevSigOrInvariantError where' s@Revolution{..} = case _revProvenance of
-  NewMsg -> error $ where'
-    ++ ": This should be unreachable, got an unsigned Revolution" ++ show s
   ReceivedMsg{..} -> _digSig _pDig

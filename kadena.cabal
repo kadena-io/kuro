@@ -33,7 +33,6 @@ library
                      , Kadena.Consensus.Handle.RequestVoteResponse
                      , Kadena.Consensus.Handle.ElectionTimeout
                      , Kadena.Consensus.Handle.HeartbeatTimeout
-                     , Kadena.Consensus.Handle.Revolution
                      , Kadena.Messaging.ZMQ
                      , Kadena.Monitoring.EkgJson
                      , Kadena.Monitoring.EkgMonitor
@@ -66,7 +65,6 @@ library
                      , Kadena.Types.Message.AER
                      , Kadena.Types.Message.RV
                      , Kadena.Types.Message.RVR
-                     , Kadena.Types.Message.REV
                      , Kadena.Types.Metric
                      , Kadena.Types.Service.Evidence
                      , Kadena.Types.Service.Sender

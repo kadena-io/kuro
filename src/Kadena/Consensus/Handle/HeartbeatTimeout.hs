@@ -13,6 +13,7 @@ import Control.Monad.State
 import Control.Monad.Writer
 
 import Kadena.Consensus.Handle.Types
+import Kadena.Consensus.Handle.AppendEntries (clearLazyVoteAndInformCandidates)
 import qualified Kadena.Service.Sender as Sender
 import Kadena.Runtime.Timer (resetHeartbeatTimer, hasElectionTimerLeaderFired)
 import Kadena.Util.Util (debug,enqueueEvent, enqueueRequest)
@@ -49,6 +50,7 @@ handle msg = do
   case out of
     IsLeader -> do
       enqueueRequest $ Sender.BroadcastAE Sender.SendAERegardless
+      clearLazyVoteAndInformCandidates
       resetHeartbeatTimer
       hbMicrosecs <- KD.viewConfig KD.heartbeatTimeout
       r <- view KD.mResetLeaderNoFollowers >>= liftIO . tryTakeMVar

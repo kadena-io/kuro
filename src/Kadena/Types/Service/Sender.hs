@@ -71,7 +71,7 @@ data ServiceRequest =
     , _srConvinced :: !Bool }|
     -- TODO: we can be smarter here and fill in the details the AER needs about the logs without needing to hit that thread
     BroadcastAER |
-    BroadcastRV |
+    BroadcastRV RequestVote|
     BroadcastRVR
     { _srCandidate :: !NodeId
     , _srHeardFromLeader :: !(Maybe HeardFromLeader)

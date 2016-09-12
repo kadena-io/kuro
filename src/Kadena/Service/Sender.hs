@@ -94,7 +94,7 @@ serviceRequests = do
           EstablishDominance -> establishDominance
           SingleAER{..} -> sendAppendEntriesResponse _srFor _srSuccess _srConvinced
           BroadcastAER -> sendAllAppendEntriesResponse
-          BroadcastRV -> sendAllRequestVotes
+          BroadcastRV rv -> sendAllRequestVotes rv
           BroadcastRVR{..} -> sendRequestVoteResponse _srCandidate _srHeardFromLeader _srVote
           SendCommandResults{..} -> sendResults _srResults
           ForwardCommandToLeader{..} -> mapM_ (sendRPC _srFor . CMD') _srCommands
@@ -113,15 +113,9 @@ debug s = do
   liftIO $ dbg $ "[Service|Sender] " ++ s
 
 -- views state, but does not update
-sendAllRequestVotes :: SenderService ()
-sendAllRequestVotes = do
-  ct <- view currentTerm
-  nid <- view myNodeId
-  mv <- queryLogs $ Set.fromList [Log.GetMaxIndex, Log.GetLastLogTerm]
-  lastLogIndex' <- return $ Log.hasQueryResult Log.MaxIndex mv
-  lastLogTerm' <- return $ Log.hasQueryResult Log.LastLogTerm mv
-  debug $ "sendRequestVote: " ++ show ct
-  pubRPC $ RV' $ RequestVote ct nid lastLogIndex' lastLogTerm' NewMsg
+sendAllRequestVotes :: RequestVote -> SenderService ()
+sendAllRequestVotes rv = do
+  pubRPC $ RV' $ rv
 
 createAppendEntries' :: NodeId
                      -> (LogIndex, Term, LogEntries)

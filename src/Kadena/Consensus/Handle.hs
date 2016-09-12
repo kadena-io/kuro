@@ -21,7 +21,6 @@ import qualified Kadena.Consensus.Handle.ElectionTimeout as PureElectionTimeout
 import qualified Kadena.Consensus.Handle.HeartbeatTimeout as PureHeartbeatTimeout
 import qualified Kadena.Consensus.Handle.RequestVote as PureRequestVote
 import qualified Kadena.Consensus.Handle.RequestVoteResponse as PureRequestVoteResponse
-import qualified Kadena.Consensus.Handle.Revolution as PureRevolution
 
 handleEvents :: Consensus ()
 handleEvents = forever $ do
@@ -52,4 +51,3 @@ handleRPC rpc = case rpc of
   CMD' cmd        -> PureCommand.handle cmd
   CMDB' cmdb      -> PureCommand.handleBatch cmdb
   CMDR' _         -> debug "got a command response RPC"
-  REV' rev        -> PureRevolution.handle rev

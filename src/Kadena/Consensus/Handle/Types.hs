@@ -19,7 +19,6 @@ module Kadena.Consensus.Handle.Types (
   , Command(..)
   , CommandResponse(..)
   , CommandBatch(..)
-  , Revolution(..)
   , RPC(..)
   , Event(..)
   , MsgType(..), KeySet(..), Digest(..), Provenance(..), WireFormat(..)
@@ -35,6 +34,7 @@ module Kadena.Consensus.Handle.Types (
   , UpdateLogs(..)
   , LazyVote(..), lvVoteFor, lvAllReceived
   , HeardFromLeader(..), hflLeaderId, hflYourRvSig, hflLastLogIndex, hflLastLogTerm
+  , InvalidCandidateResults(..), icrMyReqVoteSig, icrNoVotes
   ) where
 
 -- This module exists so we don't need to do a bunch of selective/hiding imports

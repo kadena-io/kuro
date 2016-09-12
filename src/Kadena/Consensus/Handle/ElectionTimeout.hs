@@ -33,7 +33,6 @@ data ElectionTimeoutEnv = ElectionTimeoutEnv {
     , _leaderWithoutFollowers :: Bool
     , _myPrivateKey :: PrivateKey
     , _myPublicKey :: PublicKey
-    , _maxIndex :: LogIndex
     }
 makeLenses ''ElectionTimeoutEnv
 
@@ -53,7 +52,6 @@ data ElectionTimeoutOut =
       _newTerm :: Term
     , _newRole :: Role
     , _myNodeId :: NodeId -- just to be explicit, obviously it's us
-    , _lastLogIndex :: LogIndex
     , _potentialVotes :: Set.Set NodeId
     , _yesVotes :: Set RequestVoteResponse
     }
@@ -86,14 +84,12 @@ becomeCandidate = do
   newTerm <- (+1) <$> view term
   me <- view nodeId
   selfVote <- return $ createRequestVoteResponse me me newTerm True
-  -- TODO: Track Sig for RV/initialize invalidCandidateResults
   provenance <- selfVoteProvenance selfVote
   potentials <- view otherNodes
   return $ BecomeCandidate
     { _newTerm = newTerm
     , _newRole = Candidate
     , _myNodeId = me
-    , _lastLogIndex = maxIndex'
     , _potentialVotes = potentials
     , _yesVotes = Set.singleton (selfVote {_rvrProvenance = provenance})}
 
@@ -111,7 +107,6 @@ handle msg = do
   c <- KD.readConfig
   s <- get
   leaderWithoutFollowers' <- hasElectionTimerLeaderFired
-  maxIndex' <- Log.hasQueryResult Log.MaxIndex <$> (queryLogs $ Set.singleton Log.GetMaxIndex)
   (out,l) <- runReaderT (runWriterT (handleElectionTimeout msg)) $
              ElectionTimeoutEnv
              (KD._nodeRole s)
@@ -122,7 +117,6 @@ handle msg = do
              leaderWithoutFollowers'
              (KD._myPrivateKey c)
              (KD._myPublicKey c)
-             (maxIndex')
   mapM_ debug l
   case out of
     AlreadyLeader -> return ()
@@ -131,15 +125,16 @@ handle msg = do
       castLazyVote _newTerm _lazyCandidate
     VoteForLazyCandidate {..} -> castLazyVote _newTerm _lazyCandidate
     BecomeCandidate {..} -> do
-               setRole _newRole
-               setTerm _newTerm
-               setVotedFor (Just _myNodeId)
-               selfYesVote <- return $ createRequestVoteResponse _myNodeId _myNodeId _newTerm True
-               KD.cYesVotes .= Set.singleton selfYesVote
-               KD.cPotentialVotes.= _potentialVotes
-               enqueueRequest $ Sender.BroadcastRV
-               view KD.informEvidenceServiceOfElection >>= liftIO
-               resetElectionTimer
+      setRole _newRole
+      setTerm _newTerm
+      setVotedFor (Just _myNodeId)
+      KD.cYesVotes .= _yesVotes
+      KD.cPotentialVotes.= _potentialVotes
+      (sigForRV, rv) <- createRequestVote _newTerm _myNodeId (KD._myPublicKey c) (KD._myPrivateKey c)
+      KD.invalidCandidateResults .= Just (InvalidCandidateResults sigForRV Set.empty)
+      enqueueRequest $ Sender.BroadcastRV rv
+      view KD.informEvidenceServiceOfElection >>= liftIO
+      resetElectionTimer
 
 castLazyVote :: Term -> NodeId -> KD.Consensus ()
 castLazyVote lazyTerm' lazyCandidate' = do
@@ -161,3 +156,12 @@ setVotedFor mvote = do
 createRequestVoteResponse :: NodeId -> NodeId -> Term -> Bool -> RequestVoteResponse
 createRequestVoteResponse me' target' term' vote =
   RequestVoteResponse term' Nothing me' vote target' NewMsg
+
+createRequestVote :: Term -> NodeId -> PublicKey -> PrivateKey -> KD.Consensus (Signature, RequestVote)
+createRequestVote curTerm' nodeId' myPublicKey' myPrivateKey' = do
+  mv <- queryLogs $ Set.fromList [Log.GetMaxIndex, Log.GetLastLogTerm]
+  lastLogIndex' <- return $ Log.hasQueryResult Log.MaxIndex mv
+  lastLogTerm' <- return $ Log.hasQueryResult Log.LastLogTerm mv
+  rv <- return $ RequestVote curTerm' nodeId' lastLogIndex' lastLogTerm' NewMsg
+  (SignedRPC dig bdy) <- return $ toWire nodeId' myPublicKey' myPrivateKey' rv
+  return (dig ^. KD.digSig, rv { _rvProvenance = ReceivedMsg dig bdy Nothing})

@@ -89,7 +89,7 @@ makeLenses (''ConsensusSpec)
 
 data InvalidCandidateResults = InvalidCandidateResults
   { _icrMyReqVoteSig :: !Signature
-  , _icrNoVotes :: !Int
+  , _icrNoVotes :: !(Set NodeId)
   } deriving (Show, Eq)
 makeLenses ''InvalidCandidateResults
 

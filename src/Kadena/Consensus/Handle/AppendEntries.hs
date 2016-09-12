@@ -5,7 +5,8 @@
 
 module Kadena.Consensus.Handle.AppendEntries
   (handle
-  ,createAppendEntriesResponse)
+  ,createAppendEntriesResponse
+  ,clearLazyVoteAndInformCandidates)
 where
 
 import Control.Lens hiding (Index)
@@ -20,6 +21,7 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
+import Data.Maybe (fromMaybe)
 
 import Kadena.Consensus.Handle.Types
 import Kadena.Service.Sender (createAppendEntriesResponse')
@@ -200,7 +202,6 @@ handle ae = do
       return ()
     SendUnconvincedResponse{..} -> enqueueRequest $ Sender.SingleAER _responseLeaderId False False
     ValidLeaderAndTerm{..} -> do
-      KD.lazyVote .= Nothing
       case _validReponse of
         SendFailureResponse -> enqueueRequest $ Sender.SingleAER _responseLeaderId False True
         (Commit rMap rle) -> do
@@ -212,6 +213,7 @@ handle ae = do
           KD.cmdBloomFilter %= Bloom.insertList (Set.toList $ Map.keysSet rMap)
           enqueueRequest Sender.BroadcastAER
         DoNothing -> enqueueRequest Sender.BroadcastAER
+      clearLazyVoteAndInformCandidates
       -- This NEEDS to be last, otherwise we can have an election fire when we are are transmitting proof/accessing the logs
       -- It's rare but under load and given enough time, this will happen.
       when (KD._nodeRole s /= Leader) resetElectionTimer
@@ -226,3 +228,30 @@ createAppendEntriesResponse success convinced maxIndex' lastLogHash' = do
   case createAppendEntriesResponse' success convinced ct myNodeId' maxIndex' lastLogHash' of
     AER' aer -> return aer
     _ -> error "deep invariant error: crtl-f for createAppendEntriesResponse"
+
+clearLazyVoteAndInformCandidates :: KD.Consensus ()
+clearLazyVoteAndInformCandidates = do
+  KD.invalidCandidateResults .= Nothing -- setting this to nothing is likely overkill
+  lazyVote' <- use KD.lazyVote
+  case lazyVote' of
+    Nothing -> return ()
+    Just lv -> do
+      newMv <- queryLogs $ Set.fromList $ [Log.GetLastLogTerm, Log.GetLastLogIndex]
+      term' <- return $! Log.hasQueryResult Log.LastLogTerm newMv
+      logIndex' <- return $! Log.hasQueryResult Log.LastLogIndex newMv
+      leaderId' <- fromMaybe (error "Invariant Error in clearLazyVote: could not get leaderId") <$> use KD.currentLeader
+      mapM_ (issueHflRVR leaderId' term' logIndex') (Map.elems (lv ^. lvAllReceived))
+      KD.lazyVote .= Nothing
+
+issueHflRVR :: NodeId -> Term -> LogIndex -> RequestVote -> KD.Consensus ()
+issueHflRVR leaderId' term' logIndex' rv@RequestVote{..} = do
+  let hfl = Just $! HeardFromLeader
+            { _hflLeaderId = leaderId'
+            , _hflYourRvSig = getRvSigOrInvariantError
+            , _hflLastLogIndex = logIndex'
+            , _hflLastLogTerm = term'
+            }
+      getRvSigOrInvariantError = case _rvProvenance of
+          NewMsg -> error $ "Invariant error in issueHflRVR: could not get sig from new msg" ++ show rv
+          (ReceivedMsg dig _ _) -> dig ^. KD.digSig
+  enqueueRequest $ Sender.BroadcastRVR _rvCandidateId hfl False

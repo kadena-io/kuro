@@ -26,7 +26,7 @@ import Kadena.Types.Config
 -- | One way or another we need a way to figure our what set of public keys to use for verification of signatures.
 -- By placing the message type in the digest, we can make the WireFormat implementation easier as well. CMD and REV
 -- need to use the Client Public Key maps.
-data MsgType = AE | AER | RV | RVR | CMD | CMDR | CMDB | REV
+data MsgType = AE | AER | RV | RVR | CMD | CMDR | CMDB
   deriving (Show, Eq, Ord, Generic)
 instance Serialize MsgType
 
@@ -68,7 +68,7 @@ class WireFormat a where
 -- | Based on the MsgType in the SignedRPC's Digest, we know which set of keys are needed to validate the message
 verifySignedRPC :: KeySet -> SignedRPC -> Either String ()
 verifySignedRPC !KeySet{..} s@(SignedRPC !Digest{..} !bdy)
-  | _digType == CMD || _digType == REV || _digType == CMDB =
+  | _digType == CMD || _digType == CMDB =
       case Map.lookup _digNodeId _ksClient of
         Nothing -> Left $! "PubKey not found for NodeId: " ++ show _digNodeId
         Just !key

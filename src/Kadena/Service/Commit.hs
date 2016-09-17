@@ -68,9 +68,14 @@ handle = do
   forever $ do
     q <- liftIO $ readComm oChan
     case q of
-      Tick _ -> undefined
-      ChangeNodeId{..} -> nodeId .= newNodeId
-      UpdateKeySet{..} -> keySet %= updateKeySet
+      Tick t -> liftIO (pprintTock t) >>= debug
+      ChangeNodeId{..} -> do
+        prevNodeId <- use nodeId
+        nodeId .= newNodeId
+        debug $ "Changed NodeId: " ++ show prevNodeId ++ " -> " ++ show newNodeId
+      UpdateKeySet{..} -> do
+        keySet %= updateKeySet
+        debug "Updated KeySet"
       CommitNewEntries{..} -> applyLogEntries logEntriesToApply
 
 applyLogEntries :: LogEntries -> CommitService ()

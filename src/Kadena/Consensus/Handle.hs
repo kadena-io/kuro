@@ -8,12 +8,8 @@ import Control.Lens hiding ((:>))
 import Control.Monad
 import Control.Monad.IO.Class
 
-import Data.Maybe (fromJust)
-
 import Kadena.Types
 import Kadena.Util.Util (debug, dequeueEvent)
-import Kadena.Consensus.Commit (applyLogEntries)
-import qualified Kadena.Types.Log as Log
 
 import qualified Kadena.Consensus.Handle.AppendEntries as PureAppendEntries
 import qualified Kadena.Consensus.Handle.Command as PureCommand
@@ -34,11 +30,6 @@ handleEvents = forever $ do
     ERPC rpc                      -> handleRPC rpc
     ElectionTimeout s             -> PureElectionTimeout.handle s
     HeartbeatTimeout s            -> PureHeartbeatTimeout.handle s
-    ApplyLogEntries unappliedEntries' -> do
-      debug $ (show . Log.lesCnt $ unappliedEntries')
-            ++ " new log entries to apply, up to "
-            ++ show (fromJust $ Log.lesMaxIndex unappliedEntries')
-      applyLogEntries unappliedEntries'
     Tick tock'                    -> liftIO (pprintTock tock') >>= debug
 
 -- TODO: prune out AER's from RPC if possible

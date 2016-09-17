@@ -153,7 +153,6 @@ cmdRPC2' = (\(Right v) -> v) $ fromWire Nothing keySet cmdSignedRPC2
 cmdrRPC :: CommandResponse
 cmdrRPC = CommandResponse
   { _cmdrResult     = CommandResult "account created: foo"
-  , _cmdrLeaderId   = nodeIdLeader
   , _cmdrNodeId     = nodeIdLeader
   , _cmdrRequestId  = RequestId 1
   , _cmdrLatency    = 1

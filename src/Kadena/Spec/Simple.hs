@@ -111,28 +111,19 @@ initSysLog tc = do
   tz <- getCurrentTimeZone
   fst <$> newTimedFastLogger (join $ timeCache tz tc) (LogStdout defaultBufSize)
 
-simpleConsensusSpec :: ApplyFn
-               -> (String -> IO ())
-               -> (Metric -> IO ())
-               -> MVar (MS.Map RequestId AppliedCommand)
-               -> ConsensusSpec
-simpleConsensusSpec applyFn debugFn pubMetricFn appliedCmdMap = ConsensusSpec
-    {
-
-      _applyLogEntry   = applyFn
-
-    , _debugPrint      = debugFn
-
-    , _publishMetric   = pubMetricFn
-
-    , _getTimestamp = liftIO getCurrentTime
-
-    , _random = liftIO . randomRIO
-
-    , _enqueueApplied = (\a -> modifyMVar_ appliedCmdMap
-                               (\m -> return $! MS.insert (_acRequestId a) a m))
-
-    }
+simpleConsensusSpec
+  :: (String -> IO ())
+  -> (Metric -> IO ())
+  -> MVar (MS.Map RequestId AppliedCommand)
+  -> ConsensusSpec
+simpleConsensusSpec debugFn pubMetricFn appliedCmdMap = ConsensusSpec
+  { _debugPrint      = debugFn
+  , _publishMetric   = pubMetricFn
+  , _getTimestamp = liftIO getCurrentTime
+  , _random = liftIO . randomRIO
+  , _enqueueApplied = \a -> modifyMVar_ appliedCmdMap
+                              (\m -> return $! MS.insert (_acRequestId a) a m)
+  }
 
 simpleReceiverEnv :: Dispatch
                   -> Config
@@ -178,7 +169,6 @@ runServer = do
   pubMetric <- startMonitoring rconf
   runMsgServer dispatch me oNodes debugFn -- ZMQ
   let raftSpec = simpleConsensusSpec
-                   (liftIO . applyFn)
                    debugFn
                    (liftIO . pubMetric)
                    mAppliedMap
@@ -189,4 +179,4 @@ runServer = do
   rstate <- return $ initialConsensusState timerTarget'
   mPubConsensus' <- newMVar (pubConsensusFromState rstate)
   void $ CL.fork $ runApiServer dispatch rconf debugFn mAppliedMap (_apiPort rconf) mPubConsensus'
-  runPrimedConsensusServer receiverEnv rconf raftSpec rstate utcTimeCache' mPubConsensus'
+  runPrimedConsensusServer receiverEnv rconf raftSpec rstate utcTimeCache' mPubConsensus' (liftIO . applyFn)

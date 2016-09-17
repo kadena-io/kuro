@@ -30,7 +30,8 @@ import Kadena.Persistence.SQLite
 import Kadena.Types.Service.Log as X
 import qualified Kadena.Types.Service.Evidence as Ev
 import qualified Kadena.Types.Dispatch as Dispatch
-import Kadena.Types (startIndex, Event(ApplyLogEntries), Dispatch, interval)
+import qualified Kadena.Types.Service.Commit as Commit
+import Kadena.Types (startIndex, Dispatch, interval)
 
 runLogService :: Dispatch
               -> (String -> IO())
@@ -50,6 +51,7 @@ runLogService dispatch dbg publishMetric' dbPath keySet' = do
   env <- return LogEnv
     { _logQueryChannel = dispatch ^. Dispatch.logService
     , _internalEvent = dispatch ^. Dispatch.internalEvent
+    , _commitChannel = dispatch ^. Dispatch.commitService
     , _evidence = dispatch ^. Dispatch.evidence
     , _debugPrint = dbg
     , _keySet = keySet'
@@ -59,7 +61,7 @@ runLogService dispatch dbg publishMetric' dbPath keySet' = do
     }
   void (link <$> tinyCryptoWorker keySet' dbg (dispatch ^. Dispatch.logService) cryptoMvar)
   initLogState' <- case dbConn' of
-    Just conn' -> syncLogsFromDisk (dispatch ^. Dispatch.internalEvent) conn'
+    Just conn' -> syncLogsFromDisk (dispatch ^. Dispatch.commitService) conn'
     Nothing -> return initLogState
   void $ runRWST handle env initLogState'
 
@@ -154,13 +156,13 @@ updateEvidenceCache' = do
   liftIO $ writeComm evChan $ Ev.CacheNewHash lli llh
   debug $ "Sent new evidence to cache for: " ++ show lli
 
-syncLogsFromDisk :: InternalEventChannel -> Connection -> IO LogState
-syncLogsFromDisk internalEvent' conn = do
+syncLogsFromDisk :: Commit.CommitChannel -> Connection -> IO LogState
+syncLogsFromDisk commitChannel' conn = do
   logs@(LogEntries logs') <- selectAllLogEntries conn
   lastLog' <- return $ if Map.null logs' then Nothing else Just $ snd $ Map.findMax logs'
   case lastLog' of
     Just log' -> do
-      liftIO $ writeComm internalEvent' $ InternalEvent $ ApplyLogEntries logs
+      liftIO $ writeComm commitChannel' $ Commit.CommitNewEntries logs
       (Just minIdx) <- return $ lesMinIndex logs
       return LogState
         { _lsVolatileLogEntries = LogEntries Map.empty
@@ -183,7 +185,7 @@ tellKadenaToApplyLogEntries = do
     Just unappliedEntries' -> do
       (Just appliedIndex') <- return $ lesMaxIndex unappliedEntries'
       lsLastApplied .= appliedIndex'
-      view internalEvent >>= liftIO . (`writeComm` (InternalEvent $ ApplyLogEntries unappliedEntries'))
+      view commitChannel >>= liftIO . (`writeComm` (Commit.CommitNewEntries unappliedEntries'))
       debug $ "informing Kadena to apply up to: " ++ show appliedIndex'
       publishMetric' <- view publishMetric
       liftIO $ publishMetric' $ MetricCommitIndex appliedIndex'

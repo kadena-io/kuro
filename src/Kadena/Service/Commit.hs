@@ -2,9 +2,10 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Kadena.Consensus.Commit
+module Kadena.Service.Commit
   ( initCommitEnv
   , runCommitService
+  , module X
   ) where
 
 import Control.Lens hiding (Index, (|>))
@@ -14,10 +15,9 @@ import Control.Monad.Trans.RWS.Strict
 
 import qualified Data.Map.Strict as Map
 import Data.Thyme.Clock
--- import Data.Int (Int64)
 import Data.Maybe (fromJust)
 
-import Kadena.Types.Service.Commit
+import Kadena.Types.Service.Commit as X
 import Kadena.Types.Dispatch
 import qualified Kadena.Service.Log as Log
 
@@ -54,7 +54,6 @@ debug s = do
 
 now :: CommitService UTCTime
 now = view getTimestamp >>= liftIO
-{-# INLINE now #-}
 
 logMetric :: Metric -> CommitService ()
 logMetric m = do
@@ -76,7 +75,11 @@ handle = do
       UpdateKeySet{..} -> do
         keySet %= updateKeySet
         debug "Updated KeySet"
-      CommitNewEntries{..} -> applyLogEntries logEntriesToApply
+      CommitNewEntries{..} -> do
+        debug $ (show . Log.lesCnt $ logEntriesToApply)
+              ++ " new log entries to apply, up to "
+              ++ show (fromJust $ Log.lesMaxIndex logEntriesToApply)
+        applyLogEntries logEntriesToApply
 
 applyLogEntries :: LogEntries -> CommitService ()
 applyLogEntries les@(LogEntries leToApply) = do
@@ -123,10 +126,3 @@ updateCmdStatusMap cmd cmdResult tEnd = do
 --     Just (ReceivedAt tStart) -> interval tStart tEnd
 --   return $ makeCommandResponse' nid cmd result lat
 --
--- makeCommandResponse' :: NodeId -> Command -> CommandResult -> Int64 -> CommandResponse
--- makeCommandResponse' nid Command{..} result lat = CommandResponse
---              result
---              nid
---              _cmdRequestId
---              lat
---              NewMsg

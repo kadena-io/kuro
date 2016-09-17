@@ -12,7 +12,8 @@
 {-# LANGUAGE TemplateHaskell #-}
 
 module Kadena.Types.Service.Log
-  ( LogState(..), lsVolatileLogEntries, lsPersistedLogEntries, lsLastApplied, lsLastLogIndex, lsNextLogIndex, lsCommitIndex
+  ( LogState(..)
+  , lsVolatileLogEntries, lsPersistedLogEntries, lsLastApplied, lsLastLogIndex, lsNextLogIndex, lsCommitIndex
   , lsLastPersisted, lsLastLogTerm, lsLastLogHash, lsLastCryptoVerified
   , LogApi(..)
   , initLogState
@@ -22,8 +23,9 @@ module Kadena.Types.Service.Log
   , QueryApi(..)
   , evalQuery
   , CryptoWorkerStatus(..)
-  , LogEnv(..), logQueryChannel, internalEvent, debugPrint, dbConn, evidence, keySet, publishMetric
-  , cryptoWorkerTVar
+  , LogEnv(..)
+  , logQueryChannel, commitChannel, internalEvent, debugPrint
+  , dbConn, evidence, keySet, publishMetric, cryptoWorkerTVar
   , HasQueryResult(..)
   , LogThread
   , LogServiceChannel(..)
@@ -73,6 +75,7 @@ import Kadena.Types.Message.Signed
 import Kadena.Types.Message.CMD
 
 import Kadena.Types.Evidence (EvidenceChannel)
+import Kadena.Types.Service.Commit (CommitChannel)
 
 class LogApi a where
   lastPersisted :: a -> LogIndex
@@ -561,6 +564,7 @@ data CryptoWorkerStatus =
 data LogEnv = LogEnv
   { _logQueryChannel :: !LogServiceChannel
   , _internalEvent :: !InternalEventChannel
+  , _commitChannel :: !CommitChannel
   , _evidence :: !EvidenceChannel
   , _keySet :: !KeySet
   , _cryptoWorkerTVar :: !(TVar CryptoWorkerStatus)

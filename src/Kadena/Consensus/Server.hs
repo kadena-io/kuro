@@ -33,7 +33,7 @@ runPrimedConsensusServer renv rconf spec rstate timeCache' mPubConsensus' applyF
       publishMetric' = (spec ^. publishMetric)
       dispatch' = _dispatch renv
       dbgPrint' = RENV._debugPrint renv
-      getTimeStamp' = spec ^. getTimestamp
+      getTimestamp' = spec ^. getTimestamp
       keySet' = RENV._keySet renv
       nodeId' = rconf ^. nodeId
 
@@ -48,7 +48,7 @@ runPrimedConsensusServer renv rconf spec rstate timeCache' mPubConsensus' applyF
   mLeaderNoFollowers <- newEmptyMVar
 
   evEnv <- return $! Ev.initEvidenceEnv dispatch' dbgPrint' rconf' mEvState mLeaderNoFollowers publishMetric'
-  commitEnv <- return $! Commit.initCommitEnv dispatch' dbgPrint' applyFn' publishMetric' (spec ^. getTimestamp) (spec ^. enqueueApplied)
+  commitEnv <- return $! Commit.initCommitEnv dispatch' dbgPrint' applyFn' publishMetric' getTimestamp' (spec ^. enqueueApplied)
 
   link =<< (async $ Log.runLogService dispatch' dbgPrint' publishMetric' (rconf ^. logSqlitePath) keySet')
   link =<< (async $ Sender.runSenderService dispatch' rconf dbgPrint' publishMetric' mEvState)
@@ -57,10 +57,10 @@ runPrimedConsensusServer renv rconf spec rstate timeCache' mPubConsensus' applyF
   -- This helps for testing, we'll send tocks every second to inflate the logs when we see weird pauses right before an election
   -- forever (writeComm (_internalEvent $ _dispatch renv) (InternalEvent $ Tock $ t) >> threadDelay 1000000)
   link =<< (async $ foreverTick (_internalEvent dispatch') 1000000 (InternalEvent . Tick))
-  link =<< (async $ foreverTick (_senderService dispatch') 1000000 (Sender.Tick))
-  link =<< (async $ foreverTick (_logService    dispatch') 1000000 (Log.Tick))
-  link =<< (async $ foreverTick (_evidence      dispatch') 1000000 (Ev.Tick))
-  link =<< (async $ foreverTick (_commitService dispatch') 1000000 (Commit.Tick))
+  link =<< (async $ foreverTick (_senderService dispatch') 1000000 Sender.Tick)
+  link =<< (async $ foreverTick (_logService    dispatch') 1000000 Log.Tick)
+  link =<< (async $ foreverTick (_evidence      dispatch') 1000000 Ev.Tick)
+  link =<< (async $ foreverTick (_commitService dispatch') 1000000 Commit.Tick)
   runRWS_
     raft
     (mkConsensusEnv rconf' csize qsize spec dispatch'

@@ -179,4 +179,4 @@ runServer = do
   rstate <- return $ initialConsensusState timerTarget'
   mPubConsensus' <- newMVar (pubConsensusFromState rstate)
   void $ CL.fork $ runApiServer dispatch rconf debugFn mAppliedMap (_apiPort rconf) mPubConsensus'
-  runPrimedConsensusServer receiverEnv rconf raftSpec rstate utcTimeCache' mPubConsensus' (liftIO . applyFn)
+  runPrimedConsensusServer receiverEnv rconf raftSpec rstate getCurrentTime mPubConsensus' (liftIO . applyFn)

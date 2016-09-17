@@ -25,7 +25,6 @@ library
                      , Kadena.Command.CommandLayer
                      , Kadena.Consensus.Handle
                      , Kadena.Consensus.Server
-                     , Kadena.Consensus.Commit
                      , Kadena.Consensus.Handle.Types
                      , Kadena.Consensus.Handle.AppendEntries
                      , Kadena.Consensus.Handle.Command
@@ -43,6 +42,7 @@ library
                      , Kadena.Runtime.MessageReceiver
                      , Kadena.Runtime.Role
                      , Kadena.Runtime.Timer
+                     , Kadena.Service.Commit
                      , Kadena.Service.Log
                      , Kadena.Service.Sender
                      , Kadena.Service.Evidence
@@ -66,6 +66,7 @@ library
                      , Kadena.Types.Message.RV
                      , Kadena.Types.Message.RVR
                      , Kadena.Types.Metric
+                     , Kadena.Types.Service.Commit
                      , Kadena.Types.Service.Evidence
                      , Kadena.Types.Service.Sender
                      , Kadena.Types.Service.Log

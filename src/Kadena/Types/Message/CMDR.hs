@@ -4,7 +4,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 
 module Kadena.Types.Message.CMDR
-  ( CommandResponse(..), cmdrResult, cmdrLeaderId, cmdrNodeId, cmdrRequestId, cmdrLatency, cmdrProvenance
+  ( CommandResponse(..), cmdrResult, cmdrNodeId, cmdrRequestId, cmdrLatency, cmdrProvenance
   ) where
 
 import Control.Lens
@@ -21,7 +21,6 @@ import Kadena.Types.Message.Signed
 
 data CommandResponse = CommandResponse
   { _cmdrResult     :: !CommandResult
-  , _cmdrLeaderId   :: !NodeId
   , _cmdrNodeId     :: !NodeId
   , _cmdrRequestId  :: !RequestId
   , _cmdrLatency    :: !Int64
@@ -30,7 +29,7 @@ data CommandResponse = CommandResponse
   deriving (Show, Eq, Generic)
 makeLenses ''CommandResponse
 
-data CMDRWire = CMDRWire (CommandResult, NodeId, NodeId, RequestId, Int64)
+data CMDRWire = CMDRWire (CommandResult, NodeId, RequestId, Int64)
   deriving (Show, Generic)
 instance Serialize CMDRWire
 
@@ -40,7 +39,7 @@ instance Serialize CMDRWire
 -- TODO: scrap terrible API, re-integrate signing of CMDR's
 instance WireFormat CommandResponse where
   toWire nid pubKey _privKey CommandResponse{..} = case _cmdrProvenance of
-    NewMsg -> let bdy = S.encode $ CMDRWire (_cmdrResult,_cmdrLeaderId,_cmdrNodeId,_cmdrRequestId,_cmdrLatency)
+    NewMsg -> let bdy = S.encode $ CMDRWire (_cmdrResult,_cmdrNodeId,_cmdrRequestId,_cmdrLatency)
                   sig = Sig BS.empty
                   dig = Digest nid sig pubKey CMDR
               in SignedRPC dig bdy
@@ -52,6 +51,6 @@ instance WireFormat CommandResponse where
       then error $ "Invariant Failure: attempting to decode " ++ show (_digType dig) ++ " with CMDRWire instance"
       else case S.decode bdy of
         Left !err -> Left $! "Failure to decode CMDRWire: " ++ err
-        Right (CMDRWire !(r,lid,nid,rid,lat)) -> Right $! CommandResponse r lid nid rid lat $ ReceivedMsg dig bdy ts
+        Right (CMDRWire !(r,nid,rid,lat)) -> Right $! CommandResponse r nid rid lat $ ReceivedMsg dig bdy ts
   {-# INLINE toWire #-}
   {-# INLINE fromWire #-}

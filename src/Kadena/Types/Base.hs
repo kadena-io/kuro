@@ -34,8 +34,6 @@ import qualified Data.Map as Map
 
 import Data.AffineSpace ((.-.))
 import Data.Thyme.Clock
-import Data.Thyme.Time.Core ()
-import Data.Thyme.Internal.Micro (Micro)
 
 import Data.Serialize (Serialize)
 import qualified Data.Serialize as S
@@ -46,6 +44,8 @@ import Data.Aeson.Types (defaultOptions,Options(..))
 import Data.Word (Word64)
 import GHC.Int (Int64)
 import GHC.Generics hiding (from)
+
+import Pact.Types.Orphans ()
 
 newtype Alias = Alias { unAlias :: BSC.ByteString }
   deriving (Eq, Ord, Generic, Serialize)
@@ -162,9 +162,6 @@ instance Serialize PrivateKey where
 newtype ReceivedAt = ReceivedAt {_unReceivedAt :: UTCTime}
   deriving (Show, Eq, Ord, Generic)
 instance Serialize ReceivedAt
-instance Serialize UTCTime
-instance Serialize NominalDiffTime
-instance Serialize Micro
 
 interval :: UTCTime -> UTCTime -> Int64
 interval start end = view microseconds $ end .-. start

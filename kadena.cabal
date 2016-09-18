@@ -23,6 +23,7 @@ library
                      , Apps.Kadena.Client
                      , Kadena.Command.Types
                      , Kadena.Command.CommandLayer
+                     , Kadena.Command.PactSqlLite
                      , Kadena.Consensus.Handle
                      , Kadena.Consensus.Server
                      , Kadena.Consensus.Commit
@@ -95,6 +96,7 @@ library
                      , cryptonite
                      , data-default
                      , deepseq >= 1.4.1.1
+                     , directory
                      , ed25519-donna
                      , ekg >= 0.4 && < 0.5
                      , ekg-core >= 0.1.1.0 && < 0.2

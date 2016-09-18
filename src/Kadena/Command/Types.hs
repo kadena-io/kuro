@@ -211,13 +211,6 @@ instance (ToJSON a) => ToJSON (CommandSuccess a) where
         object [ "status" .= ("Success" :: String)
                , "result" .= a ]
 
-instance DeltaParsing AP.Parser where
-    line = return mempty
-    position = return mempty
-    slicedWith f a = a <&> (`f` mempty)
-    rend = return mempty
-    restOfLine = return mempty
-
 type ApplyLocal = ByteString -> IO CommandResult
 
 type CommandM a = ReaderT CommandEnv (StateT CommandState IO) a

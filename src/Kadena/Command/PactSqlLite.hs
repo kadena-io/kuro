@@ -9,10 +9,7 @@ module Kadena.Command.PactSqlLite where
 
 import Control.Monad.Reader
 import Control.Monad.Catch
-import Database.SQLite.Simple
-import Database.SQLite.Simple.Ok
-import Database.SQLite.Simple.ToField
-import Database.SQLite.Simple.FromField
+import Database.SQLite3.Direct as SQ3
 import qualified Data.Text as T
 import System.IO
 import System.Directory
@@ -27,9 +24,12 @@ import qualified Data.ByteString as BS
 import qualified Data.Map.Strict as M
 import Criterion
 import Control.Concurrent
+import Data.Text.Encoding
+import Data.Int
 
 import Pact.Types
 
+{-
 
 instance FromField TableName where fromField f = TableName <$> fromField f
 instance FromField RowKey where fromField f = RowKey <$> fromField f
@@ -71,8 +71,10 @@ fromJSONField f = do
         Right c -> return c
 {-# INLINE fromJSONField #-}
 
+-}
+
 data PSLEnv = PSLEnv {
-      conn :: Connection
+      conn :: Database
 }
 
 newtype PactSqlLite a = PactSqlLite { runPSL :: ReaderT PSLEnv IO a }
@@ -94,7 +96,7 @@ instance MonadPact PactSqlLite where
 
 
     -- keys :: TableName -> m [RowKey]
-    keys tn = map fromOnly <$> qry_ ("select key from " <> userTable tn <> " order by key")
+    keys tn = undefined -- map fromOnly <$> qry_ ("select key from " <> userTable tn <> " order by key")
 
 
     -- txids :: TableName -> TxId -> m [TxId]
@@ -105,8 +107,9 @@ instance MonadPact PactSqlLite where
 
 
     -- getUserTableInfo :: TableName -> m (ModuleName,KeySetName)
-    getUserTableInfo tn = qry1 "select module, keyset from usertables where name=?"
-                          (Only (asString tn)) <&> (fromString *** fromString)
+    getUserTableInfo tn = do
+      [m,k] <- qry1 "select module, keyset from usertables where name=?" [stext tn] [RText,RText]
+      (,) <$> decodeText m <*> decodeText k
 
     -- beginTx :: m ()
     beginTx = exec_ "BEGIN TRANSACTION"
@@ -132,72 +135,93 @@ instance MonadPact PactSqlLite where
     {-# INLINE keys #-}
     {-# INLINE txids #-}
 
-readRow' :: (ToField k,FromField v,Show k) => Domain d k v -> T.Text -> k -> PactSqlLite (Maybe v)
+readRow' :: (AsString k,FromJSON v,Show k) => Domain d k v -> Utf8 -> k -> PactSqlLite (Maybe v)
 readRow' _ t k = do
-  r <- qry ("select value from " <> t <> " where key = ?") (Only k)
+  r <- qry ("select value from " <> t <> " where key = ?") [stext k] [RBlob]
   case r of
     [] -> return Nothing
-    [Only a] -> return $ Just a
+    [a] -> Just <$> decodeBlob a
     _ -> throwError $ "read: more than one row found for table " ++ show t ++ ", key " ++ show k
 {-# INLINE readRow' #-}
 
 throwError :: MonadThrow m => String -> m a
 throwError s = throwM (userError s)
 
-writeSys :: (ToField k,ToField v) =>  WriteType -> T.Text -> k -> v -> PactSqlLite ()
+writeSys :: (AsString k,ToJSON v) => WriteType -> Utf8 -> k -> v -> PactSqlLite ()
 writeSys wt tbl k v =
     let q = case wt of
               Write -> "INSERT OR REPLACE INTO " <> tbl <> " VALUES (?,?)"
               Insert -> "INSERT INTO " <> tbl <> " VALUES (?,?)"
               Update -> "REPLACE INTO " <> tbl <> " VALUES (?,?)"
-    in exec q (k,v)
+    in exec' q [stext k,sencode v]
 {-# INLINE writeSys #-}
 
 writeUser :: WriteType -> TableName -> RowKey -> Columns Persistable -> PactSqlLite ()
 writeUser wt tn rk row = do
   let ut = userTable tn
-  olds <- qry ("select value from " <> ut <> " where key = ?") (Only rk)
-  let ins = exec ("INSERT INTO " <> ut <> " VALUES (?,?)") (rk,row)
-      upd old = exec ("REPLACE INTO " <> ut <> " VALUES (?,?)")
-                (rk,Columns (M.union (_columns row) (_columns old)))
+  olds <- qry ("select value from " <> ut <> " where key = ?") [stext rk] [RBlob]
+  let ins = exec' ("INSERT INTO " <> ut <> " VALUES (?,?)") [stext rk,sencode row]
+      upd old = do
+        oldrow <- decodeBlob old
+        exec' ("REPLACE INTO " <> ut <> " VALUES (?,?)")
+                [stext rk,
+                 sencode (Columns (M.union (_columns row) (_columns oldrow)))]
   case (olds,wt) of
     ([],Insert) -> ins
     (_,Insert) -> throwError $ "Insert: row found for key " ++ show rk
     ([],Write) -> ins
-    ([Only old],Write) -> upd old
+    ([old],Write) -> upd old
     (_,Write) -> throwError $ "Write: more than one row found for key " ++ show rk
-    ([Only old],Update) -> upd old
+    ([old],Update) -> upd old
     ([],Update) -> throwError $ "Update: no row found for key " ++ show rk
     (_,Update) -> throwError $ "Update: more than one row found for key " ++ show rk
 {-# INLINE writeUser #-}
 
-withConn :: (Connection -> PactSqlLite a) -> PactSqlLite a
+decodeBlob :: (FromJSON v) => [SType] -> PactSqlLite v
+decodeBlob [SBlob old] = liftEither (return $ eitherDecodeStrict' old)
+decodeBlob v = throwError $ "Expected single-column blob, got: " ++ show v
+
+decodeText :: (IsString v) => SType -> PactSqlLite v
+decodeText (SText (Utf8 t)) = return $ fromString $ T.unpack $ decodeUtf8 t
+decodeText v = throwError $ "Expected text, got: " ++ show v
+
+withConn :: (Database -> PactSqlLite a) -> PactSqlLite a
 withConn f = reader conn >>= \c -> f c
 
-userTable :: TableName -> T.Text
-userTable tn = "USER_" <> T.pack (asString tn)
-keysetsTable :: T.Text
+userTable :: TableName -> Utf8
+userTable tn = "USER_" <> fromString (asString tn)
+keysetsTable :: Utf8
 keysetsTable = "SYS_keysets"
-modulesTable :: T.Text
+modulesTable :: Utf8
 modulesTable = "SYS_modules"
+
+sencode :: ToJSON a => a -> SType
+sencode a = SBlob $ BSL.toStrict $ encode a
+
+stext :: AsString a => a -> SType
+stext a = SText $ fromString $ asString a
+
+data SType = SInt Int64 | SDouble Double | SText Utf8 | SBlob BS.ByteString deriving (Eq,Show)
+data RType = RInt | RDouble | RText | RBlob deriving (Eq,Show)
+
+
 
 createTable :: TableName -> ModuleName -> KeySetName -> PactSqlLite ()
 createTable tn mn ksn = do
     exec_ $ createKV $ userTable tn
-    exec "insert into usertables values (?,?,?)"
-             (asString tn,asString mn,asString ksn)
+    exec' "insert into usertables values (?,?,?)"
+             [stext tn,stext mn,stext ksn]
 
-createKV :: T.Text -> T.Text
+createKV :: Utf8 -> Utf8
 createKV t = "create table " <> t <>
-              " (key text primary key not null unique, value SQLBlob not null)"
+              " (key text primary key not null unique, value SQLBlob not null);"
 
-createUTInfo :: T.Text
+createUTInfo :: Utf8
 createUTInfo =
     "CREATE TABLE IF NOT EXISTS usertables (\
     \ name TEXT PRIMARY KEY NOT NULL UNIQUE \
     \,module text NOT NULL \
-    \,keyset text NOT NULL) \
-    \"
+    \,keyset text NOT NULL);"
 
 
 createSchema :: PactSqlLite ()
@@ -206,22 +230,75 @@ createSchema = do
   exec_ $ createKV keysetsTable
   exec_ $ createKV modulesTable
 
-exec_ :: T.Text -> PactSqlLite ()
-exec_ q = withConn $ \c -> liftIO $ execute_ c (Query q)
+exec_ :: Utf8 -> PactSqlLite ()
+exec_ q = withConn $ \c -> liftIO $ liftEither $ SQ3.exec c q
 
-exec :: ToRow a => T.Text -> a -> PactSqlLite ()
-exec q a = withConn $ \c -> liftIO $ execute c (Query q) a
+liftEither a = do
+  r <- a
+  case r of
+    (Left e) -> throwError (show e)
+    (Right r) -> return r
 
-qry :: (ToRow q, FromRow r) => T.Text -> q -> PactSqlLite [r]
-qry q v = withConn $ \c -> liftIO $ query c (Query q) v
+exec' :: Utf8 -> [SType] -> PactSqlLite ()
+exec' q as = withConn $ \c -> liftIO $ do
+             stmt <- prepStmt c q
+             bindParams stmt as
+             r <- step stmt
+             finalize stmt
+             const () <$> liftEither (return r)
 
-qry_ :: (FromRow r) => T.Text -> PactSqlLite [r]
-qry_ q  = withConn $ \c -> liftIO $ query_ c (Query q)
+bindParams :: Statement -> [SType] -> IO ()
+bindParams stmt as =
+    const () <$> liftEither
+    (sequence <$> forM (zip as [1..]) ( \(a,pi) -> do
+      case a of
+        SInt n -> bindInt64 stmt pi n
+        SDouble n -> bindDouble stmt pi n
+        SText n -> bindText stmt pi n
+        SBlob n -> bindBlob stmt pi n))
+
+prepStmt c q = do
+    r <- prepare c q
+    case r of
+      Left e -> throwError (show e)
+      Right Nothing -> throwError "Statement prep failed"
+      Right (Just s) -> return s
+
+qry :: Utf8 -> [SType] -> [RType] -> PactSqlLite [[SType]]
+qry q as rts = withConn $ \c -> liftIO $ do
+                 stmt <- prepStmt c q
+                 bindParams stmt as
+                 rows <- stepStmt stmt rts
+                 finalize stmt
+                 return (reverse rows)
+
+qry_ :: Utf8 -> [RType] -> PactSqlLite [[SType]]
+qry_ q rts = withConn $ \c -> liftIO $ do
+            stmt <- prepStmt c q
+            rows <- stepStmt stmt rts
+            finalize stmt
+            return (reverse rows)
+
+stepStmt :: Statement -> [RType] -> IO [[SType]]
+stepStmt stmt rts = do
+  let acc rs Done = return rs
+      acc rs Row = do
+        as <- forM (zip rts [0..]) $ \(rt,ci) -> do
+                      case rt of
+                        RInt -> SInt <$> columnInt64 stmt ci
+                        RDouble -> SDouble <$> columnDouble stmt ci
+                        RText -> SText <$> columnText stmt ci
+                        RBlob -> SBlob <$> columnBlob stmt ci
+        sr <- liftEither $ step stmt
+        acc (as:rs) sr
+  sr <- liftEither $ step stmt
+  acc [] sr
 
 
-qry1 :: (ToRow q, FromRow r) => T.Text -> q -> PactSqlLite r
-qry1 q v = do
-  r <- qry q v
+
+qry1 :: Utf8 -> [SType] -> [RType] -> PactSqlLite [SType]
+qry1 q as rts = do
+  r <- qry q as rts
   case r of
     [r'] -> return r'
     [] -> throwM $ userError "qry1: no results!"
@@ -232,7 +309,7 @@ _run' :: PactSqlLite a -> IO (PSLEnv,a)
 _run' a = do
   let f = "foo.sqllite"
   doesFileExist f >>= \b -> when b (removeFile f)
-  c <- open f
+  c <- liftEither $ open (fromString f)
   r <- runReaderT (runPSL a) (PSLEnv c)
   return (PSLEnv c,r)
 
@@ -246,6 +323,7 @@ _test1 =
       beginTx
       createSchema
       createTable "stuff" "module" "keyset"
+      liftIO . print =<< qry_ "select * from usertables" [RText,RText,RText]
       commitTx 123
       liftIO . print =<< getUserTableInfo "stuff"
       writeRow Insert (UserTables "stuff") "key1" (Columns (M.fromList [("gah",PLiteral (LDecimal 123.454345))]))

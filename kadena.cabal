@@ -97,6 +97,7 @@ library
                      , data-default
                      , deepseq >= 1.4.1.1
                      , directory
+                     , direct-sqlite
                      , ed25519-donna
                      , ekg >= 0.4 && < 0.5
                      , ekg-core >= 0.1.1.0 && < 0.2

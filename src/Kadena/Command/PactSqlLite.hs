@@ -19,15 +19,25 @@ import Data.Monoid
 import Control.Lens
 import Data.String
 import Data.Aeson hiding ((.=))
+import qualified Data.Aeson as A
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString as BS
 import qualified Data.Map.Strict as M
+import qualified Data.HashMap.Strict as HM
 import Criterion hiding (env)
 import Data.Text.Encoding
 import Data.Int
 import System.CPUTime
+import Data.Default
+
+
+import qualified Data.Attoparsec.Text as AP
 
 import Pact.Types
+import Pact.Types.Orphans ()
+import Pact.Native
+import Pact.Compile
+import Pact.Eval
 
 
 data SType = SInt Int64 | SDouble Double | SText Utf8 | SBlob BS.ByteString deriving (Eq,Show)
@@ -218,9 +228,15 @@ withConn :: (Database -> PactSqlLite a) -> PactSqlLite a
 withConn f = reader conn >>= \c -> f c
 
 userTable :: TableName -> Utf8
-userTable tn = "UTBL_" <> fromString (asString tn)
+userTable tn = "UTBL_" <> (Utf8 $ encodeUtf8 $ sanitize tn)
+{-# INLINE userTable #-}
 userTxRecord :: TableName -> Utf8
-userTxRecord tn = "UTXR_" <> fromString (asString tn)
+userTxRecord tn = "UTXR_" <> (Utf8 $ encodeUtf8 $ sanitize tn)
+{-# INLINE userTxRecord #-}
+sanitize :: AsString t => t -> T.Text
+sanitize tn = T.replace "-" "_" $ T.pack (asString tn)
+{-# INLINE sanitize #-}
+
 keysetsTable :: Utf8
 keysetsTable = "STBL_keysets"
 modulesTable :: Utf8
@@ -393,6 +409,11 @@ qry1 q as rts = do
     [] -> throwM $ userError "qry1: no results!"
     rs -> throwM $ userError $ "qry1: multiple results! (" ++ show (length rs) ++ ")"
 
+runPragmas = do
+  exec_ "PRAGMA synchronous = OFF"
+  exec_ "PRAGMA journal_mode = MEMORY"
+  exec_ "PRAGMA locking_mode = EXCLUSIVE"
+  exec_ "PRAGMA temp_store = MEMORY"
 
 
 _run' :: PactSqlLite a -> IO (PSLEnv,(a,PSLState))
@@ -437,6 +458,8 @@ _test1 =
 commit' :: PactSqlLite ()
 commit' = liftIO getCPUTime >>= \t -> commitTx (fromIntegral t)
 
+runRS e s a = runReaderT (evalStateT (runPSL a) s) e
+
 _bench :: IO ()
 _bench = do
   (ie,(_,is)) <- _run' $ do
@@ -444,11 +467,7 @@ _bench = do
       createSchema
       createUserTable "stuff" "module" "keyset"
       commitTx 123
-      exec_ "PRAGMA synchronous = OFF"
-      exec_ "PRAGMA journal_mode = MEMORY"
-      exec_ "PRAGMA locking_mode = EXCLUSIVE"
-      exec_ "PRAGMA temp_store = MEMORY"
-  let runRS e s a = runReaderT (evalStateT (runPSL a) s) e
+      runPragmas
   benchmark $ whnfIO $ runRS ie is $ do
        beginTx
        writeRow Write (UserTables "stuff") "key1" (Columns (M.fromList [("gah",PLiteral (LDecimal 123.454345))]))
@@ -465,3 +484,48 @@ _bench = do
        beginTx
        writeSys Write "UTBL_stuff" (RowKey "key1") (Columns (M.fromList [("gah",PLiteral (LBool False)),("fh",PValue Null)]))
        commit'
+
+parseCompile :: T.Text -> [Term Name]
+parseCompile code = compiled where
+    (Right es) = AP.parseOnly exprs code
+    (Right compiled) = mapM compile es
+
+
+_pact :: IO ()
+_pact = do
+  void $ _run' $ do
+      cf <- liftIO $ BS.readFile "demo/demo.pact"
+      runPragmas
+      beginTx
+      createSchema
+      commit'
+      nds <- nativeDefs
+      let evalEnv = EvalEnv {
+                  _eeRefStore = RefStore nds mempty
+                , _eeMsgSigs = mempty
+                , _eeMsgBody = object ["keyset" A..= object ["keys" A..= ["demoadmin" :: T.Text], "pred" A..= (">" :: T.Text)]]
+                , _eeTxId = 123
+                , _eeEntity = "hello"
+                , _eePactStep = Nothing
+                }
+      (r,es) <- runEval def evalEnv $ do
+          evalBeginTx
+          rs <- mapM eval (parseCompile $ decodeUtf8 cf)
+          evalCommitTx
+          return rs
+      liftIO $ print r
+      ie <- ask
+      is <- get
+      let evalEnv' = over (eeRefStore.rsModules) (HM.union (HM.fromList (_rsNew (_evalRefs es)))) evalEnv
+          pactBench benchterm = do
+                                tid <- fromIntegral <$> getCPUTime
+                                runRS ie is $ runEval def (set eeTxId tid evalEnv') $ do
+                                      evalBeginTx
+                                      r' <- eval (head benchterm)
+                                      evalCommitTx
+                                      return r'
+      liftIO $ benchmark $ whnfIO $ pactBench $ parseCompile "(demo.transfer \"Acct1\" \"Acct2\" 1.0)"
+      liftIO . print =<< readRow (UserTables "demo-accounts") "Acct1"
+      liftIO $ benchmark $ whnfIO $ runRS ie is $ readRow (UserTables "demo-accounts") "Acct1"
+      liftIO $ benchmark $ whnfIO $ pactBench $ parseCompile "(demo.read-account \"Acct1\")"
+      liftIO $ benchmark $ whnfIO $ pactBench $ parseCompile "(demo.fund-account \"Acct1\" 1000.0)"

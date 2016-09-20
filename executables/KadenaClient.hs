@@ -6,5 +6,5 @@ import Kadena.Command.PactSqlLite
 main :: IO ()
 main = do
   as <- getArgs
-  case as of ["bench"] -> _bench >> _pact
+  case as of ["bench"] -> _bench
              _ -> App.main

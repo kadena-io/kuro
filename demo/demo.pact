@@ -24,6 +24,7 @@
    "Read data for account ID"
    (+ { "account": id } (read 'demo-accounts id 'balance 'amount 'data)))
 
+
  (defun check-balance (balance amount)
    (enforce (<= amount balance) "Insufficient funds"))
 
@@ -35,6 +36,7 @@
  (defun read-all ()
    (map (read-account) (keys 'demo-accounts)))
 
+ (defun table-info () (describe-table 'demo-accounts) (describe-table 'demo-accounts))
 
 )
 

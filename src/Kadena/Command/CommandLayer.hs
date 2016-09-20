@@ -46,7 +46,7 @@ import Kadena.Types.Config
 
 initCommandLayer :: CommandConfig -> IO (ApplyFn,ApplyLocal)
 initCommandLayer config = do
-  nds <- fst <$> runPurePact nativeDefs def
+  nds <- undefined -- fst <$> runPurePact nativeDefs def
   mv <- newMVar (CommandState def (RefStore nds HM.empty))
   return (applyTransactional config mv,applyLocal config mv)
 
@@ -141,6 +141,7 @@ applyExec (ExecMsg code edata) ks = do
             Right r -> return r
             Left (i,e) -> throwCmdEx $ "Pact compile failed: " ++ show i ++ ": " ++ show e
   (CommandState pureState refStore) <- get
+  undefined {-
   let evalEnv = EvalEnv {
                   _eeRefStore = refStore
                 , _eeMsgSigs = S.fromList ks
@@ -158,8 +159,9 @@ applyExec (ExecMsg code edata) ks = do
                 put (CommandState pureState' $
                      over rsModules (HM.union (HM.fromList (_rsNew (_evalRefs rEvalState')))) refStore)
            return $ jsonResult $ CommandSuccess t -- TODO Yield handling
-    Left e -> throwCmdEx $ "Exec failed: " ++ show e
+    Left e -> throwCmdEx $ "Exec failed: " ++ show e -}
 
+{-
 execTerms :: ExecutionMode -> [Term Name] -> Eval PurePact (Term Name)
 execTerms mode terms = do
   evalBeginTx
@@ -170,7 +172,7 @@ execTerms mode terms = do
     Transactional _ -> void evalCommitTx
     Local -> evalRollbackTx
   return er
-
+-}
 
 applyContinuation :: ContMsg -> [Pact.PublicKey] -> CommandM CommandResult
 applyContinuation _ _ = throwCmdEx "Continuation not supported"

@@ -1,3 +1,5 @@
+{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -9,9 +11,6 @@
 {-# LANGUAGE GADTs #-}
 module Kadena.Command.PactSqlLite where
 
-import Control.Monad.Reader
-import Control.Monad.Catch
-import Control.Monad.State.Strict
 import Database.SQLite3.Direct as SQ3
 import qualified Data.Text as T
 import System.Directory
@@ -29,6 +28,9 @@ import Data.Text.Encoding
 import Data.Int
 import System.CPUTime
 import Data.Default
+import Prelude hiding (log)
+import Control.Monad.Catch
+import Control.Monad
 
 
 import qualified Data.Attoparsec.Text as AP
@@ -38,6 +40,7 @@ import Pact.Types.Orphans ()
 import Pact.Native
 import Pact.Compile
 import Pact.Eval
+import Pact.Native.Internal
 
 
 data SType = SInt Int64 | SDouble Double | SText Utf8 | SBlob BS.ByteString deriving (Eq,Show)
@@ -58,137 +61,173 @@ data TxStmts = TxStmts {
     , tRollback :: Statement
 }
 
+data SysCache = SysCache {
+      _cachedKeySets :: HM.HashMap String PactKeySet
+    , _cachedModules :: HM.HashMap String Module
+    , _cachedTableInfo :: HM.HashMap TableName (ModuleName,KeySetName)
+}
+makeLenses ''SysCache
+instance Default SysCache where def = SysCache HM.empty HM.empty HM.empty
+
 data PSLState = PSLState {
       _txRecord :: M.Map Utf8 [TxLog]
     , _tableStmts :: M.Map Utf8 TableStmts
     , _txStmts :: TxStmts
+    , _tmpSysCache :: SysCache
+    , _sysCache :: SysCache
 }
 makeLenses ''PSLState
 
-instance FromJSON TxLog where
-    parseJSON = withObject "TxLog" $ \o ->
-                TxLog <$> o .: "table" <*> o .: "key" <*> o .: "value"
-
 data PSLEnv = PSLEnv {
       conn :: Database
+    , log :: Show s => (s -> IO ())
 }
 
-newtype PactSqlLite a = PactSqlLite { runPSL :: StateT PSLState (ReaderT PSLEnv IO) a }
-    deriving (Functor,Applicative,Monad,MonadReader PSLEnv,MonadCatch,MonadThrow,MonadIO,MonadState PSLState)
 
-instance MonadPact PactSqlLite where
+pslBackend :: Backend PSLEnv PSLState
+pslBackend =
+  Backend {
 
-    -- readRow :: Domain d k v -> k -> m (Maybe v)
-    readRow KeySets k = readRow' KeySets keysetsTable k
-    readRow Modules k = readRow' Modules modulesTable k
-    readRow d@(UserTables t) k = readRow' d (userTable t) k
+    -- readRow :: Domain k v -> k -> m (Maybe v)
+   _readRow =
+        (\e s d k' ->
+         let rr :: Domain k v -> k -> IO (Maybe v)
+             rr KeySets k = return $ HM.lookup (asString k) . _cachedKeySets . _tmpSysCache $ s
+             rr Modules k = return $ HM.lookup (asString k) . _cachedModules . _tmpSysCache $ s
+             rr d@(UserTables t) k = readRow' e s d (userTable t) k
+         in (,s) <$> rr d k')
 
-
-    -- writeRow :: WriteType -> Domain d k v -> k -> v -> m ()
-    writeRow wt KeySets k v = writeSys wt keysetsTable k v
-    writeRow wt Modules k v = writeSys wt modulesTable k v
-    writeRow wt (UserTables t) k v = writeUser wt t k v
-
+ , _writeRow =
+      (\e s wt' d' k' v' ->
+    -- writeRow :: WriteType -> Domain k v -> k -> v -> m ()
+       let wr :: WriteType -> Domain k v -> k -> v -> IO ((),PSLState)
+           wr wt KeySets k v = writeSys e s wt cachedKeySets keysetsTable k v
+           wr wt Modules k v = writeSys e s wt cachedModules modulesTable k v
+           wr wt (UserTables t) k v = writeUser e s wt t k v
+       in wr wt' d' k' v')
 
 
     -- keys :: TableName -> m [RowKey]
-    keys tn = mapM decodeText_ =<< qry_ ("select key from " <> userTable tn <> " order by key") [RText]
+  , _keys =
+      (\e s tn -> (fmap (,s) . mapM decodeText_) =<< qry_ e ("select key from " <> userTable tn <> " order by key") [RText])
 
 
     -- txids :: TableName -> TxId -> m [TxId]
-    txids tn tid = mapM decodeInt_ =<<
-                   qry ("select txid from " <> userTxRecord tn <> " where txid > ? order by txid")
-                   [SInt (fromIntegral tid)] [RInt]
+  , _txids =
+      (\e s tn tid -> (fmap (,s) . mapM (decodeInt_)) =<<
+                       qry e ("select txid from " <> userTxRecord tn <> " where txid > ? order by txid")
+                               [SInt (fromIntegral tid)] [RInt])
 
 
 
     -- createUserTable :: TableName -> ModuleName -> KeySetName -> m ()
-    createUserTable tn mn ksn = createUserTable' tn mn ksn
+  , _createUserTable =
+      (\e s tn mn ksn -> createUserTable' e s tn mn ksn)
 
 
     -- getUserTableInfo :: TableName -> m (ModuleName,KeySetName)
-    getUserTableInfo tn = do
-      [m,k] <- qry1 "select module, keyset from usertables where name=?" [stext tn] [RText,RText]
-      (,) <$> decodeText m <*> decodeText k
+  , _getUserTableInfo =
+      (\e s tn ->
+        log e ("getUserTableInfo",tn) >>
+        case HM.lookup tn (_cachedTableInfo $ _tmpSysCache s) of
+          Just r -> return (r,s)
+          _ -> throwError $ "getUserTableInfo: no such table: " ++ show tn)
+
 
     -- beginTx :: m ()
-    beginTx = resetTemp >>= \s -> execs_ (tBegin (_txStmts s))
+  , _beginTx =
+      (\e s -> execs_ (tBegin (_txStmts s)) >> return (resetTemp s))
 
 
     -- commitTx :: TxId -> m ()
-    commitTx tid = do
-      let tid' = SInt (fromIntegral tid)
-      (PSLState trs stmts' txStmts') <- state (\s -> (s,s { _txRecord = M.empty }))
-      forM_ (M.toList trs) $ \(t,es) -> execs' (sRecordTx (stmts' M.! t)) [tid',sencode es]
-      execs_ (tCommit txStmts')
+  , _commitTx =
+       (\e s tid -> do
+          let tid' = SInt (fromIntegral tid)
+              (PSLState trs stmts' txStmts' _ _) = s
+              s' = s { _txRecord = M.empty, _sysCache = _tmpSysCache s }
+          forM_ (M.toList trs) $ \(t,es) -> execs' (sRecordTx (stmts' M.! t)) [tid',sencode es]
+          execs_ (tCommit txStmts')
+          return ((),s))
 
 
     -- rollbackTx :: m ()
-    rollbackTx = resetTemp >>= \s -> execs_ (tRollback (_txStmts s))
+  , _rollbackTx =
+      (\e s -> execs_ (tRollback (_txStmts s)) >> return (resetTemp s))
 
-    -- getTxLog :: Domain d k v -> TxId -> m [TxLog]
-    getTxLog d tid =
-        let tn :: Domain d k v -> Utf8
+    -- getTxLog :: Domain k v -> TxId -> m [TxLog]
+  , _getTxLog =
+      (\e s d tid ->
+        let tn :: Domain k v -> Utf8
             tn KeySets = keysetsTxRecord
             tn Modules = modulesTxRecord
             tn (UserTables t) = userTxRecord t
-        in decodeBlob =<<
-           qry1 ("select txlogs from " <> tn d <> " where txid = ?")
+        in do
+          r <- qry1 e ("select txlogs from " <> tn d <> " where txid = ?")
                    [SInt (fromIntegral tid)] [RBlob]
+          r' <- decodeBlob r
+          return (r',s))
 
 
-    {-# INLINE readRow #-}
-    {-# INLINE writeRow #-}
-    {-# INLINE createUserTable #-}
-    {-# INLINE getUserTableInfo #-}
-    {-# INLINE commitTx #-}
-    {-# INLINE beginTx #-}
-    {-# INLINE rollbackTx #-}
-    {-# INLINE getTxLog #-}
-    {-# INLINE keys #-}
-    {-# INLINE txids #-}
+}
+
+
+    {- # INLINE readRow #-}
+    {- # INLINE writeRow #-}
+    {- # INLINE createUserTable #-}
+    {- # INLINE getUserTableInfo #-}
+    {- # INLINE commitTx #-}
+    {- # INLINE beginTx #-}
+    {- # INLINE rollbackTx #-}
+    {- # INLINE getTxLog #-}
+    {- # INLINE keys #-}
+    {- # INLINE txids #-}
 
 
 
-readRow' :: (AsString k,FromJSON v,Show k) => Domain d k v -> Utf8 -> k -> PactSqlLite (Maybe v)
-readRow' _ t k = do
-  r <- qrys t sRead [stext k] [RBlob]
+readRow' :: (AsString k,FromJSON v,Show k) => PSLEnv -> PSLState -> Domain k v -> Utf8 -> k -> IO (Maybe v)
+readRow' e s _ t k = do
+  log e ("read",k)
+  r <- qrys e s t sRead [stext k] [RBlob]
   case r of
     [] -> return Nothing
     [a] -> Just <$> decodeBlob a
     _ -> throwError $ "read: more than one row found for table " ++ show t ++ ", key " ++ show k
-{-# INLINE readRow' #-}
+{- # INLINE readRow' #-}
 
-resetTemp :: PactSqlLite PSLState
-resetTemp = state (\s -> (s,s { _txRecord = M.empty }))
+resetTemp :: PSLState -> ((),PSLState)
+resetTemp s = ((),s { _txRecord = M.empty, _tmpSysCache = (_sysCache s) })
 
-throwError :: MonadThrow m => String -> m a
+throwError :: String -> IO a
 throwError s = throwM (userError s)
 
-writeSys :: (AsString k,ToJSON v) => WriteType -> Utf8 -> k -> v -> PactSqlLite ()
-writeSys wt tbl k v =
+writeSys :: (AsString k,ToJSON v) => PSLEnv -> PSLState -> WriteType ->
+            (Setter' SysCache (HM.HashMap String v)) -> Utf8 -> k -> v -> IO ((),PSLState)
+writeSys e s wt cache tbl k v =
     let q = case wt of
               Write -> sInsertReplace
               Insert -> sInsert
               Update -> sReplace
-    in execs tbl q [stext k,sencode v]
-{-# INLINE writeSys #-}
+    in do
+      execs s tbl q [stext k,sencode v]
+      return $ ((),s { _tmpSysCache = over cache (HM.insert (asString k) v) (_tmpSysCache s) })
+{- # INLINE writeSys #-}
 
-writeUser :: WriteType -> TableName -> RowKey -> Columns Persistable -> PactSqlLite ()
-writeUser wt tn rk row = do
+writeUser :: PSLEnv -> PSLState -> WriteType -> TableName -> RowKey -> Columns Persistable -> IO ((),PSLState)
+writeUser e s wt tn rk row = do
+  log e ("write",rk)
   let ut = userTable tn
       rk' = stext rk
-  olds <- qry ("select value from " <> ut <> " where key = ?") [rk'] [RBlob]
+  olds <- qry e ("select value from " <> ut <> " where key = ?") [rk'] [RBlob]
   let ins = do
         let row' = sencode row
-        execs ut sInsert [rk',row']
+        execs s ut sInsert [rk',row']
         recordTx
       upd old = do
         oldrow <- decodeBlob old
         let row' = sencode (Columns (M.union (_columns row) (_columns oldrow)))
-        execs ut sReplace [rk',row']
+        execs s ut sReplace [rk',row']
         recordTx
-      recordTx = modify (\s -> s { _txRecord = M.insertWith (++) ut [TxLog (asString tn) (asString rk) (toJSON row)] $ _txRecord s } )
+      recordTx = return ((),s { _txRecord = M.insertWith (++) ut [TxLog (asString tn) (asString rk) (toJSON row)] $ _txRecord s } )
   case (olds,wt) of
     ([],Insert) -> ins
     (_,Insert) -> throwError $ "Insert: row found for key " ++ show rk
@@ -198,44 +237,44 @@ writeUser wt tn rk row = do
     ([old],Update) -> upd old
     ([],Update) -> throwError $ "Update: no row found for key " ++ show rk
     (_,Update) -> throwError $ "Update: more than one row found for key " ++ show rk
-{-# INLINE writeUser #-}
+{- # INLINE writeUser #-}
 
-getTableStmts :: Utf8 -> PactSqlLite TableStmts
-getTableStmts tn = (M.! tn) . _tableStmts <$> get
+getTableStmts :: PSLState -> Utf8 -> TableStmts
+getTableStmts s tn = (M.! tn) . _tableStmts $ s
 
-decodeBlob :: (FromJSON v) => [SType] -> PactSqlLite v
+decodeBlob :: (FromJSON v) => [SType] -> IO v
 decodeBlob [SBlob old] = liftEither (return $ eitherDecodeStrict' old)
 decodeBlob v = throwError $ "Expected single-column blob, got: " ++ show v
-{-# INLINE decodeBlob #-}
+{- # INLINE decodeBlob #-}
 
-decodeInt_ :: (Integral v) => [SType] -> PactSqlLite v
+decodeInt_ :: (Integral v) => [SType] -> IO v
 decodeInt_ [SInt i] = return $ fromIntegral $ i
 decodeInt_ v = throwError $ "Expected single-column int, got: " ++ show v
-{-# INLINE decodeInt_ #-}
+{- # INLINE decodeInt_ #-}
 
-decodeText :: (IsString v) => SType -> PactSqlLite v
+decodeText :: (IsString v) => SType -> IO v
 decodeText (SText (Utf8 t)) = return $ fromString $ T.unpack $ decodeUtf8 t
 decodeText v = throwError $ "Expected text, got: " ++ show v
-{-# INLINE decodeText #-}
+{- # INLINE decodeText #-}
 
-decodeText_ :: (IsString v) => [SType] -> PactSqlLite v
+decodeText_ :: (IsString v) => [SType] -> IO v
 decodeText_ [SText (Utf8 t)] = return $ fromString $ T.unpack $ decodeUtf8 t
 decodeText_ v = throwError $ "Expected single-column text, got: " ++ show v
-{-# INLINE decodeText_ #-}
+{- # INLINE decodeText_ #-}
 
 
-withConn :: (Database -> PactSqlLite a) -> PactSqlLite a
-withConn f = reader conn >>= \c -> f c
+withConn :: PSLEnv -> (Database -> IO a) -> IO a
+withConn e f = f (conn e)
 
 userTable :: TableName -> Utf8
 userTable tn = "UTBL_" <> (Utf8 $ encodeUtf8 $ sanitize tn)
-{-# INLINE userTable #-}
+{- # INLINE userTable #-}
 userTxRecord :: TableName -> Utf8
 userTxRecord tn = "UTXR_" <> (Utf8 $ encodeUtf8 $ sanitize tn)
-{-# INLINE userTxRecord #-}
+{- # INLINE userTxRecord #-}
 sanitize :: AsString t => t -> T.Text
 sanitize tn = T.replace "-" "_" $ T.pack (asString tn)
-{-# INLINE sanitize #-}
+{- # INLINE sanitize #-}
 
 keysetsTable :: Utf8
 keysetsTable = "STBL_keysets"
@@ -248,87 +287,88 @@ modulesTxRecord = "STXR_modules"
 
 sencode :: ToJSON a => a -> SType
 sencode a = SBlob $ BSL.toStrict $ encode a
-{-# INLINE sencode #-}
+{- # INLINE sencode #-}
 
 stext :: AsString a => a -> SType
 stext a = SText $ fromString $ asString a
-{-# INLINE stext #-}
+{- # INLINE stext #-}
 
 
-createUserTable' :: TableName -> ModuleName -> KeySetName -> PactSqlLite ()
-createUserTable' tn mn ksn = do
-  exec' "insert into usertables values (?,?,?)" [stext tn,stext mn,stext ksn]
-  createTable (userTable tn) (userTxRecord tn)
+createUserTable' :: PSLEnv -> PSLState -> TableName -> ModuleName -> KeySetName -> IO ((),PSLState)
+createUserTable' e s tn mn ksn = do
+  exec' e "insert into usertables values (?,?,?)" [stext tn,stext mn,stext ksn]
+  s <- return $ over (tmpSysCache . cachedTableInfo) (HM.insert tn (mn,ksn)) s
+  createTable e s (userTable tn) (userTxRecord tn)
 
-createTable :: Utf8 -> Utf8 -> PactSqlLite ()
-createTable ut ur = do
-  exec_ $ "create table " <> ut <>
+createTable :: PSLEnv -> PSLState -> Utf8 -> Utf8 -> IO ((),PSLState)
+createTable e s ut ur = do
+  exec_ e $ "create table " <> ut <>
               " (key text primary key not null unique, value SQLBlob) without rowid;"
-  exec_ $ "create table " <> ur <>
+  exec_ e $ "create table " <> ur <>
           " (txid integer primary key not null unique, txlogs SQLBlob);" -- 'without rowid' crashes!!
-  c <- reader conn
-  let mkstmt q = liftIO $ prepStmt c q
+  c <- return (conn e)
+  let mkstmt q = prepStmt c q
   ss <- TableStmts <$>
            mkstmt ("INSERT OR REPLACE INTO " <> ut <> " VALUES (?,?)") <*>
            mkstmt ("INSERT INTO " <> ut <> " VALUES (?,?)") <*>
            mkstmt ("REPLACE INTO " <> ut <> " VALUES (?,?)") <*>
            mkstmt ("select value from " <> ut <> " where key = ?") <*>
            mkstmt ("INSERT INTO " <> ur <> " VALUES (?,?)")
-  tableStmts %= M.insert ut ss
+  return ((),over tableStmts (M.insert ut ss) s)
 
 
-createSchema :: PactSqlLite ()
-createSchema = do
-  exec_ "CREATE TABLE IF NOT EXISTS usertables (\
+createSchema :: PSLEnv -> PSLState -> IO ((),PSLState)
+createSchema e s = do
+  exec_ e "CREATE TABLE IF NOT EXISTS usertables (\
     \ name TEXT PRIMARY KEY NOT NULL UNIQUE \
     \,module text NOT NULL \
     \,keyset text NOT NULL);"
-  createTable keysetsTable keysetsTxRecord
-  createTable modulesTable modulesTxRecord
+  (_,s') <- createTable e s keysetsTable keysetsTxRecord
+  createTable e s' modulesTable modulesTxRecord
 
 
-exec_ :: Utf8 -> PactSqlLite ()
-exec_ q = withConn $ \c -> liftIO $ liftEither $ SQ3.exec c q
-{-# INLINE exec_ #-}
+exec_ :: PSLEnv -> Utf8 -> IO ()
+exec_ e q = liftEither $ SQ3.exec (conn e) q
+{- # INLINE exec_ #-}
 
-execs_ :: Statement -> PactSqlLite ()
-execs_ s = liftIO $ do
-             r <- step s
-             void $ reset s
-             void $ liftEither (return r)
-{-# INLINE execs_ #-}
+execs_ :: Statement -> IO ()
+execs_ s = do
+  r <- step s
+  void $ reset s
+  void $ liftEither (return r)
+{- # INLINE execs_ #-}
 
-liftEither :: (Show a, MonadThrow m) => m (Either a b) -> m b
+liftEither :: Show a => IO (Either a b) -> IO b
 liftEither a = do
   er <- a
   case er of
     (Left e) -> throwError (show e)
     (Right r) -> return r
-{-# INLINE liftEither #-}
+{- # INLINE liftEither #-}
 
-exec' :: Utf8 -> [SType] -> PactSqlLite ()
-exec' q as = withConn $ \c -> liftIO $ do
-             stmt <- prepStmt c q
+exec' :: PSLEnv -> Utf8 -> [SType] -> IO ()
+exec' e q as = do
+             stmt <- prepStmt (conn e) q
              bindParams stmt as
              r <- step stmt
              void $ finalize stmt
              void $ liftEither (return r)
-{-# INLINE exec' #-}
+{- # INLINE exec' #-}
 
-execs :: Utf8 -> (TableStmts -> Statement) -> [SType] -> PactSqlLite ()
-execs tn stmtf as = do
-  stmt <- stmtf <$> getTableStmts tn
+execs :: PSLState -> Utf8 -> (TableStmts -> Statement) -> [SType] -> IO ()
+execs s tn stmtf as = do
+  stmt <- return $ stmtf $ getTableStmts s tn
   execs' stmt as
-{-# INLINE execs #-}
+{- # INLINE execs #-}
 
-execs' :: Statement -> [SType] -> PactSqlLite ()
-execs' stmt as = liftIO $ do
+execs' :: Statement -> [SType] -> IO ()
+execs' stmt as = do
     clearBindings stmt
     bindParams stmt as
     r <- step stmt
     void $ reset stmt
     void $ liftEither (return r)
-{-# INLINE execs' #-}
+{- # INLINE execs' #-}
 
 
 bindParams :: Statement -> [SType] -> IO ()
@@ -340,7 +380,7 @@ bindParams stmt as =
         SDouble n -> bindDouble stmt i n
         SText n -> bindText stmt i n
         SBlob n -> bindBlob stmt i n))
-{-# INLINE bindParams #-}
+{- # INLINE bindParams #-}
 
 prepStmt :: Database -> Utf8 -> IO Statement
 prepStmt c q = do
@@ -350,33 +390,32 @@ prepStmt c q = do
       Right Nothing -> throwError "Statement prep failed"
       Right (Just s) -> return s
 
-qry :: Utf8 -> [SType] -> [RType] -> PactSqlLite [[SType]]
-qry q as rts = withConn $ \c -> liftIO $ do
-                 stmt <- prepStmt c q
-                 bindParams stmt as
-                 rows <- stepStmt stmt rts
-                 void $ finalize stmt
-                 return (reverse rows)
-{-# INLINE qry #-}
+qry :: PSLEnv -> Utf8 -> [SType] -> [RType] -> IO [[SType]]
+qry e q as rts = do
+  stmt <- prepStmt (conn e) q
+  bindParams stmt as
+  rows <- stepStmt stmt rts
+  void $ finalize stmt
+  return (reverse rows)
+{- # INLINE qry #-}
 
-qrys :: Utf8 -> (TableStmts -> Statement) -> [SType] -> [RType] -> PactSqlLite [[SType]]
-qrys tn stmtf as rts = do
-  stmt <- stmtf <$> getTableStmts tn
-  liftIO $ do
-    clearBindings stmt
-    bindParams stmt as
-    rows <- stepStmt stmt rts
-    void $ reset stmt
-    return (reverse rows)
-{-# INLINE qrys #-}
+qrys :: PSLEnv -> PSLState -> Utf8 -> (TableStmts -> Statement) -> [SType] -> [RType] -> IO [[SType]]
+qrys e s tn stmtf as rts = do
+  stmt <- return $ stmtf $ getTableStmts s tn
+  clearBindings stmt
+  bindParams stmt as
+  rows <- stepStmt stmt rts
+  void $ reset stmt
+  return (reverse rows)
+{- # INLINE qrys #-}
 
-qry_ :: Utf8 -> [RType] -> PactSqlLite [[SType]]
-qry_ q rts = withConn $ \c -> liftIO $ do
-            stmt <- prepStmt c q
+qry_ :: PSLEnv -> Utf8 -> [RType] -> IO [[SType]]
+qry_ e q rts = do
+            stmt <- prepStmt (conn e) q
             rows <- stepStmt stmt rts
             _ <- finalize stmt
             return (reverse rows)
-{-# INLINE qry_ #-}
+{- # INLINE qry_ #-}
 
 stepStmt :: Statement -> [RType] -> IO [[SType]]
 stepStmt stmt rts = do
@@ -392,140 +431,185 @@ stepStmt stmt rts = do
         acc (as:rs) sr
   sr <- liftEither $ step stmt
   acc [] sr
-{-# INLINE stepStmt #-}
+{- # INLINE stepStmt #-}
 
 
 initState :: Database -> IO PSLState
-initState c = PSLState M.empty M.empty <$>
+initState c = (\ts -> PSLState M.empty M.empty ts def def) <$>
             (TxStmts <$> prepStmt c "BEGIN TRANSACTION"
                      <*> prepStmt c "COMMIT TRANSACTION"
                      <*> prepStmt c "ROLLBACK TRANSACTION")
 
-qry1 :: Utf8 -> [SType] -> [RType] -> PactSqlLite [SType]
-qry1 q as rts = do
-  r <- qry q as rts
+
+qry1 :: PSLEnv -> Utf8 -> [SType] -> [RType] -> IO [SType]
+qry1 e q as rts = do
+  r <- qry e q as rts
   case r of
     [r'] -> return r'
     [] -> throwM $ userError "qry1: no results!"
     rs -> throwM $ userError $ "qry1: multiple results! (" ++ show (length rs) ++ ")"
 
-runPragmas = do
-  exec_ "PRAGMA synchronous = OFF"
-  exec_ "PRAGMA journal_mode = MEMORY"
-  exec_ "PRAGMA locking_mode = EXCLUSIVE"
-  exec_ "PRAGMA temp_store = MEMORY"
+runPragmas e = do
+  exec_ e "PRAGMA synchronous = OFF"
+  exec_ e "PRAGMA journal_mode = MEMORY"
+  exec_ e "PRAGMA locking_mode = EXCLUSIVE"
+  exec_ e "PRAGMA temp_store = MEMORY"
 
 
-_run' :: PactSqlLite a -> IO (PSLEnv,(a,PSLState))
+_run' :: (PSLEnv -> PSLState -> IO (a,PSLState)) -> IO (PSLEnv,(a,PSLState))
 _run' a = do
   let f = "foo.sqllite"
   doesFileExist f >>= \b -> when b (removeFile f)
   c <- liftEither $ open (fromString f)
-  let env = PSLEnv c
+  let env = PSLEnv c print
   s <- initState c
-  r <- runReaderT (runStateT (runPSL a) s) env
+  r <- a env s
   return (env,r)
 
-_run :: PactSqlLite a -> IO a
-_run a = _run' a >>= \(PSLEnv e,(r,_)) -> close e >> return r
+_run :: (PSLEnv -> PSLState -> IO (a,PSLState)) -> IO a
+_run a = _run' a >>= \(PSLEnv e _,(r,_)) -> close e >> return r
 
+beginTx' = _beginTx pslBackend
+commitTx' = _commitTx pslBackend
 
+writeRow' :: forall k v . (AsString k,ToJSON v) => PSLEnv -> PSLState ->
+                   WriteType -> Domain k v -> k -> v -> IO ((),PSLState)
+writeRow' = _writeRow pslBackend
+readRow'' :: forall k v . (IsString k,FromJSON v) => PSLEnv -> PSLState ->
+                  Domain k v -> k -> IO (Maybe v,PSLState)
+readRow'' = _readRow pslBackend
+
+print' :: Show a => (a,b) -> IO ()
+print' = print . fst
 
 _test1 :: IO ()
 _test1 =
-    _run $ do
-      t <- liftIO getCPUTime
-      beginTx
-      createSchema
-      createUserTable' "stuff" "module" "keyset"
-      liftIO . print =<< qry_ "select * from usertables" [RText,RText,RText]
-      commit'
-      beginTx
-      liftIO . print =<< getUserTableInfo "stuff"
-      writeRow Insert (UserTables "stuff") "key1" (Columns (M.fromList [("gah",PLiteral (LDecimal 123.454345))]))
-      liftIO . print =<< readRow (UserTables "stuff") "key1"
-      writeRow Update (UserTables "stuff") "key1" (Columns (M.fromList [("gah",PLiteral (LBool False)),("fh",PValue Null)]))
-      liftIO . print =<< readRow (UserTables "stuff") "key1"
-      writeRow Write KeySets "ks1" (PactKeySet [PublicKey "frah"] "stuff")
-      liftIO . print =<< readRow KeySets "ks1"
-      writeRow Write Modules "mod1" (Module "mod1" "mod-admin-keyset" "code")
-      liftIO . print =<< readRow Modules "mod1"
-      commit'
-      tids <- txids "stuff" (fromIntegral t)
-      liftIO $ print tids
-      liftIO . print =<< getTxLog (UserTables "stuff") (head tids)
+    _run $ \e s -> do
+      t <- getCPUTime
+      beginTx' e s
+      (_,s) <- createSchema e s
+      (_,s) <- createUserTable' e s "stuff" "module" "keyset"
+      print =<< qry_ e "select * from usertables" [RText,RText,RText]
+      commit' e s
+      beginTx' e s
+      print' =<< _getUserTableInfo pslBackend e s "stuff"
+      (_,s) <- writeRow' e s Insert (UserTables "stuff") "key1" (Columns (M.fromList [("gah",PLiteral (LDecimal 123.454345))]))
+      print' =<< readRow'' e s (UserTables "stuff") "key1"
+      (_,s) <- writeRow' e s Update (UserTables "stuff") "key1" (Columns (M.fromList [("gah",PLiteral (LBool False)),("fh",PValue Null)]))
+      print' =<< readRow'' e s (UserTables "stuff") "key1"
+      (_,s) <- writeRow' e s Write KeySets "ks1" (PactKeySet [PublicKey "frah"] "stuff")
+      print' =<< readRow'' e s KeySets "ks1"
+      (_,s) <- writeRow' e s Write Modules "mod1" (Module "mod1" "mod-admin-keyset" "code")
+      print' =<< readRow'' e s Modules "mod1"
+      commit' e s
+      (tids,_) <- _txids pslBackend e s "stuff" (fromIntegral t)
+      print tids
+      (print . fst) =<< _getTxLog pslBackend e s (UserTables "stuff") (head tids)
+      return ((),s)
 
-commit' :: PactSqlLite ()
-commit' = liftIO getCPUTime >>= \t -> commitTx (fromIntegral t)
+commit' :: PSLEnv -> PSLState -> IO ((),PSLState)
+commit' e s = getCPUTime >>= \t -> _commitTx pslBackend e s (fromIntegral t)
 
-runRS e s a = runReaderT (evalStateT (runPSL a) s) e
+runRS e s a = a s e
 
 _bench :: IO ()
 _bench = do
-  (ie,(_,is)) <- _run' $ do
-      beginTx
-      createSchema
-      createUserTable "stuff" "module" "keyset"
-      commitTx 123
-      runPragmas
-  benchmark $ whnfIO $ runRS ie is $ do
-       beginTx
-       writeRow Write (UserTables "stuff") "key1" (Columns (M.fromList [("gah",PLiteral (LDecimal 123.454345))]))
-       _ <- readRow (UserTables "stuff") "key1"
-       writeRow Update (UserTables "stuff") "key1" (Columns (M.fromList [("gah",PLiteral (LBool False)),("fh",PValue Null)]))
-       r <- readRow (UserTables "stuff") "key1"
-       commit'
+  (e,(_,s)) <- _run' $ \e s -> do
+      beginTx' e s
+      (_,s) <- createSchema e s
+      (_,s) <- _createUserTable pslBackend e s "stuff" "module" "keyset"
+      commitTx' e s 123
+      runPragmas e
+      return ((),s)
+  e <- return $ nolog e
+  benchmark $ whnfIO $ do
+       beginTx' e s
+       (_,s) <- writeRow' e s Write (UserTables "stuff") "key1" (Columns (M.fromList [("gah",PLiteral (LDecimal 123.454345))]))
+       _ <- readRow'' e s (UserTables "stuff") "key1"
+       (_,s) <- writeRow' e s Update (UserTables "stuff") "key1" (Columns (M.fromList [("gah",PLiteral (LBool False)),("fh",PValue Null)]))
+       r <- readRow'' e s  (UserTables "stuff") "key1"
+       commit' e s
        return r
-  benchmark $ whnfIO $ runRS ie is $ do
-       beginTx
-       writeRow Update (UserTables "stuff") "key1" (Columns (M.fromList [("gah",PLiteral (LBool False)),("fh",PValue Null)]))
-       commit'
-  benchmark $ whnfIO $ runRS ie is $ do
-       beginTx
-       writeSys Write "UTBL_stuff" (RowKey "key1") (Columns (M.fromList [("gah",PLiteral (LBool False)),("fh",PValue Null)]))
-       commit'
+  benchmark $ whnfIO $ do
+       beginTx' e s
+       (_,s) <- writeRow' e s Update (UserTables "stuff") "key1" (Columns (M.fromList [("gah",PLiteral (LBool False)),("fh",PValue Null)]))
+       commit' e s
+  -- benchmark $ whnfIO $ runRS ie is $ do
+  --      beginTx
+  --      writeSys Write "UTBL_stuff" (RowKey "key1") (Columns (M.fromList [("gah",PLiteral (LBool False)),("fh",PValue Null)]))
+  --      commit'
 
 parseCompile :: T.Text -> [Term Name]
 parseCompile code = compiled where
     (Right es) = AP.parseOnly exprs code
     (Right compiled) = mapM compile es
 
+initEvalEnv :: e -> Backend e s -> IO (EvalEnv e s)
+initEvalEnv e b = do
+  (Right nds,_) <- runEval undefined undefined nativeDefs
+  return $ EvalEnv (RefStore nds HM.empty) def Null def def def e b
+
+nolog e = e { log = (\_ -> return ()) }
+
+defState s = EvalState def def def s
 
 _pact :: IO ()
 _pact = do
-  void $ _run' $ do
-      cf <- liftIO $ BS.readFile "demo/demo.pact"
-      runPragmas
-      beginTx
-      createSchema
-      commit'
-      nds <- nativeDefs
-      let evalEnv = EvalEnv {
-                  _eeRefStore = RefStore nds mempty
-                , _eeMsgSigs = mempty
-                , _eeMsgBody = object ["keyset" A..= object ["keys" A..= ["demoadmin" :: T.Text], "pred" A..= (">" :: T.Text)]]
-                , _eeTxId = 123
-                , _eeEntity = "hello"
-                , _eePactStep = Nothing
-                }
-      (r,es) <- runEval def evalEnv $ do
+  void $ _run' $ \e s -> do
+      cf <- BS.readFile "demo/demo.pact"
+      runPragmas e
+      _beginTx pslBackend e s
+      (_,s) <- createSchema e s
+      (_,s) <- commit' e s
+      let body = object ["keyset" A..= object ["keys" A..= ["demoadmin" :: T.Text], "pred" A..= (">" :: T.Text)]]
+      evalEnv <- set eeMsgBody body <$> initEvalEnv e pslBackend
+      (r,es) <- runEval (defState s) evalEnv $ do
           evalBeginTx
           rs <- mapM eval (parseCompile $ decodeUtf8 cf)
           evalCommitTx
           return rs
-      liftIO $ print r
-      ie <- ask
-      is <- get
+      s <- return $ _evalBackendState es
+      print r
+      ie <- return $ nolog e
+      ieLog <- return e
+      is <- return s
       let evalEnv' = over (eeRefStore.rsModules) (HM.union (HM.fromList (_rsNew (_evalRefs es)))) evalEnv
-          pactBench benchterm = do
+
+          pactBench pe benchterm = do
                                 tid <- fromIntegral <$> getCPUTime
-                                runRS ie is $ runEval def (set eeTxId tid evalEnv') $ do
+                                runEval (defState is) (set eeTxId tid evalEnv') $ do
                                       evalBeginTx
                                       r' <- eval (head benchterm)
                                       evalCommitTx
                                       return r'
-      liftIO $ benchmark $ whnfIO $ pactBench $ parseCompile "(demo.transfer \"Acct1\" \"Acct2\" 1.0)"
-      liftIO . print =<< readRow (UserTables "demo-accounts") "Acct1"
-      liftIO $ benchmark $ whnfIO $ runRS ie is $ readRow (UserTables "demo-accounts") "Acct1"
-      liftIO $ benchmark $ whnfIO $ pactBench $ parseCompile "(demo.read-account \"Acct1\")"
-      liftIO $ benchmark $ whnfIO $ pactBench $ parseCompile "(demo.fund-account \"Acct1\" 1000.0)"
+          pactSimple = runEval (defState is) evalEnv' . eval . head . parseCompile
+          benchy n a = (putStr n >> putStr " " >> benchmark (whnfIO $ a))
+      -- benchy "(+ 1 2)" $ pactBench $ parseCompile "(+ 1 2)"
+      -- benchy "(demo.app)" $ pactBench $ parseCompile "(demo.app)"
+      print =<< pactBench ieLog (parseCompile "(demo.read-account \"Acct1\")")
+      benchy "read-account simple" $ pactSimple $ "(demo.read-account \"Acct1\")"
+      --benchy "read-accountc simple" $ pactSimple $ "(demo.read-accountc \"Acct1\")"
+      benchy "read-account" $ pactBench ie $ parseCompile "(demo.read-account \"Acct1\")"
+      benchy "PactSqlLite readRow in tx" $ do
+                   beginTx' ie is
+                   rr <- readRow'' ie is (UserTables "demo-accounts") "Acct1"
+                   commit' ie is >> return rr
+      void $ pactBench ieLog $ parseCompile "(demo.read-account \"Acct1\")"
+      benchy "tableinfo" $ pactSimple "(describe-table 'demo-accounts)"
+      void $ pactBench ieLog $ parseCompile "(demo.transfer \"Acct1\" \"Acct2\" 1.0)"
+      benchy "transfer" $ pactBench ie $ parseCompile "(demo.transfer \"Acct1\" \"Acct2\" 1.0)"
+      print' =<< readRow'' ie is (UserTables "demo-accounts") "Acct1"
+      benchy "PactSqlLite readRow" $ runEval (defState is) evalEnv' $ readRow (UserTables "demo-accounts") "Acct1"
+      benchy "getUserTableInfo" $ _getUserTableInfo pslBackend ie is "demo-accounts"
+      benchy "PactSqlLite writeRow in tx" $ do
+                   beginTx' ie is
+                   rr <- writeRow' ie is Update (UserTables "demo-accounts") "Acct1"
+                         (Columns (M.fromList [("balance",PLiteral (LDecimal 1000.0)),
+                                               ("amount",PLiteral (LDecimal 1000.0)),
+                                               ("data",PLiteral (LString "Admin account funding"))]))
+                   commit' ie is >> return rr
+      -- bench adds 5us for firing up monad stack.
+      benchy "read-account" $ pactBench ie $ parseCompile "(demo.read-account \"Acct1\")"
+      void $ pactBench ieLog $ parseCompile "(demo.fund-account \"Acct1\" 1000.0)"
+      benchy "fund-account" $ pactBench ie $ parseCompile "(demo.fund-account \"Acct1\" 1000.0)"
+      return ((),s)

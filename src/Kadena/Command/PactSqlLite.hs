@@ -65,7 +65,8 @@ data SysCache = SysCache {
       _cachedKeySets :: HM.HashMap String PactKeySet
     , _cachedModules :: HM.HashMap String Module
     , _cachedTableInfo :: HM.HashMap TableName (ModuleName,KeySetName)
-}
+} deriving (Show)
+
 makeLenses ''SysCache
 instance Default SysCache where def = SysCache HM.empty HM.empty HM.empty
 
@@ -147,7 +148,7 @@ pslBackend =
               s' = s { _txRecord = M.empty, _sysCache = _tmpSysCache s }
           forM_ (M.toList trs) $ \(t,es) -> execs' (sRecordTx (stmts' M.! t)) [tid',sencode es]
           execs_ (tCommit txStmts')
-          return ((),s))
+          return ((),s'))
 
 
     -- rollbackTx :: m ()
@@ -171,17 +172,6 @@ pslBackend =
 }
 
 
-    {- # INLINE readRow #-}
-    {- # INLINE writeRow #-}
-    {- # INLINE createUserTable #-}
-    {- # INLINE getUserTableInfo #-}
-    {- # INLINE commitTx #-}
-    {- # INLINE beginTx #-}
-    {- # INLINE rollbackTx #-}
-    {- # INLINE getTxLog #-}
-    {- # INLINE keys #-}
-    {- # INLINE txids #-}
-
 
 
 readRow' :: (AsString k,FromJSON v,Show k) => PSLEnv -> PSLState -> Domain k v -> Utf8 -> k -> IO (Maybe v)
@@ -192,7 +182,7 @@ readRow' e s _ t k = do
     [] -> return Nothing
     [a] -> Just <$> decodeBlob a
     _ -> throwError $ "read: more than one row found for table " ++ show t ++ ", key " ++ show k
-{- # INLINE readRow' #-}
+{-# INLINE readRow' #-}
 
 resetTemp :: PSLState -> ((),PSLState)
 resetTemp s = ((),s { _txRecord = M.empty, _tmpSysCache = (_sysCache s) })
@@ -210,7 +200,7 @@ writeSys e s wt cache tbl k v =
     in do
       execs s tbl q [stext k,sencode v]
       return $ ((),s { _tmpSysCache = over cache (HM.insert (asString k) v) (_tmpSysCache s) })
-{- # INLINE writeSys #-}
+{-# INLINE writeSys #-}
 
 writeUser :: PSLEnv -> PSLState -> WriteType -> TableName -> RowKey -> Columns Persistable -> IO ((),PSLState)
 writeUser e s wt tn rk row = do
@@ -237,7 +227,7 @@ writeUser e s wt tn rk row = do
     ([old],Update) -> upd old
     ([],Update) -> throwError $ "Update: no row found for key " ++ show rk
     (_,Update) -> throwError $ "Update: more than one row found for key " ++ show rk
-{- # INLINE writeUser #-}
+{-# INLINE writeUser #-}
 
 getTableStmts :: PSLState -> Utf8 -> TableStmts
 getTableStmts s tn = (M.! tn) . _tableStmts $ s
@@ -245,22 +235,22 @@ getTableStmts s tn = (M.! tn) . _tableStmts $ s
 decodeBlob :: (FromJSON v) => [SType] -> IO v
 decodeBlob [SBlob old] = liftEither (return $ eitherDecodeStrict' old)
 decodeBlob v = throwError $ "Expected single-column blob, got: " ++ show v
-{- # INLINE decodeBlob #-}
+{-# INLINE decodeBlob #-}
 
 decodeInt_ :: (Integral v) => [SType] -> IO v
 decodeInt_ [SInt i] = return $ fromIntegral $ i
 decodeInt_ v = throwError $ "Expected single-column int, got: " ++ show v
-{- # INLINE decodeInt_ #-}
+{-# INLINE decodeInt_ #-}
 
 decodeText :: (IsString v) => SType -> IO v
 decodeText (SText (Utf8 t)) = return $ fromString $ T.unpack $ decodeUtf8 t
 decodeText v = throwError $ "Expected text, got: " ++ show v
-{- # INLINE decodeText #-}
+{-# INLINE decodeText #-}
 
 decodeText_ :: (IsString v) => [SType] -> IO v
 decodeText_ [SText (Utf8 t)] = return $ fromString $ T.unpack $ decodeUtf8 t
 decodeText_ v = throwError $ "Expected single-column text, got: " ++ show v
-{- # INLINE decodeText_ #-}
+{-# INLINE decodeText_ #-}
 
 
 withConn :: PSLEnv -> (Database -> IO a) -> IO a
@@ -268,13 +258,13 @@ withConn e f = f (conn e)
 
 userTable :: TableName -> Utf8
 userTable tn = "UTBL_" <> (Utf8 $ encodeUtf8 $ sanitize tn)
-{- # INLINE userTable #-}
+{-# INLINE userTable #-}
 userTxRecord :: TableName -> Utf8
 userTxRecord tn = "UTXR_" <> (Utf8 $ encodeUtf8 $ sanitize tn)
-{- # INLINE userTxRecord #-}
+{-# INLINE userTxRecord #-}
 sanitize :: AsString t => t -> T.Text
 sanitize tn = T.replace "-" "_" $ T.pack (asString tn)
-{- # INLINE sanitize #-}
+{-# INLINE sanitize #-}
 
 keysetsTable :: Utf8
 keysetsTable = "STBL_keysets"
@@ -287,11 +277,11 @@ modulesTxRecord = "STXR_modules"
 
 sencode :: ToJSON a => a -> SType
 sencode a = SBlob $ BSL.toStrict $ encode a
-{- # INLINE sencode #-}
+{-# INLINE sencode #-}
 
 stext :: AsString a => a -> SType
 stext a = SText $ fromString $ asString a
-{- # INLINE stext #-}
+{-# INLINE stext #-}
 
 
 createUserTable' :: PSLEnv -> PSLState -> TableName -> ModuleName -> KeySetName -> IO ((),PSLState)
@@ -329,14 +319,14 @@ createSchema e s = do
 
 exec_ :: PSLEnv -> Utf8 -> IO ()
 exec_ e q = liftEither $ SQ3.exec (conn e) q
-{- # INLINE exec_ #-}
+{-# INLINE exec_ #-}
 
 execs_ :: Statement -> IO ()
 execs_ s = do
   r <- step s
   void $ reset s
   void $ liftEither (return r)
-{- # INLINE execs_ #-}
+{-# INLINE execs_ #-}
 
 liftEither :: Show a => IO (Either a b) -> IO b
 liftEither a = do
@@ -344,7 +334,7 @@ liftEither a = do
   case er of
     (Left e) -> throwError (show e)
     (Right r) -> return r
-{- # INLINE liftEither #-}
+{-# INLINE liftEither #-}
 
 exec' :: PSLEnv -> Utf8 -> [SType] -> IO ()
 exec' e q as = do
@@ -353,13 +343,13 @@ exec' e q as = do
              r <- step stmt
              void $ finalize stmt
              void $ liftEither (return r)
-{- # INLINE exec' #-}
+{-# INLINE exec' #-}
 
 execs :: PSLState -> Utf8 -> (TableStmts -> Statement) -> [SType] -> IO ()
 execs s tn stmtf as = do
   stmt <- return $ stmtf $ getTableStmts s tn
   execs' stmt as
-{- # INLINE execs #-}
+{-# INLINE execs #-}
 
 execs' :: Statement -> [SType] -> IO ()
 execs' stmt as = do
@@ -368,7 +358,7 @@ execs' stmt as = do
     r <- step stmt
     void $ reset stmt
     void $ liftEither (return r)
-{- # INLINE execs' #-}
+{-# INLINE execs' #-}
 
 
 bindParams :: Statement -> [SType] -> IO ()
@@ -380,7 +370,7 @@ bindParams stmt as =
         SDouble n -> bindDouble stmt i n
         SText n -> bindText stmt i n
         SBlob n -> bindBlob stmt i n))
-{- # INLINE bindParams #-}
+{-# INLINE bindParams #-}
 
 prepStmt :: Database -> Utf8 -> IO Statement
 prepStmt c q = do
@@ -397,7 +387,7 @@ qry e q as rts = do
   rows <- stepStmt stmt rts
   void $ finalize stmt
   return (reverse rows)
-{- # INLINE qry #-}
+{-# INLINE qry #-}
 
 qrys :: PSLEnv -> PSLState -> Utf8 -> (TableStmts -> Statement) -> [SType] -> [RType] -> IO [[SType]]
 qrys e s tn stmtf as rts = do
@@ -407,7 +397,7 @@ qrys e s tn stmtf as rts = do
   rows <- stepStmt stmt rts
   void $ reset stmt
   return (reverse rows)
-{- # INLINE qrys #-}
+{-# INLINE qrys #-}
 
 qry_ :: PSLEnv -> Utf8 -> [RType] -> IO [[SType]]
 qry_ e q rts = do
@@ -415,7 +405,7 @@ qry_ e q rts = do
             rows <- stepStmt stmt rts
             _ <- finalize stmt
             return (reverse rows)
-{- # INLINE qry_ #-}
+{-# INLINE qry_ #-}
 
 stepStmt :: Statement -> [RType] -> IO [[SType]]
 stepStmt stmt rts = do
@@ -431,7 +421,7 @@ stepStmt stmt rts = do
         acc (as:rs) sr
   sr <- liftEither $ step stmt
   acc [] sr
-{- # INLINE stepStmt #-}
+{-# INLINE stepStmt #-}
 
 
 initState :: Database -> IO PSLState
@@ -570,14 +560,15 @@ _pact = do
           return rs
       s <- return $ _evalBackendState es
       print r
+      print $ _sysCache s
       ie <- return $ nolog e
       ieLog <- return e
       is <- return s
-      let evalEnv' = over (eeRefStore.rsModules) (HM.union (HM.fromList (_rsNew (_evalRefs es)))) evalEnv
+      let evalEnv' = set eeBackendEnv ie $ over (eeRefStore.rsModules) (HM.union (HM.fromList (_rsNew (_evalRefs es)))) evalEnv
 
           pactBench pe benchterm = do
                                 tid <- fromIntegral <$> getCPUTime
-                                runEval (defState is) (set eeTxId tid evalEnv') $ do
+                                runEval (defState is) (set eeBackendEnv pe $ set eeTxId tid evalEnv') $ do
                                       evalBeginTx
                                       r' <- eval (head benchterm)
                                       evalCommitTx

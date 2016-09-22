@@ -46,7 +46,7 @@ import Kadena.Types.Config
 
 initCommandLayer :: CommandConfig -> IO (ApplyFn,ApplyLocal)
 initCommandLayer config = do
-  nds <- undefined -- fst <$> runPurePact nativeDefs def
+  (Right nds,_) <- runEval undefined undefined nativeDefs
   mv <- newMVar (CommandState def (RefStore nds HM.empty))
   return (applyTransactional config mv,applyLocal config mv)
 
@@ -141,7 +141,7 @@ applyExec (ExecMsg code edata) ks = do
             Right r -> return r
             Left (i,e) -> throwCmdEx $ "Pact compile failed: " ++ show i ++ ": " ++ show e
   (CommandState pureState refStore) <- get
-  undefined {-
+  mv <- liftIO $ newMVar pureState
   let evalEnv = EvalEnv {
                   _eeRefStore = refStore
                 , _eeMsgSigs = S.fromList ks
@@ -149,20 +149,21 @@ applyExec (ExecMsg code edata) ks = do
                 , _eeTxId = fromMaybe 0 $ firstOf emTxId mode
                 , _eeEntity = view (ceConfig.ccEntity.entName) env
                 , _eePactStep = Nothing
+                , _eePactDb = pureBackend
+                , _eePactDbEnv = mv
                 }
-  ((r,rEvalState'),pureState') <-
-          liftIO (runPurePact (runEval def evalEnv
-                               (execTerms mode terms)) pureState)
+  (r,rEvalState') <- liftIO $ runEval def evalEnv (execTerms mode terms)
   case r of
     Right t -> do
-           when (mode /= Local) $
-                put (CommandState pureState' $
+           when (mode /= Local) $ do
+                 pureState' <- liftIO $ readMVar mv
+                 put (CommandState pureState' $
                      over rsModules (HM.union (HM.fromList (_rsNew (_evalRefs rEvalState')))) refStore)
            return $ jsonResult $ CommandSuccess t -- TODO Yield handling
-    Left e -> throwCmdEx $ "Exec failed: " ++ show e -}
+    Left e -> throwCmdEx $ "Exec failed: " ++ show e
 
-{-
-execTerms :: ExecutionMode -> [Term Name] -> Eval PurePact (Term Name)
+
+execTerms :: ExecutionMode -> [Term Name] -> Eval PureEnv () (Term Name)
 execTerms mode terms = do
   evalBeginTx
   er <- catchError
@@ -172,7 +173,7 @@ execTerms mode terms = do
     Transactional _ -> void evalCommitTx
     Local -> evalRollbackTx
   return er
--}
+
 
 applyContinuation :: ContMsg -> [Pact.PublicKey] -> CommandM CommandResult
 applyContinuation _ _ = throwCmdEx "Continuation not supported"

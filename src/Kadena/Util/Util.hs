@@ -1,4 +1,3 @@
-{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -23,19 +22,20 @@ module Kadena.Util.Util
   , awsDashVar
   , pubConsensusFromState
   , fromMaybeM
+  , makeCommandResponse'
   ) where
 
 
-import Control.Concurrent (forkIO,swapMVar)
+import Control.Concurrent (forkIO,swapMVar,takeMVar, newEmptyMVar)
 import Control.Lens
 import Control.Monad.RWS.Strict
-import Control.Concurrent (takeMVar, newEmptyMVar)
 import qualified Control.Concurrent.Lifted as CL
 
 import Data.Set (Set)
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import Data.Map.Strict (Map)
+import Data.Int (Int64)
 
 import qualified System.Random as R
 import System.Process (system)
@@ -165,3 +165,11 @@ getCmdSigOrInvariantError where' s@Command{..} = case _cmdProvenance of
   NewMsg -> error $ where'
     ++ ": This should be unreachable, somehow an AE got through with a LogEntry that contained an unsigned Command" ++ show s
   ReceivedMsg{..} -> _digSig _pDig
+
+makeCommandResponse' :: NodeId -> Command -> CommandResult -> Int64 -> CommandResponse
+makeCommandResponse' nid Command{..} result lat = CommandResponse
+             result
+             nid
+             _cmdRequestId
+             lat
+             NewMsg

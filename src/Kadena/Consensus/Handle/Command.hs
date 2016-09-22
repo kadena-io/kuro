@@ -20,10 +20,9 @@ import Data.BloomFilter (Bloom)
 import qualified Data.BloomFilter as Bloom
 import Data.Maybe (isNothing, isJust, fromJust)
 import Data.Either (partitionEithers)
-import Kadena.Consensus.Commit (makeCommandResponse')
 
 import Kadena.Consensus.Handle.Types
-import Kadena.Util.Util (getCmdSigOrInvariantError, updateLogs, enqueueRequest, debug)
+import Kadena.Util.Util (getCmdSigOrInvariantError, updateLogs, enqueueRequest, debug, makeCommandResponse')
 import Kadena.Runtime.Timer (resetHeartbeatTimer)
 import qualified Kadena.Types as KD
 
@@ -75,7 +74,7 @@ handleCommand cmd@Command{..} = do
   cmdSig <- return $ getCmdSigOrInvariantError "handleCommand" cmd
   case (Map.lookup (_cmdClientId, cmdSig) replays, r, mlid) of
     (Just (Just result), _, _) -> do
-      cmdr <- return $ makeCommandResponse' nid mlid cmd result
+      cmdr <- return $ makeCommandResponse' nid cmd result
       return . SendCommandResponse _cmdClientId $ cmdr 1
       -- we have already committed this request, so send the result to the client
     (Just Nothing, _, _) ->
@@ -204,7 +203,7 @@ postProcessBatch nid mlid replays cs = go cs (PostProcessingResult [] [] replays
     go [] bp = bp { falsePositive = reverse $ falsePositive bp }
     go (cmd@Command{..}:cmds) bp = case Map.lookup (_cmdClientId, cmdSig cmd) replays of
       Just (Just result) -> go cmds bp {
-        responseToOldCmds = (_cmdClientId, makeCommandResponse' nid mlid cmd result 1) : responseToOldCmds bp }
+        responseToOldCmds = (_cmdClientId, makeCommandResponse' nid cmd result 1) : responseToOldCmds bp }
       Just Nothing       -> go cmds bp
       _ | isNothing mlid -> go cmds bp
       Nothing -> go cmds $ bp { falsePositive = cmd : falsePositive bp

@@ -5,8 +5,8 @@
 
 module Kadena.Types.Spec
   ( Consensus
-  , ConsensusSpec(..),ApplyFn
-  , applyLogEntry , debugPrint, publishMetric, getTimestamp, random
+  , ConsensusSpec(..)
+  , debugPrint, publishMetric, getTimestamp, random
   , viewConfig, readConfig, timerTarget, evidenceState, timeCache
   -- for API <-> Kadena communication
   , enqueueApplied
@@ -52,13 +52,10 @@ import Kadena.Types.Event
 import Kadena.Types.Message
 import Kadena.Types.Metric
 import Kadena.Types.Comms
-import Kadena.Types.Log
 import Kadena.Types.Dispatch
 import Kadena.Types.Service.Sender (SenderServiceChannel, ServiceRequest')
 import Kadena.Types.Service.Log (QueryApi(..))
 import Kadena.Types.Service.Evidence (PublishedEvidenceState, Evidence(ClearConvincedNodes))
-
-type ApplyFn = LogEntry -> IO CommandResult
 
 data PublishedConsensus = PublishedConsensus
     {
@@ -70,11 +67,8 @@ makeLenses ''PublishedConsensus
 
 data ConsensusSpec = ConsensusSpec
   {
-    -- ^ Function to apply a log entry to the state machine.
-    _applyLogEntry    :: !ApplyFn
-
     -- ^ Function to log a debug message (no newline).
-  , _debugPrint       :: !(String -> IO ())
+    _debugPrint       :: !(String -> IO ())
 
   , _publishMetric    :: !(Metric -> IO ())
 

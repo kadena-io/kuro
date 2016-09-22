@@ -25,8 +25,6 @@ import Prelude hiding (log,exp)
 import qualified Data.HashMap.Strict as HM
 import Text.PrettyPrint.ANSI.Leijen (renderCompact,displayS)
 
-
-
 import Pact.Types hiding (PublicKey)
 import qualified Pact.Types as Pact
 import Pact.Pure
@@ -37,12 +35,10 @@ import Pact.Native
 import Kadena.Types.Log
 import Kadena.Types.Base hiding (Term)
 import Kadena.Types.Command
-import Kadena.Types.Spec hiding (applyLogEntry)
 import Kadena.Types.Message hiding (RPC)
 import Kadena.Command.Types
 import Kadena.Types.Config
-
-
+import Kadena.Types.Service.Commit (ApplyFn)
 
 initCommandLayer :: CommandConfig -> IO (ApplyFn,ApplyLocal)
 initCommandLayer config = do

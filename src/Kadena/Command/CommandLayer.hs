@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -10,7 +11,6 @@ import Data.ByteString (ByteString)
 import Data.ByteString.Lazy (toStrict,fromStrict)
 import qualified Data.ByteString.Base16 as B16
 import Data.Serialize as SZ hiding (get,put)
-import Control.Monad.State
 import Control.Monad.Reader
 import Control.Exception.Safe
 import Control.Applicative
@@ -24,13 +24,16 @@ import Data.Text (Text,unpack)
 import Prelude hiding (log,exp)
 import qualified Data.HashMap.Strict as HM
 import Text.PrettyPrint.ANSI.Leijen (renderCompact,displayS)
+import System.Directory
 
 import Pact.Types hiding (PublicKey)
 import qualified Pact.Types as Pact
 import Pact.Pure
 import Pact.Eval
 import Pact.Compile as Pact
-import Pact.Native
+import Pact.Repl
+
+import Kadena.Command.PactSqlLite as PactSL
 
 import Kadena.Types.Log
 import Kadena.Types.Base hiding (Term)
@@ -40,42 +43,52 @@ import Kadena.Command.Types
 import Kadena.Types.Config
 import Kadena.Types.Service.Commit (ApplyFn)
 
+type PactMVars = (DBVar,MVar CommandState)
+
 initCommandLayer :: CommandConfig -> IO (ApplyFn,ApplyLocal)
 initCommandLayer config = do
-  (Right nds,_) <- runEval undefined undefined nativeDefs
-  mv <- newMVar (CommandState def (RefStore nds HM.empty))
-  return (applyTransactional config mv,applyLocal config mv)
+  let klog s = _ccDebugFn config ("[Pact] " ++ s)
+  mvars <- case _ccDbFile config of
+             Nothing -> do
+               klog "Initializing pure pact"
+               ee <- initEvalEnv def puredb
+               rv <- newMVar (CommandState $ _eeRefStore ee)
+               return (PureVar $ _eePactDbVar ee,rv)
+             Just f -> do
+               klog "Initializing pact SQLLite"
+               newfile <- not <$> doesFileExist f
+               p <- (\a -> a { _log = \m s -> klog $ m ++ ": " ++ show s }) <$> initPSL f
+               ee <- initEvalEnv p psl
+               rv <- newMVar (CommandState $ _eeRefStore ee)
+               let v = _eePactDbVar ee
+               when newfile $ do
+                            klog "Creating Pact Schema"
+                            createSchema v
+               return (PSLVar v,rv)
+  return (applyTransactional config mvars,applyLocal config mvars)
 
 
-applyTransactional :: CommandConfig -> MVar CommandState -> LogEntry -> IO CommandResult
-applyTransactional config mv le = do
+applyTransactional :: CommandConfig -> PactMVars -> LogEntry -> IO CommandResult
+applyTransactional config (dbv,cv) le = do
   let logIndex = _leLogIndex le
-  s <- takeMVar mv
   r <- tryAny (runCommand
-               (CommandEnv config (Transactional $ fromIntegral logIndex))
-               s
+               (CommandEnv config (Transactional $ fromIntegral logIndex) dbv cv)
                (applyLogEntry le))
   case r of
-    Right (cr,s') -> do
-           putMVar mv s'
-           return cr
-    Left e -> do
-        putMVar mv s
-        return $ jsonResult $
+    Right cr -> return cr
+    Left e -> return $ jsonResult $
                CommandError "Transaction execution failed" (Just $ show e)
 
 jsonResult :: ToJSON a => a -> CommandResult
 jsonResult = CommandResult . toStrict . A.encode
 
-applyLocal :: CommandConfig -> MVar CommandState -> ByteString -> IO CommandResult
-applyLocal config mv bs = do
-  s <- readMVar mv
+applyLocal :: CommandConfig -> PactMVars -> ByteString -> IO CommandResult
+applyLocal config (dbv,cv) bs = do
   r <- tryAny (runCommand
-               (CommandEnv config Local)
-               s
+               (CommandEnv config Local dbv cv)
                (applyPactMessage bs))
   case r of
-    Right (cr,_) -> return cr
+    Right cr -> return cr
     Left e ->
         return $ jsonResult $
                CommandError "Local execution failed" (Just $ show e)
@@ -129,37 +142,36 @@ parse Local code =
 
 applyExec :: ExecMsg -> [Pact.PublicKey] -> CommandM CommandResult
 applyExec (ExecMsg code edata) ks = do
-  env <- ask
-  let mode = _ceMode env
-  exps <- parse (_ceMode env) code
+  CommandEnv {..} <- ask
+  exps <- parse _ceMode code
   when (null exps) $ throwCmdEx "No expressions found"
   terms <- forM exps $ \exp -> case compile exp of
             Right r -> return r
             Left (i,e) -> throwCmdEx $ "Pact compile failed: " ++ show i ++ ": " ++ show e
-  (CommandState pureState refStore) <- get
-  mv <- liftIO $ newMVar pureState
-  let evalEnv = EvalEnv {
+  (CommandState refStore) <- liftIO $ readMVar _ceState
+  let evalEnv :: PactDb e -> MVar e -> EvalEnv e
+      evalEnv pdb mv = EvalEnv {
                   _eeRefStore = refStore
                 , _eeMsgSigs = S.fromList ks
                 , _eeMsgBody = edata
-                , _eeTxId = fromMaybe 0 $ firstOf emTxId mode
-                , _eeEntity = view (ceConfig.ccEntity.entName) env
+                , _eeTxId = fromMaybe 0 $ firstOf emTxId _ceMode
+                , _eeEntity = _entName $ _ccEntity $ _ceConfig
                 , _eePactStep = Nothing
-                , _eePactDb = puredb
+                , _eePactDb = pdb
                 , _eePactDbVar = mv
                 }
-  (r,rEvalState') <- liftIO $ runEval def evalEnv (execTerms mode terms)
+      runP (PureVar mv) = runEval def (evalEnv puredb mv) (execTerms _ceMode terms)
+      runP (PSLVar mv) = runEval def (evalEnv psl mv) (execTerms _ceMode terms)
+  (r,rEvalState') <- liftIO $ runP _ceDBVar
   case r of
     Right t -> do
-           when (mode /= Local) $ do
-                 pureState' <- liftIO $ readMVar mv
-                 put (CommandState pureState' $
-                     over rsModules (HM.union (HM.fromList (_rsNew (_evalRefs rEvalState')))) refStore)
+           when (_ceMode /= Local) $ liftIO $ modifyMVar_ _ceState $ \rs ->
+             return $ over (csRefStore.rsModules)
+                      (HM.union (HM.fromList (_rsNew (_evalRefs rEvalState')))) rs
            return $ jsonResult $ CommandSuccess t -- TODO Yield handling
     Left e -> throwCmdEx $ "Exec failed: " ++ show e
 
-
-execTerms :: ExecutionMode -> [Term Name] -> Eval PureState (Term Name)
+execTerms :: ExecutionMode -> [Term Name] -> Eval e (Term Name)
 execTerms mode terms = do
   evalBeginTx
   er <- catchError
@@ -190,7 +202,7 @@ _sk :: PrivateKey
 _sk = fromJust $ importPrivate $ fst $ B16.decode "2ca45751578698d73759b44feeea38391cd4136bb8265cd3a36f488cbadf8eb7"
 
 _config :: CommandConfig
-_config = CommandConfig (EntityInfo "me")
+_config = CommandConfig (EntityInfo "me") Nothing putStrLn
 
 _localRPC :: ToRPC a => a -> IO ByteString
 _localRPC rpc = do

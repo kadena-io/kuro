@@ -14,7 +14,6 @@ import qualified Crypto.PubKey.Curve25519 as C2
 import Data.ByteArray.Extend
 import Data.Serialize as SZ hiding (get)
 import GHC.Generics
-import Control.Monad.State
 import Control.Monad.Reader
 import Control.Exception.Safe
 import Data.Text.Encoding
@@ -23,9 +22,12 @@ import Control.Lens hiding ((.=))
 import Data.Maybe
 import Prelude hiding (log,exp)
 import Data.Text
+import Control.Concurrent.MVar
 
 import Pact.Types hiding (PublicKey)
 import Pact.Pure
+
+import Kadena.Command.PactSqlLite
 
 import Kadena.Types.Base hiding (Term)
 import Kadena.Types.Command
@@ -164,12 +166,13 @@ instance ToRPC MultisigMsg where toRPC = Multisig
 
 data CommandConfig = CommandConfig {
       _ccEntity :: EntityInfo
+    , _ccDbFile :: Maybe FilePath
+    , _ccDebugFn :: String -> IO ()
     }
 $(makeLenses ''CommandConfig)
 
 data CommandState = CommandState {
-      _csPactState :: PureState
-    , _csRefStore :: RefStore
+     _csRefStore :: RefStore
     }
 $(makeLenses ''CommandState)
 
@@ -180,9 +183,15 @@ data ExecutionMode =
     deriving (Eq,Show)
 $(makeLenses ''ExecutionMode)
 
+
+data DBVar = PureVar (MVar PureState) |
+             PSLVar (MVar PSL)
+
 data CommandEnv = CommandEnv {
       _ceConfig :: CommandConfig
     , _ceMode :: ExecutionMode
+    , _ceDBVar :: DBVar
+    , _ceState :: MVar CommandState
     }
 $(makeLenses ''CommandEnv)
 
@@ -211,10 +220,10 @@ instance (ToJSON a) => ToJSON (CommandSuccess a) where
 
 type ApplyLocal = ByteString -> IO CommandResult
 
-type CommandM a = ReaderT CommandEnv (StateT CommandState IO) a
+type CommandM a = ReaderT CommandEnv IO a
 
-runCommand :: CommandEnv -> CommandState -> CommandM a -> IO (a,CommandState)
-runCommand e s a = runStateT (runReaderT a e) s
+runCommand :: CommandEnv -> CommandM a -> IO a
+runCommand e a = runReaderT a e
 
 
 throwCmdEx :: MonadThrow m => String -> m a

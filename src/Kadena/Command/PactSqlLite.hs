@@ -188,11 +188,11 @@ writeSys s wt cache tbl k v = modifyMVar_ s $ \m -> do
 
 writeUser :: MVar PSL -> WriteType -> TableName -> RowKey -> Columns Persistable -> IO ()
 writeUser s wt tn rk row = modifyMVar_ s $ \m -> do
-  _log m "writeUser" (tn,rk)
   let ut = userTable tn
       rk' = stext rk
   (_,olds) <- readUserTable' m tn rk
   let ins = do
+        _log m "writeUser: insert" (tn,rk)
         let row' = sencode row
         execs m ut sInsert [rk',row']
         finish row
@@ -293,6 +293,7 @@ createUserTable' s tn mn ksn = modifyMVar_ s $ \m -> do
 
 createTable :: Utf8 -> Utf8 -> PSL -> IO PSL
 createTable ut ur e = do
+  _log e "createTables" (ut,ur)
   exec_ e $ "create table " <> ut <>
               " (key text primary key not null unique, value SQLBlob) without rowid;"
   exec_ e $ "create table " <> ur <>
@@ -307,8 +308,8 @@ createTable ut ur e = do
   return (over tableStmts (M.insert ut ss) e)
 
 
-createSchema :: PSL -> IO PSL
-createSchema s = do
+createSchema :: MVar PSL -> IO ()
+createSchema e = modifyMVar_ e $ \s -> do
   exec_ s "CREATE TABLE IF NOT EXISTS usertables (\
     \ name TEXT PRIMARY KEY NOT NULL UNIQUE \
     \,module text NOT NULL \
@@ -426,8 +427,8 @@ stepStmt stmt rts = do
 {-# INLINE stepStmt #-}
 
 
-initState :: FilePath -> IO PSL
-initState f = do
+initPSL :: FilePath -> IO PSL
+initPSL f = do
   c <- liftEither $ open (fromString f)
   ts <- TxStmts <$> prepStmt' c "BEGIN TRANSACTION"
          <*> prepStmt' c "COMMIT TRANSACTION"
@@ -458,7 +459,7 @@ _initPSL :: IO PSL
 _initPSL = do
   let f = "foo.sqllite"
   doesFileExist f >>= \b -> when b (removeFile f)
-  initState f
+  initPSL f
 
 _run :: (MVar PSL -> IO ()) -> IO ()
 _run a = do
@@ -474,7 +475,7 @@ _test1 =
     _run $ \e -> do
       t <- getCPUTime
       _beginTx psl e
-      modifyMVar_ e createSchema
+      createSchema e
       createUserTable' e "stuff" "module" "keyset"
       withMVar e $ \m -> qry_ m "select * from usertables" [RText,RText,RText] >>= print
       void $ commit' e
@@ -509,7 +510,7 @@ commit' e = do
 _bench :: IO ()
 _bench = _run $ \e -> do
   _beginTx psl e
-  modifyMVar_ e createSchema
+  createSchema e
   _createUserTable psl "stuff" "module" "keyset" e
   void $ commit' e
   nolog e
@@ -547,7 +548,7 @@ _pact doBench = do
       e <- return (_eePactDbVar evalEnv)
       cf <- BS.readFile "demo/demo.pact"
       _beginTx psl e
-      modifyMVar_ e createSchema
+      createSchema e
       void $ commit' e
       (r,es) <- runEval def evalEnv $ do
           evalBeginTx

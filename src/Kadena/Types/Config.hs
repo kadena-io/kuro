@@ -7,7 +7,7 @@ module Kadena.Types.Config
   ( Config(..), otherNodes, nodeId, electionTimeoutRange, heartbeatTimeout
   , enableDebug, publicKeys, clientPublicKeys, myPrivateKey, clientTimeoutLimit
   , myPublicKey, batchTimeDelta, dontDebugFollower, apiPort
-  , logSqlitePath, enableAwsIntegration,entity
+  , logSqlitePath, enableAwsIntegration,entity,dbFile
   , KeySet(..), ksClient, ksCluster
   , EntityInfo(..),entName
   ) where
@@ -53,6 +53,7 @@ data Config = Config
   , _logSqlitePath        :: !FilePath
   , _enableAwsIntegration :: !Bool
   , _entity               :: EntityInfo
+  , _dbFile               :: !(Maybe FilePath)
   }
   deriving (Show, Generic)
 makeLenses ''Config

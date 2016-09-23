@@ -5,22 +5,23 @@ publicKeys:
     fullAddr: tcp://127.0.0.1:10000
     host: '127.0.0.1'
     port: 10000
-  - 778c3937108fc4805dc24ba229b244634c7ecd57a6b9c3df371274d707c3a32a
+  - 3a8de48045bdd45137577202fdaf04c68dc2f29fb75201b3fd90d02af67360b6
 - - alias: node1
     fullAddr: tcp://127.0.0.1:10001
     host: '127.0.0.1'
     port: 10001
-  - f02ece29e275acc4137c6534394ac5cc3b3296f7931872829e338ed70a6a161b
+  - 31f06d3d13d5d606c2a0cf61f8e633223c5b7f6db143504003b55792cb91a92b
 - - alias: node2
     fullAddr: tcp://127.0.0.1:10002
     host: '127.0.0.1'
     port: 10002
-  - d01e394e84a51e8d92c55cf68bfebecf37ef13721b4b2444c7805331925b40f5
+  - 60899211fdb104f4cf639eac0a0adc627d4e13e1c3acafca2ea07780e43fb4da
 - - alias: node3
     fullAddr: tcp://127.0.0.1:10003
     host: '127.0.0.1'
     port: 10003
-  - 882fa24af859026cf55f053f873fd7576989f7528722c507d2fe03cb5f199dc4
+  - 01418a39db55184a7c4bbf2a5645f3b10d3e9ba40aac244781bc8bdd90d2fa65
+dbFile: null
 heartbeatTimeout: 1000000
 dontDebugFollower: false
 apiPort: 8000
@@ -29,9 +30,8 @@ clientPublicKeys:
     fullAddr: tcp://127.0.0.1:10004
     host: '127.0.0.1'
     port: 10004
-  - 40b4d622437b313d2e38420846335af6dd101f63ed8f9e427ceb2edf9c5b0c4e
-myEncryptionKey: 40b4d622437b313d2e38420846335af6dd101f63ed8f9e427ceb2edf9c5b0c4e
-logSqlitePath: ./log/node4.sqlite
+  - 302520e6bcc21fa9d1d754dbe140c163f9115a3958ba78ba4da6671f2c29844c
+logSqlitePath: ''
 electionTimeoutRange:
 - 3000000
 - 6000000
@@ -52,7 +52,7 @@ otherNodes:
   fullAddr: tcp://127.0.0.1:10003
   host: '127.0.0.1'
   port: 10003
-myPublicKey: 40b4d622437b313d2e38420846335af6dd101f63ed8f9e427ceb2edf9c5b0c4e
+myPublicKey: 302520e6bcc21fa9d1d754dbe140c163f9115a3958ba78ba4da6671f2c29844c
 nodeId:
   alias: node4
   fullAddr: tcp://127.0.0.1:10004
@@ -61,5 +61,5 @@ nodeId:
 enableDebug: false
 entity:
   Name: client
-myPrivateKey: 9220065f1793a65ff3458dfd7788bee9a3b77a19f78549fd06bf3ce67cafc8d0
+myPrivateKey: 3fb68d5c5ae8f11111f9dee2ca1c9fb1511e65f1d7055173ccf3af29c2422992
 batchTimeDelta: 1 % 100

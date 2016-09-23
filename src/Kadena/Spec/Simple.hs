@@ -84,6 +84,7 @@ getConfig = do
         Right conf' -> return $ conf'
           { _apiPort = if optApiPort opts == -1 then conf' ^. apiPort else optApiPort opts
           , _logSqlitePath = if optDisablePersistence opts then "" else conf' ^. logSqlitePath
+          , _dbFile = if optDisablePersistence opts then Nothing else _dbFile conf'
           }
     (_,_,errs)     -> mapM_ putStrLn errs >> exitFailure
 
@@ -155,15 +156,15 @@ runServer = do
   setLineBuffering
   mAppliedMap <- newMVar MS.empty
   rconf <- getConfig
-  (applyFn,_) <- initCommandLayer (CommandConfig (_entity rconf))
+  utcTimeCache' <- utcTimeCache
+  fs <- initSysLog utcTimeCache'
+  let debugFn = if rconf ^. enableDebug then showDebug fs else noDebug
+  (applyFn,_) <- initCommandLayer (CommandConfig (_entity rconf) (_dbFile rconf) debugFn)
   resetAwsEnv (rconf ^. enableAwsIntegration)
   me <- return $ rconf ^. nodeId
   oNodes <- return $ Set.toList $ Set.delete me $ Set.union (rconf ^. otherNodes) (Map.keysSet $ rconf ^. clientPublicKeys)
   dispatch <- initDispatch
 
-  utcTimeCache' <- utcTimeCache
-  fs <- initSysLog utcTimeCache'
-  let debugFn = if rconf ^. enableDebug then showDebug fs else noDebug
 
   -- each node has its own snap monitoring server
   pubMetric <- startMonitoring rconf

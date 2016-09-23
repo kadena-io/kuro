@@ -5,52 +5,52 @@ publicKeys:
     fullAddr: tcp://127.0.0.1:10000
     host: '127.0.0.1'
     port: 10000
-  - 778c3937108fc4805dc24ba229b244634c7ecd57a6b9c3df371274d707c3a32a
+  - 3a8de48045bdd45137577202fdaf04c68dc2f29fb75201b3fd90d02af67360b6
 - - alias: node1
     fullAddr: tcp://127.0.0.1:10001
     host: '127.0.0.1'
     port: 10001
-  - f02ece29e275acc4137c6534394ac5cc3b3296f7931872829e338ed70a6a161b
+  - 31f06d3d13d5d606c2a0cf61f8e633223c5b7f6db143504003b55792cb91a92b
 - - alias: node2
     fullAddr: tcp://127.0.0.1:10002
     host: '127.0.0.1'
     port: 10002
-  - d01e394e84a51e8d92c55cf68bfebecf37ef13721b4b2444c7805331925b40f5
+  - 60899211fdb104f4cf639eac0a0adc627d4e13e1c3acafca2ea07780e43fb4da
 - - alias: node3
     fullAddr: tcp://127.0.0.1:10003
     host: '127.0.0.1'
     port: 10003
-  - 882fa24af859026cf55f053f873fd7576989f7528722c507d2fe03cb5f199dc4
+  - 01418a39db55184a7c4bbf2a5645f3b10d3e9ba40aac244781bc8bdd90d2fa65
+dbFile: ./log/node3-pactdb.sqlite
 heartbeatTimeout: 1000000
 dontDebugFollower: false
-apiPort: 8003
+apiPort: 8000
 clientPublicKeys:
 - - alias: node0
     fullAddr: tcp://127.0.0.1:10000
     host: '127.0.0.1'
     port: 10000
-  - 778c3937108fc4805dc24ba229b244634c7ecd57a6b9c3df371274d707c3a32a
+  - 3a8de48045bdd45137577202fdaf04c68dc2f29fb75201b3fd90d02af67360b6
 - - alias: node1
     fullAddr: tcp://127.0.0.1:10001
     host: '127.0.0.1'
     port: 10001
-  - f02ece29e275acc4137c6534394ac5cc3b3296f7931872829e338ed70a6a161b
+  - 31f06d3d13d5d606c2a0cf61f8e633223c5b7f6db143504003b55792cb91a92b
 - - alias: node2
     fullAddr: tcp://127.0.0.1:10002
     host: '127.0.0.1'
     port: 10002
-  - d01e394e84a51e8d92c55cf68bfebecf37ef13721b4b2444c7805331925b40f5
+  - 60899211fdb104f4cf639eac0a0adc627d4e13e1c3acafca2ea07780e43fb4da
 - - alias: node3
     fullAddr: tcp://127.0.0.1:10003
     host: '127.0.0.1'
     port: 10003
-  - 882fa24af859026cf55f053f873fd7576989f7528722c507d2fe03cb5f199dc4
+  - 01418a39db55184a7c4bbf2a5645f3b10d3e9ba40aac244781bc8bdd90d2fa65
 - - alias: node4
     fullAddr: tcp://127.0.0.1:10004
     host: '127.0.0.1'
     port: 10004
-  - 40b4d622437b313d2e38420846335af6dd101f63ed8f9e427ceb2edf9c5b0c4e
-myEncryptionKey: 882fa24af859026cf55f053f873fd7576989f7528722c507d2fe03cb5f199dc4
+  - 302520e6bcc21fa9d1d754dbe140c163f9115a3958ba78ba4da6671f2c29844c
 logSqlitePath: ./log/node3.sqlite
 electionTimeoutRange:
 - 3000000
@@ -68,7 +68,7 @@ otherNodes:
   fullAddr: tcp://127.0.0.1:10002
   host: '127.0.0.1'
   port: 10002
-myPublicKey: 882fa24af859026cf55f053f873fd7576989f7528722c507d2fe03cb5f199dc4
+myPublicKey: 01418a39db55184a7c4bbf2a5645f3b10d3e9ba40aac244781bc8bdd90d2fa65
 nodeId:
   alias: node3
   fullAddr: tcp://127.0.0.1:10003
@@ -77,5 +77,5 @@ nodeId:
 enableDebug: true
 entity:
   Name: me
-myPrivateKey: e93cb424b82fa71ecff16b408f91029ae6c14c24197ea7af11addc9eb20e77f6
+myPrivateKey: 479110d2fccca519387ab70f1ddea27ec6fa291ee34a2941f9b9ea9f872e4a99
 batchTimeDelta: 1 % 100

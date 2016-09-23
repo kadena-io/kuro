@@ -145,8 +145,8 @@ applyExec (ExecMsg code edata) ks = do
                 , _eeTxId = fromMaybe 0 $ firstOf emTxId mode
                 , _eeEntity = view (ceConfig.ccEntity.entName) env
                 , _eePactStep = Nothing
-                , _eePactDb = pureBackend
-                , _eePactDbEnv = mv
+                , _eePactDb = puredb
+                , _eePactDbVar = mv
                 }
   (r,rEvalState') <- liftIO $ runEval def evalEnv (execTerms mode terms)
   case r of
@@ -159,7 +159,7 @@ applyExec (ExecMsg code edata) ks = do
     Left e -> throwCmdEx $ "Exec failed: " ++ show e
 
 
-execTerms :: ExecutionMode -> [Term Name] -> Eval PureEnv () (Term Name)
+execTerms :: ExecutionMode -> [Term Name] -> Eval PureState (Term Name)
 execTerms mode terms = do
   evalBeginTx
   er <- catchError

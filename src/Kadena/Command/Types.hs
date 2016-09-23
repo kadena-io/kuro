@@ -21,8 +21,6 @@ import Data.Text.Encoding
 import Control.Applicative
 import Control.Lens hiding ((.=))
 import Data.Maybe
-import Text.Trifecta.Combinators (DeltaParsing(..))
-import qualified Data.Attoparsec.Text as AP
 import Prelude hiding (log,exp)
 import Data.Text
 

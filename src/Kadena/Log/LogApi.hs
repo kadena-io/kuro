@@ -85,10 +85,10 @@ entryCount = do
 lookupEntry :: LogIndex -> LogThread (Maybe LogEntry)
 lookupEntry i = do
   lim <- use lsLastInMemory
-  case lim of
+  res <- case lim of
     Just lim'
       | lim' > i -> do
-          conn <- view dbConn >>= maybe (error $ "Invariant Error in firstEntry: dbConn was Nothing but lim was " ++ show lim') return
+          conn <- view dbConn >>= maybe (error $ "Invariant Error in lookupEntry: dbConn was Nothing but lim was " ++ show lim') return
           liftIO $ selectSpecificLogEntry i conn
     _ -> do
       lastPersisted' <- use lsLastPersisted
@@ -104,6 +104,13 @@ lookupEntry i = do
             Just (_, ples') -> case lookup' i ples' of
               Nothing -> return $ Nothing
               v -> return $ v
+  case res of
+    Just _ -> return res
+    Nothing -> do
+      lli <- lastLogIndex
+      if i <= lli && i > startIndex
+      then error $ "Invariant Error in LookupEntry: the requested LogIndex " ++ show i ++ " should have been findable but wasn't: " ++ show (startIndex,lli)
+      else return res
 {-# INLINE lookupEntry #-}
 
 -- | called by leaders sending appendEntries.
@@ -182,15 +189,41 @@ lastLogTerm = use lsLastLogTerm
 -- TODO make monadic to get 8000 limit from config.
 getEntriesAfter :: LogIndex -> Int -> LogThread LogEntries
 getEntriesAfter pli cnt = do
+  mLastInMemory' <- use lsLastInMemory
+  case mLastInMemory' of
+    Just lastInMemory'
+      --Everything is in memory
+      | pli > lastInMemory' -> getEntriesFromMemoryInclusive (pli + 1) (pli + fromIntegral cnt)
+      --Everything is on disk
+      | pli + fromIntegral cnt < lastInMemory' -> getEntriesFromDiskInclusiveOrError "getEntriesAfter.onDisk" (pli + 1) (pli + fromIntegral cnt)
+      --It's a mix of both
+      | otherwise -> do
+          inMem <- getEntriesFromMemoryInclusive (pli + 1) (pli + fromIntegral cnt)
+          onDisk <- getEntriesFromDiskInclusiveOrError "getEntriesAfter.mix" (pli + 1) (pli + fromIntegral cnt)
+          return $! lesUnion onDisk inMem
+    Nothing -> getEntriesFromMemoryInclusive (pli + 1) (pli + fromIntegral cnt)
+{-# INLINE getEntriesAfter #-}
+
+getEntriesFromMemoryInclusive :: LogIndex -> LogIndex -> LogThread LogEntries
+getEntriesFromMemoryInclusive minLi maxLi = do
   lp <- lastPersisted
   vles <- use lsVolatileLogEntries
-  if pli >= lp
-  then return $! lesGetSection (Just $ pli + 1) (Just $ pli + fromIntegral cnt) vles
+  if minLi >= lp
+  then return $! lesGetSection (Just minLi) (Just maxLi) vles
   else do
     ples <- use lsPersistedLogEntries
-    firstPart <- return $! plesGetSection (Just $ pli + 1) (Just $ pli + fromIntegral cnt) ples
-    return $! lesUnion firstPart (lesGetSection (Just $ pli + 1) (Just $ pli + fromIntegral cnt) vles)
-{-# INLINE getEntriesAfter #-}
+    firstPart <- return $! plesGetSection (Just minLi) (Just maxLi) ples
+    return $! lesUnion firstPart (lesGetSection (Just minLi) (Just maxLi) vles)
+
+getEntriesFromDiskInclusiveOrError :: String -> LogIndex -> LogIndex -> LogThread LogEntries
+getEntriesFromDiskInclusiveOrError errName minLi maxLi = do
+  mConn' <- view dbConn
+  res <- case mConn' of
+    Just conn' -> liftIO $ selectLogEntriesInclusiveSection minLi maxLi conn'
+    Nothing -> error $ "Invariant Failure in getEntriesFromDiskInclusiveOrError: dbConn was Nothing"
+  if lesNull res
+  then error $ "Invariant Failure in " ++ errName ++ ": attempted to get " ++ show (minLi, maxLi) ++ " from db but got a null LogEntries!"
+  else return res
 
 updateLogs :: UpdateLogs -> LogThread ()
 updateLogs (ULNew nle) = appendLogEntry nle

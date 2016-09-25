@@ -60,31 +60,12 @@ commitIndex = use lsCommitIndex
 
 -- | Get the first entry
 firstEntry :: LogThread (Maybe LogEntry)
-firstEntry = do
-  lim <- use lsLastInMemory
-  case lim of
-    Just lim'
-      | lim' >= startIndex -> do
-          conn <- view dbConn >>= maybe (error $ "Invariant Error in firstEntry: dbConn was Nothing but lim was " ++ show lim') return
-          liftIO $ selectSpecificLogEntry startIndex conn
-    _ -> do
-      ples <- use lsPersistedLogEntries
-      if not $ plesNull ples
-          then return $ plesMinEntry ples
-          else lesMinEntry <$> use lsVolatileLogEntries
+firstEntry = lookupEntry startIndex
 {-# INLINE firstEntry #-}
 
 -- | Get last entry.
 lastEntry :: LogThread (Maybe LogEntry)
-lastEntry = do
-  vles <- use lsVolatileLogEntries
-  if not $ lesNull vles
-    then return $! lesMaxEntry vles
-    else do
-      ples <- use lsPersistedLogEntries
-      return $! if not $ plesNull ples
-        then plesMaxEntry ples
-        else Nothing
+lastEntry = lookupEntry =<< use lsLastLogIndex
 {-# INLINE lastEntry #-}
 
 -- | Get largest index in ledger.
@@ -103,17 +84,26 @@ entryCount = do
 -- | Safe index
 lookupEntry :: LogIndex -> LogThread (Maybe LogEntry)
 lookupEntry i = do
-  vles <- use lsVolatileLogEntries
-  let lookup' i' (LogEntries les) = Map.lookup i' les
-  case lookup' i vles of
-    Nothing -> do
-      ples <- use (lsPersistedLogEntries.pLogEntries)
-      case Map.lookupLE i ples of
-        Nothing -> return $ Nothing
-        Just (_, ples') -> case lookup' i ples' of
-          Nothing -> return $ Nothing
-          v -> return $ v
-    v -> return $ v
+  lim <- use lsLastInMemory
+  case lim of
+    Just lim'
+      | lim' > i -> do
+          conn <- view dbConn >>= maybe (error $ "Invariant Error in firstEntry: dbConn was Nothing but lim was " ++ show lim') return
+          liftIO $ selectSpecificLogEntry i conn
+    _ -> do
+      lastPersisted' <- use lsLastPersisted
+      let lookup' i' (LogEntries les) = Map.lookup i' les
+      if i > lastPersisted'
+      then do
+        vles <- use lsVolatileLogEntries
+        return $ lookup' i vles
+      else do
+          ples <- use (lsPersistedLogEntries.pLogEntries)
+          case Map.lookupLE i ples of
+            Nothing -> return $ Nothing
+            Just (_, ples') -> case lookup' i ples' of
+              Nothing -> return $ Nothing
+              v -> return $ v
 {-# INLINE lookupEntry #-}
 
 -- | called by leaders sending appendEntries.

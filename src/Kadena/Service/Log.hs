@@ -13,13 +13,12 @@ import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Trans.RWS.Strict
 
+import Data.Maybe (catMaybes)
 import Data.ByteString (ByteString)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
-
-
 
 import Data.Thyme.Clock
 import Database.SQLite.Simple (Connection(..))
@@ -80,16 +79,15 @@ handle = do
 
 runQuery :: QueryApi -> LogThread ()
 runQuery (Query aq mv) = do
-  a' <- get
-  qr <- return $ Map.fromSet (`evalQuery` a') aq
+  qr <- Map.fromList <$> mapM (\aq' -> evalQuery aq' >>= \res -> return $ (aq', res)) (Set.toList aq)
   liftIO $ putMVar mv qr
 runQuery (Update ul) = do
-  modify (updateLogs ul)
+  updateLogs ul
   updateEvidenceCache ul
   dbConn' <- view dbConn
   case dbConn' of
     Just conn -> do
-      toPersist <- getUnpersisted <$> get
+      toPersist <- getUnpersisted
       case toPersist of
         Just logs -> do
           lsLastPersisted' <- return (_leLogIndex $ snd $ Map.findMax (logs ^. logEntries))
@@ -100,7 +98,7 @@ runQuery (Update ul) = do
         Nothing -> return ()
     Nothing ->  return ()
 runQuery (NeedCacheEvidence lis mv) = do
-  qr <- buildNeedCacheEvidence lis <$> get
+  qr <- buildNeedCacheEvidence lis
   liftIO $ putMVar mv qr
   debug $ "servicing cache miss pertaining to: " ++ show lis
 runQuery (Tick t) = do
@@ -126,14 +124,10 @@ getWork t = do
     Idle -> retry
     Processing -> error "CryptoWorker tried to get work but found the TVar Processing"
 
-buildNeedCacheEvidence :: Set LogIndex -> LogState -> Map LogIndex ByteString
-buildNeedCacheEvidence lis ls = res `seq` res
-  where
-    res = Map.fromAscList $ go $ Set.toAscList lis
-    go [] = []
-    go (li:rest) = case lookupEntry li ls of
-      Nothing -> go rest
-      Just le -> (li,_leHash le) : go rest
+buildNeedCacheEvidence :: Set LogIndex -> LogThread (Map LogIndex ByteString)
+buildNeedCacheEvidence lis = do
+  let go li= return . maybe Nothing (\le -> Just $ (li,_leHash le)) =<< lookupEntry li
+  Map.fromAscList . catMaybes <$> mapM go (Set.toAscList lis)
 {-# INLINE buildNeedCacheEvidence #-}
 
 updateEvidenceCache :: UpdateLogs -> LogThread ()
@@ -180,12 +174,12 @@ syncLogsFromDisk commitChannel' conn = do
 
 tellKadenaToApplyLogEntries :: LogThread ()
 tellKadenaToApplyLogEntries = do
-  es <- get
-  case getUnappliedEntries es of
+  mUnappliedEntries' <- getUnappliedEntries
+  case mUnappliedEntries' of
     Just unappliedEntries' -> do
       (Just appliedIndex') <- return $ lesMaxIndex unappliedEntries'
       lsLastApplied .= appliedIndex'
-      view commitChannel >>= liftIO . (`writeComm` (Commit.CommitNewEntries unappliedEntries'))
+      view commitChannel >>= liftIO . (`writeComm` Commit.CommitNewEntries unappliedEntries')
       debug $ "informing Kadena to apply up to: " ++ show appliedIndex'
       publishMetric' <- view publishMetric
       liftIO $ publishMetric' $ MetricCommitIndex appliedIndex'
@@ -194,8 +188,7 @@ tellKadenaToApplyLogEntries = do
 tellTinyCryptoWorkerToDoMore :: LogThread ()
 tellTinyCryptoWorkerToDoMore = do
   mv <- view cryptoWorkerTVar
-  es <- get
-  unverifiedLes' <- return $! getUnverifiedEntries es
+  unverifiedLes' <- getUnverifiedEntries
   case unverifiedLes' of
     Nothing -> return ()
     Just v -> do

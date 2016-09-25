@@ -1,6 +1,6 @@
 {-# LANGUAGE BangPatterns #-}
 
-module Kadena.Service.Log
+module Kadena.Log.Service
   ( runLogService
   , module X)
   where
@@ -25,8 +25,9 @@ import Database.SQLite.Simple (Connection(..))
 
 import Kadena.Types.Comms
 import Kadena.Types.Metric
-import Kadena.Persistence.SQLite
+import Kadena.Log.Persistence
 import Kadena.Types.Service.Log as X
+import Kadena.Log.LogApi as X
 import qualified Kadena.Types.Service.Evidence as Ev
 import qualified Kadena.Types.Dispatch as Dispatch
 import qualified Kadena.Types.Service.Commit as Commit
@@ -167,6 +168,7 @@ syncLogsFromDisk commitChannel' conn = do
         , _lsNextLogIndex = _leLogIndex log' + 1
         , _lsCommitIndex = _leLogIndex log'
         , _lsLastPersisted = _leLogIndex log'
+        , _lsLastInMemory = Just $ _leLogIndex log'
         , _lsLastCryptoVerified = _leLogIndex log'
         , _lsLastLogTerm = _leTerm log'
         }

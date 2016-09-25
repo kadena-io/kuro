@@ -19,7 +19,7 @@ import Data.Maybe (fromJust)
 
 import Kadena.Types.Service.Commit as X
 import Kadena.Types.Dispatch
-import qualified Kadena.Service.Log as Log
+import qualified Kadena.Log.Service as Log
 
 
 -- TODO: delete SendResponse from Sender

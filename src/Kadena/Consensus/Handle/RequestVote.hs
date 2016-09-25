@@ -17,7 +17,7 @@ import qualified Data.Map.Strict as Map
 
 import Kadena.Util.Util (debug, enqueueRequest, queryLogs)
 import qualified Kadena.Service.Sender as Sender
-import qualified Kadena.Service.Log as Log
+import qualified Kadena.Log.Service as Log
 import qualified Kadena.Types as KD
 
 import Kadena.Consensus.Handle.Types

@@ -31,7 +31,7 @@ import qualified Kadena.Types as KD
 
 
 import qualified Kadena.Service.Sender as Sender
-import qualified Kadena.Service.Log as Log
+import qualified Kadena.Log.Service as Log
 
 data AppendEntriesEnv = AppendEntriesEnv {
 -- Old Constructors

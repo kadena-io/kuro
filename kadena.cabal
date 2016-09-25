@@ -33,18 +33,19 @@ library
                      , Kadena.Consensus.Handle.RequestVoteResponse
                      , Kadena.Consensus.Handle.ElectionTimeout
                      , Kadena.Consensus.Handle.HeartbeatTimeout
+                     , Kadena.Log.Service
+                     , Kadena.Log.LogApi
+                     , Kadena.Log.Persistence
                      , Kadena.Messaging.ZMQ
                      , Kadena.Monitoring.EkgJson
                      , Kadena.Monitoring.EkgMonitor
                      , Kadena.Monitoring.EkgSnap
                      , Kadena.Monitoring.Server
-                     , Kadena.Persistence.SQLite
                      , Kadena.Runtime.Api.ApiServer
                      , Kadena.Runtime.MessageReceiver
                      , Kadena.Runtime.Role
                      , Kadena.Runtime.Timer
                      , Kadena.Service.Commit
-                     , Kadena.Service.Log
                      , Kadena.Service.Sender
                      , Kadena.Service.Evidence
                      , Kadena.Spec.Simple

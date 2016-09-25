@@ -3,20 +3,21 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module Kadena.Persistence.SQLite
+module Kadena.Log.Persistence
   ( createDB
   , insertSeqLogEntry
   , selectAllLogEntries
   , selectAllLogEntriesAfter
   , selectLastLogEntry
   , selectLogEntriesInclusiveSection
+  , selectSpecificLogEntry
   ) where
 
 import Data.Typeable
-import Data.Set
+import Data.Set (Set)
 import qualified Data.Map.Strict as Map
 import Data.Serialize
-import Data.ByteString hiding (concat, length, head)
+import Data.ByteString hiding (concat, length, head, null)
 import qualified Data.Text as T
 
 import Database.SQLite.Simple
@@ -132,17 +133,17 @@ instance FromRow LogEntry where
       }
 
 sqlDbSchema :: Query
-sqlDbSchema = Query $ T.pack $ concat
-    ["CREATE TABLE IF NOT EXISTS 'main'.'logEntry' "
-    ,"( 'logIndex' INTEGER PRIMARY KEY NOT NULL UNIQUE"
-    ,", 'term' INTEGER"
-    ,", 'hash' TEXT"
-    ,", 'commandEntry' TEXT"
-    ,", 'clientId' TEXT"
-    ,", 'requestId' INTEGER"
-    ,", 'cryptoVerified' TEXT"
-    ,", 'provenance' TEXT"
-    ,")"]
+sqlDbSchema = Query $ T.pack
+  "CREATE TABLE IF NOT EXISTS 'main'.'logEntry' \
+  \( 'logIndex' INTEGER PRIMARY KEY NOT NULL UNIQUE\
+  \, 'term' INTEGER\
+  \, 'hash' TEXT\
+  \, 'commandEntry' TEXT\
+  \, 'clientId' TEXT\
+  \, 'requestId' INTEGER\
+  \, 'cryptoVerified' TEXT\
+  \, 'provenance' TEXT\
+  \)"
 
 createDB :: FilePath -> IO Connection
 createDB f = do
@@ -151,26 +152,26 @@ createDB f = do
   return conn
 
 sqlInsertLogEntry :: Query
-sqlInsertLogEntry = Query $ T.pack $ concat
-    ["INSERT INTO 'main'.'logEntry' "
-    ,"( 'logIndex'"
-    ,", 'term'"
-    ,", 'hash'"
-    ,", 'commandEntry'"
-    ,", 'clientId'"
-    ,", 'requestId'"
-    ,", 'cryptoVerified'"
-    ,", 'provenance'"
-    ,") VALUES (?,?,?,?,?,?,?,?)"]
+sqlInsertLogEntry = Query $ T.pack
+    "INSERT INTO 'main'.'logEntry' \
+    \( 'logIndex'\
+    \, 'term'\
+    \, 'hash'\
+    \, 'commandEntry'\
+    \, 'clientId'\
+    \, 'requestId'\
+    \, 'cryptoVerified'\
+    \, 'provenance'\
+    \) VALUES (?,?,?,?,?,?,?,?)"
 
 insertSeqLogEntry :: Connection -> LogEntries -> IO ()
 insertSeqLogEntry conn (LogEntries les) = withTransaction conn $ mapM_ (execute conn sqlInsertLogEntry) $ Map.elems les
 
 sqlSelectAllLogEntries :: Query
-sqlSelectAllLogEntries = Query $ T.pack $ concat
-  ["SELECT logIndex,term,hash,commandEntry,clientId,requestId,cryptoVerified,provenance"
-  ," FROM 'main'.'logEntry'"
-  ," ORDER BY logIndex ASC"]
+sqlSelectAllLogEntries = Query $ T.pack
+  "SELECT logIndex,term,hash,commandEntry,clientId,requestId,cryptoVerified,provenance\
+  \ FROM 'main'.'logEntry'\
+  \ ORDER BY logIndex ASC"
 
 selectAllLogEntries :: Connection -> IO LogEntries
 selectAllLogEntries conn = do
@@ -179,11 +180,11 @@ selectAllLogEntries conn = do
   return $ LogEntries . Map.fromList $ res'
 
 sqlSelectLastLogEntry :: Query
-sqlSelectLastLogEntry = Query $ T.pack $ concat
-  ["SELECT logIndex,term,hash,commandEntry,clientId,requestId,cryptoVerified,provenance"
-  ," FROM 'main'.'logEntry'"
-  ," ORDER BY logIndex DESC"
-  ," LIMIT 1"]
+sqlSelectLastLogEntry = Query $ T.pack
+  "SELECT logIndex,term,hash,commandEntry,clientId,requestId,cryptoVerified,provenance\
+  \ FROM 'main'.'logEntry'\
+  \ ORDER BY logIndex DESC\
+  \ LIMIT 1"
 
 selectLastLogEntry :: Connection -> IO (Maybe LogEntry)
 selectLastLogEntry conn = do
@@ -194,11 +195,11 @@ selectLastLogEntry conn = do
     err -> error $ "invariant failure: selectLastLogEntry returned more than one result\n" ++ show err
 
 sqlSelectAllLogEntryAfter :: LogIndex -> Query
-sqlSelectAllLogEntryAfter (LogIndex li) = Query $ T.pack $ concat
-  ["SELECT logIndex,term,hash,commandEntry,clientId,requestId,cryptoVerified,provenance"
-  ," FROM 'main'.'logEntry'"
-  ," ORDER BY logIndex ASC"
-  ," WHERE logIndex > " ++ show li]
+sqlSelectAllLogEntryAfter (LogIndex li) = Query $ T.pack $
+  "SELECT logIndex,term,hash,commandEntry,clientId,requestId,cryptoVerified,provenance\
+  \ FROM 'main'.'logEntry'\
+  \ ORDER BY logIndex ASC\
+  \ WHERE logIndex > " ++ show li
 
 selectAllLogEntriesAfter :: LogIndex -> Connection -> IO LogEntries
 selectAllLogEntriesAfter li conn = do
@@ -206,16 +207,30 @@ selectAllLogEntriesAfter li conn = do
   res' <- return ((\l -> (_leLogIndex l, l)) <$> res)
   return $ LogEntries . Map.fromList $ res'
 
-sqlSelectLogEntryeInclusiveSection :: LogIndex -> LogIndex -> Query
-sqlSelectLogEntryeInclusiveSection (LogIndex liFrom) (LogIndex liTo) = Query $ T.pack $ concat
-  ["SELECT logIndex,term,hash,commandEntry,clientId,requestId,cryptoVerified,provenance"
-  ," FROM 'main'.'logEntry'"
-  ," ORDER BY logIndex ASC"
-  ," WHERE logIndex >= " ++ show liFrom
-  ," AND logIndex <= " ++ show liTo]
+sqlSelectLogEntriesInclusiveSection :: LogIndex -> LogIndex -> Query
+sqlSelectLogEntriesInclusiveSection (LogIndex liFrom) (LogIndex liTo) = Query $ T.pack $
+  "SELECT logIndex,term,hash,commandEntry,clientId,requestId,cryptoVerified,provenance\
+  \ FROM 'main'.'logEntry'\
+  \ ORDER BY logIndex ASC\
+  \ WHERE logIndex >= " ++ show liFrom ++
+  " AND logIndex <= " ++ show liTo
 
 selectLogEntriesInclusiveSection :: LogIndex -> LogIndex -> Connection -> IO LogEntries
 selectLogEntriesInclusiveSection liFrom liTo conn = do
-  res <- query_ conn (sqlSelectLogEntryeInclusiveSection liFrom liTo)
+  res <- query_ conn (sqlSelectLogEntriesInclusiveSection liFrom liTo)
   res' <- return ((\l -> (_leLogIndex l, l)) <$> res)
   return $ LogEntries . Map.fromList $ res'
+
+sqlSelectSpecificLogEntry :: LogIndex -> Query
+sqlSelectSpecificLogEntry (LogIndex li) = Query $ T.pack $
+  "SELECT logIndex,term,hash,commandEntry,clientId,requestId,cryptoVerified,provenance\
+  \ FROM 'main'.'logEntry'\
+  \ ORDER BY logIndex ASC\
+  \ WHERE logIndex == " ++ show li
+
+selectSpecificLogEntry :: LogIndex -> Connection -> IO (Maybe LogEntry)
+selectSpecificLogEntry li conn = do
+  res <- query_ conn (sqlSelectSpecificLogEntry li)
+  if null res
+  then return Nothing
+  else return $ Just $ head res

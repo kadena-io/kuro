@@ -1,7 +1,8 @@
 {-# LANGUAGE RecordWildCards #-}
 
 module Kadena.Log.LogApi
-  ( lookupEntry
+  ( commitIndex
+  , lookupEntry
   , getUnappliedEntries
   , getUncommitedHashes
   , getUnpersisted

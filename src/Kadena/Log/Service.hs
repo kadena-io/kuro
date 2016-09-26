@@ -13,7 +13,7 @@ import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Trans.RWS.Strict
 
-import Data.Maybe (catMaybes)
+import Data.Maybe (catMaybes, isNothing)
 import Data.ByteString (ByteString)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -55,6 +55,7 @@ runLogService dispatch dbg publishMetric' dbPath keySet' = do
     , _evidence = dispatch ^. Dispatch.evidence
     , _debugPrint = dbg
     , _keySet = keySet'
+    , _persistedLogEntriesToKeepInMemory = 1000
     , _cryptoWorkerTVar = cryptoMvar
     , _dbConn = dbConn'
     , _publishMetric = publishMetric'
@@ -185,6 +186,7 @@ tellKadenaToApplyLogEntries = do
       debug $ "informing Kadena to apply up to: " ++ show appliedIndex'
       publishMetric' <- view publishMetric
       liftIO $ publishMetric' $ MetricCommitIndex appliedIndex'
+      clearPersistedEntriesFromMemory
     Nothing -> return ()
 
 tellTinyCryptoWorkerToDoMore :: LogThread ()
@@ -201,3 +203,24 @@ tellTinyCryptoWorkerToDoMore = do
           Idle -> writeTVar mv (Unprocessed v) >> return "CryptoWorker was Idle, gave it something to do"
           Processing -> return "Crypto hasn't finished yet..."
       debug res
+
+clearPersistedEntriesFromMemory :: LogThread ()
+clearPersistedEntriesFromMemory = do
+  conn' <- view dbConn
+  unless (isNothing conn') $ do
+    cnt <- view persistedLogEntriesToKeepInMemory
+    commitIndex' <- commitIndex
+    ples <- use lsPersistedLogEntries
+    previousLastInMemory <- use lsLastInMemory
+    splitPoint <- return $ Map.lookupLT (commitIndex' - fromIntegral cnt) $ _pLogEntries ples
+    case splitPoint of
+      Nothing -> return ()
+      Just (key',_) -> do
+        newPles <- return $ PersistedLogEntries $ Map.filterWithKey (\k _ -> k > key') $ _pLogEntries ples
+        case plesMinIndex newPles of
+          Nothing | newPles /= ples -> error "Invariant Failure in clearPersistedEntriesFromMemory: attempted to get the minIdx, got nothing, but persisted entries was changed!"
+                  | otherwise -> return ()
+          Just newMin -> do
+            lsLastInMemory .= Just newMin
+            debug $ "Memory Cleared: from " ++ show previousLastInMemory ++ " to " ++ show newMin
+        lsPersistedLogEntries .= newPles

@@ -198,8 +198,8 @@ sqlSelectAllLogEntryAfter :: LogIndex -> Query
 sqlSelectAllLogEntryAfter (LogIndex li) = Query $ T.pack $
   "SELECT logIndex,term,hash,commandEntry,clientId,requestId,cryptoVerified,provenance\
   \ FROM 'main'.'logEntry'\
-  \ ORDER BY logIndex ASC\
-  \ WHERE logIndex > " ++ show li
+  \ WHERE logIndex > " ++ show li ++
+  " ORDER BY logIndex ASC"
 
 selectAllLogEntriesAfter :: LogIndex -> Connection -> IO LogEntries
 selectAllLogEntriesAfter li conn = do
@@ -211,9 +211,9 @@ sqlSelectLogEntriesInclusiveSection :: LogIndex -> LogIndex -> Query
 sqlSelectLogEntriesInclusiveSection (LogIndex liFrom) (LogIndex liTo) = Query $ T.pack $
   "SELECT logIndex,term,hash,commandEntry,clientId,requestId,cryptoVerified,provenance\
   \ FROM 'main'.'logEntry'\
-  \ ORDER BY logIndex ASC\
   \ WHERE logIndex >= " ++ show liFrom ++
-  " AND logIndex <= " ++ show liTo
+  " AND logIndex <= " ++ show liTo ++
+  " ORDER BY logIndex ASC"
 
 selectLogEntriesInclusiveSection :: LogIndex -> LogIndex -> Connection -> IO LogEntries
 selectLogEntriesInclusiveSection liFrom liTo conn = do
@@ -225,8 +225,8 @@ sqlSelectSpecificLogEntry :: LogIndex -> Query
 sqlSelectSpecificLogEntry (LogIndex li) = Query $ T.pack $
   "SELECT logIndex,term,hash,commandEntry,clientId,requestId,cryptoVerified,provenance\
   \ FROM 'main'.'logEntry'\
-  \ ORDER BY logIndex ASC\
-  \ WHERE logIndex == " ++ show li
+  \ WHERE logIndex == " ++ show li ++
+  " ORDER BY logIndex ASC"
 
 selectSpecificLogEntry :: LogIndex -> Connection -> IO (Maybe LogEntry)
 selectSpecificLogEntry li conn = do

@@ -18,7 +18,7 @@ module Kadena.Types.Log
   , lesUnion, lesUnions, lesLookupEntry
   , PersistedLogEntries(..), pLogEntries, plesCnt, plesMinEntry, plesMaxEntry
   , plesMinIndex, plesMaxIndex, plesEmpty, plesNull, plesGetSection
-  , plesAddNew, plesLookupEntry
+  , plesAddNew, plesLookupEntry, plesTakeTopEntries
   , LEWire(..), encodeLEWire, decodeLEWire, decodeLEWire', toLogEntries
   , ReplicateLogEntries(..), rleMinLogIdx, rleMaxLogIdx, rlePrvLogIdx, rleEntries
   , toReplicateLogEntries
@@ -199,6 +199,26 @@ plesAddNew les p@(PersistedLogEntries ples) = case lesMinIndex les of
     Just pk -> error $ "Invariant Error: plesAddNew les's minIndex (" ++ show k ++ ") is <= ples's (" ++ show pk ++ ")"
     Nothing -> error $ "plesAddNew: pattern matcher can't introspect guards... I should be impossible to hit"
 {-# INLINE plesAddNew #-}
+
+plesTakeTopEntries :: Int -> PersistedLogEntries -> PersistedLogEntries
+plesTakeTopEntries atLeast' orig@(PersistedLogEntries ples) =
+    if evenBother
+    then PersistedLogEntries $! go 0 $! Map.toDescList sizeCnts
+    else orig
+  where
+    evenBother = atLeast' < sum (Map.elems sizeCnts)
+    sizeCnts :: Map LogIndex Int
+    sizeCnts = lesCnt <$> ples
+    go _ [] = error $ "Invariant Error in plesTakeTopEntries: somehow we got an empty count list!"
+                    ++ "\natLeast: " ++ show atLeast'
+                    ++ "\nsizeCnts: " ++ show sizeCnts
+                    ++ "\nples: " ++ show ples
+    go _ [(k,_)] = Map.filterWithKey (\k' _ -> k' >= k) ples
+    go cnt ((k,v):rest)
+      | cnt + v >= atLeast' = Map.filterWithKey (\k' _ -> k' >= k) ples
+      | otherwise = go (cnt+v) rest
+{-# INLINE plesTakeTopEntries #-}
+
 
 decodeLEWire' :: Maybe ReceivedAt -> KeySet -> LEWire -> Either String LogEntry
 decodeLEWire' !ts !ks (LEWire !(t,i,cmd,hsh)) = case fromWire ts ks cmd of

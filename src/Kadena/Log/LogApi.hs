@@ -196,11 +196,11 @@ getEntriesAfter pli cnt = do
       --Everything is in memory
       | pli > lastInMemory' -> getEntriesFromMemoryInclusive (pli + 1) (pli + fromIntegral cnt)
       --Everything is on disk
-      | pli + fromIntegral cnt < lastInMemory' -> getEntriesFromDiskInclusiveOrError "getEntriesAfter.onDisk" (pli + 1) (pli + fromIntegral cnt)
+      | pli + fromIntegral cnt < lastInMemory' -> getEntriesFromDiskInclusiveMaybeError (Just "getEntriesAfter.onDisk") (pli + 1) (pli + fromIntegral cnt)
       --It's a mix of both
       | otherwise -> do
           inMem <- getEntriesFromMemoryInclusive (pli + 1) (pli + fromIntegral cnt)
-          onDisk <- getEntriesFromDiskInclusiveOrError "getEntriesAfter.mix" (pli + 1) (pli + fromIntegral cnt)
+          onDisk <- getEntriesFromDiskInclusiveMaybeError Nothing (pli + 1) (pli + fromIntegral cnt)
           return $! lesUnion onDisk inMem
     Nothing -> getEntriesFromMemoryInclusive (pli + 1) (pli + fromIntegral cnt)
 {-# INLINE getEntriesAfter #-}
@@ -216,14 +216,16 @@ getEntriesFromMemoryInclusive minLi maxLi = do
     firstPart <- return $! plesGetSection (Just minLi) (Just maxLi) ples
     return $! lesUnion firstPart (lesGetSection (Just minLi) (Just maxLi) vles)
 
-getEntriesFromDiskInclusiveOrError :: String -> LogIndex -> LogIndex -> LogThread LogEntries
-getEntriesFromDiskInclusiveOrError errName minLi maxLi = do
+getEntriesFromDiskInclusiveMaybeError :: Maybe String -> LogIndex -> LogIndex -> LogThread LogEntries
+getEntriesFromDiskInclusiveMaybeError errName minLi maxLi = do
   mConn' <- view dbConn
   res <- case mConn' of
     Just conn' -> liftIO $ selectLogEntriesInclusiveSection minLi maxLi conn'
     Nothing -> error $ "Invariant Failure in getEntriesFromDiskInclusiveOrError: dbConn was Nothing"
   if lesNull res
-  then error $ "Invariant Failure in " ++ errName ++ ": attempted to get " ++ show (minLi, maxLi) ++ " from db but got a null LogEntries!"
+  then case errName of
+    Just errName' -> error $ "Invariant Failure in " ++ errName' ++ ": attempted to get " ++ show (minLi, maxLi) ++ " from db but got a null LogEntries!"
+    Nothing -> return res
   else return res
 
 updateLogs :: UpdateLogs -> LogThread ()

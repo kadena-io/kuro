@@ -102,8 +102,8 @@ data ConsensusState = ConsensusState
   , _ignoreLeader     :: !Bool
   , _timerThread      :: !(Maybe ThreadId)
   , _timerTarget      :: !(MVar Event)
-  , _replayMap        :: !(Map (NodeId, Signature) (Maybe CommandResult))
-  , _cmdBloomFilter   :: !(Bloom (NodeId, Signature))
+  , _replayMap        :: !(Map (Alias, Signature) (Maybe CommandResult))
+  , _cmdBloomFilter   :: !(Bloom (Alias, Signature))
   , _cYesVotes        :: !(Set RequestVoteResponse)
   , _cPotentialVotes  :: !(Set NodeId)
   , _timeSinceLastAER :: !Int
@@ -125,7 +125,7 @@ initialConsensusState timerTarget' = ConsensusState
 {-timerThread-}         Nothing
 {-timerTarget-}         timerTarget'
 {-replayMap-}           Map.empty
-{-cmdBloomFilter-}      (Bloom.empty (\(n,Sig s) -> BHashes.cheapHashes 3 (_fullAddr n, s)) 536870912)
+{-cmdBloomFilter-}      (Bloom.empty (\(n,Sig s) -> BHashes.cheapHashes 3 (show n, s)) 536870912)
 {-cYesVotes-}           Set.empty
 {-cPotentialVotes-}     Set.empty
 {-timeSinceLastAER-}    0

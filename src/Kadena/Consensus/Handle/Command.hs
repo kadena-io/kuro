@@ -33,9 +33,9 @@ data CommandEnv = CommandEnv {
       _nodeRole :: Role
     , _term :: Term
     , _currentLeader :: Maybe NodeId
-    , _replayMap :: Map.Map (NodeId, Signature) (Maybe CommandResult)
+    , _replayMap :: Map.Map (Alias, Signature) (Maybe CommandResult)
     , _nodeId :: NodeId
-    , _cmdBloomFilter :: Bloom (NodeId,Signature)
+    , _cmdBloomFilter :: Bloom (Alias,Signature)
 }
 makeLenses ''CommandEnv
 
@@ -44,13 +44,9 @@ data CommandOut =
     RetransmitToLeader { _leaderId :: NodeId } |
     CommitAndPropagate {
       _newEntry :: NewLogEntries
-    , _replayKey :: (NodeId, Signature)
+    , _replayKey :: (Alias, Signature)
     } |
-    AlreadySeen |
-    SendCommandResponse {
-      _clientId :: NodeId
-    , _commandReponse :: CommandResponse
-    }
+    AlreadySeen
 
 data BatchProcessing = BatchProcessing
   { newEntries :: ![Command]
@@ -74,9 +70,11 @@ handleCommand cmd@Command{..} = do
   cmdSig <- return $ getCmdSigOrInvariantError "handleCommand" cmd
   case (Map.lookup (_cmdClientId, cmdSig) replays, r, mlid) of
     (Just (Just result), _, _) -> do
-      cmdr <- return $ makeCommandResponse' nid cmd result
-      return . SendCommandResponse _cmdClientId $ cmdr 1
+      -- cmdr <- return $ makeCommandResponse' nid cmd result
+      -- return . SendCommandResponse _cmdClientId $ cmdr 1
       -- we have already committed this request, so send the result to the client
+      -- NOPE. now we just drop CMDRs
+      return AlreadySeen
     (Just Nothing, _, _) ->
       -- we have already seen this request, but have not yet committed it
       -- nothing to do
@@ -94,7 +92,7 @@ handleCommand cmd@Command{..} = do
       -- anything
       return UnknownLeader
 
-filterBatch :: Bloom (NodeId, Signature) -> [Command] -> BatchProcessing
+filterBatch :: Bloom (Alias, Signature) -> [Command] -> BatchProcessing
 filterBatch bfilter cs = BatchProcessing brandNew likelySeen
   where
     cmdSig c = getCmdSigOrInvariantError "handleCommand" c
@@ -133,7 +131,6 @@ handleSingleCommand cmd = do
     UnknownLeader -> return () -- TODO: we should probably respond with something like "availability event"
     AlreadySeen -> return () -- TODO: we should probably respond with something like "transaction still pending"
     (RetransmitToLeader lid) -> enqueueRequest $ Sender.ForwardCommandToLeader lid [cmd]
-    (SendCommandResponse cid res) -> enqueueRequest $ Sender.SendCommandResults [(cid,res)]
     (CommitAndPropagate newEntry replayKey) -> do
       updateLogs $ ULNew newEntry
       KD.replayMap %= Map.insert replayKey Nothing
@@ -173,8 +170,6 @@ handleBatch cmdb@CommandBatch{..} = do
         updateLogs $ ULNew $ NewLogEntries (KD._term s) falsePositive
         enqueueRequest $ Sender.BroadcastAE Sender.OnlySendIfFollowersAreInSync
         enqueueRequest $ Sender.BroadcastAER
-      unless (null responseToOldCmds) $
-        enqueueRequest $ Sender.SendCommandResults responseToOldCmds
       KD.replayMap .= updatedReplayMap
       KD.cmdBloomFilter .= updateBloom newEntries (KD._cmdBloomFilter s)
       quorumSize' <- view KD.quorumSize
@@ -186,17 +181,15 @@ handleBatch cmdb@CommandBatch{..} = do
       PostProcessingResult{..} <- return $! postProcessBatch (KD._nodeId c) lid (KD._replayMap s) alreadySeen
       unless (null falsePositive) $
         enqueueRequest $ Sender.ForwardCommandToLeader (fromJust lid) falsePositive
-      unless (null responseToOldCmds) $
-        enqueueRequest $ Sender.SendCommandResults responseToOldCmds
     IAmCandidate -> return () -- TODO: we should probably respond with something like "availability event"
 
 data PostProcessingResult = PostProcessingResult
   { falsePositive :: ![Command]
-  , responseToOldCmds :: ![(NodeId, CommandResponse)]
-  , updatedReplayMap :: !(Map (NodeId,Signature) (Maybe CommandResult))
+  , responseToOldCmds :: ![(Alias, CommandResponse)]
+  , updatedReplayMap :: !(Map (Alias,Signature) (Maybe CommandResult))
   } deriving (Eq, Show)
 
-postProcessBatch :: NodeId -> Maybe NodeId -> Map.Map (NodeId, Signature) (Maybe CommandResult) -> [Command] -> PostProcessingResult
+postProcessBatch :: NodeId -> Maybe NodeId -> Map.Map (Alias, Signature) (Maybe CommandResult) -> [Command] -> PostProcessingResult
 postProcessBatch nid mlid replays cs = go cs (PostProcessingResult [] [] replays)
   where
     cmdSig c = getCmdSigOrInvariantError "postProcessBatch" c
@@ -210,7 +203,7 @@ postProcessBatch nid mlid replays cs = go cs (PostProcessingResult [] [] replays
                               , updatedReplayMap = Map.insert (_cmdClientId, cmdSig cmd) Nothing $ updatedReplayMap bp }
 {-# INLINE postProcessBatch #-}
 
-updateBloom :: [Command] -> Bloom (NodeId, Signature) -> Bloom (NodeId, Signature)
+updateBloom :: [Command] -> Bloom (Alias, Signature) -> Bloom (Alias, Signature)
 updateBloom firstPass oldBloom = Bloom.insertList (grabKey <$> firstPass) oldBloom
   where
     cmdSig c = getCmdSigOrInvariantError "updateBloom" c

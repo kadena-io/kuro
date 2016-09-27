@@ -8,7 +8,9 @@ import Control.Concurrent
 import Data.Default
 import Data.Aeson as A
 import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
 import Data.ByteString.Lazy (toStrict,fromStrict)
+import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString.Base16 as B16
 import Data.Serialize as SZ hiding (get,put)
 import Control.Monad.Reader
@@ -25,6 +27,7 @@ import Prelude hiding (log,exp)
 import qualified Data.HashMap.Strict as HM
 import Text.PrettyPrint.ANSI.Leijen (renderCompact,displayS)
 import System.Directory
+import Data.Aeson.Encode.Pretty
 
 import Pact.Types hiding (PublicKey)
 import qualified Pact.Types as Pact
@@ -192,10 +195,6 @@ applyMultisig _ _ = throwCmdEx "Multisig not supported"
 applyPrivate :: SessionCipherType -> MessageTags -> ByteString -> CommandM a
 applyPrivate _ _ _ = throwCmdEx "Private messages not supported"
 
-mkPactMessage :: PublicKey -> PrivateKey -> PactRPC -> PactMessage
-mkPactMessage pk sk rpc = PactMessage bs pk (sign bs sk pk)
-    where bs = toStrict $ A.encode rpc
-
 _pk :: PublicKey
 _pk = fromJust $ importPublic $ fst $ B16.decode "06f1ade90e5637a3392dbd7aa01486d4ac597dbf7707dfb12f94f9b9d69fcf0f"
 _sk :: PrivateKey
@@ -207,16 +206,16 @@ _config = CommandConfig (EntityInfo "me") Nothing putStrLn
 _localRPC :: ToRPC a => a -> IO ByteString
 _localRPC rpc = do
   (_,runl) <- initCommandLayer _config
-  let p = mkPactMessage _pk _sk (toRPC rpc)
+  let p = mkPactMessage _sk _pk (toRPC rpc)
   unCommandResult <$> runl (SZ.encode p)
 
 _publicRPC :: ToRPC a => a -> LogIndex -> IO ByteString
 _publicRPC rpc li = do
   (runt,_) <- initCommandLayer _config
-  let p = mkPactMessage _pk _sk (toRPC rpc)
+  let p = mkPactMessage _sk _pk (toRPC rpc)
       pm = PublicMessage (SZ.encode p)
       le = LogEntry 0 li (Command (CommandEntry (SZ.encode pm))
-                          (NodeId "" 0 "" (Alias ""))
+                          (Alias "")
                           0 Valid NewMsg) ""
   unCommandResult <$> runt le
 
@@ -228,3 +227,12 @@ mkSimplePact = mkRPC . (`ExecMsg` A.Null)
 
 mkTestPact :: CommandEntry
 mkTestPact = mkSimplePact "(demo.transfer \"Acct1\" \"Acct2\" 1.0)"
+
+
+mkTestSigned :: IO ()
+mkTestSigned = do
+  msg <- BS.readFile "tests/exec1.json"
+  let pm = mkPactMessage' _sk _pk msg
+  BSL.writeFile "tests/exec1-signed.json" $ encodePretty pm
+  (Just pm') <- A.decode <$> BSL.readFile "tests/exec1-signed.json"
+  print (pm == pm')

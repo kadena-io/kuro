@@ -32,7 +32,7 @@ instance Serialize CryptoVerified
 
 data Command = Command
   { _cmdEntry      :: !CommandEntry
-  , _cmdClientId   :: !NodeId
+  , _cmdClientId   :: !Alias
   , _cmdRequestId  :: !RequestId
   , _cmdCryptoVerified :: !CryptoVerified
   , _cmdProvenance :: !Provenance
@@ -40,7 +40,7 @@ data Command = Command
   deriving (Show, Eq, Ord, Generic)
 makeLenses ''Command
 
-data CMDWire = CMDWire !(CommandEntry, NodeId, RequestId)
+data CMDWire = CMDWire !(CommandEntry, Alias, RequestId)
   deriving (Show, Generic)
 instance Serialize CMDWire
 
@@ -48,7 +48,7 @@ instance WireFormat Command where
   toWire nid pubKey privKey Command{..} = case _cmdProvenance of
     NewMsg -> let bdy = S.encode $ CMDWire (_cmdEntry, _cmdClientId, _cmdRequestId)
                   sig = sign bdy privKey pubKey
-                  dig = Digest nid sig pubKey CMD
+                  dig = Digest (_alias nid) sig pubKey CMD
               in SignedRPC dig bdy
     ReceivedMsg{..} -> SignedRPC _pDig _pOrig
   fromWire !ts !_ks _s@(SignedRPC !dig !bdy) =
@@ -81,7 +81,7 @@ instance WireFormat CommandBatch where
   toWire nid pubKey privKey CommandBatch{..} = case _cmdbProvenance of
     NewMsg -> let bdy = S.encode ((toWire nid pubKey privKey <$> _cmdbBatch) `using` parList rseq)
                   sig = sign bdy privKey pubKey
-                  dig = Digest nid sig pubKey CMDB
+                  dig = Digest (_alias nid) sig pubKey CMDB
               in SignedRPC dig bdy
     ReceivedMsg{..} -> SignedRPC _pDig _pOrig
   fromWire !ts !ks s@(SignedRPC dig bdy) = case verifySignedRPC ks s of

@@ -70,7 +70,7 @@ data AppendEntriesResult =
 data ValidResponse =
     SendFailureResponse |
     Commit {
-        _replay :: Map (NodeId, Signature) (Maybe CommandResult)
+        _replay :: Map (Alias, Signature) (Maybe CommandResult)
       , _newEntries :: ReplicateLogEntries } |
     DoNothing
 
@@ -103,7 +103,7 @@ handleAppendEntries ae@AppendEntries{..} = do
           --}
     _ | not ignoreLeader' && _aeTerm >= currentTerm' -> do -- see TODO about setTerm
       tell ["sending unconvinced response for AE received from "
-           ++ show (KD.unAlias $ _alias $ _digNodeId $ _pDig $ _aeProvenance)
+           ++ show (KD.unAlias $ _digNodeId $ _pDig $ _aeProvenance)
            ++ " for " ++ show (_aeTerm, _prevLogIndex)
            ++ " with " ++ show (Log.lesCnt _aeEntries)
            ++ " entries; my term is " ++ show currentTerm']
@@ -196,7 +196,7 @@ handle ae = do
   case _result of
     Ignore -> do
       debug $ "Ignoring AE from "
-            ++ show (KD.unAlias $ _alias $ _digNodeId $ _pDig $ _aeProvenance ae )
+            ++ show (KD.unAlias $ _digNodeId $ _pDig $ _aeProvenance ae )
             ++ " for " ++ show (_prevLogIndex $ ae)
             ++ " with " ++ show (Log.lesCnt $ _aeEntries ae) ++ " entries."
       return ()

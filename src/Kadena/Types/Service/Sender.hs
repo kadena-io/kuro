@@ -76,8 +76,6 @@ data ServiceRequest =
     { _srCandidate :: !NodeId
     , _srHeardFromLeader :: !(Maybe HeardFromLeader)
     , _srVote :: !Bool} |
-    SendCommandResults
-    { _srResults :: ![(NodeId, CommandResponse)]} |
     ForwardCommandToLeader
     { _srFor :: !NodeId
     , _srCommands :: [Command]}

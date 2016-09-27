@@ -3,7 +3,7 @@
 {-# LANGUAGE Rank2Types #-}
 
 module Kadena.Consensus.Handle.Types (
-    NodeId(..)
+    NodeId(..), Alias(..)
   , CommandEntry(..)
   , CommandResult(..)
   , Term(..), startTerm

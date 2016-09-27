@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -10,6 +11,7 @@ module Kadena.Command.Types where
 
 import Data.Aeson as A
 import Data.ByteString (ByteString)
+import qualified Data.ByteString.Lazy as BSL
 import qualified Crypto.PubKey.Curve25519 as C2
 import Data.ByteArray.Extend
 import Data.Serialize as SZ hiding (get)
@@ -138,6 +140,23 @@ data PactMessage = PactMessage {
     , _pmSig :: Signature
     } deriving (Eq,Generic)
 instance Serialize PactMessage
+instance ToJSON PactMessage where
+    toJSON (PactMessage payload pk (Sig s)) =
+        object [ "payload" .= decodeUtf8 payload
+               , "pubkey" .= pk
+               , "sig" .= toB16JSON s
+               ]
+instance FromJSON PactMessage where
+    parseJSON = withObject "PactMessage" $ \o ->
+                PactMessage <$> (encodeUtf8 <$> o .: "payload")
+                            <*> o .: "pubkey"
+                            <*> (o .: "sig" >>= \t -> Sig <$> parseB16JSON t)
+
+mkPactMessage :: ToJSON a => PrivateKey -> PublicKey -> a -> PactMessage
+mkPactMessage sk pk a = mkPactMessage' sk pk (BSL.toStrict $ A.encode a)
+
+mkPactMessage' :: PrivateKey -> PublicKey -> ByteString -> PactMessage
+mkPactMessage' sk pk payload = PactMessage payload pk (sign payload sk pk)
 
 data PactRPC =
     Exec ExecMsg |

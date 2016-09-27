@@ -102,12 +102,15 @@ mainLocal = do
       mapM_ (\c' -> Y.encodeFile ("conf" </> show (_port $ _nodeId c') ++ "-client.yaml") c') clientConfs
     _ -> putStrLn "Failed to read either input into a number, please try again"
 
+toAliasMap :: Map NodeId a -> Map Alias a
+toAliasMap = Map.fromList . map (first _alias) . Map.toList
+
 createClusterConfig :: Bool -> (Map NodeId PrivateKey, Map NodeId PublicKey) -> Map NodeId PublicKey -> NodeId -> Config
 createClusterConfig debugFollower (privMap, pubMap) clientPubMap nid = Config
   { _otherNodes           = Set.delete nid $ Map.keysSet pubMap
   , _nodeId               = nid
-  , _publicKeys           = pubMap
-  , _clientPublicKeys     = Map.union pubMap clientPubMap -- NOTE: [2016 04 26] all nodes are client (support API signing)
+  , _publicKeys           = toAliasMap $ pubMap
+  , _clientPublicKeys     = toAliasMap $ Map.union pubMap clientPubMap -- NOTE: [2016 04 26] all nodes are client (support API signing)
   , _myPrivateKey         = privMap Map.! nid
   , _myPublicKey          = pubMap Map.! nid
   , _electionTimeoutRange = (3000000,6000000)
@@ -127,8 +130,8 @@ createClientConfig :: Bool -> Map NodeId PublicKey -> (Map NodeId PrivateKey, Ma
 createClientConfig debugFollower clusterPubMap (privMap, pubMap) nid = Config
   { _otherNodes           = Map.keysSet clusterPubMap
   , _nodeId               = nid
-  , _publicKeys           = clusterPubMap
-  , _clientPublicKeys     = pubMap
+  , _publicKeys           = toAliasMap $ clusterPubMap
+  , _clientPublicKeys     = toAliasMap $ pubMap
   , _myPrivateKey         = privMap Map.! nid
   , _myPublicKey          = pubMap Map.! nid
   , _electionTimeoutRange = (3000000,6000000)

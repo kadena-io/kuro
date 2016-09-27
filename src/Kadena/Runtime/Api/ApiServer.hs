@@ -145,7 +145,7 @@ mkPublicCommand :: BS.ByteString -> Api (Command,RequestId)
 mkPublicCommand bs = do
   rid <- view aiNextRequestId >>= \f -> liftIO f
   nid <- view (aiConfig.nodeId)
-  return $! (Command (CommandEntry $! SZ.encode $! PublicMessage $! bs) nid rid Valid NewMsg,rid)
+  return $! (Command (CommandEntry $! SZ.encode $! PublicMessage $! bs) (_alias nid) rid Valid NewMsg,rid)
 
 
 enqueueRPC :: RPC -> Api ()

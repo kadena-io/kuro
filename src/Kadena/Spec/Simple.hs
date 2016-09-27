@@ -162,7 +162,7 @@ runServer = do
   (applyFn,_) <- initCommandLayer (CommandConfig (_entity rconf) (_dbFile rconf) debugFn)
   resetAwsEnv (rconf ^. enableAwsIntegration)
   me <- return $ rconf ^. nodeId
-  oNodes <- return $ Set.toList $ Set.delete me $ Set.union (rconf ^. otherNodes) (Map.keysSet $ rconf ^. clientPublicKeys)
+  oNodes <- return $ Set.toList $ Set.delete me (rconf ^. otherNodes)-- (Map.keysSet $ rconf ^. clientPublicKeys)
   dispatch <- initDispatch
 
 

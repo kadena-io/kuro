@@ -135,34 +135,46 @@ instance FromJSON RPCDigest where
             RPCDigest <$> fmap encodeUtf8 (o .: "key") <*> fmap encodeUtf8 (o .: "sig")
 
 data PactMessage = PactMessage {
-      _pmPayload :: ByteString
+      _pmEnvelope :: ByteString
     , _pmKey :: PublicKey
-    , _pmAlias :: Alias
     , _pmSig :: Signature
-    , _pmRequestId :: String
     } deriving (Eq,Generic)
 instance Serialize PactMessage
 instance ToJSON PactMessage where
-    toJSON (PactMessage payload pk a (Sig s) rid) =
-        object [ "payload" .= decodeUtf8 payload
+    toJSON (PactMessage payload pk (Sig s)) =
+        object [ "env" .= decodeUtf8 payload
                , "key" .= pk
                , "sig" .= toB16JSON s
-               , "alias" .= a
-               , "requestId" .= rid
                ]
 instance FromJSON PactMessage where
     parseJSON = withObject "PactMessage" $ \o ->
-                PactMessage <$> (encodeUtf8 <$> o .: "payload")
+                PactMessage <$> (encodeUtf8 <$> o .: "env")
                             <*> o .: "key"
-                            <*> o .: "alias"
                             <*> (o .: "sig" >>= \t -> Sig <$> parseB16JSON t)
-                            <*> o .: "requestId"
 
 mkPactMessage :: ToJSON a => PrivateKey -> PublicKey -> Alias -> String -> a -> PactMessage
-mkPactMessage sk pk al rid a = mkPactMessage' sk pk al rid (BSL.toStrict $ A.encode a)
+mkPactMessage sk pk al rid a = mkPactMessage' sk pk $ BSL.toStrict $ A.encode (PactEnvelope a rid al)
+-- al rid (BSL.toStrict $ A.encode a)
 
-mkPactMessage' :: PrivateKey -> PublicKey -> Alias -> String -> ByteString -> PactMessage
-mkPactMessage' sk pk a rid payload = PactMessage payload pk a (sign payload sk pk) rid
+mkPactMessage' :: PrivateKey -> PublicKey ->  ByteString -> PactMessage
+mkPactMessage' sk pk env = PactMessage env pk (sign env sk pk)
+
+data PactEnvelope a = PactEnvelope {
+      _pePayload :: a
+    , _peRequestId :: String
+    , _peAlias :: Alias
+} deriving (Eq)
+instance (ToJSON a) => ToJSON (PactEnvelope a) where
+    toJSON (PactEnvelope r rid al) = object [ "payload" .= r,
+                                              "rid" .= rid,
+                                              "alias" .= al ]
+instance (FromJSON a) => FromJSON (PactEnvelope a) where
+    parseJSON = withObject "PactEnvelope" $ \o ->
+                    PactEnvelope <$> o .: "payload"
+                                     <*> o .: "rid"
+                                     <*> o .: "alias"
+
+
 
 data PactRPC =
     Exec ExecMsg |

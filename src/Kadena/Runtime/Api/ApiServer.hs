@@ -13,13 +13,13 @@ import Control.Concurrent
 import Control.Monad.Reader
 import Data.Aeson hiding (defaultOptions)
 import qualified Data.ByteString.Char8 as BS
+import qualified Data.ByteString.Lazy as BSL
 import Data.ByteString.Lazy (toStrict)
 import Control.Lens hiding ((.=))
 import Data.Monoid
 import Prelude hiding (log)
 import qualified Data.Serialize as SZ
 import Data.Thyme.Clock
-import Data.Thyme.Time.Core (unUTCTime, toMicroseconds)
 import Snap.Http.Server as Snap
 import Snap.Core
 import qualified Data.Map.Strict as M
@@ -78,8 +78,12 @@ die code msg = do
 readJSON :: FromJSON t => Api (BS.ByteString,t)
 readJSON = do
   b <- readRequestBody 1000000000
-  let r = eitherDecode b
-  case r of
+  tryParseJSON b
+
+tryParseJSON
+  :: FromJSON t =>
+     BSL.ByteString -> Api (BS.ByteString, t)
+tryParseJSON b = case eitherDecode b of
     Right v -> return (toStrict b,v)
     Left e -> die 400 (BS.pack e)
 
@@ -107,11 +111,12 @@ sendPublic = do
 
 buildCmdRpc :: PactMessage -> Api (RequestId,SignedRPC)
 buildCmdRpc PactMessage {..} = do
-  storedCK <- M.lookup _pmAlias <$> view (aiConfig.clientPublicKeys)
+  (_,PactEnvelope {..} :: PactEnvelope PactRPC) <- tryParseJSON (BSL.fromStrict $ _pmEnvelope)
+  storedCK <- M.lookup _peAlias <$> view (aiConfig.clientPublicKeys)
   unless (storedCK == Just _pmKey) $ die 400 "Invalid alias/public key"
-  let rid = mkRequestId _pmAlias _pmRequestId
-  let ce = CommandEntry $! SZ.encode $! PublicMessage $! _pmPayload
-  return $! (rid,mkCmdRpc ce _pmAlias rid (Digest _pmAlias _pmSig _pmKey CMD))
+  let rid = mkRequestId _peAlias _peRequestId
+  let ce = CommandEntry $! SZ.encode $! PublicMessage $! _pmEnvelope
+  return $! (rid,mkCmdRpc ce _peAlias rid (Digest _peAlias _pmSig _pmKey CMD))
 
 sendPublicBatch :: Api ()
 sendPublicBatch = do
@@ -119,7 +124,7 @@ sendPublicBatch = do
   when (null cs) $ die 400 "Empty batch"
   rpcs <- mapM buildCmdRpc cs
   let PactMessage {..} = head cs
-      dig = Digest _pmAlias (Sig "") _pmKey CMDB
+      dig = Digest "batch" (Sig "") _pmKey CMDB
       rpc = mkCmdBatchRPC (map snd rpcs) dig
   enqueueRPC $! rpc -- CMDB' $! CommandBatch (reverse cmds) NewMsg
   writeResponse $ SubmitSuccess (map fst rpcs)

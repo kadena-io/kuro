@@ -87,8 +87,8 @@ startIndex :: LogIndex
 startIndex = LogIndex (-1)
 
 newtype RequestId = RequestId {_unRequestId :: String }
-  deriving (Show, Eq, Ord, Generic, Serialize, IsString, ToJSON, FromJSON)
-
+  deriving (Eq, Ord, Generic, Serialize, IsString, ToJSON, FromJSON)
+instance Show RequestId where show (RequestId i) = i
 
 parseB16JSON :: Value -> Parser ByteString
 parseB16JSON = withText "Base16" parseB16Text

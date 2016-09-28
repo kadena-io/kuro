@@ -37,7 +37,6 @@ import Data.Thyme.Time.Core (unUTCTime, toMicroseconds)
 
 import Network.Wreq
 import System.IO
-import GHC.Int (Int64)
 import GHC.Generics
 import Data.Int
 

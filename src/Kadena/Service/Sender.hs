@@ -14,7 +14,6 @@ module Kadena.Service.Sender
 
 import Control.Lens
 import Control.Concurrent
-import Control.Arrow (second)
 import Control.Parallel.Strategies
 
 import Control.Monad.Trans.Reader

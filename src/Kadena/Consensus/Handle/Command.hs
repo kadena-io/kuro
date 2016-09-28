@@ -66,10 +66,10 @@ handleCommand cmd@Command{..} = do
   ct <- view term
   mlid <- view currentLeader
   replays <- view replayMap
-  nid <- view nodeId
+  _nid <- view nodeId
   cmdSig <- return $ getCmdSigOrInvariantError "handleCommand" cmd
   case (Map.lookup (_cmdClientId, cmdSig) replays, r, mlid) of
-    (Just (Just result), _, _) -> do
+    (Just (Just _result), _, _) -> do
       -- cmdr <- return $ makeCommandResponse' nid cmd result
       -- return . SendCommandResponse _cmdClientId $ cmdr 1
       -- we have already committed this request, so send the result to the client

@@ -8,7 +8,6 @@ import Control.Concurrent
 import Data.Default
 import Data.Aeson as A
 import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
 import Data.ByteString.Lazy (toStrict,fromStrict)
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString.Base16 as B16
@@ -116,18 +115,20 @@ applyPactMessage m = do
   pmsg <- either (throwCmdEx . ("applyPactMessage: deserialize failed: " ++ ) . show) return $
           SZ.decode m
   pk <- validateSig pmsg
-  applyRPC [pk] (_pmPayload pmsg)
+  applyRPC [pk] (_pmEnvelope pmsg)
 
 applyRPC :: [Pact.PublicKey] -> ByteString -> CommandM CommandResult
 applyRPC ks m =
   case A.eitherDecode (fromStrict m) of
-      Right (Exec pm) -> applyExec pm ks
-      Right (Continuation ym) -> applyContinuation ym ks
-      Right (Multisig mm) -> applyMultisig mm ks
+      Right PactEnvelope {..} ->
+          case _pePayload of
+            (Exec pm) -> applyExec pm ks
+            (Continuation ym) -> applyContinuation ym ks
+            (Multisig mm) -> applyMultisig mm ks
       Left err -> throwCmdEx $ "RPC deserialize failed: " ++ show err ++ show m
 
 validateSig :: PactMessage -> CommandM Pact.PublicKey
-validateSig (PactMessage payload key _ sig _)
+validateSig (PactMessage payload key sig)
     | valid payload key sig = return (Pact.PublicKey (exportPublic key)) -- TODO turn off with compile flags?
     | otherwise = throwCmdEx "Signature verification failure"
 
@@ -230,14 +231,16 @@ mkTestPact :: CommandEntry
 mkTestPact = mkSimplePact "(demo.transfer \"Acct1\" \"Acct2\" 1.0)"
 
 
+
 mkTestSigned :: IO ()
 mkTestSigned = do
-  msg <- BS.readFile "tests/exec1.json"
-  let (pm@PactMessage {..}) = mkPactMessage' _sk _pk "hi" "rid" msg
-      ce = CommandEntry $! SZ.encode $! PublicMessage $! _pmPayload
-      rpc = mkCmdRpc ce _pmAlias "rid" (Digest _pmAlias _pmSig _pmKey CMD)
+  (Right (msg :: PactRPC)) <- eitherDecode <$> BSL.readFile "tests/exec1.json"
+  let env@PactEnvelope {..} = PactEnvelope msg "a" "rid"
+  let (pm@PactMessage {..}) = mkPactMessage' _sk _pk  (BSL.toStrict $ A.encode env)
+      ce = CommandEntry $! SZ.encode $! PublicMessage $! _pmEnvelope
+      rpc = mkCmdRpc ce _peAlias "rid" (Digest _peAlias _pmSig _pmKey CMD)
       Right (c :: Command) = fromWire Nothing def rpc
-      cmdbrpc = mkCmdBatchRPC [rpc] (Digest _pmAlias _pmSig _pmKey CMDB)
+      cmdbrpc = mkCmdBatchRPC [rpc] (Digest _peAlias _pmSig _pmKey CMDB)
       Right (cb :: CommandBatch) = fromWire Nothing def cmdbrpc
   BSL.writeFile "tests/exec1-signed.json" $ encodePretty pm
   (Just pm') <- A.decode <$> BSL.readFile "tests/exec1-signed.json"

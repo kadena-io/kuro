@@ -14,7 +14,6 @@ import System.IO
 import System.FilePath
 import System.Environment
 import qualified Data.Yaml as Y
-import Data.Monoid
 import Data.Word
 
 import qualified Data.Set as Set
@@ -26,11 +25,6 @@ import qualified Data.ByteString.Char8 as BSC
 import Kadena.Types
 import Apps.Kadena.Client hiding (main)
 
-nodes :: [NodeId]
-nodes = iterate (\n@(NodeId h p _ _) -> n {_port = p + 1
-                                          , _fullAddr = "tcp://" ++ h ++ ":" ++ show (p+1)
-                                          , _alias = Alias $ BSC.pack $ "node" ++ show (p+1-10000)})
-                    (NodeId "127.0.0.1" 10000 "tcp://127.0.0.1:10000" $ Alias "node0")
 
 mkNodes :: (Word64 -> NodeId) -> [(PrivateKey,PublicKey)] -> (Map NodeId PrivateKey, Map NodeId PublicKey)
 mkNodes nodeG keys = (ss,ps) where
@@ -49,17 +43,11 @@ makeKeys n g = case generateKeyPair g of
   Left err -> error $ show err
   Right (p,priv,g') -> (p,priv) : makeKeys (n-1) g'
 
-keyMaps :: [(PrivateKey,PublicKey)] -> (Map NodeId PrivateKey, Map NodeId PublicKey)
-keyMaps ls = (M.fromList $ zip nodes (fst <$> ls), M.fromList $ zip nodes (snd <$> ls))
-
 awsNodes :: [String] -> [NodeId]
 awsNodes = fmap (\h -> NodeId h 10000 ("tcp://" ++ h ++ ":10000") $ Alias (BSC.pack h))
 
 awsKeyMaps :: [NodeId] -> [(PrivateKey, PublicKey)] -> (Map NodeId PrivateKey, Map NodeId PublicKey)
 awsKeyMaps nodes' ls = (M.fromList $ zip nodes' (fst <$> ls), M.fromList $ zip nodes' (snd <$> ls))
-
-apiPort' :: Int
-apiPort' = 8000
 
 main :: IO ()
 main = do

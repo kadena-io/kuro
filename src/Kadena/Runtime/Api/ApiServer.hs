@@ -43,7 +43,6 @@ data ApiEnv = ApiEnv {
     , _aiDispatch :: Dispatch
     , _aiConfig :: Config.Config
     , _aiPubConsensus :: MVar PublishedConsensus
-    , _aiNextRequestId :: IO RequestId
 }
 makeLenses ''ApiEnv
 
@@ -51,20 +50,13 @@ makeLenses ''ApiEnv
 type Api a = ReaderT ApiEnv Snap a
 
 
-mkNextRequestId :: IO (IO RequestId)
-mkNextRequestId = do
-  UTCTime _ time <- unUTCTime <$> getCurrentTime
-  mv <- newMVar (RequestId $ toMicroseconds time)
-  return $ modifyMVar mv (\t -> let t'=succ t in return (t',t'))
-
 runApiServer :: Dispatch -> Config.Config -> (String -> IO ()) ->
                 MVar (M.Map RequestId AppliedCommand) -> Int -> MVar PublishedConsensus -> IO ()
 runApiServer dispatch conf logFn appliedMap port mPubConsensus' = do
   putStrLn $ "runApiServer: starting on port " ++ show port
-  nextRidFun <- mkNextRequestId
   httpServe (serverConf port) $
     applyCORS defaultOptions $ methods [GET, POST] $
-    route [ ("api", runReaderT api (ApiEnv appliedMap logFn dispatch conf mPubConsensus' nextRidFun))]
+    route [ ("api", runReaderT api (ApiEnv appliedMap logFn dispatch conf mPubConsensus'))]
 
 api :: Api ()
 api = route [
@@ -97,22 +89,40 @@ setJSON = modifyResponse $ setHeader "Content-Type" "application/json"
 writeResponse :: ToJSON j => j -> Api ()
 writeResponse j = setJSON >> writeLBS (encode j)
 
+{-
+aliases need to be verified by api against public key
+then, alias can be paired with requestId in message to create unique rid
+polling can then be on alias and client rid
+-}
+
+mkRequestId :: Alias -> String -> RequestId
+mkRequestId a s = RequestId $ show a ++ ":" ++ s
+
 sendPublic :: Api ()
 sendPublic = do
-  (bs,_ :: PactRPC) <- readJSON
-  (cmd,rid) <- mkPublicCommand bs
-  enqueueRPC $! CMD' cmd
+  (_,pm) <- readJSON
+  (rid,rpc) <- buildCmdRpc pm
+  enqueueRPC rpc
   writeResponse $ SubmitSuccess [rid]
 
+buildCmdRpc :: PactMessage -> Api (RequestId,SignedRPC)
+buildCmdRpc PactMessage {..} = do
+  storedCK <- M.lookup _pmAlias <$> view (aiConfig.clientPublicKeys)
+  unless (storedCK == Just _pmKey) $ die 400 "Invalid alias/public key"
+  let rid = mkRequestId _pmAlias _pmRequestId
+  let ce = CommandEntry $! SZ.encode $! PublicMessage $! _pmPayload
+  return $! (rid,mkCmdRpc ce _pmAlias rid (Digest _pmAlias _pmSig _pmKey CMD))
 
 sendPublicBatch :: Api ()
 sendPublicBatch = do
   (_,!cs) <- fmap cmds <$> readJSON
-  (!cmds,!rids) <- foldM (\(cms,rids) c -> do
-                    (cd,rid) <- mkPublicCommand $! toStrict $! encode c
-                    return $! (cd:cms,rid:rids)) ([],[]) cs
-  enqueueRPC $! CMDB' $! CommandBatch (reverse cmds) NewMsg
-  writeResponse $ SubmitSuccess (reverse rids)
+  when (null cs) $ die 400 "Empty batch"
+  rpcs <- mapM buildCmdRpc cs
+  let PactMessage {..} = head cs
+      dig = Digest _pmAlias (Sig "") _pmKey CMDB
+      rpc = mkCmdBatchRPC (map snd rpcs) dig
+  enqueueRPC $! rpc -- CMDB' $! CommandBatch (reverse cmds) NewMsg
+  writeResponse $ SubmitSuccess (map fst rpcs)
 
 
 poll :: Api ()
@@ -143,20 +153,18 @@ serverConf port = setErrorLog (ConfigFileLog "log/error.log") $
 
 mkPublicCommand :: BS.ByteString -> Api (Command,RequestId)
 mkPublicCommand bs = do
-  rid <- view aiNextRequestId >>= \f -> liftIO f
+  rid <- undefined -- view aiNextRequestId >>= \f -> liftIO f
   nid <- view (aiConfig.nodeId)
   return $! (Command (CommandEntry $! SZ.encode $! PublicMessage $! bs) (_alias nid) rid Valid NewMsg,rid)
 
 
-enqueueRPC :: RPC -> Api ()
-enqueueRPC m = do
+enqueueRPC :: SignedRPC -> Api ()
+enqueueRPC signedRPC = do
   env <- ask
-  conf <- return (_aiConfig env)
+  let conf = _aiConfig env
   PublishedConsensus {..} <- fromMaybeM (die 500 "Invariant error: consensus unavailable") =<<
-                               liftIO (tryReadMVar (_aiPubConsensus env))
+                              liftIO (tryReadMVar (_aiPubConsensus env))
   ldr <- fromMaybeM (die 500 "System unavaiable, please try again later") _pcLeader
-  signedRPC <- return $! rpcToSignedRPC (_nodeId conf)
-                        (Config._myPublicKey conf) (Config._myPrivateKey conf) m -- TODO api signing
   if _nodeId conf == ldr
   then do -- dispatch internally if we're leader, otherwise send outbound
     ts <- liftIO getCurrentTime

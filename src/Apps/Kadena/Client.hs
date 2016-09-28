@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -5,10 +6,11 @@
 {-# LANGUAGE BangPatterns #-}
 
 module Apps.Kadena.Client
-  ( main
+  ( main,ClientConfig(..)
   ) where
 
 import Control.Monad.State
+import Control.Monad.Reader
 import Control.Lens
 import Control.Monad.Catch
 import Control.Concurrent.Lifted (threadDelay)
@@ -26,20 +28,58 @@ import Text.Read (readMaybe)
 import qualified Data.Text as T
 import Data.Foldable
 import Data.List
+import System.Environment
+import System.Exit
+import System.Console.GetOpt
+import Data.Default
+import Data.Thyme.Clock
+import Data.Thyme.Time.Core (unUTCTime, toMicroseconds)
 
 import Network.Wreq
 import System.IO
 import GHC.Int (Int64)
+import GHC.Generics
+import Data.Int
 
 import Kadena.Types.Base
 import Kadena.Command.Types
 import Kadena.Types.Api
 
+data ClientOpts = ClientOpts {
+      _oConfig :: FilePath
+}
+makeLenses ''ClientOpts
+instance Default ClientOpts where def = ClientOpts ""
+
+
+coptions :: [OptDescr (ClientOpts -> ClientOpts)]
+coptions =
+  [ Option ['c']
+           ["config"]
+           (ReqArg (\fp -> set oConfig fp) "config")
+           "Configuration File"
+  ]
+
+data ClientConfig = ClientConfig {
+      _ccAlias :: Alias
+    , _ccSecretKey :: PrivateKey
+    , _ccPublicKey :: PublicKey
+    , _ccEndpoints :: HM.HashMap String String
+    } deriving (Eq,Show,Generic)
+makeLenses ''ClientConfig
+instance ToJSON ClientConfig where
+  toJSON = genericToJSON defaultOptions { fieldLabelModifier = drop 3 }
+instance FromJSON ClientConfig where
+  parseJSON = genericParseJSON defaultOptions { fieldLabelModifier = drop 3 }
+
 data ReplState = ReplState {
       _server :: String
     , _batchCmd :: String
+    , _requestId :: Int64
 }
 makeLenses ''ReplState
+
+type Repl a = ReaderT ClientConfig (StateT ReplState IO) a
 
 prompt :: String -> String
 prompt s = "\ESC[0;31m" ++ s ++ ">> \ESC[0m"
@@ -50,45 +90,61 @@ flushStr str = liftIO (putStr str >> hFlush stdout)
 flushStrLn :: MonadIO m => String -> m ()
 flushStrLn str = liftIO (putStrLn str >> hFlush stdout)
 
-readPrompt :: StateT ReplState IO (Maybe String)
+readPrompt :: Repl (Maybe String)
 readPrompt = do
   use server >>= flushStr . prompt
   e <- liftIO $ isEOF
   if e then return Nothing else Just <$> liftIO getLine
 
-_run :: StateT ReplState m a -> m (a, ReplState)
-_run a = runStateT a (ReplState "localhost:8000" "(demo.transfer \"Acct1\" \"Acct2\" 1.00)")
+mkExec :: String -> Value -> Repl PactMessage
+mkExec code mdata = do
+  sk <- view ccSecretKey
+  pk <- view ccPublicKey
+  a <- view ccAlias
+  requestId %= succ
+  rid <- use requestId
+  return $ mkPactMessage sk pk a (show rid) (Exec (ExecMsg (T.pack code) mdata))
 
-sendCmd :: String -> StateT ReplState IO ()
+
+sendCmd :: String -> Repl ()
 sendCmd cmd = do
   s <- use server
-  r <- liftIO $ post ("http://" ++ s ++ "/api/public/send") (toJSON (Exec (ExecMsg (T.pack cmd) Null)))
+  e <- mkExec cmd Null
+  r <- liftIO $ post ("http://" ++ s ++ "/api/public/send") (toJSON e)
   rids <- view (responseBody.ssRequestIds) <$> asJSON r
+  flushStrLn $ "Request Id: " ++ show rids
   showResult 10000 rids Nothing
 
-batchTest :: Int -> String -> StateT ReplState IO ()
+batchTest :: Int -> String -> Repl ()
 batchTest n cmd = do
   s <- use server
-  r <- liftIO $ post ("http://" ++ s ++ "/api/public/batch") (toJSON (Batch (replicate n (Exec (ExecMsg (T.pack cmd) Null)))))
+  es <- replicateM n (mkExec cmd Null)
+  flushStrLn $ "Prepared " ++ show (length es) ++ " messages ..."
+  r <- liftIO $ post ("http://" ++ s ++ "/api/public/batch") (toJSON (Batch es))
+  flushStrLn $ "Sent, retrieving responses"
   rids <- view (responseBody.ssRequestIds) <$> asJSON r
+  flushStrLn $ "Polling response " ++ show (last rids)
   showResult (n * 200) rids (Just (fromIntegral n))
 
-manyTest :: Int -> String -> StateT ReplState IO ()
+manyTest :: Int -> String -> Repl ()
 manyTest n cmd = do
   s <- use server
-  rs <- replicateM n $ liftIO $ post ("http://" ++ s ++ "/api/public/send") (toJSON (Exec (ExecMsg (T.pack cmd) Null)))
+  rs <- replicateM n $ do
+                   e <- mkExec cmd Null
+                   liftIO $ post ("http://" ++ s ++ "/api/public/send") (toJSON e)
   rids <- view (responseBody.ssRequestIds) <$> asJSON (last rs)
   showResult (n * 200) rids (Just (fromIntegral n))
 
-setup :: StateT ReplState IO ()
+setup :: Repl ()
 setup = do
-  code <- T.pack <$> liftIO (readFile "demo/demo.pact")
+  code <- liftIO (readFile "demo/demo.pact")
   (ej :: Either String Value) <- eitherDecode <$> liftIO (BSL.readFile "demo/demo.json")
   case ej of
     Left err -> liftIO (flushStrLn $ "ERROR: demo.json file invalid: " ++ show err)
     Right j -> do
       s <- use server
-      r <- liftIO $ post ("http://" ++ s ++ "/api/public/send") (toJSON (Exec (ExecMsg code j)))
+      e <- mkExec code j
+      r <- liftIO $ post ("http://" ++ s ++ "/api/public/send") (toJSON e)
       rids <- view (responseBody.ssRequestIds) <$> asJSON r
       showResult 10000 rids Nothing
 
@@ -96,7 +152,7 @@ setup = do
 
 
 
-showResult :: Int -> [RequestId] -> Maybe Int64 -> StateT ReplState IO ()
+showResult :: Int -> [RequestId] -> Maybe Int64 -> Repl ()
 showResult _ [] _ = return ()
 showResult tdelay rids countm = loop (0 :: Int) where
     loop c = do
@@ -139,7 +195,7 @@ _s2 = fromJust $ decode "{\"status\":\"Success\",\"result\":[{\"amount\":100000.
 
 
 
-runREPL :: StateT ReplState IO ()
+runREPL :: Repl ()
 runREPL = loop True
   where
     loop go =
@@ -150,19 +206,21 @@ runREPL = loop True
       case cmd' of
         Nothing -> loop False
         Just "" -> loop True
+        Just ":exit" -> loop False
         Just cmd -> parse cmd >> loop True
     parse cmd = do
       bcmd <- use batchCmd
       case cmd of
-        "sleep" -> threadDelay 5000000
-        "cmd?" -> use batchCmd >>= flushStrLn
-        "setup" -> setup
-        _ | take 11 cmd == "batch test:" ->
-            case readMaybe $ drop 11 cmd of
+        ":sleep" -> threadDelay 5000000
+        "?cmd" -> use batchCmd >>= flushStrLn
+        "?servers" -> view ccEndpoints >>= liftIO . mapM_ print
+        ":setup" -> setup
+        _ | take 7 cmd == ":batch " ->
+            case readMaybe $ drop 7 cmd of
               Just n -> batchTest n bcmd
               Nothing -> return ()
-          | take 10 cmd == "many test:" ->
-              case readMaybe $ drop 10 cmd of
+          | take 6 cmd == ":many " ->
+              case readMaybe $ drop 6 cmd of
                 Just n -> manyTest n bcmd
                 Nothing -> return ()
           | take 7 cmd == "server:" ->
@@ -172,6 +230,10 @@ runREPL = loop True
           | otherwise ->  sendCmd cmd
 
 
+_run :: StateT ReplState m a -> m (a, ReplState)
+_run a = runStateT a (ReplState "localhost:8000" "(demo.transfer \"Acct1\" \"Acct2\" 1.00)" 0)
+
+
 
 intervalOfNumerous :: Int64 -> Int64 -> String
 intervalOfNumerous cnt mics = let
@@ -179,6 +241,19 @@ intervalOfNumerous cnt mics = let
   perSec = ceiling (fromIntegral cnt / interval')
   in "Completed in " ++ show (interval' :: Double) ++ "sec (" ++ show (perSec::Integer) ++ " per sec)"
 
+initRequestId :: IO Int64
+initRequestId = do
+  UTCTime _ time <- unUTCTime <$> getCurrentTime
+  return $ toMicroseconds time
 
 main :: IO ()
-main = void $ _run runREPL
+main = do
+  as <- getArgs
+  case getOpt Permute coptions as of
+    (_,_,es@(_:_)) -> print es >> exitFailure
+    (o,_,_) -> do
+         let opts = foldl (flip id) def o
+         i <- initRequestId
+         (conf :: ClientConfig) <- either (\e -> print e >> exitFailure) return =<< Y.decodeFileEither (_oConfig opts)
+         void $ runStateT (runReaderT runREPL conf) (ReplState (snd (head (HM.toList (_ccEndpoints conf))))
+                                              "(demo.transfer \"Acct1\" \"Acct2\" 1.00)" i)

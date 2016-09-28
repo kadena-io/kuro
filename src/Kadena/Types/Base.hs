@@ -8,7 +8,7 @@ module Kadena.Types.Base
   ( NodeId(..)
   , Term(..), startTerm
   , LogIndex(..), startIndex
-  , RequestId(..), startRequestId, toRequestId
+  , RequestId(..)
   , ReceivedAt(..)
   -- for simplicity, re-export some core types that we need all over the place
   , parseB16JSON, toB16JSON, toB16Text, parseB16Text, failMaybe
@@ -55,7 +55,7 @@ newtype Alias = Alias { unAlias :: BSC.ByteString }
 instance IsString Alias where fromString s = Alias $ BSC.pack s
 
 instance Show Alias where
-  show (Alias a) = "Alias: " ++ BSC.unpack a
+  show (Alias a) = BSC.unpack a
 
 instance ToJSON Alias where
   toJSON = toJSON . decodeUtf8 . unAlias
@@ -86,14 +86,8 @@ newtype LogIndex = LogIndex Int
 startIndex :: LogIndex
 startIndex = LogIndex (-1)
 
-newtype RequestId = RequestId {_unRequestId :: Int64}
-  deriving (Show, Read, Eq, Ord, Enum, Num, Generic, Serialize, Real, Integral, ToJSON, FromJSON)
-
-startRequestId :: RequestId
-startRequestId = RequestId 0
-
-toRequestId :: Int64 -> RequestId
-toRequestId a = RequestId a
+newtype RequestId = RequestId {_unRequestId :: String }
+  deriving (Show, Eq, Ord, Generic, Serialize, IsString, ToJSON, FromJSON)
 
 
 parseB16JSON :: Value -> Parser ByteString

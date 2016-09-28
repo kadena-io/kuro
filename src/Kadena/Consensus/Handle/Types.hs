@@ -8,7 +8,7 @@ module Kadena.Consensus.Handle.Types (
   , CommandResult(..)
   , Term(..), startTerm
   , LogIndex(..), startIndex
-  , RequestId(..), startRequestId, toRequestId
+  , RequestId(..)
   , Role(..)
   , LogEntry(..)
   -- * RPC

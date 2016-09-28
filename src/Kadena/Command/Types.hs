@@ -137,26 +137,32 @@ instance FromJSON RPCDigest where
 data PactMessage = PactMessage {
       _pmPayload :: ByteString
     , _pmKey :: PublicKey
+    , _pmAlias :: Alias
     , _pmSig :: Signature
+    , _pmRequestId :: String
     } deriving (Eq,Generic)
 instance Serialize PactMessage
 instance ToJSON PactMessage where
-    toJSON (PactMessage payload pk (Sig s)) =
+    toJSON (PactMessage payload pk a (Sig s) rid) =
         object [ "payload" .= decodeUtf8 payload
-               , "pubkey" .= pk
+               , "key" .= pk
                , "sig" .= toB16JSON s
+               , "alias" .= a
+               , "requestId" .= rid
                ]
 instance FromJSON PactMessage where
     parseJSON = withObject "PactMessage" $ \o ->
                 PactMessage <$> (encodeUtf8 <$> o .: "payload")
-                            <*> o .: "pubkey"
+                            <*> o .: "key"
+                            <*> o .: "alias"
                             <*> (o .: "sig" >>= \t -> Sig <$> parseB16JSON t)
+                            <*> o .: "requestId"
 
-mkPactMessage :: ToJSON a => PrivateKey -> PublicKey -> a -> PactMessage
-mkPactMessage sk pk a = mkPactMessage' sk pk (BSL.toStrict $ A.encode a)
+mkPactMessage :: ToJSON a => PrivateKey -> PublicKey -> Alias -> String -> a -> PactMessage
+mkPactMessage sk pk al rid a = mkPactMessage' sk pk al rid (BSL.toStrict $ A.encode a)
 
-mkPactMessage' :: PrivateKey -> PublicKey -> ByteString -> PactMessage
-mkPactMessage' sk pk payload = PactMessage payload pk (sign payload sk pk)
+mkPactMessage' :: PrivateKey -> PublicKey -> Alias -> String -> ByteString -> PactMessage
+mkPactMessage' sk pk a rid payload = PactMessage payload pk a (sign payload sk pk) rid
 
 data PactRPC =
     Exec ExecMsg |

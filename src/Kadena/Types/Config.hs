@@ -13,7 +13,7 @@ module Kadena.Types.Config
   ) where
 
 import Control.Lens hiding (Index, (|>))
-import Data.Map (Map)
+import Data.Map (Map,empty)
 import Data.Set (Set)
 import Text.Read (readMaybe)
 import qualified Data.Text as Text
@@ -23,6 +23,7 @@ import Data.Aeson
 import Data.Aeson.Types
 import GHC.Generics hiding (from)
 import Control.Monad
+import Data.Default
 
 import Kadena.Types.Base
 
@@ -76,3 +77,4 @@ data KeySet = KeySet
   , _ksClient  :: !(Map Alias PublicKey)
   } deriving (Show)
 makeLenses ''KeySet
+instance Default KeySet where def = KeySet empty empty

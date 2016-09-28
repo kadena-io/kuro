@@ -127,7 +127,7 @@ applyRPC ks m =
       Left err -> throwCmdEx $ "RPC deserialize failed: " ++ show err ++ show m
 
 validateSig :: PactMessage -> CommandM Pact.PublicKey
-validateSig (PactMessage payload key sig)
+validateSig (PactMessage payload key _ sig _)
     | valid payload key sig = return (Pact.PublicKey (exportPublic key)) -- TODO turn off with compile flags?
     | otherwise = throwCmdEx "Signature verification failure"
 
@@ -202,7 +202,7 @@ _sk = fromJust $ importPrivate $ fst $ B16.decode "2ca45751578698d73759b44feeea3
 
 _config :: CommandConfig
 _config = CommandConfig (EntityInfo "me") Nothing putStrLn
-
+{-
 _localRPC :: ToRPC a => a -> IO ByteString
 _localRPC rpc = do
   (_,runl) <- initCommandLayer _config
@@ -218,6 +218,7 @@ _publicRPC rpc li = do
                           (Alias "")
                           0 Valid NewMsg) ""
   unCommandResult <$> runt le
+-}
 
 mkRPC :: ToRPC a => a ->  CommandEntry
 mkRPC = CommandEntry . SZ.encode . PublicMessage . toStrict . A.encode . A.toJSON . toRPC
@@ -232,7 +233,14 @@ mkTestPact = mkSimplePact "(demo.transfer \"Acct1\" \"Acct2\" 1.0)"
 mkTestSigned :: IO ()
 mkTestSigned = do
   msg <- BS.readFile "tests/exec1.json"
-  let pm = mkPactMessage' _sk _pk msg
+  let (pm@PactMessage {..}) = mkPactMessage' _sk _pk "hi" "rid" msg
+      ce = CommandEntry $! SZ.encode $! PublicMessage $! _pmPayload
+      rpc = mkCmdRpc ce _pmAlias "rid" (Digest _pmAlias _pmSig _pmKey CMD)
+      Right (c :: Command) = fromWire Nothing def rpc
+      cmdbrpc = mkCmdBatchRPC [rpc] (Digest _pmAlias _pmSig _pmKey CMDB)
+      Right (cb :: CommandBatch) = fromWire Nothing def cmdbrpc
   BSL.writeFile "tests/exec1-signed.json" $ encodePretty pm
   (Just pm') <- A.decode <$> BSL.readFile "tests/exec1-signed.json"
   print (pm == pm')
+  print c
+  print cb

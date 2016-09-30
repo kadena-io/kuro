@@ -109,7 +109,7 @@ runQuery (Tick t) = do
   t' <- liftIO $ pprintTock t
   debug t'
   volLEs <- use lsVolatileLogEntries
-  perLes@(PersistedLogEntries perLes') <- use lsPersistedLogEntries
+  perLes@(PersistedLogEntries _perLes') <- use lsPersistedLogEntries
   debug $ "Memory "
         ++ "{ V: " ++ show (lesCnt volLEs)
         ++ ", P: " ++ show (plesCnt perLes) ++ " }"
@@ -167,7 +167,7 @@ syncLogsFromDisk keepInMem commitChannel' conn = do
   lastLog' <- return $! lesMaxEntry logs
   case lastLog' of
     Just log' -> do
-      liftIO $ writeComm commitChannel' $ Commit.CommitNewEntries logs
+      liftIO $ writeComm commitChannel' $ Commit.ReloadFromDisk logs
       (Just maxIdx) <- return $ lesMaxIndex logs
       pLogs <- return $! (`plesAddNew` plesEmpty) $! LogEntries $! Map.filterWithKey (\k _ -> k > (maxIdx - fromIntegral keepInMem)) logs'
       return LogState

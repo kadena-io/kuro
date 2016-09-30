@@ -34,6 +34,8 @@ import Kadena.Types.Message as X
 type ApplyFn = LogEntry -> IO CommandResult
 
 data Commit =
+  ReloadFromDisk
+    { logEntriesToApply :: !LogEntries } |
   CommitNewEntries
     { logEntriesToApply :: !LogEntries } |
   ChangeNodeId

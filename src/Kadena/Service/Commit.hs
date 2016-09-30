@@ -80,6 +80,12 @@ handle = do
               ++ " new log entries to apply, up to "
               ++ show (fromJust $ Log.lesMaxIndex logEntriesToApply)
         applyLogEntries logEntriesToApply
+      ReloadFromDisk{..} -> do
+        debug $ (show . Log.lesCnt $ logEntriesToApply)
+              ++ " entries loaded from disk to apply, up to "
+              ++ show (fromJust $ Log.lesMaxIndex logEntriesToApply)
+        applyLogEntries logEntriesToApply
+
 
 applyLogEntries :: LogEntries -> CommitService ()
 applyLogEntries les@(LogEntries leToApply) = do

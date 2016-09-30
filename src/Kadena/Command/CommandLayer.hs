@@ -49,22 +49,24 @@ initCommandLayer :: CommandConfig -> IO (ApplyFn,ApplyLocal)
 initCommandLayer config = do
   let klog s = _ccDebugFn config ("[Pact] " ++ s)
   mvars <- case _ccDbFile config of
-             Nothing -> do
-               klog "Initializing pure pact"
-               ee <- initEvalEnv def puredb
-               rv <- newMVar (CommandState $ _eeRefStore ee)
-               return (PureVar $ _eePactDbVar ee,rv)
-             Just f -> do
-               klog "Initializing pact SQLLite"
-               newfile <- not <$> doesFileExist f
-               p <- (\a -> a { _log = \m s -> klog $ m ++ ": " ++ show s }) <$> initPSL f
-               ee <- initEvalEnv p psl
-               rv <- newMVar (CommandState $ _eeRefStore ee)
-               let v = _eePactDbVar ee
-               when newfile $ do
-                            klog "Creating Pact Schema"
-                            createSchema v
-               return (PSLVar v,rv)
+    Nothing -> do
+      klog "Initializing pure pact"
+      ee <- initEvalEnv def puredb
+      rv <- newMVar (CommandState $ _eeRefStore ee)
+      return (PureVar $ _eePactDbVar ee,rv)
+    Just f -> do
+      klog "Initializing pact SQLLite"
+      dbExists <- doesFileExist f
+      if dbExists
+        then klog "Deleting Existing Pact DB File" >> removeFile f
+        else klog "No Pact DB File Found"
+      p <- (\a -> a { _log = \m s -> klog $ m ++ ": " ++ show s }) <$> initPSL f
+      ee <- initEvalEnv p psl
+      rv <- newMVar (CommandState $ _eeRefStore ee)
+      let v = _eePactDbVar ee
+      klog "Creating Pact Schema"
+      createSchema v
+      return (PSLVar v,rv)
   return (applyTransactional config mvars,applyLocal config mvars)
 
 

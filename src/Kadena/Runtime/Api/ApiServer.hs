@@ -111,7 +111,7 @@ sendPublicBatch = do
   (!cmds,!rids) <- foldM (\(cms,rids) c -> do
                     (cd,rid) <- mkPublicCommand $! toStrict $! encode c
                     return $! (cd:cms,rid:rids)) ([],[]) cs
-  enqueueRPC $! CMDB' $! CommandBatch (reverse cmds) NewMsg
+  enqueueRPC $! CMDB' $! CommandBatch (Commands $! reverse cmds) NewMsg
   writeResponse $ SubmitSuccess (reverse rids)
 
 

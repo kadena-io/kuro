@@ -55,7 +55,7 @@ runLogService dispatch dbg publishMetric' dbPath keySet' = do
     , _evidence = dispatch ^. Dispatch.evidence
     , _debugPrint = dbg
     , _keySet = keySet'
-    , _persistedLogEntriesToKeepInMemory = 30000
+    , _persistedLogEntriesToKeepInMemory = 10
     , _cryptoWorkerTVar = cryptoMvar
     , _dbConn = dbConn'
     , _publishMetric = publishMetric'
@@ -106,6 +106,13 @@ runQuery (NeedCacheEvidence lis mv) = do
 runQuery (Tick t) = do
   t' <- liftIO $ pprintTock t
   debug t'
+  volLEs <- use lsVolatileLogEntries
+  perLes@(PersistedLogEntries perLes') <- use lsPersistedLogEntries
+  pMap <- return $! (\(k,v) -> (k, (lesMinIndex v, lesCnt v))) <$> Map.toDescList perLes'
+  debug $ "## Log Entries In Memory ##"
+        ++ "\n  Volatile: " ++ show (lesCnt volLEs)
+        ++ "\n Persisted: " ++ show (plesCnt perLes)
+        ++ "\n    PerMap: " ++ show pMap
 
 tinyCryptoWorker :: KeySet -> (String -> IO ()) -> LogServiceChannel -> TVar CryptoWorkerStatus -> IO (Async ())
 tinyCryptoWorker ks dbg c mv = async $ forever $ do

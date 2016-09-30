@@ -24,6 +24,50 @@ import qualified Kadena.Service.Sender as Sender
 import qualified Kadena.Log.Service as Log
 import qualified Kadena.Service.Evidence as Ev
 
+launchEvidenceService :: Dispatch
+  -> (String -> IO ())
+  -> (Metric -> IO ())
+  -> MVar Ev.PublishedEvidenceState
+  -> IORef Config
+  -> MVar ResetLeaderNoFollowersTimeout
+  -> IO (Async ())
+launchEvidenceService dispatch' dbgPrint' publishMetric' mEvState rconf' mLeaderNoFollowers = do
+  link =<< async (Ev.runEvidenceService $! Ev.initEvidenceEnv dispatch' dbgPrint' rconf' mEvState mLeaderNoFollowers publishMetric')
+  async $ foreverTick (_evidence dispatch') 1000000 Ev.Tick
+
+launchCommitService :: Dispatch
+  -> (String -> IO ())
+  -> (Metric -> IO ())
+  -> KeySet
+  -> NodeId
+  -> IO UTCTime
+  -> ApplyFn
+  -> (AppliedCommand -> IO ())
+  -> IO (Async ())
+launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' applyFn' enqueueApplied' = do
+  commitEnv <- return $! Commit.initCommitEnv dispatch' dbgPrint' applyFn' publishMetric' getTimestamp' enqueueApplied'
+  link =<< async (Commit.runCommitService commitEnv nodeId' keySet')
+  async $! foreverTick (_commitService dispatch') 1000000 Commit.Tick
+
+launchLogService :: Dispatch
+  -> (String -> IO ())
+  -> (Metric -> IO ())
+  -> KeySet
+  -> Config
+  -> IO (Async ())
+launchLogService dispatch' dbgPrint' publishMetric' keySet' rconf = do
+  link =<< async (Log.runLogService dispatch' dbgPrint' publishMetric' (rconf ^. logSqlitePath) keySet')
+  async (foreverTick (_logService dispatch') 1000000 Log.Tick)
+
+launchSenderService :: Dispatch
+  -> (String -> IO ())
+  -> (Metric -> IO ())
+  -> MVar Ev.PublishedEvidenceState
+  -> Config
+  -> IO (Async ())
+launchSenderService dispatch' dbgPrint' publishMetric' mEvState rconf = do
+  link =<< async (Sender.runSenderService dispatch' rconf dbgPrint' publishMetric' mEvState)
+  async $ foreverTick (_senderService dispatch') 1000000 Sender.Tick
 
 runPrimedConsensusServer :: ReceiverEnv -> Config -> ConsensusSpec -> ConsensusState ->
                             IO UTCTime -> MVar PublishedConsensus -> ApplyFn -> IO ()
@@ -36,6 +80,7 @@ runPrimedConsensusServer renv rconf spec rstate timeCache' mPubConsensus' applyF
       getTimestamp' = spec ^. getTimestamp
       keySet' = RENV._keySet renv
       nodeId' = rconf ^. nodeId
+      enqueueApplied' = spec ^. enqueueApplied
 
   publishMetric' $ MetricClusterSize csize
   publishMetric' $ MetricAvailableSize csize
@@ -47,20 +92,11 @@ runPrimedConsensusServer renv rconf spec rstate timeCache' mPubConsensus' applyF
   mEvState <- newEmptyMVar
   mLeaderNoFollowers <- newEmptyMVar
 
-  evEnv <- return $! Ev.initEvidenceEnv dispatch' dbgPrint' rconf' mEvState mLeaderNoFollowers publishMetric'
-  commitEnv <- return $! Commit.initCommitEnv dispatch' dbgPrint' applyFn' publishMetric' getTimestamp' (spec ^. enqueueApplied)
-
-  link =<< (async $ Log.runLogService dispatch' dbgPrint' publishMetric' (rconf ^. logSqlitePath) keySet')
-  link =<< (async $ Sender.runSenderService dispatch' rconf dbgPrint' publishMetric' mEvState)
-  link =<< (async $ Ev.runEvidenceService evEnv)
-  link =<< (async $ Commit.runCommitService commitEnv nodeId' keySet')
-  -- This helps for testing, we'll send tocks every second to inflate the logs when we see weird pauses right before an election
-  -- forever (writeComm (_internalEvent $ _dispatch renv) (InternalEvent $ Tock $ t) >> threadDelay 1000000)
-  link =<< (async $ foreverTick (_internalEvent dispatch') 1000000 (InternalEvent . Tick))
-  link =<< (async $ foreverTick (_senderService dispatch') 1000000 Sender.Tick)
-  link =<< (async $ foreverTick (_logService    dispatch') 1000000 Log.Tick)
-  link =<< (async $ foreverTick (_evidence      dispatch') 1000000 Ev.Tick)
-  link =<< (async $ foreverTick (_commitService dispatch') 1000000 Commit.Tick)
+  link =<< launchSenderService dispatch' dbgPrint' publishMetric' mEvState rconf
+  link =<< launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' applyFn' enqueueApplied'
+  link =<< launchEvidenceService dispatch' dbgPrint' publishMetric' mEvState rconf' mLeaderNoFollowers
+  link =<< launchLogService dispatch' dbgPrint' publishMetric' keySet' rconf
+  link =<< async (foreverTick (_internalEvent dispatch') 1000000 (InternalEvent . Tick))
   runRWS_
     raft
     (mkConsensusEnv rconf' csize qsize spec dispatch'
@@ -70,7 +106,7 @@ runPrimedConsensusServer renv rconf spec rstate timeCache' mPubConsensus' applyF
 -- THREAD: SERVER MAIN
 raft :: Consensus ()
 raft = do
-  la <- Log.hasQueryResult Log.LastApplied <$> (queryLogs $ Set.singleton Log.GetLastApplied)
+  la <- Log.hasQueryResult Log.LastApplied <$> queryLogs (Set.singleton Log.GetLastApplied)
   when (startIndex /= la) $ debug $ "Launch Sequence: disk sync replayed, Commit Index now " ++ show la
   logStaticMetrics
   resetElectionTimer

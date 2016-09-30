@@ -5,6 +5,7 @@
 
 module Kadena.Types.Message.CMD
   ( Command(..), cmdEntry, cmdClientId, cmdRequestId, cmdProvenance, cmdCryptoVerified
+  , Commands(..)
   , CryptoVerified(..)
   , verifyCmd
   , CommandBatch(..), cmdbBatch, cmdbProvenance
@@ -70,16 +71,18 @@ verifyCmd !ks Command{..} = case _cmdCryptoVerified of
       Left !err -> Invalid err
       Right () -> Valid
 
+newtype Commands = Commands { unCommands :: [Command] } deriving (Show, Eq)
+
 -- TODO: kill provenance for CommandBatch.
 data CommandBatch = CommandBatch
-  { _cmdbBatch :: ![Command]
+  { _cmdbBatch :: !Commands
   , _cmdbProvenance :: !Provenance
   } deriving (Show, Eq, Generic)
 makeLenses ''CommandBatch
 
 instance WireFormat CommandBatch where
   toWire nid pubKey privKey CommandBatch{..} = case _cmdbProvenance of
-    NewMsg -> let bdy = S.encode ((toWire nid pubKey privKey <$> _cmdbBatch) `using` parList rseq)
+    NewMsg -> let bdy = S.encode ((toWire nid pubKey privKey <$> unCommands _cmdbBatch) `using` parList rseq)
                   sig = sign bdy privKey pubKey
                   dig = Digest nid sig pubKey CMDB
               in SignedRPC dig bdy
@@ -95,5 +98,5 @@ instance WireFormat CommandBatch where
   {-# INLINE fromWire #-}
 
 gatherValidCmdbs :: Provenance -> [Either String Command] -> Either String CommandBatch
-gatherValidCmdbs prov ec = (`CommandBatch` prov) <$> sequence ec
+gatherValidCmdbs prov ec = (\cmds -> CommandBatch (Commands cmds) prov) <$> sequence ec
 {-# INLINE gatherValidCmdbs #-}

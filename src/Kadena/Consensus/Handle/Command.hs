@@ -52,9 +52,12 @@ data CommandOut =
     , _commandReponse :: CommandResponse
     }
 
+newtype BPNewEntries = BPNewEntries { _unBPNewEntries :: [Command]} deriving (Eq, Show)
+newtype BPAlreadySeen = BPAlreadySeen { _unBPAlreadySeen :: [Command]} deriving (Eq, Show)
+
 data BatchProcessing = BatchProcessing
-  { newEntries :: ![Command]
-  , alreadySeen :: ![Command]
+  { newEntries :: !BPNewEntries
+  , alreadySeen :: !BPAlreadySeen
   } deriving (Show, Eq)
 
 data CommandBatchOut =
@@ -84,7 +87,7 @@ handleCommand cmd@Command{..} = do
     (_, Leader, _) ->
       -- we're the leader, so append this to our log with the current term
       -- and propagate it to replicas
-      return $ CommitAndPropagate (NewLogEntries ct [cmd]) (_cmdClientId, cmdSig)
+      return $ CommitAndPropagate (NewLogEntries ct (KD.NleEntries [cmd])) (_cmdClientId, cmdSig)
     (_, _, Just lid) ->
       -- we're not the leader, but we know who the leader is, so forward this
       -- command (don't sign it ourselves, as it comes from the client)
@@ -94,8 +97,8 @@ handleCommand cmd@Command{..} = do
       -- anything
       return UnknownLeader
 
-filterBatch :: Bloom (NodeId, Signature) -> [Command] -> BatchProcessing
-filterBatch bfilter cs = BatchProcessing brandNew likelySeen
+filterBatch :: Bloom (NodeId, Signature) -> Commands -> BatchProcessing
+filterBatch bfilter (Commands cs) = BatchProcessing (BPNewEntries brandNew) (BPAlreadySeen likelySeen)
   where
     cmdSig c = getCmdSigOrInvariantError "handleCommand" c
     probablyAlreadySaw cmd@Command{..} =
@@ -163,14 +166,14 @@ handleBatch cmdb@CommandBatch{..} = do
   debug "Finished processing command batch"
   case out of
     IAmLeader BatchProcessing{..} -> do
-      updateLogs $ ULNew $ NewLogEntries (KD._term s) newEntries
-      unless (null newEntries) $ do
+      updateLogs $ ULNew $ NewLogEntries (KD._term s) $ KD.NleEntries $  _unBPNewEntries newEntries
+      unless (null $ _unBPNewEntries newEntries) $ do
         enqueueRequest $ Sender.BroadcastAE Sender.OnlySendIfFollowersAreInSync
         enqueueRequest $ Sender.BroadcastAER
       PostProcessingResult{..} <- return $! postProcessBatch (KD._nodeId c) lid (KD._replayMap s) alreadySeen
       -- Bloom filters can give false positives but most of the time the commands will be new, so we do a second pass to double check
       unless (null falsePositive) $ do
-        updateLogs $ ULNew $ NewLogEntries (KD._term s) falsePositive
+        updateLogs $ ULNew $ NewLogEntries (KD._term s) $ KD.NleEntries falsePositive
         enqueueRequest $ Sender.BroadcastAE Sender.OnlySendIfFollowersAreInSync
         enqueueRequest $ Sender.BroadcastAER
       unless (null responseToOldCmds) $
@@ -182,7 +185,7 @@ handleBatch cmdb@CommandBatch{..} = do
       when (Sender.willBroadcastAE quorumSize' (es ^. Ev.pesNodeStates) (es ^. Ev.pesConvincedNodes)) resetHeartbeatTimer
     IAmFollower BatchProcessing{..} -> do
       when (isJust lid) $ do
-        enqueueRequest $ Sender.ForwardCommandToLeader (fromJust lid) newEntries
+        enqueueRequest $ Sender.ForwardCommandToLeader (fromJust lid) $ _unBPNewEntries newEntries
       PostProcessingResult{..} <- return $! postProcessBatch (KD._nodeId c) lid (KD._replayMap s) alreadySeen
       unless (null falsePositive) $
         enqueueRequest $ Sender.ForwardCommandToLeader (fromJust lid) falsePositive
@@ -196,8 +199,8 @@ data PostProcessingResult = PostProcessingResult
   , updatedReplayMap :: !(Map (NodeId,Signature) (Maybe CommandResult))
   } deriving (Eq, Show)
 
-postProcessBatch :: NodeId -> Maybe NodeId -> Map.Map (NodeId, Signature) (Maybe CommandResult) -> [Command] -> PostProcessingResult
-postProcessBatch nid mlid replays cs = go cs (PostProcessingResult [] [] replays)
+postProcessBatch :: NodeId -> Maybe NodeId -> Map.Map (NodeId, Signature) (Maybe CommandResult) -> BPAlreadySeen -> PostProcessingResult
+postProcessBatch nid mlid replays (BPAlreadySeen cs) = go cs (PostProcessingResult [] [] replays)
   where
     cmdSig c = getCmdSigOrInvariantError "postProcessBatch" c
     go [] bp = bp { falsePositive = reverse $ falsePositive bp }
@@ -210,8 +213,8 @@ postProcessBatch nid mlid replays cs = go cs (PostProcessingResult [] [] replays
                               , updatedReplayMap = Map.insert (_cmdClientId, cmdSig cmd) Nothing $ updatedReplayMap bp }
 {-# INLINE postProcessBatch #-}
 
-updateBloom :: [Command] -> Bloom (NodeId, Signature) -> Bloom (NodeId, Signature)
-updateBloom firstPass oldBloom = Bloom.insertList (grabKey <$> firstPass) oldBloom
+updateBloom :: BPNewEntries -> Bloom (NodeId, Signature) -> Bloom (NodeId, Signature)
+updateBloom (BPNewEntries firstPass) oldBloom = Bloom.insertList (grabKey <$> firstPass) oldBloom
   where
     cmdSig c = getCmdSigOrInvariantError "updateBloom" c
     grabKey cmd@Command{..} = (_cmdClientId, cmdSig cmd)

@@ -119,7 +119,7 @@ cmdDynamicTurbine ks' getCmds' debug' enqueueEvent' timeout = do
   (invalidCmds, validCmds) <- return $ partitionEithers verifiedCmds
   mapM_ debug' invalidCmds
   cmds@(CommandBatch cmds' _) <- return $ batchCommands validCmds
-  lenCmdBatch <- return $ length cmds'
+  lenCmdBatch <- return $ length $ unCommands cmds'
   unless (lenCmdBatch == 0) $ do
     enqueueEvent' $ ERPC $ CMDB' cmds
     src <- return (Set.fromList $ fmap (\v' -> case v' of
@@ -127,7 +127,7 @@ cmdDynamicTurbine ks' getCmds' debug' enqueueEvent' timeout = do
       CMDB' v -> ( "CMDB", unAlias $ _alias $ _digNodeId $ _pDig $ _cmdbProvenance v )
       v -> error $ "deep invariant failure: caught something that wasn't a CMDB/CMD " ++ show v
       ) validCmds)
-    debug' $ turbineCmd ++ "batched " ++ show (length cmds') ++ " CMD(s) from " ++ show src
+    debug' $ turbineCmd ++ "batched " ++ show (length $ unCommands cmds') ++ " CMD(s) from " ++ show src
   threadDelay timeout
   case lenCmdBatch of
     l | l > 1000  -> cmdDynamicTurbine ks' getCmds' debug' enqueueEvent' 1000000 -- 1sec
@@ -156,9 +156,9 @@ parallelVerify f ks msgs = ((\(ts, msg) -> signedRPCtoRPC (Just ts) ks msg) . f 
 batchCommands :: [RPC] -> CommandBatch
 batchCommands cmdRPCs = cmdBatch
   where
-    cmdBatch = CommandBatch (concat (prepCmds <$> cmdRPCs)) NewMsg
+    cmdBatch = CommandBatch (Commands $! concat (prepCmds <$> cmdRPCs)) NewMsg
     prepCmds (CMD' cmd) = [cmd]
-    prepCmds (CMDB' (CommandBatch cmds _)) = cmds
+    prepCmds (CMDB' (CommandBatch (Commands cmds) _)) = cmds
     prepCmds o = error $ "Invariant failure in batchCommands: " ++ show o
 {-# INLINE batchCommands #-}
 

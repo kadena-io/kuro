@@ -37,6 +37,7 @@ module Kadena.Types.Log
   , UnappliedEntries(..)
   , QueryResult(..)
   , HasQueryResult(..)
+  , NleEntries(..)
   ) where
 
 import Control.Parallel.Strategies
@@ -313,9 +314,11 @@ toReplicateLogEntries prevLogIndex les = do
                                  , _rlePrvLogIdx = prevLogIndex
                                  , _rleEntries   = les }
 
+newtype NleEntries = NleEntries { unNleEntries :: [Command] } deriving (Eq,Show)
+
 data NewLogEntries = NewLogEntries
-  { _nleTerm :: Term
-  , _nleEntries :: [Command]
+  { _nleTerm :: !Term
+  , _nleEntries :: !NleEntries
   } deriving (Show, Eq, Generic)
 makeLenses ''NewLogEntries
 

@@ -17,6 +17,7 @@ module Kadena.Consensus.Handle.Types (
   , RequestVote(..), rvTerm, rvCandidateId, rvLastLogIndex, rvLastLogTerm, rvProvenance
   , RequestVoteResponse(..)
   , Command(..)
+  , Commands(..)
   , CommandResponse(..)
   , CommandBatch(..)
   , RPC(..)

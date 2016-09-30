@@ -278,7 +278,7 @@ appendLogEntry NewLogEntries{..} = do
   nli <- use lsNextLogIndex
   case lastEntry' of
     Just ple -> do
-      nle <- return $! newEntriesToLog _nleTerm (_leHash ple) nli _nleEntries
+      nle <- return $! newEntriesToLog _nleTerm (_leHash ple) nli (unNleEntries _nleEntries)
       mLastLog' <- return $! lesMaxEntry nle
       case mLastLog' of
         Nothing -> return ()
@@ -290,7 +290,7 @@ appendLogEntry NewLogEntries{..} = do
           lsNextLogIndex .= lastIdx' + 1
           lsLastLogTerm  .= _leTerm lastLog'
     Nothing -> do
-      nle <- return $! newEntriesToLog _nleTerm B.empty nli _nleEntries
+      nle <- return $! newEntriesToLog _nleTerm B.empty nli (unNleEntries _nleEntries)
       mLastLog' <- return $! lesMaxEntry nle
       case mLastLog' of
         Nothing -> return ()

@@ -28,7 +28,7 @@ testWireRoundtrip = do
     fromWire Nothing keySet cmdbSignedRPC
       `shouldBe`
         (Right $ cmdbRPC {
-              _cmdbBatch = [cmdRPC1', cmdRPC2']
+              _cmdbBatch = Commands $ [cmdRPC1', cmdRPC2']
             , _cmdbProvenance = ReceivedMsg
               { _pDig = _sigDigest cmdbSignedRPC
               , _pOrig = _sigBody cmdbSignedRPC
@@ -110,7 +110,7 @@ keySet = KeySet
 -- #####################################
 cmdbRPC :: CommandBatch
 cmdbRPC = CommandBatch
-  { _cmdbBatch = [cmdRPC1, cmdRPC2]
+  { _cmdbBatch = Commands $ [cmdRPC1, cmdRPC2]
   , _cmdbProvenance = NewMsg }
 
 cmdbSignedRPC :: SignedRPC

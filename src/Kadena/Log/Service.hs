@@ -55,14 +55,14 @@ runLogService dispatch dbg publishMetric' dbPath keySet' = do
     , _evidence = dispatch ^. Dispatch.evidence
     , _debugPrint = dbg
     , _keySet = keySet'
-    , _persistedLogEntriesToKeepInMemory = 10
+    , _persistedLogEntriesToKeepInMemory = 24000
     , _cryptoWorkerTVar = cryptoMvar
     , _dbConn = dbConn'
     , _publishMetric = publishMetric'
     }
   void (link <$> tinyCryptoWorker keySet' dbg (dispatch ^. Dispatch.logService) cryptoMvar)
   initLogState' <- case dbConn' of
-    Just conn' -> syncLogsFromDisk (dispatch ^. Dispatch.commitService) conn'
+    Just conn' -> syncLogsFromDisk (env ^. persistedLogEntriesToKeepInMemory) (dispatch ^. Dispatch.commitService) conn'
     Nothing -> return initLogState
   void $ runRWST handle env initLogState'
 
@@ -73,6 +73,7 @@ debug s = do
 
 handle :: LogThread ()
 handle = do
+  clearPersistedEntriesFromMemory
   oChan <- view logQueryChannel
   debug "launch!"
   forever $ do
@@ -97,6 +98,7 @@ runQuery (Update ul) = do
           lsPersistedLogEntries %= plesAddNew logs
           lsVolatileLogEntries %= lesGetSection (Just $ lsLastPersisted' + 1) Nothing
           liftIO $ insertSeqLogEntry conn logs
+          clearPersistedEntriesFromMemory
         Nothing -> return ()
     Nothing ->  return ()
 runQuery (NeedCacheEvidence lis mv) = do
@@ -108,11 +110,9 @@ runQuery (Tick t) = do
   debug t'
   volLEs <- use lsVolatileLogEntries
   perLes@(PersistedLogEntries perLes') <- use lsPersistedLogEntries
-  pMap <- return $! (\(k,v) -> (k, (lesMinIndex v, lesCnt v))) <$> Map.toDescList perLes'
-  debug $ "## Log Entries In Memory ##"
-        ++ "\n  Volatile: " ++ show (lesCnt volLEs)
-        ++ "\n Persisted: " ++ show (plesCnt perLes)
-        ++ "\n    PerMap: " ++ show pMap
+  debug $ "Memory "
+        ++ "{ V: " ++ show (lesCnt volLEs)
+        ++ ", P: " ++ show (plesCnt perLes) ++ " }"
 
 tinyCryptoWorker :: KeySet -> (String -> IO ()) -> LogServiceChannel -> TVar CryptoWorkerStatus -> IO (Async ())
 tinyCryptoWorker ks dbg c mv = async $ forever $ do
@@ -135,7 +135,7 @@ getWork t = do
 
 buildNeedCacheEvidence :: Set LogIndex -> LogThread (Map LogIndex ByteString)
 buildNeedCacheEvidence lis = do
-  let go li= return . maybe Nothing (\le -> Just $ (li,_leHash le)) =<< lookupEntry li
+  let go li = maybe Nothing (\le -> Just $ (li,_leHash le)) <$> lookupEntry li
   Map.fromAscList . catMaybes <$> mapM go (Set.toAscList lis)
 {-# INLINE buildNeedCacheEvidence #-}
 
@@ -159,24 +159,27 @@ updateEvidenceCache' = do
   liftIO $ writeComm evChan $ Ev.CacheNewHash lli llh
   debug $ "Sent new evidence to cache for: " ++ show lli
 
-syncLogsFromDisk :: Commit.CommitChannel -> Connection -> IO LogState
-syncLogsFromDisk commitChannel' conn = do
+
+-- TODO: currently, when syncing from disk, we read everything into memory. This is bad
+syncLogsFromDisk :: Int -> Commit.CommitChannel -> Connection -> IO LogState
+syncLogsFromDisk keepInMem commitChannel' conn = do
   logs@(LogEntries logs') <- selectAllLogEntries conn
-  lastLog' <- return $ if Map.null logs' then Nothing else Just $ snd $ Map.findMax logs'
+  lastLog' <- return $! lesMaxEntry logs
   case lastLog' of
     Just log' -> do
       liftIO $ writeComm commitChannel' $ Commit.CommitNewEntries logs
-      (Just minIdx) <- return $ lesMinIndex logs
+      (Just maxIdx) <- return $ lesMaxIndex logs
+      pLogs <- return $! (`plesAddNew` plesEmpty) $! LogEntries $! Map.filterWithKey (\k _ -> k > (maxIdx - fromIntegral keepInMem)) logs'
       return LogState
         { _lsVolatileLogEntries = LogEntries Map.empty
-        , _lsPersistedLogEntries = PersistedLogEntries $ Map.singleton minIdx logs
+        , _lsPersistedLogEntries = pLogs
         , _lsLastApplied = startIndex
         , _lsLastLogIndex = _leLogIndex log'
         , _lsLastLogHash = _leHash log'
         , _lsNextLogIndex = _leLogIndex log' + 1
         , _lsCommitIndex = _leLogIndex log'
         , _lsLastPersisted = _leLogIndex log'
-        , _lsLastInMemory = Just $ _leLogIndex log'
+        , _lsLastInMemory = plesMinIndex pLogs
         , _lsLastCryptoVerified = _leLogIndex log'
         , _lsLastLogTerm = _leTerm log'
         }
@@ -193,7 +196,6 @@ tellKadenaToApplyLogEntries = do
       debug $ "informing Kadena to apply up to: " ++ show appliedIndex'
       publishMetric' <- view publishMetric
       liftIO $ publishMetric' $ MetricCommitIndex appliedIndex'
-      clearPersistedEntriesFromMemory
     Nothing -> return ()
 
 tellTinyCryptoWorkerToDoMore :: LogThread ()
@@ -217,17 +219,27 @@ clearPersistedEntriesFromMemory = do
   unless (isNothing conn') $ do
     cnt <- view persistedLogEntriesToKeepInMemory
     commitIndex' <- commitIndex
-    ples <- use lsPersistedLogEntries
+    oldPles@(PersistedLogEntries _oldPles') <- use lsPersistedLogEntries
     previousLastInMemory <- use lsLastInMemory
-    newPles <- return $! plesTakeTopEntries cnt ples
+    (_mKey, newPles@(PersistedLogEntries _newPles')) <- return $! plesTakeTopEntries cnt oldPles
     case plesMinIndex newPles of
-      Nothing | newPles /= ples -> error $ "Invariant Failure in clearPersistedEntriesFromMemory: attempted to get the minIdx, got nothing, but persisted entries was changed!"
+      Nothing | newPles /= oldPles -> error $ "Invariant Failure in clearPersistedEntriesFromMemory: attempted to get the minIdx, got nothing, but persisted entries was changed!"
                                          ++ "\ncommitIndex: " ++ show commitIndex'
                                          ++ "\nprevLastInMemory: " ++ show previousLastInMemory
-                                         ++ "\nples: " ++ show (Map.keysSet $ _pLogEntries ples)
+                                         ++ "\nples: " ++ show (Map.keysSet $ _pLogEntries oldPles)
                                          ++ "\nnewPles: " ++ show (Map.keysSet $ _pLogEntries newPles)
               | otherwise -> return ()
       Just newMin -> do
         lsLastInMemory .= Just newMin
-        debug $ "Memory Cleared from " ++ maybe "Nothing" show previousLastInMemory ++ " to " ++ show newMin
+        debug $ "Memory Cleared from " ++ maybe "Nothing" show previousLastInMemory ++ " up to " ++ show newMin
     lsPersistedLogEntries .= newPles
+-- Keep this around incase there's another issue with the clearer
+--    volLEs <- use lsVolatileLogEntries
+--    oldPMap <- return $! (\(k,v) -> (k, (maybe "Nothing" show $ lesMinIndex v, lesCnt v))) <$> Map.toDescList oldPles'
+--    newPMap <- return $! (\(k,v) -> (k, (maybe "Nothing" show $ lesMinIndex v, lesCnt v))) <$> Map.toDescList newPles'
+--    debug $ "## Log Entries In Memory ##"
+--          ++ "\n  Volatile: " ++ show (lesCnt volLEs)
+--          ++ "\n Persisted: " ++ show (plesCnt newPles)
+--          ++ "\n Split Key: " ++ show mKey
+--          ++ "\n OldPerMap: " ++ show oldPMap
+--          ++ "\n NewPerMap: " ++ show newPMap

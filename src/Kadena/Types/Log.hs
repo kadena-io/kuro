@@ -201,24 +201,32 @@ plesAddNew les p@(PersistedLogEntries ples) = case lesMinIndex les of
     Nothing -> error $ "plesAddNew: pattern matcher can't introspect guards... I should be impossible to hit"
 {-# INLINE plesAddNew #-}
 
-plesTakeTopEntries :: Int -> PersistedLogEntries -> PersistedLogEntries
+plesTakeTopEntries :: Int -> PersistedLogEntries -> (Maybe LogIndex, PersistedLogEntries)
 plesTakeTopEntries atLeast' orig@(PersistedLogEntries ples) =
-    if evenBother
-    then PersistedLogEntries $! go 0 $! Map.toDescList sizeCnts
-    else orig
+    case findSplitKey atLeast' sizeCnts of
+      Nothing -> (Nothing, orig)
+      Just k -> (Just k, PersistedLogEntries $! Map.filterWithKey (\k' _ -> k' >= k) ples)
   where
-    evenBother = atLeast' < sum (Map.elems sizeCnts)
     sizeCnts :: Map LogIndex Int
     sizeCnts = lesCnt <$> ples
-    go _ [] = error $ "Invariant Error in plesTakeTopEntries: somehow we got an empty count list!"
-                    ++ "\natLeast: " ++ show atLeast'
-                    ++ "\nsizeCnts: " ++ show sizeCnts
-                    ++ "\nples: " ++ show ples
-    go _ [(k,_)] = Map.filterWithKey (\k' _ -> k' >= k) ples
-    go cnt ((k,v):rest)
-      | cnt + v >= atLeast' = Map.filterWithKey (\k' _ -> k' >= k) ples
-      | otherwise = go (cnt+v) rest
 {-# INLINE plesTakeTopEntries #-}
+
+findSplitKey :: (Show k, Eq k, Ord k) => Int -> Map k Int -> Maybe k
+findSplitKey atLeast' mapOfCounts =
+    if evenBother
+    then go 0 $! Map.toDescList mapOfCounts
+    else Nothing
+  where
+    evenBother = atLeast' < sum (Map.elems mapOfCounts)
+    go _ [] = error $ "Invariant Error in findSplitKey: somehow we got an empty count list!"
+                    ++ "\natLeast: " ++ show atLeast'
+                    ++ "\nsizeCnts: " ++ show mapOfCounts
+                    ++ "\nples: " ++ show mapOfCounts
+    go _ [(k,_)] = Just k
+    go cnt ((k,v):rest)
+      | cnt + v >= atLeast' = Just k
+      | otherwise = go (cnt+v) rest
+{-# SPECIALIZE INLINE findSplitKey :: Int -> Map LogIndex Int -> Maybe LogIndex #-}
 
 
 decodeLEWire' :: Maybe ReceivedAt -> KeySet -> LEWire -> Either String LogEntry

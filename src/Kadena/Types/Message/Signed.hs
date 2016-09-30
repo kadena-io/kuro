@@ -32,7 +32,7 @@ instance Serialize MsgType
 
 -- | Digest containing Sender ID, Signature, Sender's Public Key and the message type
 data Digest = Digest
-  { _digNodeId :: !NodeId
+  { _digNodeId :: !Alias
   , _digSig    :: !Signature
   , _digPubkey :: !PublicKey
   , _digType   :: !MsgType

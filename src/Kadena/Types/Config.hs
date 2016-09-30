@@ -12,17 +12,18 @@ module Kadena.Types.Config
   , EntityInfo(..),entName
   ) where
 
-import Control.Monad (mzero)
 import Control.Lens hiding (Index, (|>))
-import Data.Map (Map)
+import Data.Map (Map,empty)
 import Data.Set (Set)
 import Text.Read (readMaybe)
 import qualified Data.Text as Text
 import Data.Thyme.Clock
 import Data.Thyme.Time.Core ()
-import Data.Aeson (genericParseJSON,genericToJSON,parseJSON,toJSON,ToJSON,FromJSON,Value(..))
-import Data.Aeson.Types (defaultOptions,Options(..))
+import Data.Aeson
+import Data.Aeson.Types
 import GHC.Generics hiding (from)
+import Control.Monad
+import Data.Default
 
 import Kadena.Types.Base
 
@@ -36,11 +37,12 @@ instance ToJSON EntityInfo where
 instance FromJSON EntityInfo where
   parseJSON = genericParseJSON defaultOptions { fieldLabelModifier = drop 4 }
 
+
 data Config = Config
   { _otherNodes           :: !(Set NodeId)
   , _nodeId               :: !NodeId
-  , _publicKeys           :: !(Map NodeId PublicKey)
-  , _clientPublicKeys     :: !(Map NodeId PublicKey)
+  , _publicKeys           :: !(Map Alias PublicKey)
+  , _clientPublicKeys     :: !(Map Alias PublicKey)
   , _myPrivateKey         :: !PrivateKey
   , _myPublicKey          :: !PublicKey
   , _electionTimeoutRange :: !(Int,Int)
@@ -71,7 +73,8 @@ instance FromJSON Config where
   parseJSON = genericParseJSON defaultOptions { fieldLabelModifier = drop 1 }
 
 data KeySet = KeySet
-  { _ksCluster :: !(Map NodeId PublicKey)
-  , _ksClient  :: !(Map NodeId PublicKey)
+  { _ksCluster :: !(Map Alias PublicKey)
+  , _ksClient  :: !(Map Alias PublicKey)
   } deriving (Show)
 makeLenses ''KeySet
+instance Default KeySet where def = KeySet empty empty

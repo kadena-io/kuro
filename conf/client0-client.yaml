@@ -1,0 +1,8 @@
+Alias: client0
+PublicKey: 1d7c835f5f4feeff80a6cba570bfed0a91a20345fee929196be3058946b35f93
+SecretKey: a829eb281a9bf430358029b2989475bc4889be00b86584f52bfd5b39a388eddb
+Endpoints:
+  node0: 127.0.0.1:8000
+  node1: 127.0.0.1:8001
+  node2: 127.0.0.1:8002
+  node3: 127.0.0.1:8003

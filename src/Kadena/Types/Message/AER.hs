@@ -57,7 +57,7 @@ instance WireFormat AppendEntriesResponse where
                                                , _aerIndex
                                                , _aerHash)
                   sig = sign bdy privKey pubKey
-                  dig = Digest nid sig pubKey AER
+                  dig = Digest (_alias nid) sig pubKey AER
               in SignedRPC dig bdy
     ReceivedMsg{..} -> SignedRPC _pDig _pOrig
   fromWire !ts !ks s@(SignedRPC !dig !bdy) = case verifySignedRPC ks s of

@@ -41,7 +41,7 @@ instance WireFormat CommandResponse where
   toWire nid pubKey _privKey CommandResponse{..} = case _cmdrProvenance of
     NewMsg -> let bdy = S.encode $ CMDRWire (_cmdrResult,_cmdrNodeId,_cmdrRequestId,_cmdrLatency)
                   sig = Sig BS.empty
-                  dig = Digest nid sig pubKey CMDR
+                  dig = Digest (_alias nid) sig pubKey CMDR
               in SignedRPC dig bdy
     ReceivedMsg{..} -> SignedRPC _pDig _pOrig
 --  fromWire ts !ks s@(SignedRPC !dig !bdy) = case verifySignedRPC ks s of

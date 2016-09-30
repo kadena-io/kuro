@@ -22,8 +22,8 @@ instance FromJSON PollRequest
 instance ToJSON PollRequest
 
 data Batch = Batch {
-      cmds :: [PactRPC]
-    } deriving (Eq,Show,Generic)
+      cmds :: [PactMessage]
+    } deriving (Eq,Generic)
 instance FromJSON Batch
 instance ToJSON Batch
 

@@ -6,6 +6,7 @@
 module Kadena.Types.Message.CMD
   ( Command(..), cmdEntry, cmdClientId, cmdRequestId, cmdProvenance, cmdCryptoVerified
   , Commands(..)
+  , mkCmdRpc, mkCmdBatchRPC
   , CryptoVerified(..)
   , verifyCmd
   , CommandBatch(..), cmdbBatch, cmdbProvenance
@@ -33,7 +34,7 @@ instance Serialize CryptoVerified
 
 data Command = Command
   { _cmdEntry      :: !CommandEntry
-  , _cmdClientId   :: !NodeId
+  , _cmdClientId   :: !Alias
   , _cmdRequestId  :: !RequestId
   , _cmdCryptoVerified :: !CryptoVerified
   , _cmdProvenance :: !Provenance
@@ -41,15 +42,18 @@ data Command = Command
   deriving (Show, Eq, Ord, Generic)
 makeLenses ''Command
 
-data CMDWire = CMDWire !(CommandEntry, NodeId, RequestId)
+data CMDWire = CMDWire !(CommandEntry, Alias, RequestId)
   deriving (Show, Generic)
 instance Serialize CMDWire
+
+mkCmdRpc :: CommandEntry -> Alias -> RequestId -> Digest -> SignedRPC
+mkCmdRpc ce a ri d = SignedRPC d (S.encode $ CMDWire (ce, a, ri))
 
 instance WireFormat Command where
   toWire nid pubKey privKey Command{..} = case _cmdProvenance of
     NewMsg -> let bdy = S.encode $ CMDWire (_cmdEntry, _cmdClientId, _cmdRequestId)
                   sig = sign bdy privKey pubKey
-                  dig = Digest nid sig pubKey CMD
+                  dig = Digest (_alias nid) sig pubKey CMD
               in SignedRPC dig bdy
     ReceivedMsg{..} -> SignedRPC _pDig _pOrig
   fromWire !ts !_ks _s@(SignedRPC !dig !bdy) =
@@ -80,16 +84,18 @@ data CommandBatch = CommandBatch
   } deriving (Show, Eq, Generic)
 makeLenses ''CommandBatch
 
+mkCmdBatchRPC :: [SignedRPC] -> Digest -> SignedRPC
+mkCmdBatchRPC cmds d = SignedRPC d (S.encode cmds)
+
 instance WireFormat CommandBatch where
   toWire nid pubKey privKey CommandBatch{..} = case _cmdbProvenance of
     NewMsg -> let bdy = S.encode ((toWire nid pubKey privKey <$> unCommands _cmdbBatch) `using` parList rseq)
                   sig = sign bdy privKey pubKey
-                  dig = Digest nid sig pubKey CMDB
+                  dig = Digest (_alias nid) sig pubKey CMDB
               in SignedRPC dig bdy
     ReceivedMsg{..} -> SignedRPC _pDig _pOrig
-  fromWire !ts !ks s@(SignedRPC dig bdy) = case verifySignedRPC ks s of
-    Left !err -> Left err
-    Right () -> if _digType dig /= CMDB
+  fromWire !ts !ks (SignedRPC dig bdy) = -- TODO, no sigs on CMDB for now, but should maybe sign the request ids or something
+    if _digType dig /= CMDB
       then error $! "Invariant Failure: attempting to decode " ++ show (_digType dig) ++ " with CMDBWire instance"
       else case S.decode bdy of
         Left !err -> Left $ "Failure to decode CMDBWire: " ++ err

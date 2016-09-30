@@ -13,13 +13,13 @@ import Control.Concurrent
 import Control.Monad.Reader
 import Data.Aeson hiding (defaultOptions)
 import qualified Data.ByteString.Char8 as BS
+import qualified Data.ByteString.Lazy as BSL
 import Data.ByteString.Lazy (toStrict)
 import Control.Lens hiding ((.=))
 import Data.Monoid
 import Prelude hiding (log)
 import qualified Data.Serialize as SZ
 import Data.Thyme.Clock
-import Data.Thyme.Time.Core (unUTCTime, toMicroseconds)
 import Snap.Http.Server as Snap
 import Snap.Core
 import qualified Data.Map.Strict as M
@@ -43,7 +43,6 @@ data ApiEnv = ApiEnv {
     , _aiDispatch :: Dispatch
     , _aiConfig :: Config.Config
     , _aiPubConsensus :: MVar PublishedConsensus
-    , _aiNextRequestId :: IO RequestId
 }
 makeLenses ''ApiEnv
 
@@ -51,20 +50,13 @@ makeLenses ''ApiEnv
 type Api a = ReaderT ApiEnv Snap a
 
 
-mkNextRequestId :: IO (IO RequestId)
-mkNextRequestId = do
-  UTCTime _ time <- unUTCTime <$> getCurrentTime
-  mv <- newMVar (RequestId $ toMicroseconds time)
-  return $ modifyMVar mv (\t -> let t'=succ t in return (t',t'))
-
 runApiServer :: Dispatch -> Config.Config -> (String -> IO ()) ->
                 MVar (M.Map RequestId AppliedCommand) -> Int -> MVar PublishedConsensus -> IO ()
 runApiServer dispatch conf logFn appliedMap port mPubConsensus' = do
   putStrLn $ "runApiServer: starting on port " ++ show port
-  nextRidFun <- mkNextRequestId
   httpServe (serverConf port) $
     applyCORS defaultOptions $ methods [GET, POST] $
-    route [ ("api", runReaderT api (ApiEnv appliedMap logFn dispatch conf mPubConsensus' nextRidFun))]
+    route [ ("api", runReaderT api (ApiEnv appliedMap logFn dispatch conf mPubConsensus'))]
 
 api :: Api ()
 api = route [
@@ -86,8 +78,12 @@ die code msg = do
 readJSON :: FromJSON t => Api (BS.ByteString,t)
 readJSON = do
   b <- readRequestBody 1000000000
-  let r = eitherDecode b
-  case r of
+  tryParseJSON b
+
+tryParseJSON
+  :: FromJSON t =>
+     BSL.ByteString -> Api (BS.ByteString, t)
+tryParseJSON b = case eitherDecode b of
     Right v -> return (toStrict b,v)
     Left e -> die 400 (BS.pack e)
 
@@ -97,23 +93,41 @@ setJSON = modifyResponse $ setHeader "Content-Type" "application/json"
 writeResponse :: ToJSON j => j -> Api ()
 writeResponse j = setJSON >> writeLBS (encode j)
 
+{-
+aliases need to be verified by api against public key
+then, alias can be paired with requestId in message to create unique rid
+polling can then be on alias and client rid
+-}
+
+mkRequestId :: Alias -> String -> RequestId
+mkRequestId a s = RequestId $ show a ++ ":" ++ s
+
 sendPublic :: Api ()
 sendPublic = do
-  (bs,_ :: PactRPC) <- readJSON
-  (cmd,rid) <- mkPublicCommand bs
-  enqueueRPC $! CMD' cmd
+  (_,pm) <- readJSON
+  (rid,rpc) <- buildCmdRpc pm
+  enqueueRPC rpc
   writeResponse $ SubmitSuccess [rid]
 
+buildCmdRpc :: PactMessage -> Api (RequestId,SignedRPC)
+buildCmdRpc PactMessage {..} = do
+  (_,PactEnvelope {..} :: PactEnvelope PactRPC) <- tryParseJSON (BSL.fromStrict $ _pmEnvelope)
+  storedCK <- M.lookup _peAlias <$> view (aiConfig.clientPublicKeys)
+  unless (storedCK == Just _pmKey) $ die 400 "Invalid alias/public key"
+  let rid = mkRequestId _peAlias _peRequestId
+  let ce = CommandEntry $! SZ.encode $! PublicMessage $! _pmEnvelope
+  return $! (rid,mkCmdRpc ce _peAlias rid (Digest _peAlias _pmSig _pmKey CMD))
 
 sendPublicBatch :: Api ()
 sendPublicBatch = do
   (_,!cs) <- fmap cmds <$> readJSON
-  (!cmds,!rids) <- foldM (\(cms,rids) c -> do
-                    (cd,rid) <- mkPublicCommand $! toStrict $! encode c
-                    return $! (cd:cms,rid:rids)) ([],[]) cs
-  enqueueRPC $! CMDB' $! CommandBatch (Commands $! reverse cmds) NewMsg
-  writeResponse $ SubmitSuccess (reverse rids)
-
+  when (null cs) $ die 400 "Empty batch"
+  rpcs <- mapM buildCmdRpc cs
+  let PactMessage {..} = head cs
+      dig = Digest "batch" (Sig "") _pmKey CMDB
+      rpc = mkCmdBatchRPC (map snd rpcs) dig
+  enqueueRPC $! rpc -- CMDB' $! CommandBatch (reverse cmds) NewMsg
+  writeResponse $ SubmitSuccess (map fst rpcs)
 
 poll :: Api ()
 poll = do
@@ -143,20 +157,18 @@ serverConf port = setErrorLog (ConfigFileLog "log/error.log") $
 
 mkPublicCommand :: BS.ByteString -> Api (Command,RequestId)
 mkPublicCommand bs = do
-  rid <- view aiNextRequestId >>= \f -> liftIO f
+  rid <- undefined -- view aiNextRequestId >>= \f -> liftIO f
   nid <- view (aiConfig.nodeId)
-  return $! (Command (CommandEntry $! SZ.encode $! PublicMessage $! bs) nid rid Valid NewMsg,rid)
+  return $! (Command (CommandEntry $! SZ.encode $! PublicMessage $! bs) (_alias nid) rid Valid NewMsg,rid)
 
 
-enqueueRPC :: RPC -> Api ()
-enqueueRPC m = do
+enqueueRPC :: SignedRPC -> Api ()
+enqueueRPC signedRPC = do
   env <- ask
-  conf <- return (_aiConfig env)
+  let conf = _aiConfig env
   PublishedConsensus {..} <- fromMaybeM (die 500 "Invariant error: consensus unavailable") =<<
-                               liftIO (tryReadMVar (_aiPubConsensus env))
+                              liftIO (tryReadMVar (_aiPubConsensus env))
   ldr <- fromMaybeM (die 500 "System unavaiable, please try again later") _pcLeader
-  signedRPC <- return $! rpcToSignedRPC (_nodeId conf)
-                        (Config._myPublicKey conf) (Config._myPrivateKey conf) m -- TODO api signing
   if _nodeId conf == ldr
   then do -- dispatch internally if we're leader, otherwise send outbound
     ts <- liftIO getCurrentTime

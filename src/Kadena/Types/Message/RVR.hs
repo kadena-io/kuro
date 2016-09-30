@@ -60,7 +60,7 @@ instance WireFormat RequestVoteResponse where
   toWire nid pubKey privKey RequestVoteResponse{..} = case _rvrProvenance of
     NewMsg -> let bdy = S.encode $ RVRWire (_rvrTerm,_rvrHeardFromLeader,_rvrNodeId,_voteGranted,_rvrCandidateId)
                   sig = sign bdy privKey pubKey
-                  dig = Digest nid sig pubKey RVR
+                  dig = Digest (_alias nid) sig pubKey RVR
               in SignedRPC dig bdy
     ReceivedMsg{..} -> SignedRPC _pDig _pOrig
   fromWire !ts !ks s@(SignedRPC !dig !bdy) = case verifySignedRPC ks s of

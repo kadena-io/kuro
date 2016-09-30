@@ -102,8 +102,9 @@ pubKeyClient = maybe (error "bad leader key") id $ importPublic "@*\228W(^\231\1
 
 keySet :: KeySet
 keySet = KeySet
-  { _ksCluster = Map.fromList [(nodeIdLeader, pubKeyLeader),(nodeIdFollower, pubKeyFollower)]
-  , _ksClient = Map.fromList [(nodeIdClient, pubKeyClient)] }
+  { _ksCluster = Map.fromList [(_alias nodeIdLeader, pubKeyLeader),
+                               (_alias nodeIdFollower, pubKeyFollower)]
+  , _ksClient = Map.fromList [(_alias nodeIdClient, pubKeyClient)] }
 
 -- #####################################
 -- Commands, with and without provenance
@@ -127,14 +128,14 @@ cmdbRPC' = (\(Right v) -> v) $ fromWire Nothing keySet cmdbSignedRPC
 cmdRPC1, cmdRPC2 :: Command
 cmdRPC1 = Command
   { _cmdEntry = CommandEntry "CreateAccount foo"
-  , _cmdClientId = nodeIdClient
-  , _cmdRequestId = RequestId 0
+  , _cmdClientId = _alias nodeIdClient
+  , _cmdRequestId = RequestId "0"
   , _cmdCryptoVerified = UnVerified
   , _cmdProvenance = NewMsg }
 cmdRPC2 = Command
   { _cmdEntry = CommandEntry "CreateAccount foo"
-  , _cmdClientId = nodeIdClient
-  , _cmdRequestId = RequestId 1
+  , _cmdClientId = _alias nodeIdClient
+  , _cmdRequestId = RequestId "1"
   , _cmdCryptoVerified = UnVerified
   , _cmdProvenance = NewMsg }
 
@@ -154,7 +155,7 @@ cmdrRPC :: CommandResponse
 cmdrRPC = CommandResponse
   { _cmdrResult     = CommandResult "account created: foo"
   , _cmdrNodeId     = nodeIdLeader
-  , _cmdrRequestId  = RequestId 1
+  , _cmdrRequestId  = RequestId "1"
   , _cmdrLatency    = 1
   , _cmdrProvenance = NewMsg
   }

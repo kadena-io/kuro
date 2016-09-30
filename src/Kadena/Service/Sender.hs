@@ -14,7 +14,6 @@ module Kadena.Service.Sender
 
 import Control.Lens
 import Control.Concurrent
-import Control.Arrow (second)
 import Control.Parallel.Strategies
 
 import Control.Monad.Trans.Reader
@@ -96,7 +95,6 @@ serviceRequests = do
           BroadcastAER -> sendAllAppendEntriesResponse
           BroadcastRV rv -> sendAllRequestVotes rv
           BroadcastRVR{..} -> sendRequestVoteResponse _srCandidate _srHeardFromLeader _srVote
-          SendCommandResults{..} -> sendResults _srResults
           ForwardCommandToLeader{..} -> mapM_ (sendRPC _srFor . CMD') _srCommands
       Tick t -> liftIO (pprintTock t) >>= debug
 
@@ -278,14 +276,6 @@ sendRequestVoteResponse target heardFromLeader vote = do
   term' <- view currentTerm
   myNodeId' <- view myNodeId
   sendAerRvRvr $! RVR' $! RequestVoteResponse term' heardFromLeader myNodeId' vote target NewMsg
-
-sendResults :: [(NodeId, CommandResponse)] -> SenderService ()
-sendResults results = do
-  role' <- view nodeRole
-  when (role' /= Leader) $ mapM_ (debug . (++) "follower responding to commands! : " . show) results
-  debug $ "sending " ++ show (length results) ++ " results"
-  !res <- return $! second CMDR' <$> results
-  sendRPCs res
 
 pubRPC :: RPC -> SenderService ()
 pubRPC rpc = do

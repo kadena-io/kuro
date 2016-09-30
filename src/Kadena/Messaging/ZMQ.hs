@@ -151,7 +151,7 @@ runMsgServer dispatch me addrList debug = void $ forkIO $ forever $ do
                   --liftIO $ debug $ zmqAerSub ++ "received RVR from: " ++ (show $ _alias $ _digNodeId dig)
                   liftIO $ writeComm rvAndRvrWrite (InboundRVorRVR (ReceivedAt ts, s)) >> yield
                 | _digType dig == CMD || _digType dig == CMDB -> do
-                  liftIO $ debug $ zmqAerSub ++ "Received a CMD or CMDB but shouldn't have from: " ++ (show $ _alias $ _digNodeId dig)
+                  liftIO $ debug $ zmqAerSub ++ "Received a CMD or CMDB but shouldn't have from: " ++ (show $ _digNodeId dig)
                   liftIO $ writeComm cmdInboxWrite (InboundCMD (ReceivedAt ts, s)) >> yield
                 | _digType dig == AER -> do
                   --liftIO $ debug $ zmqAerSub ++ "received AER from: " ++ (show $ _alias $ _digNodeId dig)
@@ -160,7 +160,7 @@ runMsgServer dispatch me addrList debug = void $ forkIO $ forever $ do
                   liftIO $ debug $ zmqAerSub ++ "received a "
                                    ++ (show $ _digType dig)
                                    ++ " that I shouldn't have from: "
-                                   ++ (show $ _alias $ _digNodeId dig)
+                                   ++ (show $ _digNodeId dig)
                   liftIO $ writeComm inboxWrite (InboundGeneral (ReceivedAt ts, s)) >> yield
 
     liftIO $ do

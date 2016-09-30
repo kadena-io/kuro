@@ -110,20 +110,21 @@ pubKeyClient = maybe (error "bad leader key") id $ importPublic "@*\228W(^\231\1
 
 keySet :: KeySet
 keySet = KeySet
-  { _ksCluster = Map.fromList [(nodeIdLeader, pubKeyLeader),(nodeIdFollower, pubKeyFollower)]
-  , _ksClient = Map.fromList [(nodeIdClient, pubKeyClient)] }
+  { _ksCluster = Map.fromList [(_alias nodeIdLeader, pubKeyLeader),
+                               (_alias nodeIdFollower, pubKeyFollower)]
+  , _ksClient = Map.fromList [(_alias nodeIdClient, pubKeyClient)] }
 
 cmdRPC0, cmdRPC1 :: Int -> Command
 cmdRPC0 i = Command
   { _cmdEntry = CommandEntry "CreateAccount foo"
-  , _cmdClientId = nodeIdClient
-  , _cmdRequestId = RequestId $ fromIntegral i
+  , _cmdClientId = _alias nodeIdClient
+  , _cmdRequestId = RequestId $ show i
   , _cmdCryptoVerified = Valid
   , _cmdProvenance = NewMsg }
 cmdRPC1 i = Command
   { _cmdEntry = CommandEntry "CreateAccount bar"
-  , _cmdClientId = nodeIdClient
-  , _cmdRequestId = RequestId $ fromIntegral i
+  , _cmdClientId = _alias nodeIdClient
+  , _cmdRequestId = RequestId $ show i
   , _cmdCryptoVerified = Valid
   , _cmdProvenance = NewMsg }
 

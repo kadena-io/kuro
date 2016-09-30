@@ -160,6 +160,7 @@ executable genconfs
   build-depends:       base < 5
                      , bytestring
                      , containers
+                     , unordered-containers
                      , crypto-api
                      , directory
                      , ed25519-donna

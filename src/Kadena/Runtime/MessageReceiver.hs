@@ -123,8 +123,8 @@ cmdDynamicTurbine ks' getCmds' debug' enqueueEvent' timeout = do
   unless (lenCmdBatch == 0) $ do
     enqueueEvent' $ ERPC $ CMDB' cmds
     src <- return (Set.fromList $ fmap (\v' -> case v' of
-      CMD' v -> ( unAlias $ _alias $ _cmdClientId v, unAlias $ _alias $ _digNodeId $ _pDig $ _cmdProvenance v )
-      CMDB' v -> ( "CMDB", unAlias $ _alias $ _digNodeId $ _pDig $ _cmdbProvenance v )
+      CMD' v -> ( unAlias $ _cmdClientId v, unAlias $ _digNodeId $ _pDig $ _cmdProvenance v )
+      CMDB' v -> ( "CMDB", unAlias $ _digNodeId $ _pDig $ _cmdbProvenance v )
       v -> error $ "deep invariant failure: caught something that wasn't a CMDB/CMD " ++ show v
       ) validCmds)
     debug' $ turbineCmd ++ "batched " ++ show (length $ unCommands cmds') ++ " CMD(s) from " ++ show src

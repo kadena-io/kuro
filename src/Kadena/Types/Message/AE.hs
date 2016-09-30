@@ -47,7 +47,7 @@ instance WireFormat AppendEntries where
                                           ,encodeLEWire nid pubKey privKey _aeEntries
                                           ,toWire nid pubKey privKey <$> toList _aeQuorumVotes)
                   sig = sign bdy privKey pubKey
-                  dig = Digest nid sig pubKey AE
+                  dig = Digest (_alias nid) sig pubKey AE
               in SignedRPC dig bdy
     ReceivedMsg{..} -> SignedRPC _pDig _pOrig
   fromWire !ts !ks s@(SignedRPC !dig !bdy) = case verifySignedRPC ks s of

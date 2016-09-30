@@ -8,9 +8,10 @@ module Kadena.Types.Base
   ( NodeId(..)
   , Term(..), startTerm
   , LogIndex(..), startIndex
-  , RequestId(..), startRequestId, toRequestId
+  , RequestId(..)
   , ReceivedAt(..)
   -- for simplicity, re-export some core types that we need all over the place
+  , parseB16JSON, toB16JSON, toB16Text, parseB16Text, failMaybe
   , PublicKey, PrivateKey, Signature(..), sign, valid, importPublic, importPrivate, exportPublic
   , Role(..)
   , EncryptionKey(..)
@@ -28,6 +29,8 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Base16 as B16
+import Data.Text (Text)
+import Data.String
 
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -38,8 +41,8 @@ import Data.Thyme.Clock
 import Data.Serialize (Serialize)
 import qualified Data.Serialize as S
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
-import Data.Aeson (genericParseJSON,genericToJSON,parseJSON,toJSON,ToJSON,FromJSON,Value(..))
-import Data.Aeson.Types (defaultOptions,Options(..))
+import Data.Aeson
+import Data.Aeson.Types
 
 import Data.Word (Word64)
 import GHC.Int (Int64)
@@ -49,9 +52,10 @@ import Pact.Types.Orphans ()
 
 newtype Alias = Alias { unAlias :: BSC.ByteString }
   deriving (Eq, Ord, Generic, Serialize)
+instance IsString Alias where fromString s = Alias $ BSC.pack s
 
 instance Show Alias where
-  show (Alias a) = "Alias: " ++ BSC.unpack a
+  show (Alias a) = BSC.unpack a
 
 instance ToJSON Alias where
   toJSON = toJSON . decodeUtf8 . unAlias
@@ -63,7 +67,7 @@ instance FromJSON Alias where
 data NodeId = NodeId { _host :: !String, _port :: !Word64, _fullAddr :: !String, _alias :: !Alias}
   deriving (Eq,Ord,Generic)
 instance Show NodeId where
-  show nid = "NodeId: " ++ (BSC.unpack $ unAlias $ _alias nid)
+  show nid = "NodeId: " ++ BSC.unpack (unAlias $ _alias nid)
 instance Serialize NodeId
 instance ToJSON NodeId where
   toJSON = genericToJSON defaultOptions { fieldLabelModifier = drop 1 }
@@ -82,26 +86,36 @@ newtype LogIndex = LogIndex Int
 startIndex :: LogIndex
 startIndex = LogIndex (-1)
 
-newtype RequestId = RequestId {_unRequestId :: Int64}
-  deriving (Show, Read, Eq, Ord, Enum, Num, Generic, Serialize, Real, Integral, ToJSON, FromJSON)
+newtype RequestId = RequestId {_unRequestId :: String }
+  deriving (Eq, Ord, Generic, Serialize, IsString, ToJSON, FromJSON)
+instance Show RequestId where show (RequestId i) = i
 
-startRequestId :: RequestId
-startRequestId = RequestId 0
+parseB16JSON :: Value -> Parser ByteString
+parseB16JSON = withText "Base16" parseB16Text
 
-toRequestId :: Int64 -> RequestId
-toRequestId a = RequestId a
+parseB16Text :: Text -> Parser ByteString
+parseB16Text t = case B16.decode (encodeUtf8 t) of
+                 (s,leftovers) | leftovers == B.empty -> return s
+                               | otherwise -> fail $ "Base16 decode failed: " ++ show t
+
+toB16JSON :: ByteString -> Value
+toB16JSON s = String $ toB16Text s
+
+toB16Text :: ByteString -> Text
+toB16Text s = decodeUtf8 $ B16.encode s
+
+failMaybe :: Monad m => String -> Maybe a -> m a
+failMaybe err m = maybe (fail err) return m
+
+
 
 newtype EncryptionKey = EncryptionKey { unEncryptionKey :: ByteString }
   deriving (Show, Eq, Ord, Generic, Serialize)
 instance ToJSON EncryptionKey where
-  toJSON = toJSON . decodeUtf8 . B16.encode . unEncryptionKey
+  toJSON = toB16JSON . unEncryptionKey
 instance FromJSON EncryptionKey where
-  parseJSON (String s) = do
-    (s',leftovers) <- return $ B16.decode $ encodeUtf8 s
-    if leftovers == B.empty
-      then return $ EncryptionKey s'
-      else mzero
-  parseJSON _ = mzero
+  parseJSON s = EncryptionKey <$> parseB16JSON s
+
 
 deriving instance Eq Signature
 deriving instance Ord Signature
@@ -114,19 +128,15 @@ instance Eq PublicKey where
 instance Ord PublicKey where
   b <= b' = exportPublic b <= exportPublic b'
 instance ToJSON PublicKey where
-  toJSON = toJSON . decodeUtf8 . B16.encode . exportPublic
+  toJSON = toB16JSON . exportPublic
 instance FromJSON PublicKey where
-  parseJSON (String s) = do
-    (s',leftovers) <- return $ B16.decode $ encodeUtf8 s
-    if leftovers == B.empty
-      then case importPublic s' of
-             Just pk -> return pk
-             Nothing -> mzero
-      else mzero
-  parseJSON _ = mzero
-instance ToJSON (Map NodeId PublicKey) where
+  parseJSON s = do
+    s' <- parseB16JSON s
+    failMaybe ("Public key import failed: " ++ show s) $ importPublic s'
+
+instance (ToJSON k,ToJSON v) => ToJSON (Map k v) where
   toJSON = toJSON . Map.toList
-instance FromJSON (Map NodeId PublicKey) where
+instance (FromJSON k,Ord k,FromJSON v) => FromJSON (Map k v) where
   parseJSON = fmap Map.fromList . parseJSON
 
 instance Eq PrivateKey where
@@ -134,16 +144,13 @@ instance Eq PrivateKey where
 instance Ord PrivateKey where
   b <= b' = exportPrivate b <= exportPrivate b'
 instance ToJSON PrivateKey where
-  toJSON = toJSON . decodeUtf8 . B16.encode . exportPrivate
+  toJSON = toB16JSON . exportPrivate
 instance FromJSON PrivateKey where
-  parseJSON (String s) = do
-    (s',leftovers) <- return $ B16.decode $ encodeUtf8 s
-    if leftovers == B.empty
-      then case importPrivate s' of
-             Just pk -> return pk
-             Nothing -> mzero
-      else mzero
-  parseJSON _ = mzero
+  parseJSON s = do
+    s' <- parseB16JSON s
+    failMaybe ("Private key import failed: " ++ show s) $ importPrivate s'
+
+
 instance ToJSON (Map NodeId PrivateKey) where
   toJSON = toJSON . Map.toList
 instance FromJSON (Map NodeId PrivateKey) where

@@ -58,10 +58,9 @@ import Kadena.Types.Service.Log (QueryApi(..))
 import Kadena.Types.Service.Evidence (PublishedEvidenceState, Evidence(ClearConvincedNodes))
 
 data PublishedConsensus = PublishedConsensus
-    {
-      _pcLeader :: Maybe NodeId
-    , _pcRole :: Role
-    , _pcTerm :: Term
+    { _pcLeader :: !(Maybe NodeId)
+    , _pcRole :: !Role
+    , _pcTerm :: !Term
     }
 makeLenses ''PublishedConsensus
 

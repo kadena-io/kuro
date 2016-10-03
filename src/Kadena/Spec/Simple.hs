@@ -20,7 +20,6 @@ import Data.Thyme.Calendar (showGregorian)
 import Data.Thyme.Clock (UTCTime, getCurrentTime)
 import Data.Thyme.LocalTime
 import qualified Data.ByteString.Char8 as BSC
-import qualified Data.Map as Map
 import qualified Data.Map.Strict as MS
 import qualified Data.Set as Set
 import qualified Data.Yaml as Y
@@ -39,7 +38,7 @@ import Kadena.Types.Config
 import Kadena.Types.Spec hiding (timeCache)
 import Kadena.Types.Metric
 import Kadena.Types.Dispatch
-import Kadena.Util.Util (awsDashVar,pubConsensusFromState)
+import Kadena.Util.Util (awsDashVar)
 import Kadena.Messaging.ZMQ
 import Kadena.Monitoring.Server (startMonitoring)
 import Kadena.Runtime.Api.ApiServer
@@ -178,6 +177,6 @@ runServer = do
   receiverEnv <- return $ simpleReceiverEnv dispatch rconf debugFn restartTurbo
   timerTarget' <- newEmptyMVar
   rstate <- return $ initialConsensusState timerTarget'
-  mPubConsensus' <- newMVar (pubConsensusFromState rstate)
+  mPubConsensus' <- newMVar $! PublishedConsensus (rstate ^. currentLeader) (rstate ^. nodeRole) (rstate ^. term)
   void $ CL.fork $ runApiServer dispatch rconf debugFn mAppliedMap (_apiPort rconf) mPubConsensus'
   runPrimedConsensusServer receiverEnv rconf raftSpec rstate getCurrentTime mPubConsensus' (liftIO . applyFn)

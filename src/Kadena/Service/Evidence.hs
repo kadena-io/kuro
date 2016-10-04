@@ -121,7 +121,7 @@ runEvidenceProcessor es = do
 runEvidenceService :: EvidenceEnv -> IO ()
 runEvidenceService ev = do
   startingEs <- runReaderT (rebuildState Nothing) ev
-  putMVar (ev ^. mPubStateTo) $ PublishedEvidenceState (startingEs ^. esConvincedNodes) (startingEs ^. esNodeStates)
+  putMVar (ev ^. mPubStateTo) $! PublishedEvidenceState (startingEs ^. esConvincedNodes) (startingEs ^. esNodeStates)
   runReaderT (foreverRunProcessor startingEs) ev
 
 foreverRunProcessor :: EvidenceState -> EvidenceProcEnv ()
@@ -241,7 +241,7 @@ processEvidence aers = do
 tellKadenaToResetLeaderNoFollowersTimeout :: EvidenceProcEnv ()
 tellKadenaToResetLeaderNoFollowersTimeout = do
   m <- view mResetLeaderNoFollowers
-  liftIO $ void $ tryPutMVar m ResetLeaderNoFollowersTimeout
+  liftIO $ void $ tryPutMVar m $! ResetLeaderNoFollowersTimeout
 
 -- ### METRICS STUFF ###
 -- TODO: re-integrate this after Evidence thread is finished and hspec tests are written

@@ -182,7 +182,7 @@ mkConsensusEnv conf' cSize qSize rSpec dispatch timerTarget' timeCache' mEs mRes
         -- As there is a single producer for this mvar + the consumer is single threaded + fires this function this is safe.
         forkIO $ do
           threadDelay t
-          b <- tryPutMVar timerTarget' e
+          b <- tryPutMVar timerTarget' $! e
           unless b (putStrLn "Failed to update timer MVar")
           -- TODO: what if it's already taken?
     , _killEnqueued = killThread

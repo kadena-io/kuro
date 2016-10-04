@@ -139,7 +139,7 @@ publishConsensus = do
   p <- view mPubConsensus
   newPubCons <- return $! PublishedConsensus currentLeader' nodeRole' term'
   _ <- liftIO $! takeMVar p
-  liftIO $! putMVar p newPubCons
+  liftIO $! putMVar p $! newPubCons
 
 setTerm :: Term -> Consensus ()
 setTerm t = do

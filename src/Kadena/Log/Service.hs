@@ -83,7 +83,7 @@ handle = do
 runQuery :: QueryApi -> LogThread ()
 runQuery (Query aq mv) = do
   qr <- Map.fromList <$> mapM (\aq' -> evalQuery aq' >>= \res -> return $ (aq', res)) (Set.toList aq)
-  liftIO $ putMVar mv qr
+  liftIO $ putMVar mv $! qr
 runQuery (Update ul) = do
   updateLogs ul
   updateEvidenceCache ul
@@ -103,7 +103,7 @@ runQuery (Update ul) = do
     Nothing ->  return ()
 runQuery (NeedCacheEvidence lis mv) = do
   qr <- buildNeedCacheEvidence lis
-  liftIO $ putMVar mv qr
+  liftIO $ putMVar mv $! qr
   debug $ "servicing cache miss pertaining to: " ++ show lis
 runQuery (Tick t) = do
   t' <- liftIO $ pprintTock t

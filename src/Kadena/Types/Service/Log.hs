@@ -35,8 +35,8 @@ module Kadena.Types.Service.Log
 import Control.Lens hiding (Index, (|>))
 
 import Control.Concurrent (MVar)
+import Control.Concurrent.Chan (Chan)
 import Control.Concurrent.STM.TVar (TVar)
-import qualified Control.Concurrent.Chan.Unagi as Unagi
 import Control.Monad.Trans.RWS.Strict
 
 import Data.Map.Strict (Map)
@@ -64,14 +64,12 @@ data QueryApi =
   Tick Tock
   deriving (Eq)
 
-newtype LogServiceChannel =
-  LogServiceChannel (Unagi.InChan QueryApi, MVar (Maybe (Unagi.Element QueryApi, IO QueryApi), Unagi.OutChan QueryApi))
+newtype LogServiceChannel = LogServiceChannel (Chan QueryApi)
 
 instance Comms QueryApi LogServiceChannel where
-  initComms = LogServiceChannel <$> initCommsUnagi
-  readComm (LogServiceChannel (_,o)) = readCommUnagi o
-  readComms (LogServiceChannel (_,o)) = readCommsUnagi o
-  writeComm (LogServiceChannel (i,_)) = writeCommUnagi i
+  initComms = LogServiceChannel <$> initCommsNormal
+  readComm (LogServiceChannel c) = readCommNormal c
+  writeComm (LogServiceChannel c) = writeCommNormal c
 
 data CryptoWorkerStatus =
   Unprocessed LogEntries |

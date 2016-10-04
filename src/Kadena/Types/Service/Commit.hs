@@ -18,8 +18,7 @@ module Kadena.Types.Service.Commit
 import Control.Lens hiding (Index)
 
 import Control.Monad.Trans.RWS.Strict
-import qualified Control.Concurrent.Chan.Unagi as Unagi
-import Control.Concurrent (MVar)
+import Control.Concurrent.Chan (Chan)
 
 import Data.Thyme.Clock (UTCTime)
 
@@ -44,14 +43,12 @@ data Commit =
     { updateKeySet :: !(KeySet -> KeySet) } |
   Tick Tock
 
-newtype CommitChannel =
-  CommitChannel (Unagi.InChan Commit, MVar (Maybe (Unagi.Element Commit, IO Commit), Unagi.OutChan Commit))
+newtype CommitChannel = CommitChannel (Chan Commit)
 
 instance Comms Commit CommitChannel where
-  initComms = CommitChannel <$> initCommsUnagi
-  readComm (CommitChannel (_,o)) = readCommUnagi o
-  readComms (CommitChannel (_,o)) = readCommsUnagi o
-  writeComm (CommitChannel (i,_)) = writeCommUnagi i
+  initComms = CommitChannel <$> initCommsNormal
+  readComm (CommitChannel c) = readCommNormal c
+  writeComm (CommitChannel c) = writeCommNormal c
 
 data CommitEnv = CommitEnv
   { _commitChannel :: !CommitChannel

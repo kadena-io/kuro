@@ -89,6 +89,7 @@ library
                      , blake2
                      , bloomfilter
                      , bound
+                     , BoundedChan
                      , bytestring
                      , cacophony
                      , cereal >= 0.4.1.1
@@ -140,7 +141,6 @@ library
                      , time
                      , transformers
                      , trifecta
-                     , unagi-chan
                      , unix >= 2.7.1.0
                      , unordered-containers
                      , utf8-string >= 1.0.1.1

@@ -25,11 +25,8 @@ module Kadena.Types.Service.Sender
   ) where
 
 import Control.Lens
--- import Control.Monad
-import Control.Concurrent (MVar)
 import Control.Monad.Trans.Reader (ReaderT)
-
-import qualified Control.Concurrent.Chan.Unagi as Unagi
+import Control.Concurrent.Chan (Chan)
 
 import Data.Set (Set)
 
@@ -47,14 +44,12 @@ data ServiceRequest' =
   Tick Tock
   deriving (Eq, Show)
 
-newtype SenderServiceChannel =
-  SenderServiceChannel (Unagi.InChan ServiceRequest', MVar (Maybe (Unagi.Element ServiceRequest', IO ServiceRequest'), Unagi.OutChan ServiceRequest'))
+newtype SenderServiceChannel = SenderServiceChannel (Chan ServiceRequest')
 
 instance Comms ServiceRequest' SenderServiceChannel where
-  initComms = SenderServiceChannel <$> initCommsUnagi
-  readComm (SenderServiceChannel (_,o)) = readCommUnagi o
-  readComms (SenderServiceChannel (_,o)) = readCommsUnagi o
-  writeComm (SenderServiceChannel (i,_)) = writeCommUnagi i
+  initComms = SenderServiceChannel <$> initCommsNormal
+  readComm (SenderServiceChannel c) = readCommNormal c
+  writeComm (SenderServiceChannel c) = writeCommNormal c
 
 data AEBroadcastControl =
   SendAERegardless |

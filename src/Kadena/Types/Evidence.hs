@@ -18,8 +18,7 @@ module Kadena.Types.Evidence
 import Control.Lens hiding (Index)
 
 import Control.Monad.Trans.State.Strict
-import qualified Control.Concurrent.Chan.Unagi as Unagi
-import Control.Concurrent (MVar)
+import Control.Concurrent.Chan (Chan)
 
 import Data.ByteString (ByteString)
 import Data.Map.Strict (Map)
@@ -54,28 +53,26 @@ data Evidence =
   Tick Tock
   deriving (Show, Eq, Typeable)
 
-newtype EvidenceChannel =
-  EvidenceChannel (Unagi.InChan Evidence, MVar (Maybe (Unagi.Element Evidence, IO Evidence), Unagi.OutChan Evidence))
+newtype EvidenceChannel = EvidenceChannel (Chan Evidence)
 
 instance Comms Evidence EvidenceChannel where
-  initComms = EvidenceChannel <$> initCommsUnagi
-  readComm (EvidenceChannel (_,o)) = readCommUnagi o
-  readComms (EvidenceChannel (_,o)) = readCommsUnagi o
-  writeComm (EvidenceChannel (i,_)) = writeCommUnagi i
+  initComms = EvidenceChannel <$> initCommsNormal
+  readComm (EvidenceChannel c) = readCommNormal c
+  writeComm (EvidenceChannel c) = writeCommNormal c
 
 data EvidenceState = EvidenceState
-  { _esQuorumSize :: Int
+  { _esQuorumSize :: !Int
   , _esNodeStates :: !(Map NodeId (LogIndex, UTCTime))
   , _esConvincedNodes :: !(Set NodeId)
   , _esPartialEvidence :: !(Map LogIndex Int)
   , _esCommitIndex :: !LogIndex
   , _esMaxCachedIndex :: !LogIndex
-  , _esCacheMissAers :: (Set AppendEntriesResponse)
+  , _esCacheMissAers :: !(Set AppendEntriesResponse)
   , _esMismatchNodes :: !(Set NodeId)
   , _esResetLeaderNoFollowers :: Bool
   , _esHashAtCommitIndex :: !ByteString
   , _esEvidenceCache :: !(Map LogIndex ByteString)
-  , _esMaxElectionTimeout :: Int
+  , _esMaxElectionTimeout :: !Int
   } deriving (Show, Eq)
 makeLenses ''EvidenceState
 

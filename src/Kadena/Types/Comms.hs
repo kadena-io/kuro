@@ -19,6 +19,7 @@ module Kadena.Types.Comms
   , foreverTickDebugWriteDelay
   -- Comm Channels
   , Comms(..)
+  , BatchedComms(..)
   , InboundAER(..)
   , InboundAERChannel(..)
   , InboundCMD(..)
@@ -36,35 +37,32 @@ module Kadena.Types.Comms
   , InternalEvent(..)
   , InternalEventChannel(..)
   -- for construction of chans elsewhere
+  , initCommsNormal
+  , readCommNormal
+  , writeCommNormal
   , initCommsBounded
-  , initCommsNoBlock
-  , initCommsUnagi
   , readCommBounded
-  , readCommNoBlock
-  , readCommUnagi
-  , readCommsBounded
-  , readCommsNoBlock
-  , readCommsUnagi
   , writeCommBounded
-  , writeCommNoBlock
-  , writeCommUnagi
-  -- used for wiring up mock interfaces to ZMQ
-  , TestRigInput(..)
-  , TestRigInputChannel(..)
-  , TestRigOutput(..)
-  , TestRigOutputChannel(..)
+  , initCommsBatched
+  , readCommBatched
+  , readCommsBatched
+  , writeCommBatched
   ) where
 
 import Control.Monad
 import Control.Lens
+import qualified Control.Concurrent.Async as Async
 import Control.Concurrent (threadDelay, takeMVar, putMVar, newMVar, MVar)
+
+import Control.Concurrent.Chan
+import Control.Concurrent.BoundedChan (BoundedChan)
+import qualified Control.Concurrent.BoundedChan as BoundedChan
+
 import Data.ByteString (ByteString)
-
-import qualified Control.Concurrent.Chan.Unagi.Bounded as Bounded
-import qualified Control.Concurrent.Chan.Unagi as Unagi
-import qualified Control.Concurrent.Chan.Unagi.NoBlocking as NoBlock
-
+import Data.Sequence (Seq)
+import qualified Data.Sequence as Seq
 import Data.Typeable
+import Data.Foldable
 import Data.AffineSpace ((.-.))
 import Data.Thyme.Clock (UTCTime, microseconds, getCurrentTime)
 
@@ -127,236 +125,157 @@ newtype TestRigOutput = TestRigOutput {_unTestRigOutput :: Envelope }
   deriving (Show, Eq, Typeable)
 
 directMsg :: [(NodeId, ByteString)] -> OutboundGeneral
-directMsg msgs = OutboundGeneral $ Envelope . (\(n,b) -> (Topic $ unAlias $ _alias n, b)) <$> msgs
+directMsg msgs = OutboundGeneral $! Envelope . (\(n,b) -> (Topic $ unAlias $ _alias n, b)) <$> msgs
 
 broadcastMsg :: [ByteString] -> OutboundGeneral
-broadcastMsg msgs = OutboundGeneral $ Envelope . (\b -> (Topic $ "all", b)) <$> msgs
+broadcastMsg msgs = OutboundGeneral $! Envelope . (\b -> (Topic $ "all", b)) <$> msgs
 
 aerRvRvrMsg :: [ByteString] -> OutboundAerRvRvr
-aerRvRvrMsg msgs = OutboundAerRvRvr $ Envelope . (\b -> (Topic $ "all", b)) <$> msgs
+aerRvRvrMsg msgs = OutboundAerRvRvr $! Envelope . (\b -> (Topic $ "all", b)) <$> msgs
 
 newtype InternalEvent = InternalEvent { _unInternalEvent :: Event}
   deriving (Show, Typeable)
 
-newtype InboundAERChannel =
-  InboundAERChannel (NoBlock.InChan InboundAER, MVar (NoBlock.Stream InboundAER))
-newtype InboundCMDChannel =
-  InboundCMDChannel (NoBlock.InChan InboundCMD, MVar (NoBlock.Stream InboundCMD))
-newtype InboundRVorRVRChannel =
-  InboundRVorRVRChannel (Unagi.InChan InboundRVorRVR, MVar (Maybe (Unagi.Element InboundRVorRVR, IO InboundRVorRVR), Unagi.OutChan InboundRVorRVR))
-newtype InboundGeneralChannel =
-  InboundGeneralChannel (NoBlock.InChan InboundGeneral, MVar (NoBlock.Stream InboundGeneral))
-newtype OutboundGeneralChannel =
-  OutboundGeneralChannel (Unagi.InChan OutboundGeneral, MVar (Maybe (Unagi.Element OutboundGeneral, IO OutboundGeneral), Unagi.OutChan OutboundGeneral))
-newtype OutboundAerRvRvrChannel =
-  OutboundAerRvRvrChannel (Unagi.InChan OutboundAerRvRvr, MVar (Maybe (Unagi.Element OutboundAerRvRvr, IO OutboundAerRvRvr), Unagi.OutChan OutboundAerRvRvr))
-newtype InternalEventChannel =
-  InternalEventChannel (Bounded.InChan InternalEvent, MVar (Maybe (Bounded.Element InternalEvent, IO InternalEvent), Bounded.OutChan InternalEvent))
-newtype TestRigInputChannel =
-  TestRigInputChannel (Unagi.InChan TestRigInput, MVar (Maybe (Unagi.Element TestRigInput, IO TestRigInput), Unagi.OutChan TestRigInput))
-newtype TestRigOutputChannel =
-  TestRigOutputChannel (Unagi.InChan TestRigOutput, MVar (Maybe (Unagi.Element TestRigOutput, IO TestRigOutput), Unagi.OutChan TestRigOutput))
+newtype InboundAERChannel = InboundAERChannel (Chan InboundAER, MVar (Seq InboundAER))
+newtype InboundCMDChannel = InboundCMDChannel (Chan InboundCMD, MVar (Seq InboundCMD))
+newtype InboundRVorRVRChannel = InboundRVorRVRChannel (Chan InboundRVorRVR)
+newtype InboundGeneralChannel = InboundGeneralChannel (Chan InboundGeneral, MVar (Seq InboundGeneral))
+newtype OutboundGeneralChannel = OutboundGeneralChannel (Chan OutboundGeneral)
+newtype OutboundAerRvRvrChannel = OutboundAerRvRvrChannel (Chan OutboundAerRvRvr)
+newtype InternalEventChannel = InternalEventChannel (BoundedChan InternalEvent)
 
 class Comms f c | c -> f where
   initComms :: IO c
   readComm :: c -> IO f
-  readComms :: c -> Int -> IO [f]
   writeComm :: c -> f -> IO ()
 
+class (Comms f c) => BatchedComms f c | c -> f where
+  readComms :: c -> Int -> IO [f]
+
 instance Comms InboundAER InboundAERChannel where
-  initComms = InboundAERChannel <$> initCommsNoBlock
-  readComm (InboundAERChannel (_,o)) = readCommNoBlock o
-  readComms (InboundAERChannel (_,o)) = readCommsNoBlock o
-  writeComm (InboundAERChannel (i,_)) = writeCommNoBlock i
+  initComms = InboundAERChannel <$> initCommsBatched
+  readComm (InboundAERChannel (_,m)) = readCommBatched m
+  writeComm (InboundAERChannel (c,_)) = writeCommBatched c
+  {-# INLINE initComms #-}
+  {-# INLINE readComm #-}
+  {-# INLINE writeComm #-}
+
+instance BatchedComms InboundAER InboundAERChannel where
+  readComms (InboundAERChannel (_,m)) cnt = readCommsBatched m cnt
+  {-# INLINE readComms #-}
 
 instance Comms InboundCMD InboundCMDChannel where
-  initComms = InboundCMDChannel <$> initCommsNoBlock
-  readComm (InboundCMDChannel (_,o))  = readCommNoBlock o
-  readComms (InboundCMDChannel (_,o)) = readCommsNoBlock o
-  writeComm (InboundCMDChannel (i,_)) = writeCommNoBlock i
+  initComms = InboundCMDChannel <$> initCommsBatched
+  readComm (InboundCMDChannel (_,m))  = readCommBatched m
+  writeComm (InboundCMDChannel (c,_)) = writeCommBatched c
+  {-# INLINE initComms #-}
+  {-# INLINE readComm #-}
+  {-# INLINE writeComm #-}
+
+instance BatchedComms InboundCMD InboundCMDChannel where
+  readComms (InboundCMDChannel (_,m)) cnt = readCommsBatched m cnt
+  {-# INLINE readComms #-}
 
 instance Comms InboundGeneral InboundGeneralChannel where
-  initComms = InboundGeneralChannel <$> initCommsNoBlock
-  readComm (InboundGeneralChannel (_,o))  = readCommNoBlock o
-  readComms (InboundGeneralChannel (_,o)) = readCommsNoBlock o
-  writeComm (InboundGeneralChannel (i,_)) = writeCommNoBlock i
+  initComms = InboundGeneralChannel <$> initCommsBatched
+  readComm (InboundGeneralChannel (_,m))  = readCommBatched m
+  writeComm (InboundGeneralChannel (c,_)) = writeCommBatched c
+  {-# INLINE initComms #-}
+  {-# INLINE readComm #-}
+  {-# INLINE writeComm #-}
+
+instance BatchedComms InboundGeneral InboundGeneralChannel where
+  readComms (InboundGeneralChannel (_,m)) cnt = readCommsBatched m cnt
+  {-# INLINE readComms #-}
 
 instance Comms InboundRVorRVR InboundRVorRVRChannel where
-  initComms = InboundRVorRVRChannel <$> initCommsUnagi
-  readComm (InboundRVorRVRChannel (_,o)) = readCommUnagi o
-  readComms (InboundRVorRVRChannel (_,o)) = readCommsUnagi o
-  writeComm (InboundRVorRVRChannel (i,_)) = writeCommUnagi i
+  initComms = InboundRVorRVRChannel <$> initCommsNormal
+  readComm (InboundRVorRVRChannel c) = readCommNormal c
+  writeComm (InboundRVorRVRChannel c) = writeCommNormal c
+  {-# INLINE initComms #-}
+  {-# INLINE readComm #-}
+  {-# INLINE writeComm #-}
 
 instance Comms OutboundGeneral OutboundGeneralChannel where
-  initComms = OutboundGeneralChannel <$> initCommsUnagi
-  readComm (OutboundGeneralChannel (_,o)) = readCommUnagi o
-  readComms (OutboundGeneralChannel (_,o)) = readCommsUnagi o
-  writeComm (OutboundGeneralChannel (i,_)) = writeCommUnagi i
+  initComms = OutboundGeneralChannel <$> initCommsNormal
+  readComm (OutboundGeneralChannel c) = readCommNormal c
+  writeComm (OutboundGeneralChannel c) = writeCommNormal c
+  {-# INLINE initComms #-}
+  {-# INLINE readComm #-}
+  {-# INLINE writeComm #-}
 
 instance Comms OutboundAerRvRvr OutboundAerRvRvrChannel where
-  initComms = OutboundAerRvRvrChannel <$> initCommsUnagi
-  readComm (OutboundAerRvRvrChannel (_,o)) = readCommUnagi o
-  readComms (OutboundAerRvRvrChannel (_,o)) = readCommsUnagi o
-  writeComm (OutboundAerRvRvrChannel (i,_)) = writeCommUnagi i
+  initComms = OutboundAerRvRvrChannel <$> initCommsNormal
+  readComm (OutboundAerRvRvrChannel c) = readCommNormal c
+  writeComm (OutboundAerRvRvrChannel c) = writeCommNormal c
+  {-# INLINE initComms #-}
+  {-# INLINE readComm #-}
+  {-# INLINE writeComm #-}
 
 instance Comms InternalEvent InternalEventChannel where
   initComms = InternalEventChannel <$> initCommsBounded
-  readComm (InternalEventChannel (_,o)) = readCommBounded o
-  readComms (InternalEventChannel (_,o)) = readCommsBounded o
-  writeComm (InternalEventChannel (i,_)) = writeCommBounded i
+  readComm (InternalEventChannel c) = readCommBounded c
+  writeComm (InternalEventChannel c) = writeCommBounded c
+  {-# INLINE initComms #-}
+  {-# INLINE readComm #-}
+  {-# INLINE writeComm #-}
 
-instance Comms TestRigInput TestRigInputChannel where
-  initComms = TestRigInputChannel <$> initCommsUnagi
-  readComm (TestRigInputChannel (_,o)) = readCommUnagi o
-  readComms (TestRigInputChannel (_,o)) = readCommsUnagi o
-  writeComm (TestRigInputChannel (i,_)) = writeCommUnagi i
+{-# INLINE initCommsNormal #-}
+initCommsNormal :: IO (Chan a)
+initCommsNormal = newChan
 
-instance Comms TestRigOutput TestRigOutputChannel where
-  initComms = TestRigOutputChannel <$> initCommsUnagi
-  readComm (TestRigOutputChannel (_,o)) = readCommUnagi o
-  readComms (TestRigOutputChannel (_,o)) = readCommsUnagi o
-  writeComm (TestRigOutputChannel (i,_)) = writeCommUnagi i
+{-# INLINE readCommNormal #-}
+readCommNormal :: Chan a -> IO a
+readCommNormal c = readChan c
 
--- Implementations for each type of chan that we use
-initCommsBounded :: IO (Bounded.InChan a, MVar (Maybe a1, Bounded.OutChan a))
-initCommsBounded = do
-  (i, o) <- Bounded.newChan 20
-  m <- newMVar (Nothing, o)
-  return (i,m)
+{-# INLINE writeCommNormal #-}
+writeCommNormal :: Chan a -> a -> IO ()
+writeCommNormal c m = writeChan c m
 
-readCommBounded :: MVar (Maybe (t, IO b), Bounded.OutChan b) -> IO b
-readCommBounded m = do
-  (e, o) <- takeMVar m
-  case e of
-    Nothing -> do
-      r <- Bounded.readChan o
-      putMVar m (Nothing, o)
-      return r
-    Just (_,blockingRead) -> do
-      putMVar m (Nothing,o) >> blockingRead
+{-# INLINE initCommsBounded #-}
+initCommsBounded :: IO (BoundedChan a)
+initCommsBounded = BoundedChan.newBoundedChan 20
 
-readCommsBounded
-  :: (Num a1, Ord a1)
-  =>  MVar (Maybe (NoBlock.Element a, IO a), Bounded.OutChan a)
-  -> a1
-  -> IO [a]
-readCommsBounded m cnt = do
-  (e, o) <- takeMVar m
-  case e of
-    Nothing -> do
-      readBoundedUnagi Nothing m o cnt
-    Just (v,blockingRead) -> do
-      r <- Bounded.tryRead v
-      case r of
-        Nothing -> putMVar m (Just (v,blockingRead),o) >> return []
-        Just v' -> readBoundedUnagi (Just v') m o cnt
+{-# INLINE readCommBounded #-}
+readCommBounded :: BoundedChan a -> IO a
+readCommBounded c = BoundedChan.readChan c
 
-writeCommBounded :: Bounded.InChan a -> a -> IO ()
-writeCommBounded i c = Bounded.writeChan i c
+{-# INLINE writeCommBounded #-}
+writeCommBounded :: BoundedChan a -> a -> IO ()
+writeCommBounded c m = BoundedChan.writeChan c m
 
-initCommsNoBlock :: IO (NoBlock.InChan a, MVar (NoBlock.Stream a))
-initCommsNoBlock = do
-    (i, o) <- NoBlock.newChan
-    m <- newMVar =<< return . head =<< NoBlock.streamChan 1 o
-    return (i,m)
+{-# INLINE initCommsBatched #-}
+initCommsBatched :: IO (Chan a, MVar (Seq a))
+initCommsBatched = do
+  c <- newChan
+  s <- newMVar $ Seq.empty
+  Async.link =<< Async.async (readAndAddToSeq c s)
+  return (c,s)
 
-readCommNoBlock :: MVar (NoBlock.Stream b) -> IO b
-readCommNoBlock m = do
-    possibleRead <- takeMVar m
-    t <- NoBlock.tryReadNext possibleRead
-    case t of
-      NoBlock.Pending -> putMVar m possibleRead >> readCommNoBlock m
-      NoBlock.Next v possibleRead' -> putMVar m possibleRead' >> return v
+{-# INLINE readAndAddToSeq #-}
+readAndAddToSeq :: Chan a -> MVar (Seq a) -> IO ()
+readAndAddToSeq c ms = forever $ do
+  m <- readChan c
+  s <- takeMVar ms
+  newS <- return $! s Seq.|> m
+  putMVar ms newS
 
-readCommsNoBlock :: (Eq t, Num a, Ord a) => MVar (NoBlock.Stream t) -> a -> IO [t]
-readCommsNoBlock m cnt = do
-    possibleRead <- takeMVar m
-    blog <- readStream m possibleRead cnt
-    if blog /= []
-      then return blog
-      else threadDelay 1000 >> return []
+{-# INLINE readCommBatched #-}
+readCommBatched :: MVar (Seq a) -> IO a
+readCommBatched ms = do
+  s <- takeMVar ms
+  case Seq.viewl s of
+    Seq.EmptyL -> putMVar ms s >> threadDelay 100 >> readCommBatched ms
+    a Seq.:< as -> putMVar ms as >> return a
 
-writeCommNoBlock :: NoBlock.InChan a -> a -> IO ()
-writeCommNoBlock i c = NoBlock.writeChan i c
+{-# INLINE readCommsBatched #-}
+readCommsBatched :: MVar (Seq a) -> Int -> IO [a]
+readCommsBatched ms cnt = do
+  s <- takeMVar ms
+  (res, rest) <- return $! Seq.splitAt cnt s
+  putMVar ms rest
+  return $! toList res
 
-initCommsUnagi :: IO (Unagi.InChan a, MVar (Maybe a1, Unagi.OutChan a))
-initCommsUnagi = do
-  (i, o) <- Unagi.newChan
-  m <- newMVar (Nothing, o)
-  return (i,m)
-
-readCommUnagi :: MVar (Maybe (t, IO b), Unagi.OutChan b) -> IO b
-readCommUnagi m = do
-  (e, o) <- takeMVar m
-  case e of
-    Nothing -> do
-      r <- Unagi.readChan o
-      putMVar m (Nothing, o)
-      return r
-    Just (_,blockingRead) -> do
-      putMVar m (Nothing,o) >> blockingRead
-
-readCommsUnagi
-  :: (Num a1, Ord a1)
-  => MVar (Maybe (NoBlock.Element a, IO a), Unagi.OutChan a)
-  -> a1
-  -> IO [a]
-readCommsUnagi m cnt = do
-  (e, o) <- takeMVar m
-  case e of
-    Nothing -> do
-      readRegularUnagi Nothing m o cnt
-    Just (v,blockingRead) -> do
-      r <- Unagi.tryRead v
-      case r of
-        Nothing -> putMVar m (Just (v,blockingRead),o) >> return []
-        Just v' -> readRegularUnagi (Just v') m o cnt
-
-writeCommUnagi :: Unagi.InChan a -> a -> IO ()
-writeCommUnagi i c = Unagi.writeChan i c
-
--- Utility Functions to allow for reading N elements off a queue
-readRegularUnagi :: (Num a, Ord a)
-                 => Maybe t
-                 -> MVar (Maybe (Unagi.Element t, IO t), Unagi.OutChan t)
-                 -> Unagi.OutChan t
-                 -> a
-                 -> IO [t]
-readRegularUnagi (Just t) m o cnt' = liftM (t:) (readRegularUnagi Nothing m o (cnt'-1))
-readRegularUnagi Nothing m o cnt'
-  | cnt' <= 0 = putMVar m (Nothing, o) >> return []
-  | otherwise = do
-      (r,blockingRead) <- Unagi.tryReadChan o
-      r' <- Unagi.tryRead r
-      case r' of
-        Nothing -> putMVar m (Just (r,blockingRead), o) >> return []
-        Just v -> liftM (v:) (readRegularUnagi Nothing m o (cnt'-1))
-
-readBoundedUnagi :: (Num a, Ord a)
-                 =>  Maybe t
-                 -> MVar (Maybe (Bounded.Element t, IO t), Bounded.OutChan t)
-                 -> Bounded.OutChan t
-                 -> a
-                 -> IO [t]
-readBoundedUnagi (Just t) m o cnt' = liftM (t:) (readBoundedUnagi Nothing m o (cnt'-1))
-readBoundedUnagi Nothing m o cnt'
-  | cnt' <= 0 = putMVar m (Nothing, o) >> return []
-  | otherwise = do
-      (r,blockingRead) <- Bounded.tryReadChan o
-      r' <- Bounded.tryRead r
-      case r' of
-        Nothing -> putMVar m (Just (r,blockingRead), o) >> return []
-        Just v -> liftM (v:) (readBoundedUnagi Nothing m o (cnt'-1))
-
-readStream :: (Num a, Ord a)
-           =>  MVar (NoBlock.Stream t)
-           -> NoBlock.Stream t
-           -> a
-           -> IO [t]
-readStream m strm cnt'
-  | cnt' <= 0 = putMVar m strm >> return []
-  | otherwise = do
-      s <- NoBlock.tryReadNext strm
-      case s of
-        NoBlock.Next a strm' -> liftM (a:) (readStream m strm' (cnt'-1))
-        NoBlock.Pending -> putMVar m strm >> return []
+{-# INLINE writeCommBatched #-}
+writeCommBatched :: Chan a -> a -> IO ()
+writeCommBatched c a = writeChan c a

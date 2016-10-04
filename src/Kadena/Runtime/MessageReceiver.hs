@@ -18,7 +18,9 @@ import Control.Monad.Reader
 import Control.Parallel.Strategies
 import Data.Either (partitionEithers)
 import Data.List (partition)
+import Data.Foldable
 
+import qualified Data.Sequence as Seq
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
@@ -69,8 +71,8 @@ generalTurbine = do
   ks <- view keySet
   forever $ liftIO $ do
     msgs <- gm 10
-    (aes, noAes) <- return $ partition (\(_,SignedRPC{..}) -> if _digType _sigDigest == AE then True else False) (_unInboundGeneral <$> msgs)
-    prunedAes <- return $ pruneRedundantAEs aes
+    (aes, noAes) <- return $ Seq.partition (\(_,SignedRPC{..}) -> if _digType _sigDigest == AE then True else False) (_unInboundGeneral <$> msgs)
+    prunedAes <- return $ pruneRedundantAEs $ toList aes
     when (length aes - length prunedAes /= 0) $ debug $ turbineGeneral ++ "pruned " ++ show (length aes - length prunedAes) ++ " redundant AE(s)"
     unless (null aes) $ do
       l <- return $ show (length aes)
@@ -83,7 +85,7 @@ generalTurbine = do
                 ++ "mics since it was received"
           enqueueEvent (ERPC v)
             ) prunedAes
-    (invalid, validNoAes) <- return $ partitionEithers $ parallelVerify id ks noAes
+    (invalid, validNoAes) <- return $ partitionEithers $ parallelVerify id ks $ toList noAes
     unless (null validNoAes) $ mapM_ (enqueueEvent . ERPC) validNoAes
     unless (null invalid) $ mapM_ debug invalid
 
@@ -99,7 +101,7 @@ pruneRedundantAEs m = go m Set.empty
 cmdTurbine :: ReaderT ReceiverEnv IO ()
 cmdTurbine = do
   getCmds' <- view (dispatch.inboundCMD)
-  let getCmds n = readComms getCmds' n
+  let getCmds n = toList <$> readComms getCmds' n
   enqueueEvent' <- view (dispatch.internalEvent)
   let enqueueEvent = writeComm enqueueEvent' . InternalEvent
   debug <- view debugPrint
@@ -179,7 +181,7 @@ aerTurbine = do
     then threadDelay backpressureDelay
     else do
       startTime <- getCurrentTime
-      (invalidAers, unverifiedAers) <- return $! constructEvidenceMap rawAers
+      (invalidAers, unverifiedAers) <- return $! constructEvidenceMap $! toList rawAers
       (badCrypto, validAers) <- return $! partitionEithers $! ((getFirstValidAer ks <$> (Map.elems unverifiedAers)) `using` parList rseq)
       enqueueEvent validAers
       mapM_ (debug . ((++) turbineAer)) invalidAers

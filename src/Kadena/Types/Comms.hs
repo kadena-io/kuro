@@ -52,8 +52,9 @@ module Kadena.Types.Comms
 import Control.Monad
 import Control.Lens
 import qualified Control.Concurrent.Async as Async
-import Control.Concurrent (threadDelay, takeMVar, putMVar, newMVar, MVar)
-
+import Control.Concurrent (threadDelay)
+import Control.Concurrent.STM (atomically, retry)
+import Control.Concurrent.STM.TVar
 import Control.Concurrent.Chan
 import Control.Concurrent.BoundedChan (BoundedChan)
 import qualified Control.Concurrent.BoundedChan as BoundedChan
@@ -62,7 +63,7 @@ import Data.ByteString (ByteString)
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import Data.Typeable
-import Data.Foldable
+
 import Data.AffineSpace ((.-.))
 import Data.Thyme.Clock (UTCTime, microseconds, getCurrentTime)
 
@@ -136,10 +137,10 @@ aerRvRvrMsg msgs = OutboundAerRvRvr $! Envelope . (\b -> (Topic $ "all", b)) <$>
 newtype InternalEvent = InternalEvent { _unInternalEvent :: Event}
   deriving (Show, Typeable)
 
-newtype InboundAERChannel = InboundAERChannel (Chan InboundAER, MVar (Seq InboundAER))
-newtype InboundCMDChannel = InboundCMDChannel (Chan InboundCMD, MVar (Seq InboundCMD))
+newtype InboundAERChannel = InboundAERChannel (Chan InboundAER, TVar (Seq InboundAER))
+newtype InboundCMDChannel = InboundCMDChannel (Chan InboundCMD, TVar (Seq InboundCMD))
 newtype InboundRVorRVRChannel = InboundRVorRVRChannel (Chan InboundRVorRVR)
-newtype InboundGeneralChannel = InboundGeneralChannel (Chan InboundGeneral, MVar (Seq InboundGeneral))
+newtype InboundGeneralChannel = InboundGeneralChannel (Chan InboundGeneral, TVar (Seq InboundGeneral))
 newtype OutboundGeneralChannel = OutboundGeneralChannel (Chan OutboundGeneral)
 newtype OutboundAerRvRvrChannel = OutboundAerRvRvrChannel (Chan OutboundAerRvRvr)
 newtype InternalEventChannel = InternalEventChannel (BoundedChan InternalEvent)
@@ -150,7 +151,7 @@ class Comms f c | c -> f where
   writeComm :: c -> f -> IO ()
 
 class (Comms f c) => BatchedComms f c | c -> f where
-  readComms :: c -> Int -> IO [f]
+  readComms :: c -> Int -> IO (Seq f)
 
 instance Comms InboundAER InboundAERChannel where
   initComms = InboundAERChannel <$> initCommsBatched
@@ -245,36 +246,41 @@ writeCommBounded :: BoundedChan a -> a -> IO ()
 writeCommBounded c m = BoundedChan.writeChan c m
 
 {-# INLINE initCommsBatched #-}
-initCommsBatched :: IO (Chan a, MVar (Seq a))
+initCommsBatched :: IO (Chan a, TVar (Seq a))
 initCommsBatched = do
   c <- newChan
-  s <- newMVar $ Seq.empty
+  s <- newTVarIO $ Seq.empty
   Async.link =<< Async.async (readAndAddToSeq c s)
   return (c,s)
 
 {-# INLINE readAndAddToSeq #-}
-readAndAddToSeq :: Chan a -> MVar (Seq a) -> IO ()
+readAndAddToSeq :: Chan a -> TVar (Seq a) -> IO ()
 readAndAddToSeq c ms = forever $ do
   m <- readChan c
-  s <- takeMVar ms
-  newS <- return $! s Seq.|> m
-  putMVar ms newS
+  atomically $ modifyTVar' ms (\s -> s Seq.|> m )
 
 {-# INLINE readCommBatched #-}
-readCommBatched :: MVar (Seq a) -> IO a
-readCommBatched ms = do
-  s <- takeMVar ms
+readCommBatched :: TVar (Seq a) -> IO a
+readCommBatched ms = atomically $ do
+  s <- readTVar ms
   case Seq.viewl s of
-    Seq.EmptyL -> putMVar ms s >> threadDelay 100 >> readCommBatched ms
-    a Seq.:< as -> putMVar ms as >> return a
+    Seq.EmptyL -> retry
+    a Seq.:< as -> writeTVar ms as >> return a
 
 {-# INLINE readCommsBatched #-}
-readCommsBatched :: MVar (Seq a) -> Int -> IO [a]
-readCommsBatched ms cnt = do
-  s <- takeMVar ms
-  (res, rest) <- return $! Seq.splitAt cnt s
-  putMVar ms rest
-  return $! toList res
+readCommsBatched :: TVar (Seq a) -> Int -> IO (Seq a)
+readCommsBatched ms cnt = atomically $ do
+  s <- readTVar ms
+  if Seq.null s
+  then retry
+  else if Seq.length s <= cnt
+       then do
+        writeTVar ms $! Seq.empty
+        return $! s
+       else do
+        (res, rest) <- return $! Seq.splitAt cnt s
+        writeTVar ms rest
+        return $! res
 
 {-# INLINE writeCommBatched #-}
 writeCommBatched :: Chan a -> a -> IO ()

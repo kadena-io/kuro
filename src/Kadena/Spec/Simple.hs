@@ -23,6 +23,7 @@ import qualified Data.ByteString.Char8 as BSC
 import qualified Data.Map.Strict as MS
 import qualified Data.Set as Set
 import qualified Data.Yaml as Y
+import qualified Data.Text.IO as T
 
 import System.Console.GetOpt
 import System.Environment
@@ -153,6 +154,7 @@ resetAwsEnv awsEnabled = do
 runServer :: IO ()
 runServer = do
   setLineBuffering
+  T.putStrLn $! "Kadena LLC © (2016-2017)"
   mAppliedMap <- newMVar MS.empty
   rconf <- getConfig
   utcTimeCache' <- utcTimeCache

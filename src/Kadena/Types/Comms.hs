@@ -119,12 +119,6 @@ newtype OutboundGeneral = OutboundGeneral { _unOutboundGeneral :: [Envelope]}
 newtype OutboundAerRvRvr = OutboundAerRvRvr { _unOutboundAerRvRvr :: [Envelope]}
   deriving (Show, Eq, Typeable)
 
-newtype TestRigInput = TestRigInput {_unTestRigInput :: [ByteString] }
-  deriving (Show, Eq, Typeable)
-
-newtype TestRigOutput = TestRigOutput {_unTestRigOutput :: Envelope }
-  deriving (Show, Eq, Typeable)
-
 directMsg :: [(NodeId, ByteString)] -> OutboundGeneral
 directMsg msgs = OutboundGeneral $! Envelope . (\(n,b) -> (Topic $ unAlias $ _alias n, b)) <$> msgs
 

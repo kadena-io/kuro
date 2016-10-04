@@ -11,13 +11,14 @@ module Kadena.Runtime.MessageReceiver
   , ReceiverEnv(..), dispatch, keySet, debugPrint, restartTurbo
   ) where
 
+-- TODO: we use toList to change from a Seq to a list for `parList`, change this
+
 import Control.Concurrent (threadDelay, MVar, takeMVar)
 import Control.Lens
 import Control.Monad
 import Control.Monad.Reader
 import Control.Parallel.Strategies
 import Data.Either (partitionEithers)
-import Data.List (partition)
 import Data.Foldable
 
 import qualified Data.Sequence as Seq

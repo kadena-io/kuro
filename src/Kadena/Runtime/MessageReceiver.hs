@@ -131,13 +131,11 @@ cmdDynamicTurbine ks' getCmds' debug' enqueueEvent' timeout = do
       v -> error $ "deep invariant failure: caught something that wasn't a CMDB/CMD " ++ show v
       ) validCmds)
     debug' $ turbineCmd ++ "batched " ++ show (length $ unCommands cmds') ++ " CMD(s) from " ++ show src
-  threadDelay timeout
+  unless (timeout <= 0) $ threadDelay timeout
   case lenCmdBatch of
-    l | l > 1000  -> cmdDynamicTurbine ks' getCmds' debug' enqueueEvent' 1000000 -- 1sec
-      | l > 500   -> cmdDynamicTurbine ks' getCmds' debug' enqueueEvent' 500000 -- .5sec
-      | l > 100   -> cmdDynamicTurbine ks' getCmds' debug' enqueueEvent' 100000 -- .1sec
-      | l > 10    -> cmdDynamicTurbine ks' getCmds' debug' enqueueEvent' 50000 -- .05sec
-      | otherwise -> cmdDynamicTurbine ks' getCmds' debug' enqueueEvent' 10000 -- .01sec
+    l | l > 10    -> cmdDynamicTurbine ks' getCmds' debug' enqueueEvent' 500000 -- 1sec
+      | l > 0     -> cmdDynamicTurbine ks' getCmds' debug' enqueueEvent' 100000 -- .1sec
+      | otherwise -> cmdDynamicTurbine ks' getCmds' debug' enqueueEvent' 0 -- .01sec
 
 rvAndRvrTurbine :: ReaderT ReceiverEnv IO ()
 rvAndRvrTurbine = do

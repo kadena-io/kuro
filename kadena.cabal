@@ -1,5 +1,5 @@
 name:                kadena
-version:             0.0.0.2
+version:             0.0.0.3
 synopsis:            Bynzantine Fault Tolerant Raft
 description:         An implementation of a Byzantine Fault Tolerant Raft protocol.
 homepage:            https://github.com/buckie/kadena
@@ -37,12 +37,17 @@ library
                      , Kadena.Log.LogApi
                      , Kadena.Log.Persistence
                      , Kadena.Messaging.ZMQ
+                     , Kadena.Messaging.Turbine
+                     , Kadena.Messaging.Turbine.AER
+                     , Kadena.Messaging.Turbine.CMD
+                     , Kadena.Messaging.Turbine.General
+                     , Kadena.Messaging.Turbine.RV
+                     , Kadena.Messaging.Turbine.Types
                      , Kadena.Monitoring.EkgJson
                      , Kadena.Monitoring.EkgMonitor
                      , Kadena.Monitoring.EkgSnap
                      , Kadena.Monitoring.Server
                      , Kadena.Runtime.Api.ApiServer
-                     , Kadena.Runtime.MessageReceiver
                      , Kadena.Runtime.Role
                      , Kadena.Runtime.Timer
                      , Kadena.Service.Commit

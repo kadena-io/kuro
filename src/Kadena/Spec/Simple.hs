@@ -9,6 +9,7 @@ module Kadena.Spec.Simple
   ) where
 
 import Control.AutoUpdate (mkAutoUpdate, defaultUpdateSettings,updateAction,updateFreq)
+import Control.Concurrent.Async
 import Control.Concurrent
 import qualified Control.Concurrent.Lifted as CL
 import Control.Lens
@@ -43,7 +44,7 @@ import Kadena.Util.Util (awsDashVar)
 import Kadena.Messaging.ZMQ
 import Kadena.Monitoring.Server (startMonitoring)
 import Kadena.Runtime.Api.ApiServer
-import qualified Kadena.Runtime.MessageReceiver as RENV
+import qualified Kadena.Messaging.Turbine as Turbine
 import Kadena.Command.CommandLayer
 import Kadena.Command.Types
 
@@ -130,13 +131,12 @@ simpleReceiverEnv :: Dispatch
                   -> Config
                   -> (String -> IO ())
                   -> MVar String
-                  -> RENV.ReceiverEnv
-simpleReceiverEnv dispatch conf debugFn restartTurbo' = RENV.ReceiverEnv
+                  -> Turbine.ReceiverEnv
+simpleReceiverEnv dispatch conf debugFn restartTurbo' = Turbine.ReceiverEnv
   dispatch
   (KeySet (view publicKeys conf) (view clientPublicKeys conf))
   debugFn
   restartTurbo'
-
 
 setLineBuffering :: IO ()
 setLineBuffering = do
@@ -149,7 +149,6 @@ resetAwsEnv awsEnabled = do
   awsDashVar awsEnabled "Term" "Startup"
   awsDashVar awsEnabled "AppliedIndex" "Startup"
   awsDashVar awsEnabled "CommitIndex" "Startup"
-
 
 runServer :: IO ()
 runServer = do
@@ -169,7 +168,7 @@ runServer = do
 
   -- each node has its own snap monitoring server
   pubMetric <- startMonitoring rconf
-  runMsgServer dispatch me oNodes debugFn -- ZMQ
+  link =<< runMsgServer dispatch me oNodes debugFn -- ZMQ
   let raftSpec = simpleConsensusSpec
                    debugFn
                    (liftIO . pubMetric)

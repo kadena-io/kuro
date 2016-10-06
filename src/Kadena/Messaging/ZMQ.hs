@@ -11,7 +11,8 @@ module Kadena.Messaging.ZMQ (
 
 import Control.Lens
 import Control.Exception.Base
-import Control.Concurrent (forkIO, yield, newEmptyMVar, takeMVar, putMVar)
+import Control.Concurrent (yield, newEmptyMVar, takeMVar, putMVar)
+import Control.Concurrent.Async (Async)
 import qualified Control.Concurrent.Async as Async
 import Control.Monad.State.Strict
 import System.ZMQ4.Monadic
@@ -33,8 +34,8 @@ runMsgServer :: Dispatch
              -> NodeId
              -> [NodeId]
              -> (String -> IO ())
-             -> IO ()
-runMsgServer dispatch me addrList debug = void $ forkIO $ forever $ do
+             -> IO (Async ())
+runMsgServer dispatch me addrList debug = Async.async $ forever $ do
   inboxWrite <- return $ dispatch ^. inboundGeneral
   cmdInboxWrite <- return $ dispatch ^. inboundCMD
   aerInboxWrite <- return $ dispatch ^. inboundAER

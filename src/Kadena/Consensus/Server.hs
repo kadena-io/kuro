@@ -12,8 +12,8 @@ import Data.IORef
 import Data.Thyme.Clock (UTCTime)
 
 import Kadena.Consensus.Handle
-import Kadena.Runtime.MessageReceiver
-import qualified Kadena.Runtime.MessageReceiver as RENV
+import Kadena.Messaging.Turbine
+import qualified Kadena.Messaging.Turbine as Turbine
 import Kadena.Runtime.Timer
 import Kadena.Types
 import Kadena.Util.Util
@@ -76,9 +76,9 @@ runPrimedConsensusServer renv rconf spec rstate timeCache' mPubConsensus' applyF
       qsize = getQuorumSize csize
       publishMetric' = (spec ^. publishMetric)
       dispatch' = _dispatch renv
-      dbgPrint' = RENV._debugPrint renv
+      dbgPrint' = Turbine._debugPrint renv
       getTimestamp' = spec ^. getTimestamp
-      keySet' = RENV._keySet renv
+      keySet' = Turbine._keySet renv
       nodeId' = rconf ^. nodeId
       enqueueApplied' = spec ^. enqueueApplied
 

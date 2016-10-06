@@ -20,7 +20,7 @@ import qualified Data.Set as Set
 import Data.Thyme.Clock (getCurrentTime)
 
 import Kadena.Types hiding (debugPrint, nodeId)
-import Kadena.Types.Evidence (Evidence(VerifiedAER))
+import Kadena.Evidence.Types (Evidence(VerifiedAER))
 
 import Kadena.Messaging.Turbine.Types
 

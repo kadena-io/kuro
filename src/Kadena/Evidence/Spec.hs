@@ -2,26 +2,33 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
-module Kadena.Types.Service.Evidence
+module Kadena.Evidence.Spec
   ( EvidenceProcEnv
-  , Result(..)
   , checkEvidence
   , processResult
   , EvidenceChannel(..)
   , EvidenceEnv(..)
   , logService, evidence, mConfig, mPubStateTo, mResetLeaderNoFollowers
+  , EvidenceState(..), initEvidenceState
+  , esQuorumSize, esNodeStates, esConvincedNodes, esPartialEvidence
+  , esCommitIndex, esCacheMissAers, esMismatchNodes, esResetLeaderNoFollowers
+  , esHashAtCommitIndex, esEvidenceCache, esMaxCachedIndex, esMaxElectionTimeout
+  , EvidenceProcessor
   , debugFn
   , publishMetric
-  , CommitCheckResult(..)
   , module X
   ) where
 
 import Control.Lens hiding (Index)
+import Control.Monad.Trans.State.Strict
 import Control.Monad.Trans.Reader
 import Control.Concurrent (MVar)
 import Data.IORef (IORef)
 
+import Data.ByteString (ByteString)
+import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Thyme.Clock
 
@@ -30,7 +37,7 @@ import Kadena.Types.Metric as X
 import Kadena.Types.Config as X
 import Kadena.Types.Message as X
 import Kadena.Types.Comms as X
-import Kadena.Types.Evidence as X
+import Kadena.Evidence.Types as X
 import Kadena.Types.Event (ResetLeaderNoFollowersTimeout)
 import Kadena.Log.Types (LogServiceChannel)
 
@@ -47,54 +54,46 @@ makeLenses ''EvidenceEnv
 
 type EvidenceProcEnv = ReaderT EvidenceEnv IO
 
--- | Result of the evidence check
--- NB: there are some optimizations that can be done, but I choose not to because they complicate matters and I think
--- this system will be used to optimize messaging in the future (e.g. don't send AER's to nodes who agree with you).
--- For that, we'll need to check crypto anyway
-data Result =
-  Unconvinced
-  -- * Sender does not believe in leader.
-    { _rNodeId :: !NodeId
-    , _rLogIndex :: !LogIndex
-    , _rReceivedAt :: !UTCTime }|
-  Unsuccessful
-  -- * Sender believes in leader but failed to replicate. This usually this occurs when a follower is catching up
-  -- * and an AE was sent with a PrevLogIndex > LastLogIndex
-    { _rNodeId :: !NodeId
-    , _rLogIndex :: !LogIndex
-    , _rReceivedAt :: !UTCTime }|
-  Successful
-  -- * Replication occurred and the incremental hash matches our own
-    { _rNodeId :: !NodeId
-    , _rLogIndex :: !LogIndex
-    , _rReceivedAt :: !UTCTime }|
-  SuccessfulSteadyState
-  -- * Nothing's going on besides heartbeats
-    { _rNodeId :: !NodeId
-    , _rLogIndex :: !LogIndex
-    , _rReceivedAt :: !UTCTime }|
-  SuccessfulButCacheMiss
-  -- * Our pre-cached evidence was lacking this particular hash, so we need to request it
-    { _rAer :: AppendEntriesResponse }|
-  MisMatch
-  -- * Sender was successful BUT incremental hash doesn't match our own
-  -- NB: this is a big deal as something went seriously wrong BUT it's the sender's problem and not ours
-  -- ... unless we're the odd man out
-    { _rNodeId :: !NodeId
-    , _rLogIndex :: !LogIndex } |
-  Noop
-  -- * This is for a very specific AER event, IFF:
-  --   - we have already counted evidence for another AER for this node that is for a later LogIndex
-  --   - this Noop AER was received within less than one MaxElectionTimeBound
-  -- Why: because AER's can and do come in out of order sometimes. We don't want to decrease a the nodeState
-  --      for a given node if we can avoid it.
-  deriving (Show, Eq)
+data EvidenceState = EvidenceState
+  { _esQuorumSize :: !Int
+  , _esNodeStates :: !(Map NodeId (LogIndex, UTCTime))
+  , _esConvincedNodes :: !(Set NodeId)
+  , _esPartialEvidence :: !(Map LogIndex Int)
+  , _esCommitIndex :: !LogIndex
+  , _esMaxCachedIndex :: !LogIndex
+  , _esCacheMissAers :: !(Set AppendEntriesResponse)
+  , _esMismatchNodes :: !(Set NodeId)
+  , _esResetLeaderNoFollowers :: Bool
+  , _esHashAtCommitIndex :: !ByteString
+  , _esEvidenceCache :: !(Map LogIndex ByteString)
+  , _esMaxElectionTimeout :: !Int
+  } deriving (Show, Eq)
+makeLenses ''EvidenceState
 
-data CommitCheckResult =
-  SteadyState {_ccrCommitIndex :: !LogIndex}|
-  NeedMoreEvidence {_ccrEvRequired :: Int} |
-  NewCommitIndex {_ccrCommitIndex :: !LogIndex}
-  deriving (Show)
+-- | Quorum Size for evidence processing is a different size than used elsewhere, specifically 1 less.
+-- The reason is that to get a match on the hash, the receiving node already needs to have replicated
+-- the entry. As such, getting a match that is counted when checking evidence implies that count is already +1
+-- This note is here because we used to process our own evidence, which was stupid.
+getEvidenceQuorumSize :: Int -> Int
+getEvidenceQuorumSize n = 1 + floor (fromIntegral n / 2 :: Float)
+
+initEvidenceState :: Set NodeId -> LogIndex -> Int -> EvidenceState
+initEvidenceState otherNodes' commidIndex' maxElectionTimeout' = EvidenceState
+  { _esQuorumSize = getEvidenceQuorumSize $ Set.size otherNodes'
+  , _esNodeStates = Map.fromSet (\_ -> (commidIndex',minBound)) otherNodes'
+  , _esConvincedNodes = Set.empty
+  , _esPartialEvidence = Map.empty
+  , _esCommitIndex = commidIndex'
+  , _esMaxCachedIndex = commidIndex'
+  , _esCacheMissAers = Set.empty
+  , _esMismatchNodes = Set.empty
+  , _esResetLeaderNoFollowers = False
+  , _esHashAtCommitIndex = mempty
+  , _esEvidenceCache = Map.singleton startIndex mempty
+  , _esMaxElectionTimeout = maxElectionTimeout'
+  }
+
+type EvidenceProcessor = State EvidenceState
 
 getTimestamp :: Provenance -> UTCTime
 getTimestamp NewMsg = error "Deep invariant failure: a NewMsg AER, which doesn't have a timestamp, was received by EvidenceService"

@@ -27,7 +27,7 @@ import Kadena.Consensus.Util (resetHeartbeatTimer)
 import qualified Kadena.Types as KD
 
 import qualified Kadena.Service.Sender as Sender
-import qualified Kadena.Service.Evidence as Ev
+import qualified Kadena.Evidence.Service as Ev
 
 data CommandEnv = CommandEnv {
       _nodeRole :: Role

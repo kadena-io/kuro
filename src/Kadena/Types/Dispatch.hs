@@ -22,7 +22,7 @@ import Data.Typeable
 import Kadena.Types.Comms
 import Kadena.Types.Service.Sender (SenderServiceChannel)
 import Kadena.Log.Types (LogServiceChannel)
-import Kadena.Types.Service.Evidence (EvidenceChannel)
+import Kadena.Evidence.Spec (EvidenceChannel)
 import Kadena.Types.Service.Commit (CommitChannel)
 
 data Dispatch = Dispatch

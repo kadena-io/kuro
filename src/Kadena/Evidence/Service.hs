@@ -1,7 +1,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module Kadena.Service.Evidence
+module Kadena.Evidence.Service
   ( runEvidenceService
   , initEvidenceEnv
   , module X
@@ -22,7 +22,7 @@ import Data.IORef
 
 import Kadena.Types.Dispatch (Dispatch)
 import Kadena.Types.Event (ResetLeaderNoFollowersTimeout(..))
-import Kadena.Types.Service.Evidence as X
+import Kadena.Evidence.Spec as X
 -- TODO: re-integrate EKG when Evidence Service is finished and hspec tests are written
 -- import Kadena.Types.Metric
 import qualified Kadena.Types.Dispatch as Dispatch

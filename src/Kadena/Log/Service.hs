@@ -28,7 +28,7 @@ import Kadena.Types.Metric
 import Kadena.Log.Persistence
 import Kadena.Log.Types as X
 import Kadena.Log.LogApi as X
-import qualified Kadena.Types.Service.Evidence as Ev
+import qualified Kadena.Evidence.Spec as Ev
 import qualified Kadena.Types.Dispatch as Dispatch
 import qualified Kadena.Types.Service.Commit as Commit
 import Kadena.Types (startIndex, Dispatch, interval)

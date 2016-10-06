@@ -22,7 +22,7 @@ import qualified Kadena.Messaging.Turbine as Turbine
 import qualified Kadena.Service.Commit as Commit
 import qualified Kadena.Service.Sender as Sender
 import qualified Kadena.Log.Service as Log
-import qualified Kadena.Service.Evidence as Ev
+import qualified Kadena.Evidence.Service as Ev
 
 launchEvidenceService :: Dispatch
   -> (String -> IO ())

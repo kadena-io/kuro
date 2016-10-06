@@ -55,7 +55,7 @@ import Kadena.Types.Comms
 import Kadena.Types.Dispatch
 import Kadena.Types.Service.Sender (SenderServiceChannel, ServiceRequest')
 import Kadena.Log.Types (QueryApi(..))
-import Kadena.Types.Service.Evidence (PublishedEvidenceState, Evidence(ClearConvincedNodes))
+import Kadena.Evidence.Spec (PublishedEvidenceState, Evidence(ClearConvincedNodes))
 
 data PublishedConsensus = PublishedConsensus
     { _pcLeader :: !(Maybe NodeId)

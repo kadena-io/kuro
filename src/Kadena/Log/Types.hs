@@ -54,7 +54,7 @@ import Kadena.Types.Log
 import qualified Kadena.Types.Log as X
 import Kadena.Types.Comms
 
-import Kadena.Types.Evidence (EvidenceChannel)
+import Kadena.Evidence.Types (EvidenceChannel)
 import Kadena.Types.Service.Commit (CommitChannel)
 
 data QueryApi =

@@ -52,7 +52,7 @@ library
                      , Kadena.HTTP.ApiServer
                      , Kadena.Service.Commit
                      , Kadena.Service.Sender
-                     , Kadena.Service.Evidence
+                     , Kadena.Evidence.Service
                      , Kadena.Spec.Simple
                      , Kadena.Types
                      , Kadena.Types.Api
@@ -62,7 +62,7 @@ library
                      , Kadena.Types.Config
                      , Kadena.Types.Dispatch
                      , Kadena.Types.Event
-                     , Kadena.Types.Evidence
+                     , Kadena.Evidence.Types
                      , Kadena.Types.Log
                      , Kadena.Types.Message
                      , Kadena.Types.Message.Signed
@@ -74,7 +74,7 @@ library
                      , Kadena.Types.Message.RVR
                      , Kadena.Types.Metric
                      , Kadena.Types.Service.Commit
-                     , Kadena.Types.Service.Evidence
+                     , Kadena.Evidence.Spec
                      , Kadena.Types.Service.Sender
                      , Kadena.Types.Spec
                      , Kadena.Util.Combinator

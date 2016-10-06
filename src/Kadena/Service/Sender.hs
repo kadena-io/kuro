@@ -31,7 +31,7 @@ import Data.Thyme.Clock (UTCTime, getCurrentTime)
 
 import qualified Kadena.Types as KD
 import Kadena.Types.Service.Sender as X
-import qualified Kadena.Types.Service.Evidence as Ev
+import qualified Kadena.Evidence.Spec as Ev
 import qualified Kadena.Log.Types as Log
 import Kadena.Types hiding (debugPrint, ConsensusState(..), Config(..)
   , Consensus, ConsensusSpec(..), nodeId, sendMessage, outboundGeneral, outboundAerRvRvr

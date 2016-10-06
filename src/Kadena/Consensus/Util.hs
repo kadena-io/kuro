@@ -1,9 +1,10 @@
-module Kadena.Runtime.Timer
+module Kadena.Consensus.Util
   ( resetElectionTimer
   , resetElectionTimerLeader
   , resetHeartbeatTimer
   , hasElectionTimerLeaderFired
   , cancelTimer
+  , becomeFollower
   ) where
 
 import Control.Monad.IO.Class
@@ -49,3 +50,9 @@ setTimedEvent e t = do
   cancelTimer
   tmr <- enqueueEventLater t e -- forks, no state
   timerThread .= Just tmr
+
+becomeFollower :: Consensus ()
+becomeFollower = do
+  debug "becoming follower"
+  setRole Follower
+  resetElectionTimer

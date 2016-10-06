@@ -23,7 +23,7 @@ import Data.Either (partitionEithers)
 
 import Kadena.Consensus.Handle.Types
 import Kadena.Util.Util (getCmdSigOrInvariantError, updateLogs, enqueueRequest, debug, makeCommandResponse')
-import Kadena.Runtime.Timer (resetHeartbeatTimer)
+import Kadena.Consensus.Util (resetHeartbeatTimer)
 import qualified Kadena.Types as KD
 
 import qualified Kadena.Service.Sender as Sender

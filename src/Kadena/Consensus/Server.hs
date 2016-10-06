@@ -12,13 +12,13 @@ import Data.IORef
 import Data.Thyme.Clock (UTCTime)
 
 import Kadena.Consensus.Handle
-import Kadena.Messaging.Turbine
-import qualified Kadena.Messaging.Turbine as Turbine
-import Kadena.Runtime.Timer
+import Kadena.Consensus.Util
 import Kadena.Types
 import Kadena.Util.Util
 import Kadena.Types.Service.Commit (ApplyFn)
 
+import Kadena.Messaging.Turbine
+import qualified Kadena.Messaging.Turbine as Turbine
 import qualified Kadena.Service.Commit as Commit
 import qualified Kadena.Service.Sender as Sender
 import qualified Kadena.Log.Service as Log

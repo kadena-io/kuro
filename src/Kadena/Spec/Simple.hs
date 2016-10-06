@@ -43,7 +43,7 @@ import Kadena.Types.Dispatch
 import Kadena.Util.Util (awsDashVar)
 import Kadena.Messaging.ZMQ
 import Kadena.Monitoring.Server (startMonitoring)
-import Kadena.Runtime.Api.ApiServer
+import Kadena.HTTP.ApiServer
 import qualified Kadena.Messaging.Turbine as Turbine
 import Kadena.Command.CommandLayer
 import Kadena.Command.Types

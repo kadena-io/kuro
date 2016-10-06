@@ -33,6 +33,7 @@ library
                      , Kadena.Consensus.Handle.RequestVoteResponse
                      , Kadena.Consensus.Handle.ElectionTimeout
                      , Kadena.Consensus.Handle.HeartbeatTimeout
+                     , Kadena.Consensus.Util
                      , Kadena.Log.Service
                      , Kadena.Log.LogApi
                      , Kadena.Log.Persistence
@@ -47,9 +48,7 @@ library
                      , Kadena.Monitoring.EkgMonitor
                      , Kadena.Monitoring.EkgSnap
                      , Kadena.Monitoring.Server
-                     , Kadena.Runtime.Api.ApiServer
-                     , Kadena.Runtime.Role
-                     , Kadena.Runtime.Timer
+                     , Kadena.HTTP.ApiServer
                      , Kadena.Service.Commit
                      , Kadena.Service.Sender
                      , Kadena.Service.Evidence

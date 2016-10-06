@@ -15,7 +15,7 @@ import Control.Monad.Writer
 import Kadena.Consensus.Handle.Types
 import Kadena.Consensus.Handle.AppendEntries (clearLazyVoteAndInformCandidates)
 import qualified Kadena.Service.Sender as Sender
-import Kadena.Runtime.Timer (resetHeartbeatTimer, hasElectionTimerLeaderFired)
+import Kadena.Consensus.Util (resetHeartbeatTimer, hasElectionTimerLeaderFired)
 import Kadena.Util.Util (debug,enqueueEvent, enqueueRequest)
 import qualified Kadena.Types as KD
 

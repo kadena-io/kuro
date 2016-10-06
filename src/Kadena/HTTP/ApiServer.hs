@@ -7,7 +7,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE BangPatterns #-}
 
-module Kadena.Runtime.Api.ApiServer
+module Kadena.HTTP.ApiServer
     where
 import Control.Concurrent
 import Control.Monad.Reader

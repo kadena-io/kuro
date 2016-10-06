@@ -16,7 +16,7 @@ import Data.Set as Set
 import Kadena.Consensus.Handle.Types
 import qualified Kadena.Service.Sender as Sender
 import qualified Kadena.Log.Service as Log
-import Kadena.Runtime.Timer (resetHeartbeatTimer, resetElectionTimerLeader,
+import Kadena.Consensus.Util (resetHeartbeatTimer, resetElectionTimerLeader,
                            resetElectionTimer)
 import Kadena.Util.Util
 import qualified Kadena.Types as KD

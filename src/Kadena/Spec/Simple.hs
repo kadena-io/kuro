@@ -33,7 +33,7 @@ import System.IO (BufferMode(..),stdout,stderr,hSetBuffering)
 import System.Log.FastLogger
 import System.Random
 
-import Kadena.Consensus.Server
+import Kadena.Consensus.Service
 import Kadena.Types.Command
 import Kadena.Types.Base
 import Kadena.Types.Config
@@ -180,4 +180,4 @@ runServer = do
   rstate <- return $ initialConsensusState timerTarget'
   mPubConsensus' <- newMVar $! PublishedConsensus (rstate ^. currentLeader) (rstate ^. nodeRole) (rstate ^. term)
   void $ CL.fork $ runApiServer dispatch rconf debugFn mAppliedMap (_apiPort rconf) mPubConsensus'
-  runPrimedConsensusServer receiverEnv rconf raftSpec rstate getCurrentTime mPubConsensus' (liftIO . applyFn)
+  runConsensusService receiverEnv rconf raftSpec rstate getCurrentTime mPubConsensus' (liftIO . applyFn)

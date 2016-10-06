@@ -1,5 +1,5 @@
-module Kadena.Consensus.Server
-  ( runPrimedConsensusServer
+module Kadena.Consensus.Service
+  ( runConsensusService
   ) where
 
 import Control.Concurrent
@@ -14,7 +14,6 @@ import Data.Thyme.Clock (UTCTime)
 import Kadena.Consensus.Handle
 import Kadena.Consensus.Util
 import Kadena.Types
-import Kadena.Util.Util
 import Kadena.Commit.Types (ApplyFn)
 
 import Kadena.Messaging.Turbine
@@ -69,9 +68,9 @@ launchSenderService dispatch' dbgPrint' publishMetric' mEvState rconf = do
   link =<< async (Sender.runSenderService dispatch' rconf dbgPrint' publishMetric' mEvState)
   async $ foreverTick (_senderService dispatch') 1000000 Sender.Tick
 
-runPrimedConsensusServer :: ReceiverEnv -> Config -> ConsensusSpec -> ConsensusState ->
+runConsensusService :: ReceiverEnv -> Config -> ConsensusSpec -> ConsensusState ->
                             IO UTCTime -> MVar PublishedConsensus -> ApplyFn -> IO ()
-runPrimedConsensusServer renv rconf spec rstate timeCache' mPubConsensus' applyFn' = do
+runConsensusService renv rconf spec rstate timeCache' mPubConsensus' applyFn' = do
   let csize = 1 + Set.size (rconf ^. otherNodes)
       qsize = getQuorumSize csize
       publishMetric' = (spec ^. publishMetric)
@@ -98,14 +97,14 @@ runPrimedConsensusServer renv rconf spec rstate timeCache' mPubConsensus' applyF
   link =<< launchLogService dispatch' dbgPrint' publishMetric' keySet' rconf
   link =<< async (foreverTick (_internalEvent dispatch') 1000000 (InternalEvent . Tick))
   runRWS_
-    raft
+    kadena
     (mkConsensusEnv rconf' csize qsize spec dispatch'
                     timerTarget' timeCache' mEvState mLeaderNoFollowers mPubConsensus')
     rstate
 
 -- THREAD: SERVER MAIN
-raft :: Consensus ()
-raft = do
+kadena :: Consensus ()
+kadena = do
   la <- Log.hasQueryResult Log.LastApplied <$> queryLogs (Set.singleton Log.GetLastApplied)
   when (startIndex /= la) $ debug $ "Launch Sequence: disk sync replayed, Commit Index now " ++ show la
   logStaticMetrics

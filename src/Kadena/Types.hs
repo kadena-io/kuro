@@ -2,6 +2,8 @@ module Kadena.Types
   ( module X
   ) where
 
+-- NB: This is really the Consensus Service's type module but as consensus is all encompassing, it's also the primary types file
+
 import Kadena.Types.Base as X
 import Kadena.Types.Command as X
 import Kadena.Types.Comms as X

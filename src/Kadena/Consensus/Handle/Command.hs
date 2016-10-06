@@ -22,8 +22,7 @@ import Data.Maybe (isNothing, isJust, fromJust)
 import Data.Either (partitionEithers)
 
 import Kadena.Consensus.Handle.Types
-import Kadena.Util.Util (getCmdSigOrInvariantError, updateLogs, enqueueRequest, debug, makeCommandResponse')
-import Kadena.Consensus.Util (resetHeartbeatTimer)
+import Kadena.Consensus.Util
 import qualified Kadena.Types as KD
 
 import qualified Kadena.Sender.Service as Sender

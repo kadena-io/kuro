@@ -4,7 +4,12 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Kadena.Types.Api where
+module Kadena.Types.Api
+  ( PollRequest(..)
+  , Batch(..)
+  , SubmitSuccess(..), ssRequestIds
+  , PollSuccessEntry(..)
+  ) where
 
 import Data.Aeson
 import Control.Lens hiding ((.=))

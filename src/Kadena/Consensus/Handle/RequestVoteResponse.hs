@@ -10,16 +10,14 @@ import Control.Lens
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer.Strict
--- import Data.Map as Map
 import Data.Set as Set
 
-import Kadena.Consensus.Handle.Types
 import qualified Kadena.Sender.Service as Sender
 import qualified Kadena.Log.Service as Log
-import Kadena.Consensus.Util (resetHeartbeatTimer, resetElectionTimerLeader,
-                           resetElectionTimer)
-import Kadena.Util.Util
 import qualified Kadena.Types as KD
+
+import Kadena.Consensus.Handle.Types
+import Kadena.Consensus.Util
 
 data RequestVoteResponseEnv = RequestVoteResponseEnv {
       _myNodeId :: NodeId

@@ -15,12 +15,12 @@ import Control.Monad.State (get)
 import qualified Data.Set as Set
 import qualified Data.Map.Strict as Map
 
-import Kadena.Util.Util (debug, enqueueRequest, queryLogs)
 import qualified Kadena.Sender.Service as Sender
 import qualified Kadena.Log.Service as Log
 import qualified Kadena.Types as KD
 
 import Kadena.Consensus.Handle.Types
+import Kadena.Consensus.Util
 
 data RequestVoteEnv = RequestVoteEnv {
 -- Old Constructors

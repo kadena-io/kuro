@@ -8,7 +8,7 @@ import Control.Lens
 import Control.Monad
 import Control.Monad.Reader
 
-import Kadena.Util.Combinator (foreverRetry)
+import Kadena.Util.Util (foreverRetry)
 
 import Kadena.Messaging.Turbine.Types
 import Kadena.Messaging.Turbine.AER

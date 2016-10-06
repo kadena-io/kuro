@@ -9,7 +9,7 @@ import Control.Monad
 import Control.Monad.IO.Class
 
 import Kadena.Types
-import Kadena.Util.Util (debug, dequeueEvent)
+import Kadena.Consensus.Util
 
 import qualified Kadena.Consensus.Handle.AppendEntries as PureAppendEntries
 import qualified Kadena.Consensus.Handle.Command as PureCommand

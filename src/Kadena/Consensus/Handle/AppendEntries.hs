@@ -25,10 +25,8 @@ import Data.Maybe (fromMaybe)
 
 import Kadena.Consensus.Handle.Types
 import Kadena.Sender.Service (createAppendEntriesResponse')
-import Kadena.Consensus.Util (resetElectionTimer)
-import Kadena.Util.Util
+import Kadena.Consensus.Util
 import qualified Kadena.Types as KD
-
 
 import qualified Kadena.Sender.Service as Sender
 import qualified Kadena.Log.Service as Log

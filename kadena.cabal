@@ -34,7 +34,7 @@ library
                      , Kadena.Consensus.Handle.RequestVote
                      , Kadena.Consensus.Handle.RequestVoteResponse
                      , Kadena.Consensus.Handle.Types
-                     , Kadena.Consensus.Server
+                     , Kadena.Consensus.Service
                      , Kadena.Consensus.Util
                      , Kadena.Evidence.Service
                      , Kadena.Evidence.Spec
@@ -77,7 +77,6 @@ library
                      , Kadena.Types.Message.Signed
                      , Kadena.Types.Metric
                      , Kadena.Types.Spec
-                     , Kadena.Util.Combinator
                      , Kadena.Util.Util
 
   build-depends:       aeson

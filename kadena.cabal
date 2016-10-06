@@ -19,40 +19,43 @@ source-repository head
   location: git@github.com:buckie/kadena.git
 
 library
-  exposed-modules:     Apps.Kadena.Server
-                     , Apps.Kadena.Client
-                     , Kadena.Command.Types
+  exposed-modules:     Apps.Kadena.Client
+                     , Apps.Kadena.Server
                      , Kadena.Command.CommandLayer
                      , Kadena.Command.PactSqlLite
+                     , Kadena.Command.Types
                      , Kadena.Consensus.Handle
-                     , Kadena.Consensus.Server
-                     , Kadena.Consensus.Handle.Types
                      , Kadena.Consensus.Handle.AppendEntries
                      , Kadena.Consensus.Handle.Command
-                     , Kadena.Consensus.Handle.RequestVote
-                     , Kadena.Consensus.Handle.RequestVoteResponse
                      , Kadena.Consensus.Handle.ElectionTimeout
                      , Kadena.Consensus.Handle.HeartbeatTimeout
+                     , Kadena.Consensus.Handle.RequestVote
+                     , Kadena.Consensus.Handle.RequestVoteResponse
+                     , Kadena.Consensus.Handle.Types
+                     , Kadena.Consensus.Server
                      , Kadena.Consensus.Util
+                     , Kadena.Evidence.Service
+                     , Kadena.Evidence.Spec
+                     , Kadena.Evidence.Types
+                     , Kadena.HTTP.ApiServer
                      , Kadena.Log.LogApi
                      , Kadena.Log.Persistence
                      , Kadena.Log.Service
                      , Kadena.Log.Types
-                     , Kadena.Messaging.ZMQ
                      , Kadena.Messaging.Turbine
                      , Kadena.Messaging.Turbine.AER
                      , Kadena.Messaging.Turbine.CMD
                      , Kadena.Messaging.Turbine.General
                      , Kadena.Messaging.Turbine.RV
                      , Kadena.Messaging.Turbine.Types
+                     , Kadena.Messaging.ZMQ
                      , Kadena.Monitoring.EkgJson
                      , Kadena.Monitoring.EkgMonitor
                      , Kadena.Monitoring.EkgSnap
                      , Kadena.Monitoring.Server
-                     , Kadena.HTTP.ApiServer
+                     , Kadena.Sender.Service
+                     , Kadena.Sender.Types
                      , Kadena.Service.Commit
-                     , Kadena.Service.Sender
-                     , Kadena.Evidence.Service
                      , Kadena.Spec.Simple
                      , Kadena.Types
                      , Kadena.Types.Api
@@ -62,20 +65,17 @@ library
                      , Kadena.Types.Config
                      , Kadena.Types.Dispatch
                      , Kadena.Types.Event
-                     , Kadena.Evidence.Types
                      , Kadena.Types.Log
                      , Kadena.Types.Message
-                     , Kadena.Types.Message.Signed
-                     , Kadena.Types.Message.CMD
-                     , Kadena.Types.Message.CMDR
                      , Kadena.Types.Message.AE
                      , Kadena.Types.Message.AER
+                     , Kadena.Types.Message.CMD
+                     , Kadena.Types.Message.CMDR
                      , Kadena.Types.Message.RV
                      , Kadena.Types.Message.RVR
+                     , Kadena.Types.Message.Signed
                      , Kadena.Types.Metric
                      , Kadena.Types.Service.Commit
-                     , Kadena.Evidence.Spec
-                     , Kadena.Types.Service.Sender
                      , Kadena.Types.Spec
                      , Kadena.Util.Combinator
                      , Kadena.Util.Util

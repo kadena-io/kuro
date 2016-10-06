@@ -24,13 +24,13 @@ import qualified Data.Set as Set
 import Data.Maybe (fromMaybe)
 
 import Kadena.Consensus.Handle.Types
-import Kadena.Service.Sender (createAppendEntriesResponse')
+import Kadena.Sender.Service (createAppendEntriesResponse')
 import Kadena.Consensus.Util (resetElectionTimer)
 import Kadena.Util.Util
 import qualified Kadena.Types as KD
 
 
-import qualified Kadena.Service.Sender as Sender
+import qualified Kadena.Sender.Service as Sender
 import qualified Kadena.Log.Service as Log
 
 data AppendEntriesEnv = AppendEntriesEnv {

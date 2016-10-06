@@ -41,7 +41,7 @@ import qualified System.Random as R
 import System.Process (system)
 
 import Kadena.Types
-import qualified Kadena.Types.Service.Sender as Sender
+import qualified Kadena.Sender.Types as Sender
 import qualified Kadena.Log.Service as Log
 
 awsDashVar :: Bool -> String -> String -> IO ()

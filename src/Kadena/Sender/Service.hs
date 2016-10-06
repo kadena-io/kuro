@@ -1,3 +1,4 @@
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ImpredicativeTypes #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE RankNTypes #-}
@@ -5,8 +6,12 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RecordWildCards #-}
 
-module Kadena.Service.Sender
-  ( runSenderService
+module Kadena.Sender.Service
+  ( SenderService
+  , ServiceEnv(..), myNodeId, currentLeader, currentTerm, myPublicKey
+  , myPrivateKey, yesVotes, debugPrint, serviceRequestChan, outboundGeneral, outboundAerRvRvr
+  , logService, otherNodes, nodeRole, getEvidenceState, publishMetric, aeReplicationLogLimit
+  , runSenderService
   , createAppendEntriesResponse' -- we need this for AER Evidence
   , willBroadcastAE
   , module X --re-export the types to make things straight forward
@@ -29,13 +34,43 @@ import Data.Serialize
 
 import Data.Thyme.Clock (UTCTime, getCurrentTime)
 
-import qualified Kadena.Types as KD
-import Kadena.Types.Service.Sender as X
-import qualified Kadena.Evidence.Spec as Ev
-import qualified Kadena.Log.Types as Log
 import Kadena.Types hiding (debugPrint, ConsensusState(..), Config(..)
   , Consensus, ConsensusSpec(..), nodeId, sendMessage, outboundGeneral, outboundAerRvRvr
-  , myPublicKey, myPrivateKey, otherNodes, nodeRole, term, Event(..), logService)
+  , myPublicKey, myPrivateKey, otherNodes, nodeRole, term, Event(..), logService, publishMetric
+  , currentLeader)
+import qualified Kadena.Types as KD
+
+import Kadena.Log.Types (LogServiceChannel)
+import qualified Kadena.Log.Types as Log
+import Kadena.Evidence.Spec (PublishedEvidenceState)
+import qualified Kadena.Evidence.Spec as Ev
+
+import Kadena.Sender.Types as X
+
+data ServiceEnv = ServiceEnv
+  { _myNodeId :: !NodeId
+  , _nodeRole :: !Role
+  , _otherNodes :: !(Set NodeId)
+  , _currentLeader :: !(Maybe NodeId)
+  , _currentTerm :: !Term
+  , _myPublicKey :: !PublicKey
+  , _myPrivateKey :: !PrivateKey
+  , _yesVotes :: !(Set RequestVoteResponse)
+  , _debugPrint :: !(String -> IO ())
+  , _aeReplicationLogLimit :: Int
+  -- Comm Channels
+  , _serviceRequestChan :: !SenderServiceChannel
+  , _outboundGeneral :: !OutboundGeneralChannel
+  , _outboundAerRvRvr :: !OutboundAerRvRvrChannel
+  -- Log Storage
+  , _logService :: !LogServiceChannel
+  -- Evidence Thread's Published State
+  , _getEvidenceState :: !(IO PublishedEvidenceState)
+  , _publishMetric :: !(Metric -> IO ())
+  }
+makeLenses ''ServiceEnv
+
+type SenderService = ReaderT ServiceEnv IO
 
 runSenderService
   :: Dispatch

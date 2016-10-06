@@ -20,7 +20,7 @@ import Kadena.Types.Service.Commit (ApplyFn)
 import Kadena.Messaging.Turbine
 import qualified Kadena.Messaging.Turbine as Turbine
 import qualified Kadena.Service.Commit as Commit
-import qualified Kadena.Service.Sender as Sender
+import qualified Kadena.Sender.Service as Sender
 import qualified Kadena.Log.Service as Log
 import qualified Kadena.Evidence.Service as Ev
 

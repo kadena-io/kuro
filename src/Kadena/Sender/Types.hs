@@ -11,31 +11,23 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Kadena.Types.Service.Sender
+module Kadena.Sender.Types
   ( SenderServiceChannel(..)
   , ServiceRequest'(..)
   , ServiceRequest(..)
   , StateSnapshot(..), newNodeId, newRole, newOtherNodes, newLeader, newTerm, newPublicKey
-  , newPrivateKey, newYesVotes, aeReplicationLogLimit
+  , newPrivateKey, newYesVotes
   , AEBroadcastControl(..)
-  , SenderService
-  , ServiceEnv(..), myNodeId, currentLeader, currentTerm, myPublicKey
-  , myPrivateKey, yesVotes, debugPrint, serviceRequestChan, outboundGeneral, outboundAerRvRvr
-  , logService, otherNodes, nodeRole, getEvidenceState, publishMetric
   ) where
 
 import Control.Lens
-import Control.Monad.Trans.Reader (ReaderT)
 import Control.Concurrent.Chan (Chan)
 
 import Data.Set (Set)
 
 import Kadena.Types.Base
-import Kadena.Types.Metric
 import Kadena.Types.Message
 import Kadena.Types.Comms
-import Kadena.Log.Types (LogServiceChannel)
-import Kadena.Evidence.Spec (PublishedEvidenceState)
 
 data ServiceRequest' =
   ServiceRequest'
@@ -87,28 +79,3 @@ data StateSnapshot = StateSnapshot
   , _newYesVotes :: !(Set RequestVoteResponse)
   } deriving (Eq, Show)
 makeLenses ''StateSnapshot
-
-data ServiceEnv = ServiceEnv
-  { _myNodeId :: !NodeId
-  , _nodeRole :: !Role
-  , _otherNodes :: !(Set NodeId)
-  , _currentLeader :: !(Maybe NodeId)
-  , _currentTerm :: !Term
-  , _myPublicKey :: !PublicKey
-  , _myPrivateKey :: !PrivateKey
-  , _yesVotes :: !(Set RequestVoteResponse)
-  , _debugPrint :: !(String -> IO ())
-  , _aeReplicationLogLimit :: Int
-  -- Comm Channels
-  , _serviceRequestChan :: !SenderServiceChannel
-  , _outboundGeneral :: !OutboundGeneralChannel
-  , _outboundAerRvRvr :: !OutboundAerRvRvrChannel
-  -- Log Storage
-  , _logService :: !LogServiceChannel
-  -- Evidence Thread's Published State
-  , _getEvidenceState :: !(IO PublishedEvidenceState)
-  , _publishMetric :: !(Metric -> IO ())
-  }
-makeLenses ''ServiceEnv
-
-type SenderService = ReaderT ServiceEnv IO

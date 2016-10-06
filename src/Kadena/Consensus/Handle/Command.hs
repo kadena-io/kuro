@@ -26,7 +26,7 @@ import Kadena.Util.Util (getCmdSigOrInvariantError, updateLogs, enqueueRequest, 
 import Kadena.Consensus.Util (resetHeartbeatTimer)
 import qualified Kadena.Types as KD
 
-import qualified Kadena.Service.Sender as Sender
+import qualified Kadena.Sender.Service as Sender
 import qualified Kadena.Evidence.Service as Ev
 
 data CommandEnv = CommandEnv {

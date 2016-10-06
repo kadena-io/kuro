@@ -53,7 +53,7 @@ import Kadena.Types.Message
 import Kadena.Types.Metric
 import Kadena.Types.Comms
 import Kadena.Types.Dispatch
-import Kadena.Types.Service.Sender (SenderServiceChannel, ServiceRequest')
+import Kadena.Sender.Types (SenderServiceChannel, ServiceRequest')
 import Kadena.Log.Types (QueryApi(..))
 import Kadena.Evidence.Spec (PublishedEvidenceState, Evidence(ClearConvincedNodes))
 

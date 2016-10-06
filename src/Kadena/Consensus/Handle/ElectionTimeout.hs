@@ -17,7 +17,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 
 import Kadena.Consensus.Handle.Types
-import qualified Kadena.Service.Sender as Sender
+import qualified Kadena.Sender.Service as Sender
 import qualified Kadena.Log.Service as Log
 import Kadena.Consensus.Util (resetElectionTimer, hasElectionTimerLeaderFired)
 import Kadena.Util.Util

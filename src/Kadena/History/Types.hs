@@ -3,13 +3,15 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 
 module Kadena.History.Types
-  ( ApplyFn
-  , History(..)
+  ( History(..)
+  , ExistenceResult(..)
+  , PossiblyIncompleteResults(..)
+  , ListenerResult(..)
   , HistoryEnv(..)
-  , commitChannel, applyLogEntry, debugPrint, publishMetric
-  , getTimestamp, publishResults
+  , historyChannel, debugPrint, getTimestamp, dbPath
   , HistoryState(..)
-  , nodeId, keySet
+  , registeredListeners, persistence
+  , PersistenceSystem(..)
   , HistoryChannel(..)
   , HistoryService
   , module X
@@ -18,27 +20,47 @@ module Kadena.History.Types
 import Control.Lens hiding (Index)
 
 import Control.Monad.Trans.RWS.Strict
+import Control.Concurrent.MVar
 import Control.Concurrent.Chan (Chan)
 
+import Data.Map.Strict (Map)
+import Data.Set (Set)
+
 import Data.Thyme.Clock (UTCTime)
+import Database.SQLite.Simple (Connection(..))
 
 import Kadena.Types.Base as X
 import Kadena.Types.Config as X hiding (nodeId, _nodeId)
 import Kadena.Types.Command as X
 import Kadena.Types.Comms as X
 import Kadena.Types.Metric as X
-import Kadena.Types.Log as X
 import Kadena.Types.Message as X
+
+newtype ExistenceResult = ExistenceResult
+  { rksThatAlreadyExist :: Set RequestKey
+  } deriving (Show, Eq)
+
+newtype PossiblyIncompleteResults = PossiblyIncompleteResults
+  { possiblyIncompleteResults :: Map RequestKey CommandResult
+  } deriving (Show, Eq)
+
+data ListenerResult =
+  ListenerResult CommandResult |
+  GCed
+  deriving (Show, Eq)
 
 data History =
   AddNew
-    { logEntriesToApply :: !LogEntries } |
+    { hNewKeys :: !(Set RequestKey) } |
   Update
-    { logEntriesToApply :: !LogEntries } |
-  Query
-    { logEntriesToApply :: !LogEntries } |
+    { hUpdateRks :: !(Map RequestKey CommandResult) } |
+  QueryForExistence
+    { hQueryForExistence :: !(Set RequestKey, MVar ExistenceResult) } |
+  QueryForResults
+    { hQueryForResults :: !(RequestKey, MVar PossiblyIncompleteResults) } |
   RegisterListener
-    { newNodeId :: !NodeId } |
+    { hNewListener :: !(RequestKey, MVar ListenerResult)} |
+  Bounce |
   Tick Tock
 
 newtype HistoryChannel = HistoryChannel (Chan History)
@@ -49,19 +71,23 @@ instance Comms History HistoryChannel where
   writeComm (HistoryChannel c) = writeCommNormal c
 
 data HistoryEnv = HistoryEnv
-  { _commitChannel :: !HistoryChannel
-    -- ^ Function to apply a log entry to the state machine.
-  , _applyLogEntry    :: !ApplyFn
+  { _historyChannel :: !HistoryChannel
   , _debugPrint :: !(String -> IO ())
-  , _publishMetric :: !(Metric -> IO ())
   , _getTimestamp :: !(IO UTCTime)
-  , _publishResults :: !(AppliedCommand -> IO ())
+  , _dbPath :: !(Maybe FilePath)
   }
 makeLenses ''HistoryEnv
 
+data PersistenceSystem =
+  InMemory
+    {inMemResults :: !(Map RequestKey (Maybe CommandResult))} |
+  OnDisk
+    {dbConn :: !Connection}
+
+
 data HistoryState = HistoryState
-  { _nodeId :: !NodeId
-  , _keySet :: !KeySet
+  { _registeredListeners :: !(Map RequestKey [MVar ListenerResult])
+  , _persistence :: !PersistenceSystem
   }
 makeLenses ''HistoryState
 

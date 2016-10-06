@@ -13,6 +13,7 @@ module Kadena.Types.Dispatch
   , logService
   , evidence
   , commitService
+  , historyChannel
   ) where
 
 import Control.Lens
@@ -24,6 +25,7 @@ import Kadena.Sender.Types (SenderServiceChannel)
 import Kadena.Log.Types (LogServiceChannel)
 import Kadena.Evidence.Spec (EvidenceChannel)
 import Kadena.Commit.Types (CommitChannel)
+import Kadena.History.Types (HistoryChannel)
 
 data Dispatch = Dispatch
   { _inboundAER      :: InboundAERChannel
@@ -37,11 +39,13 @@ data Dispatch = Dispatch
   , _logService   :: LogServiceChannel
   , _evidence   :: EvidenceChannel
   , _commitService :: CommitChannel
+  , _historyChannel :: HistoryChannel
   } deriving (Typeable)
 
 initDispatch :: IO Dispatch
 initDispatch = Dispatch
   <$> initComms
+  <*> initComms
   <*> initComms
   <*> initComms
   <*> initComms

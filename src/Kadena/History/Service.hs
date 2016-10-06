@@ -18,29 +18,43 @@ import Data.Thyme.Clock
 import Data.Maybe (fromJust)
 
 import Kadena.History.Types as X
-import Kadena.Types.Dispatch
-import qualified Kadena.Log.Service as Log
+import Kadena.Types.Dispatch (Dispatch)
+import qualified Kadena.Types.Dispatch as D
 
 initHistoryEnv
   :: Dispatch
+  -> Maybe FilePath
   -> (String -> IO ())
-  -> ApplyFn
-  -> (Metric -> IO ())
   -> IO UTCTime
-  -> (AppliedCommand -> IO ())
   -> HistoryEnv
-initHistoryEnv dispatch' debugPrint' applyLogEntry'
-              publishMetric' getTimestamp' publishResults' = HistoryEnv
-  { _commitChannel = dispatch' ^. commitService
-  , _applyLogEntry = applyLogEntry'
+initHistoryEnv dispatch' dbPath' debugPrint' getTimestamp' = HistoryEnv
+  { _historyChannel = dispatch' ^. D.historyChannel
   , _debugPrint = debugPrint'
-  , _publishMetric = publishMetric'
   , _getTimestamp = getTimestamp'
-  , _publishResults = publishResults'
+  , _dbPath = dbPath'
   }
 
-runHistoryService :: HistoryEnv -> NodeId -> KeySet -> IO ()
-runHistoryService env nodeId' keySet' = do
+--data PersistenceSystem =
+--  InMemory
+--    {inMemResults :: !(Map RequestKey (Maybe CommandResult))} |
+--  OnDisk
+--    {dbConn :: !Connection}
+--
+--data HistoryState = HistoryState
+--  { _registeredListeners :: !(Map RequestKey [MVar ListenerResult])
+--  , _persistence :: !PersistenceSystem
+--  }
+--makeLenses ''HistoryState
+--  { _commitChannel = dispatch' ^. commitService
+--  , _applyLogEntry = applyLogEntry'
+--  , _debugPrint = debugPrint'
+--  , _publishMetric = publishMetric'
+--  , _getTimestamp = getTimestamp'
+--  , _publishResults = publishResults'
+--  }
+
+runHistoryService :: HistoryEnv -> Maybe HistoryState -> IO ()
+runHistoryService env = do
   initHistoryState <- return $! HistoryState { _nodeId = nodeId', _keySet = keySet'}
   void $ runRWST handle env initHistoryState
 

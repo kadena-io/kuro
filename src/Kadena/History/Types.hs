@@ -62,6 +62,7 @@ data History =
     { hNewListener :: !(RequestKey, MVar ListenerResult)} |
   Bounce |
   Tick Tock
+  deriving (Eq)
 
 newtype HistoryChannel = HistoryChannel (Chan History)
 
@@ -83,7 +84,6 @@ data PersistenceSystem =
     {inMemResults :: !(Map RequestKey (Maybe CommandResult))} |
   OnDisk
     {dbConn :: !Connection}
-
 
 data HistoryState = HistoryState
   { _registeredListeners :: !(Map RequestKey [MVar ListenerResult])

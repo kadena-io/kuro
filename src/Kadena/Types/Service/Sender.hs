@@ -34,7 +34,7 @@ import Kadena.Types.Base
 import Kadena.Types.Metric
 import Kadena.Types.Message
 import Kadena.Types.Comms
-import Kadena.Types.Service.Log (LogServiceChannel)
+import Kadena.Log.Types (LogServiceChannel)
 import Kadena.Types.Service.Evidence (PublishedEvidenceState)
 
 data ServiceRequest' =

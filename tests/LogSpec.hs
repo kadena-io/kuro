@@ -10,7 +10,7 @@ import qualified Data.Map.Strict as Map
 
 import Kadena.Types
 import Kadena.Log.LogApi hiding (keySet)
--- import Kadena.Types.Service.Log hiding (keySet)
+-- import Kadena.Log.Types hiding (keySet)
 
 spec :: Spec
 spec = do

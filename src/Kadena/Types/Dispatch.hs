@@ -21,7 +21,7 @@ import Data.Typeable
 
 import Kadena.Types.Comms
 import Kadena.Types.Service.Sender (SenderServiceChannel)
-import Kadena.Types.Service.Log (LogServiceChannel)
+import Kadena.Log.Types (LogServiceChannel)
 import Kadena.Types.Service.Evidence (EvidenceChannel)
 import Kadena.Types.Service.Commit (CommitChannel)
 

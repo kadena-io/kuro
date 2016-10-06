@@ -26,7 +26,7 @@ import Kadena.Types.Service.Evidence as X
 -- TODO: re-integrate EKG when Evidence Service is finished and hspec tests are written
 -- import Kadena.Types.Metric
 import qualified Kadena.Types.Dispatch as Dispatch
-import qualified Kadena.Types.Service.Log as Log
+import qualified Kadena.Log.Types as Log
 
 initEvidenceEnv :: Dispatch
                 -> (String -> IO ())

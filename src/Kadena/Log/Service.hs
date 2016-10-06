@@ -26,7 +26,7 @@ import Database.SQLite.Simple (Connection(..))
 import Kadena.Types.Comms
 import Kadena.Types.Metric
 import Kadena.Log.Persistence
-import Kadena.Types.Service.Log as X
+import Kadena.Log.Types as X
 import Kadena.Log.LogApi as X
 import qualified Kadena.Types.Service.Evidence as Ev
 import qualified Kadena.Types.Dispatch as Dispatch

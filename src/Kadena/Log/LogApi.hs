@@ -33,8 +33,8 @@ import qualified Data.ByteString as B
 import Data.Serialize hiding (get)
 
 import Kadena.Types.Base
-import Kadena.Types.Service.Log
-import qualified Kadena.Types.Service.Log as X
+import Kadena.Log.Types
+import qualified Kadena.Log.Types as X
 import Kadena.Types.Message.Signed
 import Kadena.Types.Message.CMD
 import Kadena.Log.Persistence

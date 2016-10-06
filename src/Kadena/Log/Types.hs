@@ -11,7 +11,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module Kadena.Types.Service.Log
+module Kadena.Log.Types
   ( LogState(..)
   , lsVolatileLogEntries, lsPersistedLogEntries, lsLastApplied, lsLastLogIndex, lsNextLogIndex, lsCommitIndex
   , lsLastPersisted, lsLastLogTerm, lsLastLogHash, lsLastCryptoVerified, lsLastInMemory

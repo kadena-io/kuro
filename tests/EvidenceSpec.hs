@@ -22,7 +22,7 @@ import Test.Hspec
 --
 --import Kadena.Types
 --import qualified Kadena.Types.Log as Log
---import qualified Kadena.Types.Service.Log as Log
+--import qualified Kadena.Log.Types as Log
 --import qualified Kadena.Service.Evidence as Ev
 --
 

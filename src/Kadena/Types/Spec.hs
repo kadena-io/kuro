@@ -54,7 +54,7 @@ import Kadena.Types.Metric
 import Kadena.Types.Comms
 import Kadena.Types.Dispatch
 import Kadena.Types.Service.Sender (SenderServiceChannel, ServiceRequest')
-import Kadena.Types.Service.Log (QueryApi(..))
+import Kadena.Log.Types (QueryApi(..))
 import Kadena.Types.Service.Evidence (PublishedEvidenceState, Evidence(ClearConvincedNodes))
 
 data PublishedConsensus = PublishedConsensus

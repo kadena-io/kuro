@@ -34,9 +34,10 @@ library
                      , Kadena.Consensus.Handle.ElectionTimeout
                      , Kadena.Consensus.Handle.HeartbeatTimeout
                      , Kadena.Consensus.Util
-                     , Kadena.Log.Service
                      , Kadena.Log.LogApi
                      , Kadena.Log.Persistence
+                     , Kadena.Log.Service
+                     , Kadena.Log.Types
                      , Kadena.Messaging.ZMQ
                      , Kadena.Messaging.Turbine
                      , Kadena.Messaging.Turbine.AER
@@ -75,7 +76,6 @@ library
                      , Kadena.Types.Service.Commit
                      , Kadena.Types.Service.Evidence
                      , Kadena.Types.Service.Sender
-                     , Kadena.Types.Service.Log
                      , Kadena.Types.Spec
                      , Kadena.Util.Combinator
                      , Kadena.Util.Util

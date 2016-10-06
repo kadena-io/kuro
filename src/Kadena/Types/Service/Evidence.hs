@@ -32,7 +32,7 @@ import Kadena.Types.Message as X
 import Kadena.Types.Comms as X
 import Kadena.Types.Evidence as X
 import Kadena.Types.Event (ResetLeaderNoFollowersTimeout)
-import Kadena.Types.Service.Log (LogServiceChannel)
+import Kadena.Log.Types (LogServiceChannel)
 
 data EvidenceEnv = EvidenceEnv
   { _logService :: !LogServiceChannel

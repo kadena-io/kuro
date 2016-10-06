@@ -6,7 +6,6 @@
 module Kadena.Util.Util
   ( seqIndex
   , getQuorumSize
-  , getCmdSigOrInvariantError
   , awsDashVar
   , fromMaybeM
   , makeCommandResponse'
@@ -57,13 +56,8 @@ getQuorumSize n = 1 + floor (fromIntegral n / 2 :: Float)
 fromMaybeM :: Monad m => m b -> Maybe b -> m b
 fromMaybeM errM = maybe errM (return $!)
 
-getCmdSigOrInvariantError :: String -> Command -> Signature
-getCmdSigOrInvariantError where' s@Command{..} = case _cmdProvenance of
-  NewMsg -> error $! where'
-    ++ ": This should be unreachable, somehow an AE got through with a LogEntry that contained an unsigned Command" ++ show s
-  ReceivedMsg{..} -> _digSig _pDig
-
 makeCommandResponse' :: NodeId -> Command -> CommandResult -> Int64 -> CommandResponse
 makeCommandResponse' nid Command{..} result lat =
   let !res = CommandResponse result nid _cmdRequestId lat NewMsg
   in res
+{-# INLINE makeCommandResponse' #-}

@@ -68,7 +68,7 @@ data AppendEntriesResult =
 data ValidResponse =
     SendFailureResponse |
     Commit {
-        _replay :: Map (Alias, Signature) (Maybe CommandResult)
+        _replay :: Map RequestKey (Maybe CommandResult)
       , _newEntries :: ReplicateLogEntries } |
     DoNothing
 
@@ -157,7 +157,7 @@ appendLogEntries pli newEs
           return SendFailureResponse
       Right rle -> do
         replay <- return $ Map.fromList $ fmap
-          (\LogEntry{_leCommand = c@Command{..}} -> ((_cmdClientId, getCmdSigOrInvariantError "appendLogEntries" c), Nothing))
+          (\LogEntry{_leCommand = c} -> (toRequestKey "appendLogEntries" c, Nothing))
           (Map.elems (newEs ^. Log.logEntries))
         tell ["replicated LogEntry(s): " ++ show (_rleMinLogIdx rle) ++ " through " ++ show (_rleMaxLogIdx rle)]
         return $ Commit replay rle

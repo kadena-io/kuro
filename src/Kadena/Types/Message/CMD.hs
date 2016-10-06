@@ -7,6 +7,10 @@ module Kadena.Types.Message.CMD
   ( Command(..), cmdEntry, cmdClientId, cmdRequestId, cmdProvenance, cmdCryptoVerified
   , Commands(..)
   , mkCmdRpc, mkCmdBatchRPC
+  , getCmdSigOrInvariantError
+  , toRequestKey
+  , hashCmdForBloom
+  , hashReqKeyForBloom
   , CryptoVerified(..)
   , verifyCmd
   , CommandBatch(..), cmdbBatch, cmdbProvenance
@@ -15,10 +19,14 @@ module Kadena.Types.Message.CMD
 
 import Control.Parallel.Strategies
 import Control.Lens
+
+import qualified Data.BloomFilter.Hash as BHashes
 import Data.Serialize (Serialize)
 import qualified Data.Serialize as S
+
 import Data.Thyme.Time.Core ()
 import GHC.Generics
+import GHC.Word (Word32)
 
 import Kadena.Types.Base
 import Kadena.Types.Command
@@ -74,6 +82,25 @@ verifyCmd !ks Command{..} = case _cmdCryptoVerified of
     ReceivedMsg !dig !bdy _ -> case verifySignedRPC ks $! SignedRPC dig bdy of
       Left !err -> Invalid err
       Right () -> Valid
+
+getCmdSigOrInvariantError :: String -> Command -> Signature
+getCmdSigOrInvariantError where' s@Command{..} = case _cmdProvenance of
+  NewMsg -> error $! where'
+    ++ ": This should be unreachable, somehow an AE got through with a LogEntry that contained an unsigned Command" ++ show s
+  ReceivedMsg{..} -> _digSig _pDig
+{-# INLINE getCmdSigOrInvariantError #-}
+
+toRequestKey :: String -> Command -> RequestKey
+toRequestKey where' cmd@Command{..} = RequestKey (_cmdClientId, getCmdSigOrInvariantError where' cmd)
+{-# INLINE toRequestKey #-}
+
+hashReqKeyForBloom :: RequestKey -> [Word32]
+hashReqKeyForBloom (RequestKey (n, Sig s)) = BHashes.cheapHashes 3 (show n, s)
+{-# INLINE hashReqKeyForBloom #-}
+
+hashCmdForBloom :: String -> Command -> [Word32]
+hashCmdForBloom where' cmd = hashReqKeyForBloom $! toRequestKey where' cmd
+{-# INLINE hashCmdForBloom #-}
 
 newtype Commands = Commands { unCommands :: [Command] } deriving (Show, Eq)
 

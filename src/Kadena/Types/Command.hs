@@ -5,6 +5,7 @@
 module Kadena.Types.Command
   ( CommandEntry(..)
   , CommandResult(..)
+  , RequestKey(..)
   , AppliedCommand(..),acResult,acLatency,acRequestId
   ) where
 
@@ -20,6 +21,9 @@ newtype CommandEntry = CommandEntry { unCommandEntry :: ByteString }
   deriving (Show, Eq, Ord, Generic, Serialize)
 
 newtype CommandResult = CommandResult { unCommandResult :: ByteString }
+  deriving (Show, Eq, Ord, Generic, Serialize)
+
+newtype RequestKey = RequestKey { unRequestKey :: (Alias, Signature) }
   deriving (Show, Eq, Ord, Generic, Serialize)
 
 data AppliedCommand = AppliedCommand {

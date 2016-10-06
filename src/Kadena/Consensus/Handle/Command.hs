@@ -32,9 +32,9 @@ data CommandEnv = CommandEnv {
       _nodeRole :: Role
     , _term :: Term
     , _currentLeader :: Maybe NodeId
-    , _replayMap :: Map.Map (Alias, Signature) (Maybe CommandResult)
+    , _replayMap :: Map.Map RequestKey (Maybe CommandResult)
     , _nodeId :: NodeId
-    , _cmdBloomFilter :: Bloom (Alias,Signature)
+    , _cmdBloomFilter :: Bloom RequestKey
 }
 makeLenses ''CommandEnv
 
@@ -43,7 +43,7 @@ data CommandOut =
     RetransmitToLeader { _leaderId :: NodeId } |
     CommitAndPropagate {
       _newEntry :: NewLogEntries
-    , _replayKey :: (Alias, Signature)
+    , _replayKey :: RequestKey
     } |
     AlreadySeen
 
@@ -69,8 +69,8 @@ handleCommand cmd@Command{..} = do
   mlid <- view currentLeader
   replays <- view replayMap
   _nid <- view nodeId
-  cmdSig <- return $ getCmdSigOrInvariantError "handleCommand" cmd
-  case (Map.lookup (_cmdClientId, cmdSig) replays, r, mlid) of
+  rk <- return $ toRequestKey "handleCommand" cmd
+  case (Map.lookup rk replays, r, mlid) of
     (Just (Just _result), _, _) -> do
       -- cmdr <- return $ makeCommandResponse' nid cmd result
       -- return . SendCommandResponse _cmdClientId $ cmdr 1
@@ -84,7 +84,7 @@ handleCommand cmd@Command{..} = do
     (_, Leader, _) ->
       -- we're the leader, so append this to our log with the current term
       -- and propagate it to replicas
-      return $ CommitAndPropagate (NewLogEntries ct (KD.NleEntries [cmd])) (_cmdClientId, cmdSig)
+      return $ CommitAndPropagate (NewLogEntries ct (KD.NleEntries [cmd])) rk
     (_, _, Just lid) ->
       -- we're not the leader, but we know who the leader is, so forward this
       -- command (don't sign it ourselves, as it comes from the client)
@@ -94,13 +94,12 @@ handleCommand cmd@Command{..} = do
       -- anything
       return UnknownLeader
 
-filterBatch :: Bloom (Alias, Signature) -> Commands -> BatchProcessing
+filterBatch :: Bloom RequestKey -> Commands -> BatchProcessing
 filterBatch bfilter (Commands cs) = BatchProcessing (BPNewEntries brandNew) (BPAlreadySeen likelySeen)
   where
-    cmdSig c = getCmdSigOrInvariantError "handleCommand" c
     probablyAlreadySaw cmd@Command{..} =
       -- forcing the inside of an either is notoriously hard. in' is trying to at least force the majority of the work
-      let in' = Bloom.elem (_cmdClientId, cmdSig cmd) bfilter
+      let in' = Bloom.elem (toRequestKey "filterBatch" cmd) bfilter
           res = if in'
             then Left cmd
             else Right cmd
@@ -166,7 +165,7 @@ handleBatch cmdb@CommandBatch{..} = do
       unless (null $ _unBPNewEntries newEntries) $ do
         enqueueRequest $ Sender.BroadcastAE Sender.OnlySendIfFollowersAreInSync
         enqueueRequest $ Sender.BroadcastAER
-      PostProcessingResult{..} <- return $! postProcessBatch (KD._nodeId c) lid (KD._replayMap s) alreadySeen
+      PostProcessingResult{..} <- return $! postProcessBatch lid (KD._replayMap s) alreadySeen
       -- Bloom filters can give false positives but most of the time the commands will be new, so we do a second pass to double check
       unless (null falsePositive) $ do
         updateLogs $ ULNew $ NewLogEntries (KD._term s) $ KD.NleEntries falsePositive
@@ -180,34 +179,32 @@ handleBatch cmdb@CommandBatch{..} = do
     IAmFollower BatchProcessing{..} -> do
       when (isJust lid) $ do
         enqueueRequest $ Sender.ForwardCommandToLeader (fromJust lid) $ _unBPNewEntries newEntries
-      PostProcessingResult{..} <- return $! postProcessBatch (KD._nodeId c) lid (KD._replayMap s) alreadySeen
+      PostProcessingResult{..} <- return $! postProcessBatch lid (KD._replayMap s) alreadySeen
       unless (null falsePositive) $
         enqueueRequest $ Sender.ForwardCommandToLeader (fromJust lid) falsePositive
     IAmCandidate -> return () -- TODO: we should probably respond with something like "availability event"
 
 data PostProcessingResult = PostProcessingResult
   { falsePositive :: ![Command]
-  , responseToOldCmds :: ![(Alias, CommandResponse)]
-  , updatedReplayMap :: !(Map (Alias,Signature) (Maybe CommandResult))
+  , alreadySeenCmds :: ![RequestKey]
+  , updatedReplayMap :: !(Map RequestKey (Maybe CommandResult))
   } deriving (Eq, Show)
 
-postProcessBatch :: NodeId -> Maybe NodeId -> Map.Map (Alias, Signature) (Maybe CommandResult) -> BPAlreadySeen -> PostProcessingResult
-postProcessBatch nid mlid replays (BPAlreadySeen cs) = go cs (PostProcessingResult [] [] replays)
+postProcessBatch :: Maybe NodeId -> Map.Map RequestKey (Maybe CommandResult) -> BPAlreadySeen -> PostProcessingResult
+postProcessBatch mlid replays (BPAlreadySeen cs) = go cs (PostProcessingResult [] [] replays)
   where
-    cmdSig c = getCmdSigOrInvariantError "postProcessBatch" c
     go [] bp = bp { falsePositive = reverse $ falsePositive bp }
-    go (cmd@Command{..}:cmds) bp = case Map.lookup (_cmdClientId, cmdSig cmd) replays of
-      Just (Just result) -> go cmds bp {
-        responseToOldCmds = (_cmdClientId, makeCommandResponse' nid cmd result 1) : responseToOldCmds bp }
-      Just Nothing       -> go cmds bp
-      _ | isNothing mlid -> go cmds bp
-      Nothing -> go cmds $ bp { falsePositive = cmd : falsePositive bp
-                              , updatedReplayMap = Map.insert (_cmdClientId, cmdSig cmd) Nothing $ updatedReplayMap bp }
+    go (cmd@Command{..}:cmds) bp =
+      let rk = toRequestKey "postProcessBatch" cmd
+      in case Map.lookup rk replays of
+        Just (Just _) -> go cmds bp {
+          alreadySeenCmds =  rk : alreadySeenCmds bp }
+        Just Nothing       -> go cmds bp
+        _ | isNothing mlid -> go cmds bp
+        Nothing -> go cmds $ bp { falsePositive = cmd : falsePositive bp
+                                , updatedReplayMap = Map.insert rk Nothing $ updatedReplayMap bp }
 {-# INLINE postProcessBatch #-}
 
-updateBloom :: BPNewEntries -> Bloom (Alias, Signature) -> Bloom (Alias, Signature)
-updateBloom (BPNewEntries firstPass) oldBloom = Bloom.insertList (grabKey <$> firstPass) oldBloom
-  where
-    cmdSig c = getCmdSigOrInvariantError "updateBloom" c
-    grabKey cmd@Command{..} = (_cmdClientId, cmdSig cmd)
+updateBloom :: BPNewEntries -> Bloom RequestKey -> Bloom RequestKey
+updateBloom (BPNewEntries firstPass) oldBloom = Bloom.insertList (toRequestKey "updateBloom" <$> firstPass) oldBloom
 {-# INLINE updateBloom #-}

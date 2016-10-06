@@ -35,7 +35,6 @@ import Control.Monad.RWS.Strict (RWST)
 
 import Data.BloomFilter (Bloom)
 import qualified Data.BloomFilter as Bloom
-import qualified Data.BloomFilter.Hash as BHashes
 import Data.IORef
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -101,8 +100,8 @@ data ConsensusState = ConsensusState
   , _ignoreLeader     :: !Bool
   , _timerThread      :: !(Maybe ThreadId)
   , _timerTarget      :: !(MVar Event)
-  , _replayMap        :: !(Map (Alias, Signature) (Maybe CommandResult))
-  , _cmdBloomFilter   :: !(Bloom (Alias, Signature))
+  , _replayMap        :: !(Map RequestKey (Maybe CommandResult))
+  , _cmdBloomFilter   :: !(Bloom RequestKey)
   , _cYesVotes        :: !(Set RequestVoteResponse)
   , _cPotentialVotes  :: !(Set NodeId)
   , _timeSinceLastAER :: !Int
@@ -124,7 +123,7 @@ initialConsensusState timerTarget' = ConsensusState
 {-timerThread-}         Nothing
 {-timerTarget-}         timerTarget'
 {-replayMap-}           Map.empty
-{-cmdBloomFilter-}      (Bloom.empty (\(n,Sig s) -> BHashes.cheapHashes 3 (show n, s)) 536870912)
+{-cmdBloomFilter-}      (Bloom.empty hashReqKeyForBloom 536870912)
 {-cYesVotes-}           Set.empty
 {-cPotentialVotes-}     Set.empty
 {-timeSinceLastAER-}    0

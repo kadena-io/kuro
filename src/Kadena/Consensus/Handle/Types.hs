@@ -16,7 +16,8 @@ module Kadena.Consensus.Handle.Types (
   , AppendEntriesResponse(..)
   , RequestVote(..), rvTerm, rvCandidateId, rvLastLogIndex, rvLastLogTerm, rvProvenance
   , RequestVoteResponse(..)
-  , Command(..)
+  , RequestKey(..)
+  , Command(..), getCmdSigOrInvariantError, hashCmdForBloom, hashReqKeyForBloom, toRequestKey
   , Commands(..)
   , CommandResponse(..)
   , CommandBatch(..)

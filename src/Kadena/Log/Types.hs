@@ -55,7 +55,7 @@ import qualified Kadena.Types.Log as X
 import Kadena.Types.Comms
 
 import Kadena.Evidence.Types (EvidenceChannel)
-import Kadena.Types.Service.Commit (CommitChannel)
+import Kadena.Commit.Types (CommitChannel)
 
 data QueryApi =
   Query (Set AtomicQuery) (MVar (Map AtomicQuery QueryResult)) |

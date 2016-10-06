@@ -2,7 +2,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
-module Kadena.Types.Service.Commit
+module Kadena.Commit.Types
   ( ApplyFn
   , Commit(..)
   , CommitEnv(..)

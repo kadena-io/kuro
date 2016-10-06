@@ -24,6 +24,8 @@ library
                      , Kadena.Command.CommandLayer
                      , Kadena.Command.PactSqlLite
                      , Kadena.Command.Types
+                     , Kadena.Commit.Service
+                     , Kadena.Commit.Types
                      , Kadena.Consensus.Handle
                      , Kadena.Consensus.Handle.AppendEntries
                      , Kadena.Consensus.Handle.Command
@@ -55,7 +57,6 @@ library
                      , Kadena.Monitoring.Server
                      , Kadena.Sender.Service
                      , Kadena.Sender.Types
-                     , Kadena.Service.Commit
                      , Kadena.Spec.Simple
                      , Kadena.Types
                      , Kadena.Types.Api
@@ -75,7 +76,6 @@ library
                      , Kadena.Types.Message.RVR
                      , Kadena.Types.Message.Signed
                      , Kadena.Types.Metric
-                     , Kadena.Types.Service.Commit
                      , Kadena.Types.Spec
                      , Kadena.Util.Combinator
                      , Kadena.Util.Util

@@ -43,7 +43,7 @@ import Kadena.Types.Command
 import Kadena.Types.Message hiding (RPC)
 import Kadena.Command.Types
 import Kadena.Types.Config
-import Kadena.Types.Service.Commit (ApplyFn)
+import Kadena.Commit.Types (ApplyFn)
 
 type PactMVars = (DBVar,MVar CommandState)
 

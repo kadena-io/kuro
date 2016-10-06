@@ -23,7 +23,7 @@ import Kadena.Types.Comms
 import Kadena.Sender.Types (SenderServiceChannel)
 import Kadena.Log.Types (LogServiceChannel)
 import Kadena.Evidence.Spec (EvidenceChannel)
-import Kadena.Types.Service.Commit (CommitChannel)
+import Kadena.Commit.Types (CommitChannel)
 
 data Dispatch = Dispatch
   { _inboundAER      :: InboundAERChannel

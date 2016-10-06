@@ -2,7 +2,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Kadena.Service.Commit
+module Kadena.Commit.Service
   ( initCommitEnv
   , runCommitService
   , module X
@@ -17,7 +17,7 @@ import qualified Data.Map.Strict as Map
 import Data.Thyme.Clock
 import Data.Maybe (fromJust)
 
-import Kadena.Types.Service.Commit as X
+import Kadena.Commit.Types as X
 import Kadena.Types.Dispatch
 import qualified Kadena.Log.Service as Log
 

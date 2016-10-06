@@ -30,7 +30,7 @@ import Kadena.Log.Types as X
 import Kadena.Log.LogApi as X
 import qualified Kadena.Evidence.Spec as Ev
 import qualified Kadena.Types.Dispatch as Dispatch
-import qualified Kadena.Types.Service.Commit as Commit
+import qualified Kadena.Commit.Types as Commit
 import Kadena.Types (startIndex, Dispatch, interval)
 
 runLogService :: Dispatch

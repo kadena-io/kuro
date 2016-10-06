@@ -15,11 +15,11 @@ import Kadena.Consensus.Handle
 import Kadena.Consensus.Util
 import Kadena.Types
 import Kadena.Util.Util
-import Kadena.Types.Service.Commit (ApplyFn)
+import Kadena.Commit.Types (ApplyFn)
 
 import Kadena.Messaging.Turbine
 import qualified Kadena.Messaging.Turbine as Turbine
-import qualified Kadena.Service.Commit as Commit
+import qualified Kadena.Commit.Service as Commit
 import qualified Kadena.Sender.Service as Sender
 import qualified Kadena.Log.Service as Log
 import qualified Kadena.Evidence.Service as Ev

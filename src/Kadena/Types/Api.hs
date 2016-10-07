@@ -19,6 +19,7 @@ import Data.Int
 
 import Kadena.Types.Base
 import Kadena.Command.Types
+import Kadena.Types.Command
 
 data PollRequest = PollRequest
   { requestIds :: ![RequestId]
@@ -32,7 +33,7 @@ data Batch = Batch
 instance FromJSON Batch
 instance ToJSON Batch
 
-data SubmitSuccess = SubmitSuccess { _ssRequestIds :: ![RequestId] }
+data SubmitSuccess = SubmitSuccess { _ssRequestIds :: ![RequestKey] }
 makeLenses ''SubmitSuccess
 
 instance ToJSON SubmitSuccess where

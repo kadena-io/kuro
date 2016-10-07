@@ -41,11 +41,11 @@ newtype ExistenceResult = ExistenceResult
   } deriving (Show, Eq)
 
 newtype PossiblyIncompleteResults = PossiblyIncompleteResults
-  { possiblyIncompleteResults :: Map RequestKey CommandResult
+  { possiblyIncompleteResults :: Map RequestKey AppliedCommand
   } deriving (Show, Eq)
 
 data ListenerResult =
-  ListenerResult CommandResult |
+  ListenerResult AppliedCommand |
   GCed
   deriving (Show, Eq)
 
@@ -53,7 +53,7 @@ data History =
   AddNew
     { hNewKeys :: !(Set RequestKey) } |
   Update
-    { hUpdateRks :: !(Map RequestKey CommandResult) } |
+    { hUpdateRks :: !(Map RequestKey AppliedCommand) } |
   QueryForExistence
     { hQueryForExistence :: !(Set RequestKey, MVar ExistenceResult) } |
   QueryForResults
@@ -81,7 +81,7 @@ makeLenses ''HistoryEnv
 
 data PersistenceSystem =
   InMemory
-    {inMemResults :: !(Map RequestKey (Maybe CommandResult))} |
+    {inMemResults :: !(Map RequestKey (Maybe AppliedCommand))} |
   OnDisk
     {dbConn :: !Connection}
 

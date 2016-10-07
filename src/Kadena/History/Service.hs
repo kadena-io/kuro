@@ -44,7 +44,7 @@ initHistoryEnv dispatch' dbPath' debugPrint' getTimestamp' = HistoryEnv
 
 --data PersistenceSystem =
 --  InMemory
---    {inMemResults :: !(Map RequestKey (Maybe CommandResult))} |
+--    {inMemResults :: !(Map RequestKey (Maybe AppliedCommand))} |
 --  OnDisk
 --    {dbConn :: !Connection}
 --
@@ -105,7 +105,7 @@ addNewKeys srks = do
 insertNewKeysAsNothingSQL :: Connection -> Set RequestKey -> IO ()
 insertNewKeysAsNothingSQL dbConn srks = undefined
 
-updateExistingKeys :: Map RequestKey CommandResult -> HistoryService ()
+updateExistingKeys :: Map RequestKey AppliedCommand -> HistoryService ()
 updateExistingKeys updates = do
   alertListeners updates
   pers <- use persistence
@@ -115,10 +115,10 @@ updateExistingKeys updates = do
       persistence .= newInMem
     OnDisk dbConn -> liftIO $ updateKeysSQL dbConn updates
 
-updateInMemKey :: (RequestKey, CommandResult) -> Map RequestKey (Maybe CommandResult) -> Map RequestKey (Maybe CommandResult)
+updateInMemKey :: (RequestKey, AppliedCommand) -> Map RequestKey (Maybe AppliedCommand) -> Map RequestKey (Maybe AppliedCommand)
 updateInMemKey (k,v) m = Map.insert k (Just v) m
 
-alertListeners :: Map RequestKey CommandResult -> HistoryService ()
+alertListeners :: Map RequestKey AppliedCommand -> HistoryService ()
 alertListeners m = do
   start <- now
   listeners <- use registeredListeners
@@ -129,14 +129,14 @@ alertListeners m = do
     end <- now
     debug $ "Serviced " ++ show (sum res) ++ " alerts taking " ++ show (interval start end) ++ "mics"
 
-alertListener :: Map RequestKey CommandResult -> (RequestKey, [MVar ListenerResult]) -> HistoryService Int
+alertListener :: Map RequestKey AppliedCommand -> (RequestKey, [MVar ListenerResult]) -> HistoryService Int
 alertListener res (k,mvs) = do
   commandRes <- return $! res Map.! k
   fails <- liftIO $ mapM (`tryPutMVar` ListenerResult commandRes) mvs
   unless (null fails) $ debug $ "Registered Listener Alert Failure for: " ++ show k ++ " (" ++ show (length fails) ++ " failures)"
   return $ length mvs
 
-updateKeysSQL :: Connection -> Map RequestKey CommandResult -> IO ()
+updateKeysSQL :: Connection -> Map RequestKey AppliedCommand -> IO ()
 updateKeysSQL dbConn updates = undefined
 
 queryForExisting :: (Set RequestKey, MVar ExistenceResult) -> HistoryService ()
@@ -165,11 +165,11 @@ queryForResults (srks, mRes) = do
       liftIO $! putMVar mRes $ PossiblyIncompleteResults $ fmap fromJust found
 
 -- This is here to try to get GHC to check the fast part first
-checkForIndividualResultInMem :: Set RequestKey -> RequestKey -> Maybe CommandResult -> Bool
+checkForIndividualResultInMem :: Set RequestKey -> RequestKey -> Maybe AppliedCommand -> Bool
 checkForIndividualResultInMem _ _ Nothing = False
 checkForIndividualResultInMem s k (Just _) = Set.member k s
 
-queryForResultsSQL :: Connection -> Set RequestKey -> IO (Map RequestKey (Maybe CommandResult))
+queryForResultsSQL :: Connection -> Set RequestKey -> IO (Map RequestKey (Maybe AppliedCommand))
 queryForResultsSQL dbConn srks = undefined
 
 registerNewListeners :: Map RequestKey (MVar ListenerResult) -> HistoryService ()

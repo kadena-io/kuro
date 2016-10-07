@@ -8,21 +8,32 @@
 {-# LANGUAGE BangPatterns #-}
 
 module Kadena.HTTP.ApiServer
-    where
+  ( runApiServer
+  ) where
+
+import Prelude hiding (log)
+import Control.Lens hiding ((.=))
 import Control.Concurrent
 import Control.Monad.Reader
-import Data.Aeson hiding (defaultOptions)
+
+import Data.Monoid
+
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy as BSL
 import Data.ByteString.Lazy (toStrict)
-import Control.Lens hiding ((.=))
-import Data.Monoid
-import Prelude hiding (log)
+import Data.Aeson hiding (defaultOptions)
 import qualified Data.Serialize as SZ
+
+import Data.Set (Set)
+import qualified Data.Set as Set
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
+
 import Data.Thyme.Clock
-import Snap.Http.Server as Snap
+import Data.Thyme.Time.Core (unUTCTime, toMicroseconds)
+
 import Snap.Core
-import qualified Data.Map.Strict as M
+import Snap.Http.Server as Snap
 import Snap.CORS
 
 import Kadena.Types.Command
@@ -32,30 +43,39 @@ import Kadena.Types.Message
 import Kadena.Types.Config as Config
 import Kadena.Types.Spec
 import Kadena.Command.Types
+import Kadena.History.Types ( History(..)
+                            , ExistenceResult(..)
+                            , PossiblyIncompleteResults(..)
+                            , ListenerResult(..))
 import Kadena.Types.Dispatch
 import Kadena.Util.Util
-import Kadena.Types.Api
 
+import Kadena.Types.Api
 
 data ApiEnv = ApiEnv
   { _aiLog :: String -> IO ()
+  , _aiIdCounter :: MVar Int
   , _aiDispatch :: Dispatch
   , _aiConfig :: Config.Config
   , _aiPubConsensus :: MVar PublishedConsensus
   }
 makeLenses ''ApiEnv
 
-
 type Api a = ReaderT ApiEnv Snap a
 
+initRequestId :: IO Int
+initRequestId = do
+  UTCTime _ time <- unUTCTime <$> getCurrentTime
+  return $ fromIntegral $ toMicroseconds time
 
 runApiServer :: Dispatch -> Config.Config -> (String -> IO ()) ->
-                MVar (M.Map RequestId AppliedCommand) -> Int -> MVar PublishedConsensus -> IO ()
+                MVar (Map.Map RequestKey AppliedCommand) -> Int -> MVar PublishedConsensus -> IO ()
 runApiServer dispatch conf logFn appliedMap port mPubConsensus' = do
   putStrLn $ "runApiServer: starting on port " ++ show port
+  m <- newMVar =<< initRequestId
   httpServe (serverConf port) $
     applyCORS defaultOptions $ methods [GET, POST] $
-    route [ ("api", runReaderT api (ApiEnv appliedMap logFn dispatch conf mPubConsensus'))]
+    route [ ("api", runReaderT api (ApiEnv logFn m dispatch conf mPubConsensus'))]
 
 api :: Api ()
 api = route [
@@ -98,24 +118,22 @@ then, alias can be paired with requestId in message to create unique rid
 polling can then be on alias and client rid
 -}
 
-mkRequestId :: Alias -> String -> RequestId
-mkRequestId a s = RequestId $ show a ++ ":" ++ s
-
 sendPublic :: Api ()
 sendPublic = do
   (_,pm) <- readJSON
-  (rid,rpc) <- buildCmdRpc pm
+  (rk,rpc) <- buildCmdRpc pm
   enqueueRPC rpc
-  writeResponse $ SubmitSuccess [rid]
+  writeResponse $ SubmitSuccess [rk]
 
-buildCmdRpc :: PactMessage -> Api (RequestId,SignedRPC)
+buildCmdRpc :: PactMessage -> Api (RequestKey,SignedRPC)
 buildCmdRpc PactMessage {..} = do
   (_,PactEnvelope {..} :: PactEnvelope PactRPC) <- tryParseJSON (BSL.fromStrict $ _pmEnvelope)
-  storedCK <- M.lookup _peAlias <$> view (aiConfig.clientPublicKeys)
+  storedCK <- Map.lookup _peAlias <$> view (aiConfig.clientPublicKeys)
   unless (storedCK == Just _pmKey) $ die 400 "Invalid alias/public key"
-  let rid = mkRequestId _peAlias _peRequestId
+  rid <- getNextRequestId
   let ce = CommandEntry $! SZ.encode $! PublicMessage $! _pmEnvelope
-  return $! (rid,mkCmdRpc ce _peAlias rid (Digest _peAlias _pmSig _pmKey CMD))
+      hsh = hash $ SZ.encode $ CMDWire (ce,_peAlias,rid)
+  return $! (RequestKey hsh,mkCmdRpc ce _peAlias rid (Digest _peAlias _pmSig _pmKey CMD hsh))
 
 sendPublicBatch :: Api ()
 sendPublicBatch = do
@@ -123,23 +141,25 @@ sendPublicBatch = do
   when (null cs) $ die 400 "Empty batch"
   rpcs <- mapM buildCmdRpc cs
   let PactMessage {..} = head cs
-      dig = Digest "batch" (Sig "") _pmKey CMDB
+      btch = map snd rpcs
+      hsh = hash $ SZ.encode $ btch
+      dig = Digest "batch" (Sig "") _pmKey CMDB hsh
       rpc = mkCmdBatchRPC (map snd rpcs) dig
   enqueueRPC $! rpc -- CMDB' $! CommandBatch (reverse cmds) NewMsg
   writeResponse $ SubmitSuccess (map fst rpcs)
 
 poll :: Api ()
 poll = do
-  (_,rids) <- fmap requestIds <$> readJSON
-  m <- view aiApplied >>= liftIO . tryReadMVar >>= fromMaybeM (die 500 "Results unavailable")
+  (_,rks) <- readJSON
+  PossiblyIncompleteResults{..} <- checkHistoryForResult (Set.fromList rks)
   setJSON
   writeBS "{ \"status\": \"Success\", \"responses\": ["
-  forM_ (zip rids [(0 :: Int)..]) $ \(rid@RequestId {..},i) -> do
+  forM_ (zip rks [(0 :: Int)..]) $ \(rk,i) -> do
          when (i>0) $ writeBS ", "
-         writeBS "{ \"requestId\": "
-         writeBS (BS.pack (show _unRequestId))
+         writeBS "{ \"requestKey\": "
+         writeBS $ SZ.encode rk
          writeBS ", \"response\": "
-         case M.lookup rid m of
+         case Map.lookup rk possiblyIncompleteResults of
            Nothing -> writeBS "{ \"status\": \"Not Found\" }"
            Just (AppliedCommand (CommandResult cr) lat _) -> do
                                writeBS cr
@@ -148,17 +168,23 @@ poll = do
          writeBS "}"
   writeBS "] }"
 
-
 serverConf :: MonadSnap m => Int -> Snap.Config m a
 serverConf port = setErrorLog (ConfigFileLog "log/error.log") $
                   setAccessLog (ConfigFileLog "log/access.log") $
                   setPort port defaultConfig
+getNextRequestId :: Api RequestId
+getNextRequestId = do
+  cntr <- view aiIdCounter
+  cnt <- liftIO (takeMVar cntr)
+  liftIO $ putMVar cntr (cnt + 1)
+  return $ RequestId $ show cnt
 
-mkPublicCommand :: BS.ByteString -> Api (Command,RequestId)
+mkPublicCommand :: BS.ByteString -> Api (Command, RequestKey)
 mkPublicCommand bs = do
-  rid <- undefined -- view aiNextRequestId >>= \f -> liftIO f
+  rid <- getNextRequestId
   nid <- view (aiConfig.nodeId)
-  return $! (Command (CommandEntry $! SZ.encode $! PublicMessage $! bs) (_alias nid) rid Valid NewMsg,rid)
+  cmd@Command{..} <- return $! Command (CommandEntry $! SZ.encode $! PublicMessage $! bs) (_alias nid) (RequestId $ show rid) Valid NewMsg
+  return (cmd, RequestKey $ hash $ SZ.encode $ CMDWire (_cmdEntry, _cmdClientId, _cmdRequestId))
 
 
 enqueueRPC :: SignedRPC -> Api ()
@@ -174,3 +200,16 @@ enqueueRPC signedRPC = do
     liftIO $ writeComm (_inboundCMD $ _aiDispatch env) $! InboundCMD (ReceivedAt ts, signedRPC)
   else liftIO $ writeComm (_outboundGeneral $ _aiDispatch env) $!
        directMsg [(ldr,SZ.encode signedRPC)]
+
+
+--  QueryForResults
+--    { hQueryForResults :: !(Set RequestKey, MVar PossiblyIncompleteResults) } |
+--  RegisterListener
+--    { hNewListener :: !(Map RequestKey (MVar ListenerResult))} |
+
+checkHistoryForResult :: Set RequestKey -> Api PossiblyIncompleteResults
+checkHistoryForResult rks = do
+  hChan <- view (aiDispatch.historyChannel)
+  m <- liftIO $ newEmptyMVar
+  liftIO $ writeComm hChan $ QueryForResults (rks,m)
+  liftIO $ readMVar m

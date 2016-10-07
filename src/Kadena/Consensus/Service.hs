@@ -22,6 +22,35 @@ import qualified Kadena.Commit.Service as Commit
 import qualified Kadena.Sender.Service as Sender
 import qualified Kadena.Log.Service as Log
 import qualified Kadena.Evidence.Service as Ev
+import qualified Kadena.History.Service as History
+
+--initHistoryEnv
+--  :: Dispatch
+--  -> Maybe FilePath
+--  -> (String -> IO ())
+--  -> IO UTCTime
+--  -> HistoryEnv
+--initHistoryEnv dispatch' dbPath' debugPrint' getTimestamp' = HistoryEnv
+--  { _historyChannel = dispatch' ^. D.historyChannel
+--  , _debugPrint = debugPrint'
+--  , _getTimestamp = getTimestamp'
+--  , _dbPath = dbPath'
+--  }
+--
+--runHistoryService :: HistoryEnv -> Maybe HistoryState -> IO ()
+
+launchHistoryService :: Dispatch
+  -> (String -> IO ())
+  -> IO UTCTime
+  -> Config
+  -> IO (Async ())
+launchHistoryService dispatch' dbgPrint' getTimestamp' rconf = do
+  let _dbPath' = rconf ^. logSqlitePath
+      _dbPath'' = if null _dbPath'
+        then Nothing
+        else error "Persistence not yet enabled" --Just dbPath'
+  link =<< async (History.runHistoryService (History.initHistoryEnv dispatch' Nothing dbgPrint' getTimestamp') Nothing)
+  async (foreverTick (_historyChannel dispatch') 1000000 History.Tick)
 
 launchEvidenceService :: Dispatch
   -> (String -> IO ())
@@ -91,6 +120,7 @@ runConsensusService renv rconf spec rstate timeCache' mPubConsensus' applyFn' = 
   mEvState <- newEmptyMVar
   mLeaderNoFollowers <- newEmptyMVar
 
+  link =<< launchHistoryService dispatch' dbgPrint' getTimestamp' rconf
   link =<< launchSenderService dispatch' dbgPrint' publishMetric' mEvState rconf
   link =<< launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' applyFn' enqueueApplied'
   link =<< launchEvidenceService dispatch' dbgPrint' publishMetric' mEvState rconf' mLeaderNoFollowers

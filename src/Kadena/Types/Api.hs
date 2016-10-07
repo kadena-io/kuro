@@ -7,7 +7,7 @@
 module Kadena.Types.Api
   ( PollRequest(..)
   , Batch(..)
-  , SubmitSuccess(..), ssRequestIds
+  , SubmitSuccess(..), ssRequestKeys
   , PollSuccessEntry(..)
   ) where
 
@@ -33,7 +33,7 @@ data Batch = Batch
 instance FromJSON Batch
 instance ToJSON Batch
 
-data SubmitSuccess = SubmitSuccess { _ssRequestIds :: ![RequestKey] }
+data SubmitSuccess = SubmitSuccess { _ssRequestKeys :: ![RequestKey] }
 makeLenses ''SubmitSuccess
 
 instance ToJSON SubmitSuccess where

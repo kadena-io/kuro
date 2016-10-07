@@ -11,6 +11,7 @@ module Kadena.Consensus.Handle.Types (
   , RequestId(..)
   , Role(..)
   , LogEntry(..)
+  , Hash(..)
   -- * RPC
   , AppendEntries(..)
   , AppendEntriesResponse(..)

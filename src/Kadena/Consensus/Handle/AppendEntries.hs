@@ -14,8 +14,6 @@ import Control.Monad.Reader
 import Control.Monad.State (get)
 import Control.Monad.Writer.Strict
 
-import Data.ByteString (ByteString)
-
 import qualified Data.BloomFilter as Bloom
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
@@ -168,8 +166,8 @@ applyNewLeader NewLeaderConfirmed{..} = do
   view KD.informEvidenceServiceOfElection >>= liftIO
   setRole _stateRole
 
-logHashChange :: ByteString -> KD.Consensus ()
-logHashChange mLastHash = do
+logHashChange :: Hash -> KD.Consensus ()
+logHashChange (Hash mLastHash) = do
   logMetric $ KD.MetricHash mLastHash
 
 handle :: AppendEntries -> KD.Consensus ()
@@ -216,7 +214,7 @@ handle ae = do
       -- This `when` fixes a funky bug. If the leader receives an AE from itself it will reset its election timer (which can kill the leader).
       -- Ignoring this is safe because if we have an out of touch leader they will step down after 2x maxElectionTimeouts if it receives no valid AER
 
-createAppendEntriesResponse :: Bool -> Bool -> LogIndex -> ByteString -> KD.Consensus AppendEntriesResponse
+createAppendEntriesResponse :: Bool -> Bool -> LogIndex -> Hash -> KD.Consensus AppendEntriesResponse
 createAppendEntriesResponse success convinced maxIndex' lastLogHash' = do
   ct <- use KD.term
   myNodeId' <- KD.viewConfig KD.nodeId

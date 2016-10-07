@@ -110,7 +110,7 @@ sendCmd cmd = do
   s <- use server
   e <- mkExec cmd Null
   r <- liftIO $ post ("http://" ++ s ++ "/api/public/send") (toJSON e)
-  rids <- view (responseBody.ssRequestIds) <$> asJSON r
+  rids <- view (responseBody.ssRequestKeys) <$> asJSON r
   flushStrLn $ "Request Id: " ++ show rids
   showResult 10000 rids Nothing
 
@@ -121,7 +121,7 @@ batchTest n cmd = do
   flushStrLn $ "Prepared " ++ show (length es) ++ " messages ..."
   r <- liftIO $ post ("http://" ++ s ++ "/api/public/batch") (toJSON (Batch es))
   flushStrLn $ "Sent, retrieving responses"
-  rids <- view (responseBody.ssRequestIds) <$> asJSON r
+  rids <- view (responseBody.ssRequestKeys) <$> asJSON r
   flushStrLn $ "Polling response " ++ show (last rids)
   showResult (n * 200) rids (Just (fromIntegral n))
 
@@ -131,7 +131,7 @@ manyTest n cmd = do
   rs <- replicateM n $ do
                    e <- mkExec cmd Null
                    liftIO $ post ("http://" ++ s ++ "/api/public/send") (toJSON e)
-  rids <- view (responseBody.ssRequestIds) <$> asJSON (last rs)
+  rids <- view (responseBody.ssRequestKeys) <$> asJSON (last rs)
   showResult (n * 200) rids (Just (fromIntegral n))
 
 setup :: Repl ()
@@ -144,7 +144,7 @@ setup = do
       s <- use server
       e <- mkExec code j
       r <- liftIO $ post ("http://" ++ s ++ "/api/public/send") (toJSON e)
-      rids <- view (responseBody.ssRequestIds) <$> asJSON r
+      rids <- view (responseBody.ssRequestKeys) <$> asJSON r
       showResult 10000 rids Nothing
 
 

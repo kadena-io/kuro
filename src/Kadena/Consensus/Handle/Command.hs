@@ -12,14 +12,11 @@ import Control.Monad.State
 import Control.Monad.Writer
 import Control.Parallel.Strategies
 
-
 import qualified Data.Set as Set
-
-
 
 import Data.BloomFilter (Bloom)
 import qualified Data.BloomFilter as Bloom
-import Data.Maybe (isNothing, isJust, fromJust)
+import Data.Maybe (isJust, fromJust)
 import Data.Either (partitionEithers)
 
 import Kadena.Consensus.Handle.Types
@@ -29,23 +26,11 @@ import qualified Kadena.Types as KD
 import qualified Kadena.Sender.Service as Sender
 import qualified Kadena.Evidence.Service as Ev
 
-data CommandEnv = CommandEnv {
-      _nodeRole :: Role
-    , _term :: Term
-    , _currentLeader :: Maybe NodeId
-    , _nodeId :: NodeId
-    , _cmdBloomFilter :: Bloom RequestKey
-}
+data CommandEnv = CommandEnv
+  { _nodeRole :: Role
+  , _cmdBloomFilter :: Bloom RequestKey
+  }
 makeLenses ''CommandEnv
-
-data CommandOut =
-    UnknownLeader |
-    RetransmitToLeader { _leaderId :: NodeId } |
-    CommitAndPropagate {
-      _newEntry :: NewLogEntries
-    , _replayKey :: RequestKey
-    } |
-    AlreadySeen
 
 newtype BPNewEntries = BPNewEntries { _unBPNewEntries :: [Command]} deriving (Eq, Show)
 newtype BPAlreadySeen = BPAlreadySeen { _unBPAlreadySeen :: [Command]} deriving (Eq, Show)
@@ -86,15 +71,10 @@ handleCommandBatch cmdbBatch = do
 handleBatch :: Commands -> KD.Consensus ()
 handleBatch cmdbBatch = do
   debug "Received Command Batch"
-  c <- KD.readConfig
   s <- get
   lid <- return $ KD._currentLeader s
-  ct <- return $ KD._term s
   (out,_) <- runReaderT (runWriterT (handleCommandBatch cmdbBatch)) $
              CommandEnv (KD._nodeRole s)
-                        ct
-                        lid
-                        (KD._nodeId c)
                         (KD._cmdBloomFilter s)
   debug "Finished processing command batch"
   case out of

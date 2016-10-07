@@ -179,5 +179,5 @@ runServer = do
   timerTarget' <- newEmptyMVar
   rstate <- return $ initialConsensusState timerTarget'
   mPubConsensus' <- newMVar $! PublishedConsensus (rstate ^. currentLeader) (rstate ^. nodeRole) (rstate ^. term)
-  void $ CL.fork $ runApiServer dispatch rconf debugFn mAppliedMap (_apiPort rconf) mPubConsensus'
+  void $ CL.fork $ runApiServer dispatch rconf debugFn (_apiPort rconf) mPubConsensus'
   runConsensusService receiverEnv rconf raftSpec rstate getCurrentTime mPubConsensus' (liftIO . applyFn)

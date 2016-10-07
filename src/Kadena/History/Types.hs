@@ -75,7 +75,7 @@ data HistoryEnv = HistoryEnv
   { _historyChannel :: !HistoryChannel
   , _debugPrint :: !(String -> IO ())
   , _getTimestamp :: !(IO UTCTime)
-  , _dbPath :: !(Maybe FilePath)
+  , _dbPath :: !(Maybe String)
   }
 makeLenses ''HistoryEnv
 

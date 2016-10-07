@@ -28,7 +28,6 @@ import qualified Data.IntMap.Strict as IntMap
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 
-import Data.ByteString (ByteString)
 import qualified Data.ByteString as B
 import Data.Serialize hiding (get)
 
@@ -117,7 +116,7 @@ lookupEntry i = do
 -- | called by leaders sending appendEntries.
 -- given a replica's nextIndex, get the index and term to send as
 -- prevLog(Index/Term)
-getUncommitedHashes :: LogThread (Map LogIndex ByteString)
+getUncommitedHashes :: LogThread (Map LogIndex Hash)
 getUncommitedHashes = do
   ci   <- commitIndex
   vles <- use lsVolatileLogEntries
@@ -177,8 +176,8 @@ logInfoForNextIndex (Just myNextIdx) = do
 {-# INLINE logInfoForNextIndex #-}
 
 -- | Latest hash or empty
-lastLogHash :: LogThread ByteString
-lastLogHash = maybe mempty _leHash <$> lastEntry
+lastLogHash :: LogThread Hash
+lastLogHash = maybe (Hash mempty) _leHash <$> lastEntry
 {-# INLINE lastLogHash #-}
 
 -- | Latest term on log or 'startTerm'
@@ -290,7 +289,7 @@ appendLogEntry NewLogEntries{..} = do
           lsNextLogIndex .= lastIdx' + 1
           lsLastLogTerm  .= _leTerm lastLog'
     Nothing -> do
-      nle <- return $! newEntriesToLog _nleTerm B.empty nli (unNleEntries _nleEntries)
+      nle <- return $! newEntriesToLog _nleTerm (Hash B.empty) nli (unNleEntries _nleEntries)
       mLastLog' <- return $! lesMaxEntry nle
       case mLastLog' of
         Nothing -> return ()
@@ -303,7 +302,7 @@ appendLogEntry NewLogEntries{..} = do
           lsLastLogTerm  .= _leTerm lastLog'
 {-# INLINE appendLogEntry #-}
 
-newEntriesToLog :: Term -> ByteString -> LogIndex -> [Command] -> LogEntries
+newEntriesToLog :: Term -> Hash -> LogIndex -> [Command] -> LogEntries
 newEntriesToLog ct prevHash idx cmds = res `seq` LogEntries res
   where
     res = Map.fromList $! go prevHash idx cmds
@@ -327,7 +326,7 @@ updateLogEntriesHashes preceedingEntry (LogEntries les) = LogEntries $! Map.from
 --    Nothing -> ls
 {-# INLINE updateLogEntriesHashes #-}
 
-hashNewEntry :: ByteString -> Term -> LogIndex -> Command -> ByteString
+hashNewEntry :: Hash -> Term -> LogIndex -> Command -> Hash
 hashNewEntry prevHash leTerm' leLogIndex' cmd = hash $! (encode $! LEWire (leTerm', leLogIndex', sigCmd cmd, prevHash))
   where
     sigCmd Command{ _cmdProvenance = ReceivedMsg{ _pDig = dig, _pOrig = bdy }} =

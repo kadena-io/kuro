@@ -6,14 +6,16 @@
 module Kadena.Types.Message.Signed
   ( MsgType(..)
   , Provenance(..), pDig, pOrig, pTimeStamp
-  , Digest(..), digNodeId, digSig, digPubkey, digType
+  , Digest(..), digNodeId, digSig, digPubkey, digType, digHash
   , SignedRPC(..)
   -- for testing & benchmarks
-  , verifySignedRPC
+  , verifySignedRPC, verifySignedRPCNoReHash
   , WireFormat(..)
   ) where
 
 import Control.Lens hiding (Index, (|>))
+import Control.Parallel.Strategies
+
 import qualified Data.Map as Map
 import Data.ByteString (ByteString)
 import Data.Serialize (Serialize)
@@ -36,6 +38,7 @@ data Digest = Digest
   , _digSig    :: !Signature
   , _digPubkey :: !PublicKey
   , _digType   :: !MsgType
+  , _digHash   :: !Hash
   } deriving (Show, Eq, Ord, Generic)
 makeLenses ''Digest
 
@@ -65,23 +68,51 @@ class WireFormat a where
   toWire   :: NodeId -> PublicKey -> PrivateKey -> a -> SignedRPC
   fromWire :: Maybe ReceivedAt -> KeySet -> SignedRPC -> Either String a
 
--- | Based on the MsgType in the SignedRPC's Digest, we know which set of keys are needed to validate the message
-verifySignedRPC :: KeySet -> SignedRPC -> Either String ()
-verifySignedRPC !KeySet{..} s@(SignedRPC !Digest{..} !bdy)
+-- | Based on the MsgType in the SignedRPC's Digest, choose the keySet to try to find the key in
+pickKey :: KeySet -> SignedRPC -> Either String PublicKey
+pickKey !KeySet{..} s@(SignedRPC !Digest{..} _)
   | _digType == CMD || _digType == CMDB =
       case Map.lookup _digNodeId _ksClient of
         Nothing -> Left $! "PubKey not found for NodeId: " ++ show _digNodeId
         Just !key
           | key /= _digPubkey -> Left $! "Public key in storage doesn't match digest's key for msg: " ++ show s
-          | otherwise -> if not $ valid bdy key _digSig
-                         then Left $! "Unable to verify SignedRPC sig: " ++ show s
-                         else Right ()
+          | otherwise -> Right $! key
   | otherwise =
       case Map.lookup _digNodeId _ksCluster of
         Nothing -> Left $! "PubKey not found for NodeId: " ++ show _digNodeId
         Just !key
           | key /= _digPubkey -> Left $! "Public key in storage doesn't match digest's key for msg: " ++ show s
-          | otherwise -> if not $ valid bdy key _digSig
-                         then Left $! "Unable to verify SignedRPC sig: " ++ show s
-                         else Right ()
+          | otherwise -> Right $! key
+{-# INLINE pickKey #-}
+
+verifySignedRPC :: KeySet -> SignedRPC -> Either String ()
+verifySignedRPC ks s = pickKey ks s >>= rehashAndVerify s
 {-# INLINE verifySignedRPC #-}
+
+verifySignedRPCNoReHash :: KeySet -> SignedRPC -> Either String ()
+verifySignedRPCNoReHash ks s = pickKey ks s >>= verifyNoHash s
+{-# INLINE verifySignedRPCNoReHash #-}
+
+rehashAndVerify :: SignedRPC -> PublicKey -> Either String ()
+rehashAndVerify s@(SignedRPC !Digest{..} !bdy) !key = runEval $ do
+  h <- rpar $ hash bdy
+  c <- rpar $ valid _digHash key _digSig
+  hashRes <- rseq h
+  if hashRes /= _digHash
+  then return $! Left $! "Unable to verify SignedRPC hash: "
+              ++ " our=" ++ show hashRes
+              ++ " theirs=" ++ show _digHash
+              ++ " in " ++ show s
+  else do
+    cryptoRes <- rseq c
+    if not cryptoRes
+    then return $! Left $! "Unable to verify SignedRPC sig: " ++ show s
+    else return $! Right ()
+{-# INLINE rehashAndVerify #-}
+
+verifyNoHash :: SignedRPC -> PublicKey -> Either String ()
+verifyNoHash s@(SignedRPC !Digest{..} _) key =
+  if not $ valid _digHash key _digSig
+  then Left $! "Unable to verify SignedRPC sig: " ++ show s
+  else Right ()
+{-# INLINE verifyNoHash #-}

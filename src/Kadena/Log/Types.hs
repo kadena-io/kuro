@@ -41,13 +41,12 @@ import Control.Monad.Trans.RWS.Strict
 
 import Data.Map.Strict (Map)
 import Data.Set (Set)
-import Data.ByteString (ByteString)
 
 import Database.SQLite.Simple (Connection(..))
 
 import GHC.Generics
 
-import Kadena.Types.Base
+import Kadena.Types.Base as X
 import Kadena.Types.Metric
 import Kadena.Types.Config (KeySet(..))
 import Kadena.Types.Log
@@ -60,7 +59,7 @@ import Kadena.Commit.Types (CommitChannel)
 data QueryApi =
   Query (Set AtomicQuery) (MVar (Map AtomicQuery QueryResult)) |
   Update UpdateLogs |
-  NeedCacheEvidence (Set LogIndex) (MVar (Map LogIndex ByteString)) |
+  NeedCacheEvidence (Set LogIndex) (MVar (Map LogIndex Hash)) |
   Tick Tock
   deriving (Eq)
 
@@ -95,7 +94,7 @@ data LogState = LogState
   , _lsPersistedLogEntries :: !PersistedLogEntries
   , _lsLastApplied      :: !LogIndex
   , _lsLastLogIndex     :: !LogIndex
-  , _lsLastLogHash      :: !ByteString
+  , _lsLastLogHash      :: !Hash
   , _lsNextLogIndex     :: !LogIndex
   , _lsCommitIndex      :: !LogIndex
   , _lsLastPersisted    :: !LogIndex
@@ -111,7 +110,7 @@ initLogState = LogState
   , _lsPersistedLogEntries = plesEmpty
   , _lsLastApplied = startIndex
   , _lsLastLogIndex = startIndex
-  , _lsLastLogHash = mempty
+  , _lsLastLogHash = Hash mempty
   , _lsNextLogIndex = startIndex + 1
   , _lsCommitIndex = startIndex
   , _lsLastPersisted = startIndex

@@ -43,14 +43,11 @@ module Kadena.Types.Log
 import Control.Parallel.Strategies
 import Control.Lens hiding (Index, (|>))
 
-import qualified Crypto.Hash.BLAKE2.BLAKE2bp as BLAKE
-
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import qualified Data.ByteString as B
-import Data.ByteString (ByteString)
+
 import Data.Serialize hiding (get)
 import Data.Foldable
 
@@ -62,21 +59,17 @@ import Kadena.Types.Config
 import Kadena.Types.Message.Signed
 import Kadena.Types.Message.CMD
 
-hash :: ByteString -> ByteString
-hash = BLAKE.hash 32 B.empty
-{-# INLINE hash #-}
-
 -- TODO: add discrimination here, so we can get a better map construction
 data LogEntry = LogEntry
   { _leTerm     :: !Term
   , _leLogIndex :: !LogIndex
   , _leCommand  :: !Command
-  , _leHash     :: !ByteString
+  , _leHash     :: !Hash
   }
   deriving (Show, Eq, Ord, Generic)
 makeLenses ''LogEntry
 
-data LEWire = LEWire (Term, LogIndex, SignedRPC, ByteString)
+data LEWire = LEWire (Term, LogIndex, SignedRPC, Hash)
   deriving (Show, Generic)
 instance Serialize LEWire
 
@@ -259,7 +252,7 @@ verifySeqLogEntries !ks !s = foldr' (\(k,v) -> IntMap.insert k v) IntMap.empty $
 {-# INLINE verifySeqLogEntries #-}
 
 newtype VerifiedLogEntries = VerifiedLogEntries
-  { _vleResults :: (IntMap CryptoVerified)}
+  { _vleResults :: IntMap CryptoVerified}
   deriving (Show, Eq)
 
 decodeLEWire :: Maybe ReceivedAt -> KeySet -> [LEWire] -> Either String LogEntries
@@ -273,21 +266,20 @@ decodeLEWire !ts !ks !les = go les Map.empty
 
 encodeLEWire :: NodeId -> PublicKey -> PrivateKey -> LogEntries -> [LEWire]
 encodeLEWire nid pubKey privKey les =
-  (\LogEntry{..} -> LEWire (_leTerm, _leLogIndex, toWire nid pubKey privKey _leCommand, _leHash)) <$> (Map.elems $ _logEntries les)
+  (\LogEntry{..} -> LEWire (_leTerm, _leLogIndex, toWire nid pubKey privKey _leCommand, _leHash)) <$> Map.elems (_logEntries les)
 {-# INLINE encodeLEWire #-}
 
 -- TODO: This uses the old decode encode trick and should be changed...
 hashLogEntry :: Maybe LogEntry -> LogEntry -> LogEntry
 hashLogEntry (Just LogEntry{ _leHash = prevHash }) le@LogEntry{..} =
-  le { _leHash = hash (encode $ LEWire (_leTerm, _leLogIndex, getCmdSignedRPC le, prevHash))}
+  le { _leHash = hash (encode $ (_leTerm, _leLogIndex, getCmdBodyHash le, prevHash))}
 hashLogEntry Nothing le@LogEntry{..} =
-  le { _leHash = hash (encode $ LEWire (_leTerm, _leLogIndex, getCmdSignedRPC le, mempty))}
+  le { _leHash = hash (encode $ (_leTerm, _leLogIndex, getCmdBodyHash le, Hash mempty))}
 {-# INLINE hashLogEntry #-}
 
-getCmdSignedRPC :: LogEntry -> SignedRPC
-getCmdSignedRPC LogEntry{ _leCommand = Command{ _cmdProvenance = ReceivedMsg{ _pDig = dig, _pOrig = bdy }}} =
-  SignedRPC dig bdy
-getCmdSignedRPC LogEntry{ _leCommand = Command{ _cmdProvenance = NewMsg }} =
+getCmdBodyHash :: LogEntry -> Hash
+getCmdBodyHash LogEntry{ _leCommand = Command{ _cmdProvenance = ReceivedMsg{ _pDig = dig }}} = _digHash dig
+getCmdBodyHash LogEntry{ _leCommand = Command{ _cmdProvenance = NewMsg }} =
   error "Invariant Failure: for a command to be in a log entry, it needs to have been received!"
 
 data ReplicateLogEntries = ReplicateLogEntries
@@ -368,7 +360,7 @@ data QueryResult =
   QrSomeEntry (Maybe LogEntry) |
   QrUnappliedEntries (Maybe LogEntries) |
   QrLogInfoForNextIndex (LogIndex,Term) |
-  QrLastLogHash ByteString |
+  QrLastLogHash Hash |
   QrLastLogTerm Term |
   QrEntriesAfter LogEntries |
   QrInfoAndEntriesAfter (LogIndex, Term, LogEntries) |
@@ -463,7 +455,7 @@ instance HasQueryResult LogInfoForNextIndex (LogIndex,Term) where
     _ -> error "Invariant Error: hasQueryResult LogInfoForNextIndex failed to find LogInfoForNextIndex"
   {-# INLINE hasQueryResult #-}
 
-instance HasQueryResult LastLogHash ByteString where
+instance HasQueryResult LastLogHash Hash where
   hasQueryResult LastLogHash m = case Map.lookup GetLastLogHash m of
     Just (QrLastLogHash v) -> v
     _ -> error "Invariant Error: hasQueryResult LastLogHash failed to find LastLogHash"

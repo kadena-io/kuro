@@ -36,8 +36,9 @@ instance WireFormat RequestVote where
                                           , _rvCandidateId
                                           , _rvLastLogIndex
                                           , _rvLastLogTerm)
-                  sig = sign bdy privKey pubKey
-                  dig = Digest (_alias nid) sig pubKey RV
+                  hsh = hash bdy
+                  sig = sign hsh privKey pubKey
+                  dig = Digest (_alias nid) sig pubKey RV hsh
               in SignedRPC dig bdy
     ReceivedMsg{..} -> SignedRPC _pDig _pOrig
   fromWire !ts !ks s@(SignedRPC !dig !bdy) = case verifySignedRPC ks s of

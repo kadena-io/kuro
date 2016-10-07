@@ -11,6 +11,7 @@ module Kadena.Types.Command
 
 import Data.ByteString (ByteString)
 import Data.Serialize (Serialize)
+import Data.Aeson
 import GHC.Generics hiding (from)
 import GHC.Int (Int64)
 import Control.Lens (makeLenses)
@@ -23,8 +24,8 @@ newtype CommandEntry = CommandEntry { unCommandEntry :: ByteString }
 newtype CommandResult = CommandResult { unCommandResult :: ByteString }
   deriving (Show, Eq, Ord, Generic, Serialize)
 
-newtype RequestKey = RequestKey { unRequestKey :: (Alias, Signature) }
-  deriving (Show, Eq, Ord, Generic, Serialize)
+newtype RequestKey = RequestKey { unRequestKey :: Hash}
+  deriving (Show, Eq, Ord, Generic, ToJSON, FromJSON, Serialize)
 
 data AppliedCommand = AppliedCommand {
       _acResult :: !CommandResult

@@ -25,7 +25,6 @@ import Control.Monad.Trans.Reader
 import Control.Concurrent (MVar)
 import Data.IORef (IORef)
 
-import Data.ByteString (ByteString)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
@@ -64,8 +63,8 @@ data EvidenceState = EvidenceState
   , _esCacheMissAers :: !(Set AppendEntriesResponse)
   , _esMismatchNodes :: !(Set NodeId)
   , _esResetLeaderNoFollowers :: Bool
-  , _esHashAtCommitIndex :: !ByteString
-  , _esEvidenceCache :: !(Map LogIndex ByteString)
+  , _esHashAtCommitIndex :: !Hash
+  , _esEvidenceCache :: !(Map LogIndex Hash)
   , _esMaxElectionTimeout :: !Int
   } deriving (Show, Eq)
 makeLenses ''EvidenceState
@@ -88,8 +87,8 @@ initEvidenceState otherNodes' commidIndex' maxElectionTimeout' = EvidenceState
   , _esCacheMissAers = Set.empty
   , _esMismatchNodes = Set.empty
   , _esResetLeaderNoFollowers = False
-  , _esHashAtCommitIndex = mempty
-  , _esEvidenceCache = Map.singleton startIndex mempty
+  , _esHashAtCommitIndex = Hash mempty
+  , _esEvidenceCache = Map.singleton startIndex (Hash mempty)
   , _esMaxElectionTimeout = maxElectionTimeout'
   }
 

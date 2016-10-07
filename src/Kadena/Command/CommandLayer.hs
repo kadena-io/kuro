@@ -27,6 +27,7 @@ import qualified Data.HashMap.Strict as HM
 import Text.PrettyPrint.ANSI.Leijen (renderCompact,displayS)
 import System.Directory
 import Data.Aeson.Encode.Pretty
+import Crypto.Ed25519.Pure (valid)
 
 import Pact.Types hiding (PublicKey)
 import qualified Pact.Types as Pact
@@ -38,7 +39,7 @@ import Pact.Repl
 import Kadena.Command.PactSqlLite as PactSL
 
 import Kadena.Types.Log
-import Kadena.Types.Base hiding (Term)
+import Kadena.Types.Base hiding (Term, valid, sign)
 import Kadena.Types.Command
 import Kadena.Types.Message hiding (RPC)
 import Kadena.Command.Types
@@ -240,9 +241,9 @@ mkTestSigned = do
   let env@PactEnvelope {..} = PactEnvelope msg "a" "rid"
   let (pm@PactMessage {..}) = mkPactMessage' _sk _pk  (BSL.toStrict $ A.encode env)
       ce = CommandEntry $! SZ.encode $! PublicMessage $! _pmEnvelope
-      rpc = mkCmdRpc ce _peAlias "rid" (Digest _peAlias _pmSig _pmKey CMD)
+      rpc = mkCmdRpc ce _peAlias "rid" (Digest _peAlias _pmSig _pmKey CMD $ hash $ SZ.encode $ CMDWire (ce,_peAlias,"rid"))
       Right (c :: Command) = fromWire Nothing def rpc
-      cmdbrpc = mkCmdBatchRPC [rpc] (Digest _peAlias _pmSig _pmKey CMDB)
+      cmdbrpc = mkCmdBatchRPC [rpc] (Digest _peAlias _pmSig _pmKey CMDB $ hash $ SZ.encode $ [rpc])
       Right (cb :: CommandBatch) = fromWire Nothing def cmdbrpc
   BSL.writeFile "tests/exec1-signed.json" $ encodePretty pm
   (Just pm') <- A.decode <$> BSL.readFile "tests/exec1-signed.json"

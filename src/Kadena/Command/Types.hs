@@ -13,6 +13,7 @@ import Data.Aeson as A
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as BSL
 import qualified Crypto.PubKey.Curve25519 as C2
+import Crypto.Ed25519.Pure (sign)
 import Data.ByteArray.Extend
 import Data.Serialize as SZ hiding (get)
 import GHC.Generics
@@ -31,7 +32,7 @@ import Pact.Pure
 
 import Kadena.Command.PactSqlLite
 
-import Kadena.Types.Base hiding (Term)
+import Kadena.Types.Base hiding (Term, sign, valid)
 import Kadena.Types.Command
 import Kadena.Types.Config
 
@@ -156,7 +157,7 @@ mkPactMessage :: ToJSON a => PrivateKey -> PublicKey -> Alias -> String -> a -> 
 mkPactMessage sk pk al rid a = mkPactMessage' sk pk $ BSL.toStrict $ A.encode (PactEnvelope a rid al)
 -- al rid (BSL.toStrict $ A.encode a)
 
-mkPactMessage' :: PrivateKey -> PublicKey ->  ByteString -> PactMessage
+mkPactMessage' :: PrivateKey -> PublicKey -> ByteString -> PactMessage
 mkPactMessage' sk pk env = PactMessage env pk (sign env sk pk)
 
 data PactEnvelope a = PactEnvelope {

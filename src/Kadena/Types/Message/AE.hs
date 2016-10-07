@@ -14,6 +14,7 @@ import Data.Set (Set)
 import Data.Serialize (Serialize)
 import qualified Data.Serialize as S
 import Data.Foldable
+import Data.Maybe (fromMaybe)
 import Data.Thyme.Time.Core ()
 import GHC.Generics
 
@@ -40,14 +41,15 @@ instance Serialize AEWire
 
 instance WireFormat AppendEntries where
   toWire nid pubKey privKey AppendEntries{..} = case _aeProvenance of
-    NewMsg -> let bdy = maybe (error "failure to compress AE") id $ compressHC $ S.encode $ AEWire (_aeTerm
+    NewMsg -> let bdy = fromMaybe (error "failure to compress AE") $ compressHC $ S.encode $ AEWire (_aeTerm
                                           ,_leaderId
                                           ,_prevLogIndex
                                           ,_prevLogTerm
                                           ,encodeLEWire nid pubKey privKey _aeEntries
                                           ,toWire nid pubKey privKey <$> toList _aeQuorumVotes)
-                  sig = sign bdy privKey pubKey
-                  dig = Digest (_alias nid) sig pubKey AE
+                  hsh = hash bdy
+                  sig = sign hsh privKey pubKey
+                  dig = Digest (_alias nid) sig pubKey AE hsh
               in SignedRPC dig bdy
     ReceivedMsg{..} -> SignedRPC _pDig _pOrig
   fromWire !ts !ks s@(SignedRPC !dig !bdy) = case verifySignedRPC ks s of

@@ -14,7 +14,6 @@ module Kadena.Evidence.Types
 import Control.Lens hiding (Index)
 import Control.Concurrent.Chan (Chan)
 
-import Data.ByteString (ByteString)
 import Data.Map.Strict (Map)
 import Data.Set (Set)
 
@@ -41,7 +40,7 @@ data Evidence =
   -- So, whenever LogService sees a new batch come it, it hands us the info for the last one.
   -- We will have misses -- if nodes are out of sync they may get different batches but overall this should
   -- function fine.
-  CacheNewHash { _cLogIndex :: LogIndex , _cHash :: ByteString } |
+  CacheNewHash { _cLogIndex :: LogIndex , _cHash :: Hash } |
   Tick Tock
   deriving (Show, Eq, Typeable)
 

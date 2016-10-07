@@ -50,13 +50,13 @@ data RPC = AE'   AppendEntries
   deriving (Show, Eq, Generic)
 
 signedRPCtoRPC :: Maybe ReceivedAt -> KeySet -> SignedRPC -> Either String RPC
-signedRPCtoRPC ts ks s@(SignedRPC (Digest _ _ _ AE)   _) = (\rpc -> rpc `seq` AE'   rpc) <$> fromWire ts ks s
-signedRPCtoRPC ts ks s@(SignedRPC (Digest _ _ _ AER)  _) = (\rpc -> rpc `seq` AER'  rpc) <$> fromWire ts ks s
-signedRPCtoRPC ts ks s@(SignedRPC (Digest _ _ _ RV)   _) = (\rpc -> rpc `seq` RV'   rpc) <$> fromWire ts ks s
-signedRPCtoRPC ts ks s@(SignedRPC (Digest _ _ _ RVR)  _) = (\rpc -> rpc `seq` RVR'  rpc) <$> fromWire ts ks s
-signedRPCtoRPC ts ks s@(SignedRPC (Digest _ _ _ CMD)  _) = (\rpc -> rpc `seq` CMD'  rpc) <$> fromWire ts ks s
-signedRPCtoRPC ts ks s@(SignedRPC (Digest _ _ _ CMDR) _) = (\rpc -> rpc `seq` CMDR' rpc) <$> fromWire ts ks s
-signedRPCtoRPC ts ks s@(SignedRPC (Digest _ _ _ CMDB) _) = (\rpc -> rpc `seq` CMDB' rpc) <$> fromWire ts ks s
+signedRPCtoRPC ts ks s@(SignedRPC (Digest _ _ _ AE _)   _) = (\rpc -> rpc `seq` AE'   rpc) <$> fromWire ts ks s
+signedRPCtoRPC ts ks s@(SignedRPC (Digest _ _ _ AER _)  _) = (\rpc -> rpc `seq` AER'  rpc) <$> fromWire ts ks s
+signedRPCtoRPC ts ks s@(SignedRPC (Digest _ _ _ RV _)   _) = (\rpc -> rpc `seq` RV'   rpc) <$> fromWire ts ks s
+signedRPCtoRPC ts ks s@(SignedRPC (Digest _ _ _ RVR _)  _) = (\rpc -> rpc `seq` RVR'  rpc) <$> fromWire ts ks s
+signedRPCtoRPC ts ks s@(SignedRPC (Digest _ _ _ CMD _)  _) = (\rpc -> rpc `seq` CMD'  rpc) <$> fromWire ts ks s
+signedRPCtoRPC ts ks s@(SignedRPC (Digest _ _ _ CMDR _) _) = (\rpc -> rpc `seq` CMDR' rpc) <$> fromWire ts ks s
+signedRPCtoRPC ts ks s@(SignedRPC (Digest _ _ _ CMDB _) _) = (\rpc -> rpc `seq` CMDB' rpc) <$> fromWire ts ks s
 {-# INLINE signedRPCtoRPC #-}
 
 rpcToSignedRPC :: NodeId -> PublicKey -> PrivateKey -> RPC -> SignedRPC

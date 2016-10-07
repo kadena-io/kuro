@@ -92,6 +92,7 @@ library
                      , blake2
                      , bloomfilter
                      , bound
+                     , binary
                      , BoundedChan
                      , bytestring
                      , cacophony

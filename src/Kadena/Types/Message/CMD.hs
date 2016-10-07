@@ -6,8 +6,10 @@
 module Kadena.Types.Message.CMD
   ( Command(..), cmdEntry, cmdClientId, cmdRequestId, cmdProvenance, cmdCryptoVerified
   , Commands(..)
+  , CMDWire(..)
   , mkCmdRpc, mkCmdBatchRPC
   , getCmdSigOrInvariantError
+  , getCmdHashOrInvariantError
   , toRequestKey
   , hashCmdForBloom
   , hashReqKeyForBloom
@@ -20,13 +22,14 @@ module Kadena.Types.Message.CMD
 import Control.Parallel.Strategies
 import Control.Lens
 
-import qualified Data.BloomFilter.Hash as BHashes
 import Data.Serialize (Serialize)
 import qualified Data.Serialize as S
+import qualified Data.ByteString as B
+import qualified Data.ByteString.Lazy as BL
+import Data.Binary
 
 import Data.Thyme.Time.Core ()
 import GHC.Generics
-import GHC.Word (Word32)
 
 import Kadena.Types.Base
 import Kadena.Types.Command
@@ -60,28 +63,42 @@ mkCmdRpc ce a ri d = SignedRPC d (S.encode $ CMDWire (ce, a, ri))
 instance WireFormat Command where
   toWire nid pubKey privKey Command{..} = case _cmdProvenance of
     NewMsg -> let bdy = S.encode $ CMDWire (_cmdEntry, _cmdClientId, _cmdRequestId)
-                  sig = sign bdy privKey pubKey
-                  dig = Digest (_alias nid) sig pubKey CMD
+                  hsh = hash bdy
+                  sig = sign hsh privKey pubKey
+                  dig = Digest (_alias nid) sig pubKey CMD hsh
               in SignedRPC dig bdy
     ReceivedMsg{..} -> SignedRPC _pDig _pOrig
-  fromWire !ts !_ks _s@(SignedRPC !dig !bdy) =
+  fromWire !ts !_ks s@(SignedRPC !dig !bdy) =
         if _digType dig /= CMD
         then error $ "Invariant Failure: attempting to decode " ++ show (_digType dig) ++ " with CMDWire instance"
-        else case S.decode bdy of
-            Left !err -> Left $! "Failure to decode CMDWire: " ++ err
-            Right (CMDWire !(ce,nid,rid)) -> Right $! Command ce nid rid UnVerified $ ReceivedMsg dig bdy ts
+        else let ourHash = hash bdy
+             in if ourHash == _digHash dig
+             then  Left $! "Unable to verify SignedRPC hash: "
+                        ++ " our=" ++ show ourHash
+                        ++ " theirs=" ++ show (_digHash dig)
+                        ++ " in " ++ show s
+             else case S.decode bdy of
+              Left !err -> Left $! "Failure to decode CMDWire: " ++ err
+              Right (CMDWire !(ce,nid,rid)) -> Right $! Command ce nid rid UnVerified $ ReceivedMsg dig bdy ts
   {-# INLINE toWire #-}
   {-# INLINE fromWire #-}
 
 verifyCmd :: KeySet -> Command -> CryptoVerified
 verifyCmd !ks Command{..} = case _cmdCryptoVerified of
-  Valid ->_cmdCryptoVerified
-  Invalid _ ->_cmdCryptoVerified
+  Valid -> _cmdCryptoVerified
+  Invalid _ -> _cmdCryptoVerified
   UnVerified -> case _cmdProvenance of
-    NewMsg ->_cmdCryptoVerified
-    ReceivedMsg !dig !bdy _ -> case verifySignedRPC ks $! SignedRPC dig bdy of
+    NewMsg -> _cmdCryptoVerified
+    ReceivedMsg !dig !bdy _ -> case verifySignedRPCNoReHash ks $! SignedRPC dig bdy of
       Left !err -> Invalid err
       Right () -> Valid
+
+getCmdHashOrInvariantError :: String -> Command -> Hash
+getCmdHashOrInvariantError where' s@Command{..} = case _cmdProvenance of
+  NewMsg -> error $! where'
+    ++ ": This should be unreachable, somehow an AE got through with a LogEntry that contained an unsigned Command" ++ show s
+  ReceivedMsg{..} -> _digHash _pDig
+{-# INLINE getCmdHashOrInvariantError #-}
 
 getCmdSigOrInvariantError :: String -> Command -> Signature
 getCmdSigOrInvariantError where' s@Command{..} = case _cmdProvenance of
@@ -91,11 +108,15 @@ getCmdSigOrInvariantError where' s@Command{..} = case _cmdProvenance of
 {-# INLINE getCmdSigOrInvariantError #-}
 
 toRequestKey :: String -> Command -> RequestKey
-toRequestKey where' cmd@Command{..} = RequestKey (_cmdClientId, getCmdSigOrInvariantError where' cmd)
+toRequestKey where' cmd = RequestKey $ getCmdHashOrInvariantError where' cmd
 {-# INLINE toRequestKey #-}
 
 hashReqKeyForBloom :: RequestKey -> [Word32]
-hashReqKeyForBloom (RequestKey (n, Sig s)) = BHashes.cheapHashes 3 (show n, s)
+hashReqKeyForBloom (RequestKey h) = decode . BL.fromStrict <$> go (unHash h)
+  where
+    go v
+      | B.null v = []
+      | otherwise = let (a,b) = B.splitAt 4 v in a : go b
 {-# INLINE hashReqKeyForBloom #-}
 
 hashCmdForBloom :: String -> Command -> [Word32]
@@ -117,8 +138,9 @@ mkCmdBatchRPC cmds d = SignedRPC d (S.encode cmds)
 instance WireFormat CommandBatch where
   toWire nid pubKey privKey CommandBatch{..} = case _cmdbProvenance of
     NewMsg -> let bdy = S.encode ((toWire nid pubKey privKey <$> unCommands _cmdbBatch) `using` parList rseq)
-                  sig = sign bdy privKey pubKey
-                  dig = Digest (_alias nid) sig pubKey CMDB
+                  hsh = hash bdy
+                  sig = sign hsh privKey pubKey
+                  dig = Digest (_alias nid) sig pubKey CMDB hsh
               in SignedRPC dig bdy
     ReceivedMsg{..} -> SignedRPC _pDig _pOrig
   fromWire !ts !ks (SignedRPC dig bdy) = -- TODO, no sigs on CMDB for now, but should maybe sign the request ids or something

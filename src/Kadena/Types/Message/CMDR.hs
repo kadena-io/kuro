@@ -8,10 +8,11 @@ module Kadena.Types.Message.CMDR
   ) where
 
 import Control.Lens
+
 import Data.Serialize (Serialize)
 import qualified Data.Serialize as S
-import qualified Data.ByteString as BS
 import Data.Thyme.Time.Core ()
+
 import GHC.Generics
 import GHC.Int (Int64)
 
@@ -33,15 +34,15 @@ data CMDRWire = CMDRWire (CommandResult, NodeId, RequestId, Int64)
   deriving (Show, Generic)
 instance Serialize CMDRWire
 
-
 -- NB: eventually we need to service async and when that happens we'll need to start signing again
 -- NB| but until then the signing hurts performance as it's sync
 -- TODO: scrap terrible API, re-integrate signing of CMDR's
 instance WireFormat CommandResponse where
-  toWire nid pubKey _privKey CommandResponse{..} = case _cmdrProvenance of
+  toWire nid pubKey privKey CommandResponse{..} = case _cmdrProvenance of
     NewMsg -> let bdy = S.encode $ CMDRWire (_cmdrResult,_cmdrNodeId,_cmdrRequestId,_cmdrLatency)
-                  sig = Sig BS.empty
-                  dig = Digest (_alias nid) sig pubKey CMDR
+                  hsh = hash bdy
+                  sig = sign hsh privKey pubKey
+                  dig = Digest (_alias nid) sig pubKey CMDR hsh
               in SignedRPC dig bdy
     ReceivedMsg{..} -> SignedRPC _pDig _pOrig
 --  fromWire ts !ks s@(SignedRPC !dig !bdy) = case verifySignedRPC ks s of

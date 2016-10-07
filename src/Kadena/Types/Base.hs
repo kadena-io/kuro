@@ -17,12 +17,17 @@ module Kadena.Types.Base
   , EncryptionKey(..)
   , Alias(..)
   , interval
+  , hash, hashLengthAsBS, hashLengthAsBase16
+  , Hash(..)
   ) where
 
 import Control.Lens
 import Control.Monad (mzero)
-import Crypto.Ed25519.Pure ( PublicKey, PrivateKey, Signature(..), sign, valid
+import qualified Crypto.Ed25519.Pure as Ed25519
+import Crypto.Ed25519.Pure ( PublicKey, PrivateKey, Signature(..)
                            , importPublic, importPrivate, exportPublic, exportPrivate)
+import qualified Crypto.Hash.BLAKE2.BLAKE2bp as BLAKE
+
 
 import Data.Maybe (fromMaybe)
 import Data.ByteString (ByteString)
@@ -90,6 +95,39 @@ newtype RequestId = RequestId {_unRequestId :: String }
   deriving (Eq, Ord, Generic, Serialize, IsString, ToJSON, FromJSON)
 instance Show RequestId where show (RequestId i) = i
 
+
+-- NB: this hash is also used for the bloom filter, which needs 32bit keys
+-- if you want to change this, you need to retool the bloom filter as well
+-- So long as this is divisible by 4 you're fine
+hashLengthAsBS :: Int
+hashLengthAsBS = 32
+
+hashLengthAsBase16 :: Int
+hashLengthAsBase16 = hashLengthAsBS * 2
+
+hash :: ByteString -> Hash
+hash = Hash . BLAKE.hash hashLengthAsBS B.empty
+{-# INLINE hash #-}
+
+newtype Hash = Hash { unHash :: ByteString }
+  deriving (Show, Eq, Ord, Generic)
+
+instance Serialize Hash where
+  put (Hash h) = do
+    S.putByteString h
+  get = do
+    raw <- S.getByteString hashLengthAsBS
+    if hashLengthAsBS == B.length raw
+      then return $ Hash raw
+      else fail $ "Unable to decode hash, wrong length: "
+                ++ show (B.length raw)
+                ++ " from original bytestring " ++ show raw
+
+instance ToJSON Hash where
+  toJSON (Hash h) = toB16JSON h
+instance FromJSON Hash where
+  parseJSON s = Hash <$> parseB16JSON s
+
 parseB16JSON :: Value -> Parser ByteString
 parseB16JSON = withText "Base16" parseB16Text
 
@@ -107,8 +145,6 @@ toB16Text s = decodeUtf8 $ B16.encode s
 failMaybe :: Monad m => String -> Maybe a -> m a
 failMaybe err m = maybe (fail err) return m
 
-
-
 newtype EncryptionKey = EncryptionKey { unEncryptionKey :: ByteString }
   deriving (Show, Eq, Ord, Generic, Serialize)
 instance ToJSON EncryptionKey where
@@ -116,12 +152,19 @@ instance ToJSON EncryptionKey where
 instance FromJSON EncryptionKey where
   parseJSON s = EncryptionKey <$> parseB16JSON s
 
-
 deriving instance Eq Signature
 deriving instance Ord Signature
 instance Serialize Signature where
   put (Sig s) = S.put s
   get = Sig <$> (S.get >>= S.getByteString)
+
+valid :: Hash -> PublicKey -> Signature -> Bool
+valid (Hash h) = Ed25519.valid h
+{-# INLINE valid #-}
+
+sign :: Hash -> PrivateKey -> PublicKey -> Signature
+sign (Hash h) = Ed25519.sign h
+{-# INLINE sign #-}
 
 instance Eq PublicKey where
   b == b' = exportPublic b == exportPublic b'

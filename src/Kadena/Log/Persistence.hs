@@ -74,6 +74,15 @@ instance FromField Provenance where
       Left err -> returnError ConversionFailed f ("Couldn't deserialize Provenance: " ++ err)
       Right v -> Ok v
 
+instance ToField Hash where
+  toField s = toField $ Aeson.encode s
+instance FromField Hash where
+  fromField f = do
+    s :: ByteString <- fromField f
+    case Aeson.eitherDecodeStrict s of
+      Left err -> returnError ConversionFailed f ("Couldn't deserialize Set: " ++ err)
+      Right v -> Ok v
+
 instance ToField CommandEntry where
   toField (CommandEntry e) = toField e
 instance FromField CommandEntry where

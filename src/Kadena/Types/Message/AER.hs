@@ -12,7 +12,6 @@ module Kadena.Types.Message.AER
 
 import Control.Lens
 
-import Data.ByteString (ByteString)
 import Data.Serialize (Serialize)
 import qualified Data.Serialize as S
 import GHC.Generics
@@ -28,7 +27,7 @@ data AppendEntriesResponse = AppendEntriesResponse
   , _aerSuccess    :: !Bool
   , _aerConvinced  :: !Bool
   , _aerIndex      :: !LogIndex
-  , _aerHash       :: !ByteString
+  , _aerHash       :: !Hash
   , _aerProvenance :: !Provenance
   }
   deriving (Show, Generic, Eq)
@@ -44,7 +43,7 @@ instance Ord AppendEntriesResponse where
   (AppendEntriesResponse t n s c i h p) <= (AppendEntriesResponse t' n' s' c' i' h' p') =
     (n,t,i,h,s,c,p) <= (n',t',i',h',s',c',p')
 
-data AERWire = AERWire (Term,NodeId,Bool,Bool,LogIndex,ByteString)
+data AERWire = AERWire (Term,NodeId,Bool,Bool,LogIndex,Hash)
   deriving (Show, Generic)
 instance Serialize AERWire
 
@@ -56,8 +55,9 @@ instance WireFormat AppendEntriesResponse where
                                                , _aerConvinced
                                                , _aerIndex
                                                , _aerHash)
-                  sig = sign bdy privKey pubKey
-                  dig = Digest (_alias nid) sig pubKey AER
+                  hsh = hash bdy
+                  sig = sign hsh privKey pubKey
+                  dig = Digest (_alias nid) sig pubKey AER hsh
               in SignedRPC dig bdy
     ReceivedMsg{..} -> SignedRPC _pDig _pOrig
   fromWire !ts !ks s@(SignedRPC !dig !bdy) = case verifySignedRPC ks s of

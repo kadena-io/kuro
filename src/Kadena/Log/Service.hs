@@ -14,7 +14,6 @@ import Control.Monad.IO.Class
 import Control.Monad.Trans.RWS.Strict
 
 import Data.Maybe (catMaybes, isNothing)
-import Data.ByteString (ByteString)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
@@ -31,7 +30,7 @@ import Kadena.Log.LogApi as X
 import qualified Kadena.Evidence.Spec as Ev
 import qualified Kadena.Types.Dispatch as Dispatch
 import qualified Kadena.Commit.Types as Commit
-import Kadena.Types (startIndex, Dispatch, interval)
+import Kadena.Types (Dispatch)
 
 runLogService :: Dispatch
               -> (String -> IO())
@@ -133,7 +132,7 @@ getWork t = do
     Idle -> retry
     Processing -> error "CryptoWorker tried to get work but found the TVar Processing"
 
-buildNeedCacheEvidence :: Set LogIndex -> LogThread (Map LogIndex ByteString)
+buildNeedCacheEvidence :: Set LogIndex -> LogThread (Map LogIndex Hash)
 buildNeedCacheEvidence lis = do
   let go li = maybe Nothing (\le -> Just $ (li,_leHash le)) <$> lookupEntry li
   Map.fromAscList . catMaybes <$> mapM go (Set.toAscList lis)

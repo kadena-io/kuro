@@ -25,7 +25,6 @@ import Control.Monad.Trans.Reader
 import Control.Monad
 import Control.Monad.IO.Class
 
-import Data.ByteString (ByteString)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Set (Set)
@@ -277,7 +276,7 @@ canBroadcastAE clusterSize' nodeCurrentIndex' ct myNodeId' vts =
         return $ BackStreet (inSyncRpc, Set.union laggingFollowers (oNodes' Set.\\ vts))
 {-# INLINE canBroadcastAE #-}
 
-createAppendEntriesResponse' :: Bool -> Bool -> Term -> NodeId -> LogIndex -> ByteString -> RPC
+createAppendEntriesResponse' :: Bool -> Bool -> Term -> NodeId -> LogIndex -> Hash -> RPC
 createAppendEntriesResponse' success convinced ct myNodeId' lindex lhash =
   AER' $ AppendEntriesResponse ct myNodeId' success convinced lindex lhash NewMsg
 

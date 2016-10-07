@@ -1,4 +1,6 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE RecordWildCards #-}
+
 module Kadena.Consensus.Util
   ( resetElectionTimer
   , resetElectionTimerLeader
@@ -215,9 +217,10 @@ sendHistoryNewKeys srks = do
   send <- view enqueueHistoryQuery
   liftIO $ send $ History.AddNew srks
 
-queryHistoryForExisting :: Set RequestKey -> Consensus History.ExistenceResult
+queryHistoryForExisting :: Set RequestKey -> Consensus (Set RequestKey)
 queryHistoryForExisting srks = do
   send <- view enqueueHistoryQuery
   m <- liftIO $ newEmptyMVar
   liftIO $ send $ History.QueryForExistence (srks,m)
-  liftIO $ takeMVar m
+  History.ExistenceResult{..} <- liftIO $ takeMVar m
+  return rksThatAlreadyExist

@@ -39,6 +39,6 @@ handleRPC rpc = case rpc of
   AER' aer        -> error $ "Invariant Error: AER received by Consensus Service" ++ show aer
   RV' rv          -> PureRequestVote.handle rv
   RVR' rvr        -> PureRequestVoteResponse.handle rvr
-  CMD' cmd        -> PureCommand.handle cmd
-  CMDB' cmdb      -> PureCommand.handleBatch cmdb
+  CMD' cmd        -> PureCommand.handleBatch $ Commands [cmd]
+  CMDB' cmdb      -> PureCommand.handleBatch $ _cmdbBatch cmdb
   CMDR' _         -> debug "got a command response RPC"

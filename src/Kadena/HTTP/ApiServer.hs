@@ -37,13 +37,12 @@ import Kadena.Util.Util
 import Kadena.Types.Api
 
 
-data ApiEnv = ApiEnv {
-      _aiApplied :: MVar (M.Map RequestId AppliedCommand)
-    , _aiLog :: String -> IO ()
-    , _aiDispatch :: Dispatch
-    , _aiConfig :: Config.Config
-    , _aiPubConsensus :: MVar PublishedConsensus
-}
+data ApiEnv = ApiEnv
+  { _aiLog :: String -> IO ()
+  , _aiDispatch :: Dispatch
+  , _aiConfig :: Config.Config
+  , _aiPubConsensus :: MVar PublishedConsensus
+  }
 makeLenses ''ApiEnv
 
 

@@ -17,7 +17,6 @@ import Control.Monad.Writer.Strict
 import Data.ByteString (ByteString)
 
 import qualified Data.BloomFilter as Bloom
-import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
@@ -68,7 +67,7 @@ data AppendEntriesResult =
 data ValidResponse =
     SendFailureResponse |
     Commit {
-        _replay :: Map RequestKey (Maybe CommandResult)
+        _newRequestKeys :: Set RequestKey
       , _newEntries :: ReplicateLogEntries } |
     DoNothing
 
@@ -156,9 +155,7 @@ appendLogEntries pli newEs
           tell ["Failure to Append Logs: " ++ err]
           return SendFailureResponse
       Right rle -> do
-        replay <- return $ Map.fromList $ fmap
-          (\LogEntry{_leCommand = c} -> (toRequestKey "appendLogEntries" c, Nothing))
-          (Map.elems (newEs ^. Log.logEntries))
+        replay <- return $ Set.fromList $ fmap (toRequestKey "appendLogEntries" . _leCommand) (Map.elems (newEs ^. Log.logEntries))
         tell ["replicated LogEntry(s): " ++ show (_rleMinLogIdx rle) ++ " through " ++ show (_rleMaxLogIdx rle)]
         return $ Commit replay rle
 
@@ -202,14 +199,15 @@ handle ae = do
     ValidLeaderAndTerm{..} -> do
       case _validReponse of
         SendFailureResponse -> enqueueRequest $ Sender.SingleAER _responseLeaderId False True
-        (Commit rMap rle) -> do
+        (Commit rks rle) -> do
           updateLogs $ Log.ULReplicate rle
           newMv <- queryLogs $ Set.singleton Log.GetLastLogHash
           newLastLogHash' <- return $! Log.hasQueryResult Log.LastLogHash newMv
+          -- TODO: look into having `updateLogs Log.ULReplicate` trigger an AER
+          enqueueRequest Sender.BroadcastAER -- NB: this can only happen after `updateLogs` is complete, the tracer query makes sure of this
           logHashChange newLastLogHash'
-          KD.replayMap %= Map.union rMap
-          KD.cmdBloomFilter %= Bloom.insertList (Set.toList $ Map.keysSet rMap)
-          enqueueRequest Sender.BroadcastAER
+          sendHistoryNewKeys rks
+          KD.cmdBloomFilter %= Bloom.insertList (Set.toList rks)
         DoNothing -> enqueueRequest Sender.BroadcastAER
       clearLazyVoteAndInformCandidates
       -- This NEEDS to be last, otherwise we can have an election fire when we are are transmitting proof/accessing the logs
@@ -217,7 +215,6 @@ handle ae = do
       when (KD._nodeRole s /= Leader) resetElectionTimer
       -- This `when` fixes a funky bug. If the leader receives an AE from itself it will reset its election timer (which can kill the leader).
       -- Ignoring this is safe because if we have an out of touch leader they will step down after 2x maxElectionTimeouts if it receives no valid AER
-      -- TODO: change this behavior to be if it hasn't heard from a quorum in 2x maxElectionTimeouts
 
 createAppendEntriesResponse :: Bool -> Bool -> LogIndex -> ByteString -> KD.Consensus AppendEntriesResponse
 createAppendEntriesResponse success convinced maxIndex' lastLogHash' = do

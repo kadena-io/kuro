@@ -57,9 +57,9 @@ data History =
   QueryForExistence
     { hQueryForExistence :: !(Set RequestKey, MVar ExistenceResult) } |
   QueryForResults
-    { hQueryForResults :: !(RequestKey, MVar PossiblyIncompleteResults) } |
+    { hQueryForResults :: !(Set RequestKey, MVar PossiblyIncompleteResults) } |
   RegisterListener
-    { hNewListener :: !(RequestKey, MVar ListenerResult)} |
+    { hNewListener :: !(Map RequestKey (MVar ListenerResult))} |
   Bounce |
   Tick Tock
   deriving (Eq)

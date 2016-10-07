@@ -13,10 +13,17 @@ import Control.Lens hiding (Index, (|>))
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Trans.RWS.Strict
+import Control.Concurrent.MVar
 
+import Data.Semigroup ((<>))
+import Data.Set (Set)
+import qualified Data.Set as Set
+import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Thyme.Clock
 import Data.Maybe (fromJust)
+
+import Database.SQLite.Simple (Connection(..))
 
 import Kadena.History.Types as X
 import Kadena.Types.Dispatch (Dispatch)
@@ -47,9 +54,14 @@ initHistoryEnv dispatch' dbPath' debugPrint' getTimestamp' = HistoryEnv
 --  }
 
 runHistoryService :: HistoryEnv -> Maybe HistoryState -> IO ()
-runHistoryService env Nothing = do
-  pers <- setupPersistence (env ^. dbPath)
-  initHistoryState <- return $! HistoryState { _registeredListeners = Map.empty, _persistence = pers }
+runHistoryService env mState = do
+  initHistoryState <- case mState of
+    Nothing -> do
+      pers <- setupPersistence (env ^. dbPath)
+      return $! HistoryState { _registeredListeners = Map.empty, _persistence = pers }
+    Just mState' -> do
+      -- should we bounce the dbConn?
+      return mState'
   let dbg = env ^. debugPrint
   let oChan = env ^. historyChannel
   dbg "[Histoy] Launch!"
@@ -73,9 +85,86 @@ handle oChan = do
   unless (q == Bounce) $ do
     case q of
       Tick t -> liftIO (pprintTock t) >>= debug
-      AddNew{..} -> undefined -- { hNewKeys :: !(Set RequestKey) }
-      Update{..} -> undefined -- { hUpdateRks :: !(Map RequestKey CommandResult) }
-      QueryForExistence{..} -> undefined -- { hQueryForExistence :: !(Set RequestKey, MVar ExistenceResult) }
-      QueryForResults{..} -> undefined -- { hQueryForResults :: !(RequestKey, MVar PossiblyIncompleteResults) }
-      RegisterListener{..} -> undefined -- { hNewListener :: !(RequestKey, MVar ListenerResult)}
+      AddNew{..} ->  addNewKeys hNewKeys
+      Update{..} -> updateExistingKeys hUpdateRks
+      QueryForExistence{..} -> queryForExisting hQueryForExistence
+      QueryForResults{..} -> queryForResults hQueryForResults
+      RegisterListener{..} -> registerNewListeners hNewListener
+      -- I thought it cleaner to match on bounce above instead of opening up the potential to forget to loop
+      Bounce -> error "Unreachable Path: you can't hit bounce twice"
     handle oChan
+
+addNewKeys :: Set RequestKey -> HistoryService ()
+addNewKeys srks = do
+  pers <- use persistence
+  case pers of
+    InMemory m -> persistence .= InMemory (Map.union m $ Map.fromSet (const Nothing) srks)
+    OnDisk dbConn -> liftIO $ insertNewKeysAsNothingSQL dbConn srks
+
+insertNewKeysAsNothingSQL :: Connection -> Set RequestKey -> IO ()
+insertNewKeysAsNothingSQL dbConn srks = undefined
+
+updateExistingKeys :: Map RequestKey CommandResult -> HistoryService ()
+updateExistingKeys updates = do
+  alertListeners updates
+  pers <- use persistence
+  case pers of
+    InMemory m -> do
+      newInMem <- return $! InMemory $! foldr updateInMemKey m $ Map.toList updates
+      persistence .= newInMem
+    OnDisk dbConn -> liftIO $ updateKeysSQL dbConn updates
+
+updateInMemKey :: (RequestKey, CommandResult) -> Map RequestKey (Maybe CommandResult) -> Map RequestKey (Maybe CommandResult)
+updateInMemKey (k,v) m = Map.insert k (Just v) m
+
+alertListeners :: Map RequestKey CommandResult -> HistoryService ()
+alertListeners m = do
+  listeners <- use registeredListeners
+  triggered <- return $! Set.intersection (Map.keysSet m) (Map.keysSet listeners)
+  mapM_ (alertListener m) $ Map.toList $ Map.filterWithKey (\k _ -> Set.member k triggered) listeners
+  registeredListeners %= Map.filterWithKey (\k _ -> Set.notMember k triggered)
+
+alertListener :: Map RequestKey CommandResult -> (RequestKey, [MVar ListenerResult]) -> HistoryService ()
+alertListener res (k,mvs) = do
+  commandRes <- return $! res Map.! k
+  fails <- liftIO $ mapM (`tryPutMVar` ListenerResult commandRes) mvs
+  unless (null fails) $ debug $ "Registered Listener Alert Failure for: " ++ show k ++ " (" ++ show (length fails) ++ " failures)"
+
+updateKeysSQL :: Connection -> Map RequestKey CommandResult -> IO ()
+updateKeysSQL dbConn updates = undefined
+
+queryForExisting :: (Set RequestKey, MVar ExistenceResult) -> HistoryService ()
+queryForExisting (srks, mRes) = do
+  pers <- use persistence
+  case pers of
+    InMemory m -> do
+      found <- return $! Set.intersection srks $ Map.keysSet m
+      liftIO $! putMVar mRes $ ExistenceResult found
+    OnDisk dbConn -> do
+      found <- liftIO $ queryForExistingSQL dbConn srks
+      liftIO $! putMVar mRes $ ExistenceResult found
+
+queryForExistingSQL :: Connection -> Set RequestKey -> IO (Set RequestKey)
+queryForExistingSQL dbConn srks = undefined
+
+queryForResults :: (Set RequestKey, MVar PossiblyIncompleteResults) -> HistoryService ()
+queryForResults (srks, mRes) = do
+  pers <- use persistence
+  case pers of
+    InMemory m -> do
+      found <- return $! Map.filterWithKey (checkForIndividualResultInMem srks) m
+      liftIO $! putMVar mRes $ PossiblyIncompleteResults $ fmap fromJust found
+    OnDisk dbConn -> do
+      found <- liftIO $ queryForResultsSQL dbConn srks
+      liftIO $! putMVar mRes $ PossiblyIncompleteResults $ fmap fromJust found
+
+-- This is here to try to get GHC to check the fast part first
+checkForIndividualResultInMem :: Set RequestKey -> RequestKey -> Maybe CommandResult -> Bool
+checkForIndividualResultInMem _ _ Nothing = False
+checkForIndividualResultInMem s k (Just _) = Set.member k s
+
+queryForResultsSQL :: Connection -> Set RequestKey -> IO (Map RequestKey (Maybe CommandResult))
+queryForResultsSQL dbConn srks = undefined
+
+registerNewListeners :: Map RequestKey (MVar ListenerResult) -> HistoryService ()
+registerNewListeners m = registeredListeners %= Map.unionWith (<>) ((:[]) <$> m)

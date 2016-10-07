@@ -19,6 +19,8 @@ module Kadena.Consensus.Util
   , setRole
   , setCurrentLeader
   , enqueueRequest
+  , sendHistoryNewKeys
+  , queryHistoryForExisting
   , module X -- convenience for Handlers
   ) where
 
@@ -37,9 +39,8 @@ import qualified System.Random as R
 import Kadena.Types
 import qualified Kadena.Sender.Types as Sender
 import qualified Kadena.Log.Service as Log
+import qualified Kadena.History.Types as History
 import Kadena.Util.Util as X
-
-
 
 getNewElectionTimeout :: Consensus Int
 getNewElectionTimeout = viewConfig electionTimeoutRange >>= randomRIO
@@ -176,5 +177,47 @@ setCurrentLeader mNode = do
   currentLeader .= mNode
   publishConsensus
   logMetric $! MetricCurrentLeader mNode
+
 runRWS_ :: MonadIO m => RWST r w s m a -> r -> s -> m ()
 runRWS_ ma r s = void $! runRWST ma r s
+
+
+--newtype ExistenceResult = ExistenceResult
+--  { rksThatAlreadyExist :: Set RequestKey
+--  } deriving (Show, Eq)
+--
+--newtype PossiblyIncompleteResults = PossiblyIncompleteResults
+--  { possiblyIncompleteResults :: Map RequestKey CommandResult
+--  } deriving (Show, Eq)
+--
+--data ListenerResult =
+--  ListenerResult CommandResult |
+--  GCed
+--  deriving (Show, Eq)
+--
+--data History =
+--  AddNew
+--    { hNewKeys :: !(Set RequestKey) } |
+--  Update
+--    { hUpdateRks :: !(Map RequestKey CommandResult) } |
+--  QueryForExistence
+--    { hQueryForExistence :: !(Set RequestKey, MVar ExistenceResult) } |
+--  QueryForResults
+--    { hQueryForResults :: !(Set RequestKey, MVar PossiblyIncompleteResults) } |
+--  RegisterListener
+--    { hNewListener :: !(Map RequestKey (MVar ListenerResult))} |
+--  Bounce |
+--  Tick Tock
+--  deriving (Eq)
+
+sendHistoryNewKeys :: Set RequestKey -> Consensus ()
+sendHistoryNewKeys srks = do
+  send <- view enqueueHistoryQuery
+  liftIO $ send $ History.AddNew srks
+
+queryHistoryForExisting :: Set RequestKey -> Consensus History.ExistenceResult
+queryHistoryForExisting srks = do
+  send <- view enqueueHistoryQuery
+  m <- liftIO $ newEmptyMVar
+  liftIO $ send $ History.QueryForExistence (srks,m)
+  liftIO $ takeMVar m

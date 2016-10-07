@@ -32,7 +32,6 @@ data CommandEnv = CommandEnv {
       _nodeRole :: Role
     , _term :: Term
     , _currentLeader :: Maybe NodeId
-    , _replayMap :: Map.Map RequestKey (Maybe CommandResult)
     , _nodeId :: NodeId
     , _cmdBloomFilter :: Bloom RequestKey
 }
@@ -67,7 +66,6 @@ handleCommand cmd@Command{..} = do
   r <- view nodeRole
   ct <- view term
   mlid <- view currentLeader
-  replays <- view replayMap
   _nid <- view nodeId
   rk <- return $ toRequestKey "handleCommand" cmd
   case (Map.lookup rk replays, r, mlid) of
@@ -134,7 +132,6 @@ handleSingleCommand cmd = do
     (RetransmitToLeader lid) -> enqueueRequest $ Sender.ForwardCommandToLeader lid [cmd]
     (CommitAndPropagate newEntry replayKey) -> do
       updateLogs $ ULNew newEntry
-      KD.replayMap %= Map.insert replayKey Nothing
       enqueueRequest $ Sender.BroadcastAE Sender.OnlySendIfFollowersAreInSync
       enqueueRequest $ Sender.BroadcastAER
       quorumSize' <- view KD.quorumSize
@@ -171,7 +168,6 @@ handleBatch cmdb@CommandBatch{..} = do
         updateLogs $ ULNew $ NewLogEntries (KD._term s) $ KD.NleEntries falsePositive
         enqueueRequest $ Sender.BroadcastAE Sender.OnlySendIfFollowersAreInSync
         enqueueRequest $ Sender.BroadcastAER
-      KD.replayMap .= updatedReplayMap
       KD.cmdBloomFilter .= updateBloom newEntries (KD._cmdBloomFilter s)
       quorumSize' <- view KD.quorumSize
       es <- view KD.evidenceState >>= liftIO

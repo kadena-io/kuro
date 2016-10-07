@@ -13,10 +13,10 @@ module Kadena.Types.Spec
   , ConsensusEnv(..), cfg, enqueueLogQuery, clusterSize, quorumSize, rs
   , enqueue, enqueueMultiple, dequeue, enqueueLater, killEnqueued
   , sendMessage, clientSendMsg, mResetLeaderNoFollowers, mPubConsensus
-  , informEvidenceServiceOfElection
+  , informEvidenceServiceOfElection, enqueueHistoryQuery
   , ConsensusState(..), initialConsensusState
   , nodeRole, term, votedFor, lazyVote, currentLeader, ignoreLeader
-  , timerThread, replayMap, cYesVotes, cPotentialVotes, lastCommitTime
+  , timerThread, cYesVotes, cPotentialVotes, lastCommitTime
   , timeSinceLastAER, cmdBloomFilter, invalidCandidateResults
   , Event(..)
   , mkConsensusEnv
@@ -24,8 +24,6 @@ module Kadena.Types.Spec
   , LazyVote(..), lvVoteFor, lvAllReceived
   , InvalidCandidateResults(..), icrMyReqVoteSig, icrNoVotes
   ) where
-
--- timeSinceLastAER, lNextIndex, lConvinced, commitProof
 
 import Control.Concurrent (MVar, ThreadId, killThread, yield, forkIO, threadDelay, tryPutMVar, tryTakeMVar, readMVar)
 import Control.Lens hiding (Index, (|>))
@@ -37,7 +35,6 @@ import Data.BloomFilter (Bloom)
 import qualified Data.BloomFilter as Bloom
 import Data.IORef
 import Data.Map (Map)
-import qualified Data.Map as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Thyme.Clock
@@ -54,6 +51,7 @@ import Kadena.Types.Comms
 import Kadena.Types.Dispatch
 import Kadena.Sender.Types (SenderServiceChannel, ServiceRequest')
 import Kadena.Log.Types (QueryApi(..))
+import Kadena.History.Types (History(..))
 import Kadena.Evidence.Spec (PublishedEvidenceState, Evidence(ClearConvincedNodes))
 
 data PublishedConsensus = PublishedConsensus
@@ -100,7 +98,6 @@ data ConsensusState = ConsensusState
   , _ignoreLeader     :: !Bool
   , _timerThread      :: !(Maybe ThreadId)
   , _timerTarget      :: !(MVar Event)
-  , _replayMap        :: !(Map RequestKey (Maybe CommandResult))
   , _cmdBloomFilter   :: !(Bloom RequestKey)
   , _cYesVotes        :: !(Set RequestVoteResponse)
   , _cPotentialVotes  :: !(Set NodeId)
@@ -122,7 +119,6 @@ initialConsensusState timerTarget' = ConsensusState
 {-ignoreLeader-}        False
 {-timerThread-}         Nothing
 {-timerTarget-}         timerTarget'
-{-replayMap-}           Map.empty
 {-cmdBloomFilter-}      (Bloom.empty hashReqKeyForBloom 536870912)
 {-cYesVotes-}           Set.empty
 {-cPotentialVotes-}     Set.empty
@@ -135,6 +131,7 @@ type Consensus = RWST ConsensusEnv () ConsensusState IO
 data ConsensusEnv = ConsensusEnv
   { _cfg              :: !(IORef Config)
   , _enqueueLogQuery  :: !(QueryApi -> IO ())
+  , _enqueueHistoryQuery :: !(History -> IO ())
   , _clusterSize      :: !Int
   , _quorumSize       :: !Int
   , _rs               :: !ConsensusSpec
@@ -168,6 +165,7 @@ mkConsensusEnv
 mkConsensusEnv conf' cSize qSize rSpec dispatch timerTarget' timeCache' mEs mResetLeaderNoFollowers' mPubConsensus' = ConsensusEnv
     { _cfg = conf'
     , _enqueueLogQuery = writeComm ls'
+    , _enqueueHistoryQuery = writeComm hs'
     , _clusterSize = cSize
     , _quorumSize = qSize
     , _rs = rSpec
@@ -197,6 +195,7 @@ mkConsensusEnv conf' cSize qSize rSpec dispatch timerTarget' timeCache' mEs mRes
     g' = dispatch ^. senderService
     cog' = dispatch ^. outboundGeneral
     ls' = dispatch ^. logService
+    hs' = dispatch ^. historyChannel
     ie' = dispatch ^. internalEvent
     ev' = dispatch ^. evidence
 

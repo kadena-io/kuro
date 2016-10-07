@@ -77,7 +77,8 @@ now :: HistoryService UTCTime
 now = view getTimestamp >>= liftIO
 
 setupPersistence :: Maybe FilePath -> IO PersistenceSystem
-setupPersistence = undefined
+setupPersistence Nothing = return $ InMemory Map.empty
+setupPersistence (Just _dbPath) = error $ "History Service: on disk persistence is not yet supported"
 
 handle :: HistoryChannel -> HistoryService ()
 handle oChan = do
@@ -119,16 +120,21 @@ updateInMemKey (k,v) m = Map.insert k (Just v) m
 
 alertListeners :: Map RequestKey CommandResult -> HistoryService ()
 alertListeners m = do
+  start <- now
   listeners <- use registeredListeners
   triggered <- return $! Set.intersection (Map.keysSet m) (Map.keysSet listeners)
-  mapM_ (alertListener m) $ Map.toList $ Map.filterWithKey (\k _ -> Set.member k triggered) listeners
-  registeredListeners %= Map.filterWithKey (\k _ -> Set.notMember k triggered)
+  unless (Set.null triggered) $ do
+    res <- mapM (alertListener m) $ Map.toList $ Map.filterWithKey (\k _ -> Set.member k triggered) listeners
+    registeredListeners %= Map.filterWithKey (\k _ -> Set.notMember k triggered)
+    end <- now
+    debug $ "Serviced " ++ show (sum res) ++ " alerts taking " ++ show (interval start end) ++ "mics"
 
-alertListener :: Map RequestKey CommandResult -> (RequestKey, [MVar ListenerResult]) -> HistoryService ()
+alertListener :: Map RequestKey CommandResult -> (RequestKey, [MVar ListenerResult]) -> HistoryService Int
 alertListener res (k,mvs) = do
   commandRes <- return $! res Map.! k
   fails <- liftIO $ mapM (`tryPutMVar` ListenerResult commandRes) mvs
   unless (null fails) $ debug $ "Registered Listener Alert Failure for: " ++ show k ++ " (" ++ show (length fails) ++ " failures)"
+  return $ length mvs
 
 updateKeysSQL :: Connection -> Map RequestKey CommandResult -> IO ()
 updateKeysSQL dbConn updates = undefined

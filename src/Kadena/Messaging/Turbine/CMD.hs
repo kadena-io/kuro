@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards #-}
 
 module Kadena.Messaging.Turbine.CMD
   ( cmdTurbine

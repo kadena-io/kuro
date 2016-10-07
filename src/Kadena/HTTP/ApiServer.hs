@@ -26,7 +26,6 @@ import qualified Data.Serialize as SZ
 
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 
 import Data.Thyme.Clock
@@ -44,7 +43,6 @@ import Kadena.Types.Config as Config
 import Kadena.Types.Spec
 import Kadena.Command.Types
 import Kadena.History.Types ( History(..)
-                            , ExistenceResult(..)
                             , PossiblyIncompleteResults(..)
                             , ListenerResult(..))
 import Kadena.Types.Dispatch
@@ -68,9 +66,9 @@ initRequestId = do
   UTCTime _ time <- unUTCTime <$> getCurrentTime
   return $ fromIntegral $ toMicroseconds time
 
-runApiServer :: Dispatch -> Config.Config -> (String -> IO ()) ->
-                MVar (Map.Map RequestKey AppliedCommand) -> Int -> MVar PublishedConsensus -> IO ()
-runApiServer dispatch conf logFn appliedMap port mPubConsensus' = do
+runApiServer :: Dispatch -> Config.Config -> (String -> IO ())
+             -> Int -> MVar PublishedConsensus -> IO ()
+runApiServer dispatch conf logFn port mPubConsensus' = do
   putStrLn $ "runApiServer: starting on port " ++ show port
   m <- newMVar =<< initRequestId
   httpServe (serverConf port) $
@@ -82,6 +80,7 @@ api = route [
        ("public/send",sendPublic)
       ,("public/batch",sendPublicBatch)
       ,("poll",poll)
+      ,("listen",registerListener)
       ]
 
 log :: String -> Api ()
@@ -133,7 +132,7 @@ buildCmdRpc PactMessage {..} = do
   rid <- getNextRequestId
   let ce = CommandEntry $! SZ.encode $! PublicMessage $! _pmEnvelope
       hsh = hash $ SZ.encode $ CMDWire (ce,_peAlias,rid)
-  return $! (RequestKey hsh,mkCmdRpc ce _peAlias rid (Digest _peAlias _pmSig _pmKey CMD hsh))
+  return (RequestKey hsh,mkCmdRpc ce _peAlias rid (Digest _peAlias _pmSig _pmKey CMD hsh))
 
 sendPublicBatch :: Api ()
 sendPublicBatch = do
@@ -179,8 +178,8 @@ getNextRequestId = do
   liftIO $ putMVar cntr (cnt + 1)
   return $ RequestId $ show cnt
 
-mkPublicCommand :: BS.ByteString -> Api (Command, RequestKey)
-mkPublicCommand bs = do
+_mkPublicCommand :: BS.ByteString -> Api (Command, RequestKey)
+_mkPublicCommand bs = do
   rid <- getNextRequestId
   nid <- view (aiConfig.nodeId)
   cmd@Command{..} <- return $! Command (CommandEntry $! SZ.encode $! PublicMessage $! bs) (_alias nid) (RequestId $ show rid) Valid NewMsg
@@ -201,15 +200,31 @@ enqueueRPC signedRPC = do
   else liftIO $ writeComm (_outboundGeneral $ _aiDispatch env) $!
        directMsg [(ldr,SZ.encode signedRPC)]
 
-
---  QueryForResults
---    { hQueryForResults :: !(Set RequestKey, MVar PossiblyIncompleteResults) } |
---  RegisterListener
---    { hNewListener :: !(Map RequestKey (MVar ListenerResult))} |
-
 checkHistoryForResult :: Set RequestKey -> Api PossiblyIncompleteResults
 checkHistoryForResult rks = do
   hChan <- view (aiDispatch.historyChannel)
   m <- liftIO $ newEmptyMVar
   liftIO $ writeComm hChan $ QueryForResults (rks,m)
   liftIO $ readMVar m
+
+registerListener :: Api ()
+registerListener = do
+  (_,rk) <- readJSON
+  hChan <- view (aiDispatch.historyChannel)
+  m <- liftIO $ newEmptyMVar
+  liftIO $ writeComm hChan $ RegisterListener (Map.fromList [(rk,m)])
+  res <- liftIO $ readMVar m
+  case res of
+    GCed -> die 500 "Listener was GCed before fulfilled, likely the command doesn't exist"
+    ListenerResult res' -> do
+      setJSON
+      writeBS "{ \"status\": \"Success\", \"responses\": ["
+      writeBS "{ \"requestKey\": "
+      writeBS $ SZ.encode rk
+      writeBS ", \"response\": "
+      AppliedCommand (CommandResult cr) lat _ <- return res'
+      writeBS cr
+      writeBS ", \"latency\": "
+      writeBS (BS.pack (show lat))
+      writeBS "}"
+      writeBS "] }"

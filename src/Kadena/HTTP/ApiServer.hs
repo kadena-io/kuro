@@ -192,10 +192,14 @@ registerListener = do
   hChan <- view (aiDispatch.historyChannel)
   m <- liftIO $ newEmptyMVar
   liftIO $ writeComm hChan $ RegisterListener (Map.fromList [(rk,m)])
+  log $ "Registered Listener for: " ++ show rk
   res <- liftIO $ readMVar m
   case res of
-    History.GCed -> die "Listener was GCed before fulfilled, likely the command doesn't exist"
+    History.GCed -> do
+      log $ "Listener GCed for: " ++ show rk
+      die "Listener was GCed before fulfilled, likely the command doesn't exist"
     History.ListenerResult AppliedCommand{..} -> do
+      log $ "Listener Serviced for: " ++ show rk
       setJSON
       ls <- return $ ApiSuccess $ PollResult { _prRequestKey = rk, _prLatency = _acLatency, _prResponse = _acResult}
       writeLBS $ encode ls

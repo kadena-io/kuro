@@ -87,13 +87,14 @@ handle oChan = do
 addNewKeys :: Set RequestKey -> HistoryService ()
 addNewKeys srks = do
   pers <- use persistence
-  mapM_ (debug . ("New Key Added: " ++) . show) srks
   case pers of
-    InMemory m -> persistence .= InMemory (Map.union m $ Map.fromSet (const Nothing) srks)
+    InMemory m -> do
+      persistence .= InMemory (Map.union m $ Map.fromSet (const Nothing) srks)
+      debug $ "Added " ++ show (Set.size srks) ++ " new keys"
     OnDisk dbConn -> liftIO $ insertNewKeysAsNothingSQL dbConn srks
 
 insertNewKeysAsNothingSQL :: Connection -> Set RequestKey -> IO ()
-insertNewKeysAsNothingSQL dbConn srks = undefined
+insertNewKeysAsNothingSQL _dbConn _srks = undefined
 
 updateExistingKeys :: Map RequestKey AppliedCommand -> HistoryService ()
 updateExistingKeys updates = do
@@ -116,18 +117,20 @@ alertListeners m = do
   unless (Set.null triggered) $ do
     res <- mapM (alertListener m) $ Map.toList $ Map.filterWithKey (\k _ -> Set.member k triggered) listeners
     registeredListeners %= Map.filterWithKey (\k _ -> Set.notMember k triggered)
+    use registeredListeners >>= debug . ("Active Listeners: " ++) . show . Map.keysSet
     end <- now
     debug $ "Serviced " ++ show (sum res) ++ " alerts taking " ++ show (interval start end) ++ "mics"
 
 alertListener :: Map RequestKey AppliedCommand -> (RequestKey, [MVar ListenerResult]) -> HistoryService Int
 alertListener res (k,mvs) = do
   commandRes <- return $! res Map.! k
-  fails <- liftIO $ mapM (`tryPutMVar` ListenerResult commandRes) mvs
+  debug $ "Servicing Listener for: " ++ show k
+  fails <- filter not <$> liftIO (mapM (`tryPutMVar` ListenerResult commandRes) mvs)
   unless (null fails) $ debug $ "Registered Listener Alert Failure for: " ++ show k ++ " (" ++ show (length fails) ++ " failures)"
   return $ length mvs
 
 updateKeysSQL :: Connection -> Map RequestKey AppliedCommand -> IO ()
-updateKeysSQL dbConn updates = undefined
+updateKeysSQL _dbConn _updates = undefined
 
 queryForExisting :: (Set RequestKey, MVar ExistenceResult) -> HistoryService ()
 queryForExisting (srks, mRes) = do
@@ -141,16 +144,16 @@ queryForExisting (srks, mRes) = do
       liftIO $! putMVar mRes $ ExistenceResult found
 
 queryForExistingSQL :: Connection -> Set RequestKey -> IO (Set RequestKey)
-queryForExistingSQL dbConn srks = undefined
+queryForExistingSQL _dbConn _srks = undefined
 
 queryForResults :: (Set RequestKey, MVar PossiblyIncompleteResults) -> HistoryService ()
 queryForResults (srks, mRes) = do
   pers <- use persistence
   case pers of
     InMemory m -> do
-      mapM_ (debug . ("Current Keys: " ++) . show) $ Map.toList m
       found <- return $! Map.filterWithKey (checkForIndividualResultInMem srks) m
       liftIO $! putMVar mRes $ PossiblyIncompleteResults $ fmap fromJust found
+      debug $ "Querying for " ++ show (Set.size srks) ++ " keys, found " ++ show (Map.size found)
     OnDisk dbConn -> do
       found <- liftIO $ queryForResultsSQL dbConn srks
       liftIO $! putMVar mRes $ PossiblyIncompleteResults $ fmap fromJust found
@@ -161,7 +164,25 @@ checkForIndividualResultInMem _ _ Nothing = False
 checkForIndividualResultInMem s k (Just _) = Set.member k s
 
 queryForResultsSQL :: Connection -> Set RequestKey -> IO (Map RequestKey (Maybe AppliedCommand))
-queryForResultsSQL dbConn srks = undefined
+queryForResultsSQL _dbConn _srks = undefined
 
 registerNewListeners :: Map RequestKey (MVar ListenerResult) -> HistoryService ()
-registerNewListeners m = registeredListeners %= Map.unionWith (<>) ((:[]) <$> m)
+registerNewListeners newListeners' = do
+  pers <- use persistence
+  case pers of
+    InMemory m -> do
+      srks <- return $! Map.keysSet newListeners'
+      found <- return $! fromJust <$> Map.filterWithKey (checkForIndividualResultInMem srks) m
+      noNeedToListen <- return $! Set.intersection (Map.keysSet found) srks
+      readyToServiceListeners <- return $! Map.filterWithKey (\k _ -> Set.member k noNeedToListen) newListeners'
+      realListeners <- return $! Map.filterWithKey (\k _ -> not $ Set.member k noNeedToListen) newListeners'
+      unless (Map.null readyToServiceListeners) $ mapM_ (\(k,v) -> alertListener found (k,[v])) $ Map.toList readyToServiceListeners
+      unless (Map.null realListeners) $ registeredListeners %= Map.unionWith (<>) ((:[]) <$> realListeners)
+    OnDisk dbConn -> do
+      srks <- return $! Map.keysSet newListeners'
+      found <- fmap fromJust <$> liftIO (queryForResultsSQL dbConn srks)
+      noNeedToListen <- return $! Set.intersection (Map.keysSet found) srks
+      readyToServiceListeners <- return $! Map.filterWithKey (\k _ -> Set.member k noNeedToListen) newListeners'
+      realListeners <- return $! Map.filterWithKey (\k _ -> not $ Set.member k noNeedToListen) newListeners'
+      unless (Map.null readyToServiceListeners) $ mapM_ (\(k,v) -> alertListener found (k,[v])) $ Map.toList readyToServiceListeners
+      unless (Map.null realListeners) $ registeredListeners %= Map.unionWith (<>) ((:[]) <$> realListeners)

@@ -164,12 +164,11 @@ showResult tdelay rks countm = loop (0 :: Int)
       threadDelay tdelay
       when (c > 100) $ flushStrLn "Timeout"
       s <- use server
-      r <- liftIO $ post ("http://" ++ s ++ "/api/poll") (toJSON (Poll [last rks]))
+      r <- liftIO $ post ("http://" ++ s ++ "/api/listen") (toJSON (ListenerRequest $ last rks))
       resp <- asJSON r
       case resp ^. responseBody of
         ApiFailure err -> flushStrLn $ "Error: no results received: " ++ show err
-        ApiSuccess [] -> loop $ c + 1
-        ApiSuccess [PollResult{..}] ->
+        ApiSuccess PollResult{..} ->
                 case countm of
                   Nothing -> do
                     prettyRes <- return $ (pprintResult =<< decode (BSL.fromStrict $ unCommandResult _prResponse))
@@ -179,7 +178,6 @@ showResult tdelay rks countm = loop (0 :: Int)
                         uglyRes <- return $ fromMaybe (Y.String "unable to decode") (Y.decode $ unCommandResult _prResponse)
                         flushStrLn $ BS8.unpack $ Y.encode uglyRes
                   Just cnt -> flushStrLn $ intervalOfNumerous cnt _prLatency
-        v -> flushStrLn $ "Error: " ++ show v
 
 pprintResult :: Value -> Maybe String
 pprintResult v = do

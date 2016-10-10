@@ -11,6 +11,10 @@ packages:
     git: git@bitbucket.org:spopejoy/pact.git
     commit: f4a05f72aa58f54dff57d3c197d0c7beeb5cbf80
   extra-dep: true
+- location:
+    git: git@github.com:kadena-io/bencoding.git
+    commit: 8eb25b3a00579793d4e0ce475791758012d3f5a1
+  extra-dep: true
 
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)
@@ -27,7 +31,7 @@ extra-deps:
 - trifecta-1.6
 
 # Override default flag values for local packages and extra-deps
-# flags: []
+flags: {}
 
 # Extra package databases containing global packages
 extra-package-dbs: []

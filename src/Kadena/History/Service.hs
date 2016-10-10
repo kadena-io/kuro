@@ -42,17 +42,6 @@ initHistoryEnv dispatch' dbPath' debugPrint' getTimestamp' = HistoryEnv
   , _dbPath = dbPath'
   }
 
---data PersistenceSystem =
---  InMemory
---    {inMemResults :: !(Map RequestKey (Maybe AppliedCommand))} |
---  OnDisk
---    {dbConn :: !Connection}
---
---data HistoryState = HistoryState
---  { _registeredListeners :: !(Map RequestKey [MVar ListenerResult])
---  , _persistence :: !PersistenceSystem
---  }
-
 runHistoryService :: HistoryEnv -> Maybe HistoryState -> IO ()
 runHistoryService env mState = do
   initHistoryState <- case mState of

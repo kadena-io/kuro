@@ -5,13 +5,15 @@
 module Kadena.Types.Command
   ( CommandEntry(..)
   , CommandResult(..)
-  , RequestKey(..)
+  , RequestKey(..), initialRequestKey
   , AppliedCommand(..),acResult,acLatency,acRequestId
   ) where
 
 import Data.ByteString (ByteString)
 import Data.Serialize (Serialize)
 import Data.Aeson
+import qualified Data.Aeson as A
+import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import GHC.Generics hiding (from)
 import GHC.Int (Int64)
 import Control.Lens (makeLenses)
@@ -23,9 +25,17 @@ newtype CommandEntry = CommandEntry { unCommandEntry :: ByteString }
 
 newtype CommandResult = CommandResult { unCommandResult :: ByteString }
   deriving (Show, Eq, Ord, Generic, Serialize)
+instance ToJSON CommandResult where
+  toJSON (CommandResult a) = toJSON $ decodeUtf8 a
+instance FromJSON CommandResult where
+  parseJSON (A.String t) = return $ CommandResult (encodeUtf8 t)
+  parseJSON _ = mempty
 
 newtype RequestKey = RequestKey { unRequestKey :: Hash}
   deriving (Show, Eq, Ord, Generic, ToJSON, FromJSON, Serialize)
+
+initialRequestKey :: RequestKey
+initialRequestKey = RequestKey initialHash
 
 data AppliedCommand = AppliedCommand {
       _acResult :: !CommandResult

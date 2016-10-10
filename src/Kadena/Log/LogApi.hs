@@ -177,7 +177,7 @@ logInfoForNextIndex (Just myNextIdx) = do
 
 -- | Latest hash or empty
 lastLogHash :: LogThread Hash
-lastLogHash = maybe (Hash mempty) _leHash <$> lastEntry
+lastLogHash = maybe initialHash _leHash <$> lastEntry
 {-# INLINE lastLogHash #-}
 
 -- | Latest term on log or 'startTerm'
@@ -289,7 +289,7 @@ appendLogEntry NewLogEntries{..} = do
           lsNextLogIndex .= lastIdx' + 1
           lsLastLogTerm  .= _leTerm lastLog'
     Nothing -> do
-      nle <- return $! newEntriesToLog _nleTerm (Hash B.empty) nli (unNleEntries _nleEntries)
+      nle <- return $! newEntriesToLog _nleTerm initialHash nli (unNleEntries _nleEntries)
       mLastLog' <- return $! lesMaxEntry nle
       case mLastLog' of
         Nothing -> return ()

@@ -39,7 +39,10 @@ library
                      , Kadena.Evidence.Service
                      , Kadena.Evidence.Spec
                      , Kadena.Evidence.Types
+                     , Kadena.History.Service
+                     , Kadena.History.Types
                      , Kadena.HTTP.ApiServer
+                     , Kadena.HTTP.Types
                      , Kadena.Log.LogApi
                      , Kadena.Log.Persistence
                      , Kadena.Log.Service
@@ -59,7 +62,6 @@ library
                      , Kadena.Sender.Types
                      , Kadena.Spec.Simple
                      , Kadena.Types
-                     , Kadena.Types.Api
                      , Kadena.Types.Base
                      , Kadena.Types.Command
                      , Kadena.Types.Comms
@@ -93,6 +95,7 @@ library
                      , bloomfilter
                      , bound
                      , binary
+                     , bencoding
                      , BoundedChan
                      , bytestring
                      , cacophony

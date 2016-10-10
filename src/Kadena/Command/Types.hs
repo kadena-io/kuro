@@ -13,18 +13,17 @@ import Data.Aeson as A
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as BSL
 import qualified Crypto.PubKey.Curve25519 as C2
-import Crypto.Ed25519.Pure (sign)
 import Data.ByteArray.Extend
 import Data.Serialize as SZ hiding (get)
 import GHC.Generics
 import Control.Monad.Reader
 import Control.Exception.Safe
+import Data.Text
 import Data.Text.Encoding
 import Control.Applicative
 import Control.Lens hiding ((.=))
 import Data.Maybe
 import Prelude hiding (log,exp)
-import Data.Text
 import Control.Concurrent.MVar
 
 import Pact.Types hiding (PublicKey)
@@ -32,7 +31,7 @@ import Pact.Pure
 
 import Kadena.Command.PactSqlLite
 
-import Kadena.Types.Base hiding (Term, sign, valid)
+import Kadena.Types.Base hiding (Term)
 import Kadena.Types.Command
 import Kadena.Types.Config
 
@@ -139,26 +138,32 @@ data PactMessage = PactMessage {
       _pmEnvelope :: ByteString
     , _pmKey :: PublicKey
     , _pmSig :: Signature
+    , _pmHsh :: Hash
     } deriving (Eq,Generic)
 instance Serialize PactMessage
 instance ToJSON PactMessage where
-    toJSON (PactMessage payload pk (Sig s)) =
+    toJSON (PactMessage payload pk (Sig s) hsh) =
         object [ "env" .= decodeUtf8 payload
                , "key" .= pk
                , "sig" .= toB16JSON s
+               , "hsh" .= hsh
                ]
 instance FromJSON PactMessage where
     parseJSON = withObject "PactMessage" $ \o ->
                 PactMessage <$> (encodeUtf8 <$> o .: "env")
                             <*> o .: "key"
                             <*> (o .: "sig" >>= \t -> Sig <$> parseB16JSON t)
+                            <*> (o .: "hsh")
 
 mkPactMessage :: ToJSON a => PrivateKey -> PublicKey -> Alias -> String -> a -> PactMessage
 mkPactMessage sk pk al rid a = mkPactMessage' sk pk $ BSL.toStrict $ A.encode (PactEnvelope a rid al)
 -- al rid (BSL.toStrict $ A.encode a)
 
 mkPactMessage' :: PrivateKey -> PublicKey -> ByteString -> PactMessage
-mkPactMessage' sk pk env = PactMessage env pk (sign env sk pk)
+mkPactMessage' sk pk env = PactMessage env pk sig hsh
+  where
+    hsh = hash env
+    sig = sign hsh sk pk
 
 data PactEnvelope a = PactEnvelope {
       _pePayload :: a
@@ -174,8 +179,6 @@ instance (FromJSON a) => FromJSON (PactEnvelope a) where
                     PactEnvelope <$> o .: "payload"
                                      <*> o .: "rid"
                                      <*> o .: "alias"
-
-
 
 data PactRPC =
     Exec ExecMsg |

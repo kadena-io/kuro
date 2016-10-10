@@ -57,13 +57,16 @@ data CMDWire = CMDWire !(CommandEntry, Alias, RequestId)
   deriving (Show, Generic)
 instance Serialize CMDWire
 
+-- TODO: MASSIVE TODO/ISSUE -- CMD and PactMessage need to be unified, I've altered fromWire and to wire for now to make this work
+-- The issue is that the alias and rid are in the CommandEntry now, so we don't sign/verify against CMDWire but just CommandEntry
+-- and use CMDWire to duplicate Alias and rid
 mkCmdRpc :: CommandEntry -> Alias -> RequestId -> Digest -> SignedRPC
 mkCmdRpc ce a ri d = SignedRPC d (S.encode $ CMDWire (ce, a, ri))
 
 instance WireFormat Command where
   toWire nid pubKey privKey Command{..} = case _cmdProvenance of
     NewMsg -> let bdy = S.encode $ CMDWire (_cmdEntry, _cmdClientId, _cmdRequestId)
-                  hsh = hash bdy
+                  hsh = hash $ unCommandEntry _cmdEntry
                   sig = sign hsh privKey pubKey
                   dig = Digest (_alias nid) sig pubKey CMD hsh
               in SignedRPC dig bdy
@@ -71,15 +74,15 @@ instance WireFormat Command where
   fromWire !ts !_ks s@(SignedRPC !dig !bdy) =
         if _digType dig /= CMD
         then error $ "Invariant Failure: attempting to decode " ++ show (_digType dig) ++ " with CMDWire instance"
-        else let ourHash = hash bdy
-             in if ourHash == _digHash dig
-             then  Left $! "Unable to verify SignedRPC hash: "
+        else case S.decode bdy of
+          Left !err -> Left $! "Failure to decode CMDWire: " ++ err
+          Right (CMDWire !(ce,nid,rid)) -> let ourHash = hash $ unCommandEntry ce
+            in if ourHash /= _digHash dig
+               then Left $! "Unable to verify SignedRPC hash: "
                         ++ " our=" ++ show ourHash
                         ++ " theirs=" ++ show (_digHash dig)
                         ++ " in " ++ show s
-             else case S.decode bdy of
-              Left !err -> Left $! "Failure to decode CMDWire: " ++ err
-              Right (CMDWire !(ce,nid,rid)) -> Right $! Command ce nid rid UnVerified $ ReceivedMsg dig bdy ts
+               else Right $! Command ce nid rid UnVerified $ ReceivedMsg dig bdy ts
   {-# INLINE toWire #-}
   {-# INLINE fromWire #-}
 

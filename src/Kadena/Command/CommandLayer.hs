@@ -131,9 +131,12 @@ applyRPC ks m =
       Left err -> throwCmdEx $ "RPC deserialize failed: " ++ show err ++ show m
 
 validateSig :: PactMessage -> CommandM Pact.PublicKey
-validateSig (PactMessage payload key sig)
-    | valid payload key sig = return (Pact.PublicKey (exportPublic key)) -- TODO turn off with compile flags?
-    | otherwise = throwCmdEx "Signature verification failure"
+validateSig (PactMessage payload key sig hsh) = do
+  if hsh /= hash payload
+  then throwCmdEx "Hash verification failure"
+  else if valid payload key sig
+       then return (Pact.PublicKey (exportPublic key)) -- TODO turn off with compile flags?
+       else throwCmdEx "Signature verification failure"
 
 parse :: ExecutionMode -> Text -> CommandM [Exp]
 parse (Transactional _) code =

@@ -274,7 +274,7 @@ hashLogEntry :: Maybe LogEntry -> LogEntry -> LogEntry
 hashLogEntry (Just LogEntry{ _leHash = prevHash }) le@LogEntry{..} =
   le { _leHash = hash (encode $ (_leTerm, _leLogIndex, getCmdBodyHash le, prevHash))}
 hashLogEntry Nothing le@LogEntry{..} =
-  le { _leHash = hash (encode $ (_leTerm, _leLogIndex, getCmdBodyHash le, Hash mempty))}
+  le { _leHash = hash (encode $ (_leTerm, _leLogIndex, getCmdBodyHash le, initialHash))}
 {-# INLINE hashLogEntry #-}
 
 getCmdBodyHash :: LogEntry -> Hash

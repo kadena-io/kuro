@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -20,9 +21,9 @@ import qualified Data.ByteString.Lazy.Char8 as BSL
 import Data.Maybe (fromJust, fromMaybe)
 import qualified Data.HashMap.Strict as HM
 import Data.Either ()
-import Data.Aeson hiding ((.=))
+import Data.Aeson hiding ((.=), Result(..))
 import Data.Aeson.Lens
-import Data.Aeson.Types hiding ((.=),parse)
+import Data.Aeson.Types hiding ((.=),parse, Result(..))
 import qualified Data.Yaml as Y
 import Text.Read (readMaybe)
 import qualified Data.Text as T
@@ -42,7 +43,8 @@ import Data.Int
 
 import Kadena.Types.Base
 import Kadena.Command.Types
-import Kadena.Types.Api
+import Kadena.Types.Command
+import Kadena.HTTP.Types
 
 data ClientOpts = ClientOpts {
       _oConfig :: FilePath
@@ -75,6 +77,7 @@ data ReplState = ReplState {
       _server :: String
     , _batchCmd :: String
     , _requestId :: Int64
+    , _requestKey :: RequestKey
 }
 makeLenses ''ReplState
 
@@ -104,35 +107,36 @@ mkExec code mdata = do
   rid <- use requestId
   return $ mkPactMessage sk pk a (show rid) (Exec (ExecMsg (T.pack code) mdata))
 
-
 sendCmd :: String -> Repl ()
 sendCmd cmd = do
   s <- use server
-  e <- mkExec cmd Null
-  r <- liftIO $ post ("http://" ++ s ++ "/api/public/send") (toJSON e)
-  rids <- view (responseBody.ssRequestKeys) <$> asJSON r
-  flushStrLn $ "Request Id: " ++ show rids
-  showResult 10000 rids Nothing
+  (e :: PactMessage) <- mkExec cmd Null
+  r <- liftIO $ post ("http://" ++ s ++ "/api/public/send") (toJSON $ SubmitBatch [e])
+  resp <- asJSON r
+  case resp of
+    SubmitBatchFailure ApiResponse{..} -> do
+      flushStrLn $ "Failure: " ++ show _apiResponse
+    SubmitBatchSuccess ApiResponse{..} -> do
+      rid <- return $ head (_apiResponse ^. rkRequestKeys)
+      flushStrLn $ "Request Id: " ++ show rid
+      showResult 10000 rid Nothing
 
 batchTest :: Int -> String -> Repl ()
 batchTest n cmd = do
   s <- use server
-  es <- replicateM n (mkExec cmd Null)
+  (es :: SubmitBatch) <- SubmitBatch <$> replicateM n (mkExec cmd Null)
   flushStrLn $ "Prepared " ++ show (length es) ++ " messages ..."
-  r <- liftIO $ post ("http://" ++ s ++ "/api/public/batch") (toJSON (Batch es))
+  r <- liftIO $ post ("http://" ++ s ++ "/api/public/batch") (toJSON es)
   flushStrLn $ "Sent, retrieving responses"
-  rids <- view (responseBody.ssRequestKeys) <$> asJSON r
-  flushStrLn $ "Polling response " ++ show (last rids)
-  showResult (n * 200) rids (Just (fromIntegral n))
-
-manyTest :: Int -> String -> Repl ()
-manyTest n cmd = do
-  s <- use server
-  rs <- replicateM n $ do
-                   e <- mkExec cmd Null
-                   liftIO $ post ("http://" ++ s ++ "/api/public/send") (toJSON e)
-  rids <- view (responseBody.ssRequestKeys) <$> asJSON (last rs)
-  showResult (n * 200) rids (Just (fromIntegral n))
+  resp <- asJSON r
+  case resp of
+    SubmitBatchFailure ApiResponse{..} -> do
+      flushStrLn $ "Failure: " ++ show _apiResponse
+    SubmitBatchSuccess ApiResponse{..} -> do
+      rid <- return $ last (_apiResponse ^. rkRequestKeys)
+      flushStrLn $ "Request Id: " ++ show $ rid
+      flushStrLn $ "Polling response " ++ show rid
+      showResult 10000 rid (Just (fromIntegral n))
 
 setup :: Repl ()
 setup = do
@@ -144,29 +148,33 @@ setup = do
       s <- use server
       e <- mkExec code j
       r <- liftIO $ post ("http://" ++ s ++ "/api/public/send") (toJSON e)
-      rids <- view (responseBody.ssRequestKeys) <$> asJSON r
-      showResult 10000 rids Nothing
+      resp <- asJSON r
+      case resp of
+        SubmitBatchFailure ApiResponse{..} -> do
+          flushStrLn $ "Failure: " ++ show _apiResponse
+        SubmitBatchSuccess ApiResponse{..} -> do
+          rid <- return $ last (_apiResponse ^. rkRequestKeys)
+          flushStrLn $ "Request Id: " ++ show $ rid
+          flushStrLn $ "Polling response " ++ show rid
+          showResult 10000 rid Nothing
 
-
-
-
-
-showResult :: Int -> [RequestId] -> Maybe Int64 -> Repl ()
+showResult :: Int -> [RequestKey] -> Maybe Int64 -> Repl ()
 showResult _ [] _ = return ()
-showResult tdelay rids countm = loop (0 :: Int) where
+showResult tdelay rks countm = loop (0 :: Int)
+  where
     loop c = do
       threadDelay tdelay
       when (c > 100) $ flushStrLn "Timeout"
       s <- use server
-      r <- liftIO $ post ("http://" ++ s ++ "/api/poll") (toJSON (PollRequest [last rids]))
+      r <- liftIO $ post ("http://" ++ s ++ "/api/poll") (toJSON (Poll [last rks]))
       v <- asValue r
       case toListOf (responseBody.key "responses".values) v of
         [] -> flushStrLn $ "Error: no results received: " ++ show r
         rs -> case parseEither parseJSON (last rs) of
-            Right (PollSuccessEntry lat rsp) ->
+            Right (PollSuccess (ApiResponse Success [PollResult{..}])) ->
                 case countm of
-                  Nothing -> flushStrLn $ fromMaybe (BS8.unpack (Y.encode rsp)) (pprintResult rsp)
-                  Just cnt -> flushStrLn $ intervalOfNumerous cnt lat
+                  Nothing -> flushStrLn $ fromMaybe (BS8.unpack (Y.encode _prResponse)) (pprintResult $ decode _prResponse)
+                  Just cnt -> flushStrLn $ intervalOfNumerous cnt _prLatency
             Left _ ->  loop (succ c)
 
 
@@ -218,10 +226,6 @@ runREPL = loop True
             case readMaybe $ drop 7 cmd of
               Just n -> batchTest n bcmd
               Nothing -> return ()
-          | take 6 cmd == ":many " ->
-              case readMaybe $ drop 6 cmd of
-                Just n -> manyTest n bcmd
-                Nothing -> return ()
           | take 8 cmd == ":server " ->
               server .= drop 8 cmd
           | take 5 cmd == ":cmd " ->
@@ -230,7 +234,7 @@ runREPL = loop True
 
 
 _run :: StateT ReplState m a -> m (a, ReplState)
-_run a = runStateT a (ReplState "localhost:8000" "(demo.transfer \"Acct1\" \"Acct2\" 1.00)" 0)
+_run a = runStateT a (ReplState "localhost:8000" "(demo.transfer \"Acct1\" \"Acct2\" 1.00)" 0 initialRequestKey)
 
 
 
@@ -254,5 +258,8 @@ main = do
          let opts = foldl (flip id) def o
          i <- initRequestId
          (conf :: ClientConfig) <- either (\e -> print e >> exitFailure) return =<< Y.decodeFileEither (_oConfig opts)
-         void $ runStateT (runReaderT runREPL conf) (ReplState (snd (head (HM.toList (_ccEndpoints conf))))
-                                              "(demo.transfer \"Acct1\" \"Acct2\" 1.00)" i)
+         void $ runStateT (runReaderT runREPL conf)
+                  (ReplState (snd (head (HM.toList (_ccEndpoints conf))))
+                             "(demo.transfer \"Acct1\" \"Acct2\" 1.00)"
+                             i
+                             initialRequestKey)

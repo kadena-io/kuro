@@ -18,7 +18,7 @@ module Kadena.Types.Base
   , Alias(..)
   , interval
   , hash, hashLengthAsBS, hashLengthAsBase16
-  , Hash(..)
+  , Hash(..), initialHash
   ) where
 
 import Control.Lens
@@ -112,11 +112,13 @@ hash = Hash . BLAKE.hash hashLengthAsBS B.empty
 newtype Hash = Hash { unHash :: ByteString }
   deriving (Show, Eq, Ord, Generic)
 
+initialHash :: Hash
+initialHash = hash B.empty
+
 instance Serialize Hash where
-  put (Hash h) = do
-    S.putByteString h
+  put (Hash h) = S.put h
   get = do
-    raw <- S.getByteString hashLengthAsBS
+    raw <- S.get >>= S.getByteString
     if hashLengthAsBS == B.length raw
       then return $ Hash raw
       else fail $ "Unable to decode hash, wrong length: "

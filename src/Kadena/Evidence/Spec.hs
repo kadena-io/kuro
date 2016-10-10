@@ -87,8 +87,8 @@ initEvidenceState otherNodes' commidIndex' maxElectionTimeout' = EvidenceState
   , _esCacheMissAers = Set.empty
   , _esMismatchNodes = Set.empty
   , _esResetLeaderNoFollowers = False
-  , _esHashAtCommitIndex = Hash mempty
-  , _esEvidenceCache = Map.singleton startIndex (Hash mempty)
+  , _esHashAtCommitIndex = initialHash
+  , _esEvidenceCache = Map.singleton startIndex initialHash
   , _esMaxElectionTimeout = maxElectionTimeout'
   }
 

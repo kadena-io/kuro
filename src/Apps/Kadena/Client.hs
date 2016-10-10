@@ -77,7 +77,7 @@ data ReplState = ReplState {
       _server :: String
     , _batchCmd :: String
     , _requestId :: Int64
-    , _requestKey :: RequestKey
+    , _requestKey :: Maybe RequestKey
 }
 makeLenses ''ReplState
 
@@ -235,9 +235,7 @@ runREPL = loop True
 
 
 _run :: StateT ReplState m a -> m (a, ReplState)
-_run a = runStateT a (ReplState "localhost:8000" "(demo.transfer \"Acct1\" \"Acct2\" 1.00)" 0 initialRequestKey)
-
-
+_run a = runStateT a (ReplState "localhost:8000" "(demo.transfer \"Acct1\" \"Acct2\" 1.00)" 0 Nothing)
 
 intervalOfNumerous :: Int64 -> Int64 -> String
 intervalOfNumerous cnt mics = let
@@ -263,4 +261,4 @@ main = do
                   (ReplState (snd (head (HM.toList (_ccEndpoints conf))))
                              "(demo.transfer \"Acct1\" \"Acct2\" 1.00)"
                              i
-                             initialRequestKey)
+                             Nothing)

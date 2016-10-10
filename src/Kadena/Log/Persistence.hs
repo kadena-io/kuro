@@ -149,7 +149,7 @@ sqlDbSchema = Query $ T.pack
   \, 'hash' TEXT\
   \, 'commandEntry' TEXT\
   \, 'clientId' TEXT\
-  \, 'requestId' INTEGER\
+  \, 'requestId' TEXT\
   \, 'cryptoVerified' TEXT\
   \, 'provenance' TEXT\
   \)"

@@ -1,3 +1,4 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -88,11 +89,14 @@ handle = do
 applyLogEntries :: LogEntries -> CommitService ()
 applyLogEntries les@(LogEntries leToApply) = do
   now' <- now
-  results <- mapM (applyCommand now') (Map.elems leToApply)
+  (results :: [(RequestKey, AppliedCommand)]) <- mapM (applyCommand now') (Map.elems leToApply)
   commitIndex' <- return $ fromJust $ Log.lesMaxIndex les
   logMetric $ MetricAppliedIndex commitIndex'
   if not (null results)
-    then debug $! "Applied " ++ show (length results) ++ " CMD(s)"
+    then do
+      debug $! "Applied " ++ show (length results) ++ " CMD(s)"
+      hChan <- view historyChannel
+      liftIO $! writeComm hChan (History.Update $ Map.fromList results)
     else debug "Applied log entries but did not send results?"
 
 logApplyLatency :: Command -> CommitService ()
@@ -105,28 +109,14 @@ logApplyLatency (Command _ _ _ _ provenance) = case provenance of
     Nothing -> return ()
 {-# INLINE logApplyLatency #-}
 
-applyCommand :: UTCTime -> LogEntry -> CommitService ()
+applyCommand :: UTCTime -> LogEntry -> CommitService (RequestKey, AppliedCommand)
 applyCommand tEnd le = do
   let cmd = _leCommand le
   apply <- view applyLogEntry
   logApplyLatency cmd
   result <- liftIO $ apply le
-  updateCmdStatusMap cmd result tEnd -- shared with the API and to query state
-
-updateCmdStatusMap :: Command -> CommandResult -> UTCTime -> CommitService ()
-updateCmdStatusMap cmd cmdResult tEnd = do
   rid <- return $ _cmdRequestId cmd
   lat <- return $ case _pTimeStamp $ _cmdProvenance cmd of
     Nothing -> 1 -- don't want a div by zero error downstream and this is for demo purposes
     Just (ReceivedAt tStart) -> interval tStart tEnd
-  hChan <- view historyChannel
-  liftIO $! writeComm hChan (History.Update $ Map.fromList [(RequestKey $ getCmdHashOrInvariantError "updateCmdStatusMap" cmd, AppliedCommand cmdResult lat rid)])
-
--- makeCommandResponse :: UTCTime -> Command -> CommandResult -> CommitService CommandResponse
--- makeCommandResponse tEnd cmd result = do
---   nid <- use nodeId
---   lat <- return $ case _pTimeStamp $ _cmdProvenance cmd of
---     Nothing -> 1 -- don't want a div by zero error downstream and this is for demo purposes
---     Just (ReceivedAt tStart) -> interval tStart tEnd
---   return $ makeCommandResponse' nid cmd result lat
---
+  return (RequestKey $ getCmdHashOrInvariantError "updateCmdStatusMap" cmd, AppliedCommand result lat rid)

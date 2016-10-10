@@ -104,6 +104,7 @@ updateExistingKeys updates = do
     InMemory m -> do
       newInMem <- return $! InMemory $! foldr updateInMemKey m $ Map.toList updates
       persistence .= newInMem
+      debug $ "Updated " ++ show (Map.size updates) ++ " keys"
     OnDisk dbConn -> liftIO $ updateKeysSQL dbConn updates
 
 updateInMemKey :: (RequestKey, AppliedCommand) -> Map RequestKey (Maybe AppliedCommand) -> Map RequestKey (Maybe AppliedCommand)

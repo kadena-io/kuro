@@ -9,7 +9,7 @@ import Data.Default
 import Data.Aeson as A
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy (toStrict,fromStrict)
-import qualified Data.ByteString.Lazy as BSL
+
 import qualified Data.ByteString.Base16 as B16
 import Data.Serialize as SZ hiding (get,put)
 import Control.Monad.Reader
@@ -26,7 +26,7 @@ import Prelude hiding (log,exp)
 import qualified Data.HashMap.Strict as HM
 import Text.PrettyPrint.ANSI.Leijen (renderCompact,displayS)
 import System.Directory
-import Data.Aeson.Encode.Pretty
+
 import Crypto.Ed25519.Pure (valid)
 
 import Pact.Types hiding (PublicKey)

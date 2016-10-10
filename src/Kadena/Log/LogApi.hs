@@ -15,7 +15,6 @@ module Kadena.Log.LogApi
   , KeySet(..)
   -- for tesing
   , newEntriesToLog
-  , hashNewEntry
   , updateLogEntriesHashes
   ) where
 
@@ -28,13 +27,9 @@ import qualified Data.IntMap.Strict as IntMap
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 
-import qualified Data.ByteString as B
-import Data.Serialize hiding (get)
-
 import Kadena.Types.Base
 import Kadena.Log.Types
 import qualified Kadena.Log.Types as X
-import Kadena.Types.Message.Signed
 import Kadena.Types.Message.CMD
 import Kadena.Log.Persistence
 
@@ -305,12 +300,13 @@ appendLogEntry NewLogEntries{..} = do
 newEntriesToLog :: Term -> Hash -> LogIndex -> [Command] -> LogEntries
 newEntriesToLog ct prevHash idx cmds = res `seq` LogEntries res
   where
-    res = Map.fromList $! go prevHash idx cmds
+    res = Map.fromList $! go (Just prevHash) idx cmds
     go _ _ [] = []
-    go prevHash' i [c] = [(i,LogEntry ct i c (hashNewEntry prevHash' ct i c))]
-    go prevHash' i (c:cs) = let
-        newHash = hashNewEntry prevHash' ct i c
-      in (:) (i, LogEntry ct i c newHash) $! go newHash (i + 1) cs
+    go prevHash' i [c] = [(i,hashLogEntry prevHash' (LogEntry ct i c initialHash))]
+    go prevHash' i (c:cs) =
+      let
+        hashedEntry = hashLogEntry prevHash' $ LogEntry ct i c initialHash
+      in (:) (i, hashedEntry) $! go (Just $ _leHash hashedEntry) (i + 1) cs
 {-# INLINE newEntriesToLog #-}
 
 updateLogEntriesHashes :: Maybe LogEntry -> LogEntries -> LogEntries
@@ -318,22 +314,13 @@ updateLogEntriesHashes preceedingEntry (LogEntries les) = LogEntries $! Map.from
   where
     go [] _ = []
     go ((k,le):rest) pEntry =
-      let hashedEntry = hashLogEntry pEntry le
+      let hashedEntry = hashLogEntry (_leHash <$> pEntry) le
       in (hashedEntry `seq` (k,hashedEntry)) : go rest (Just hashedEntry)
 --  case firstOf (ix i) ls of
 --    Just _ -> updateLogHashesFromIndex (succ i) $
 --              over (logEntries) (Seq.adjust (hashLogEntry (firstOf (ix (i - 1)) ls)) (fromIntegral i)) ls
 --    Nothing -> ls
 {-# INLINE updateLogEntriesHashes #-}
-
-hashNewEntry :: Hash -> Term -> LogIndex -> Command -> Hash
-hashNewEntry prevHash leTerm' leLogIndex' cmd = hash $! (encode $! LEWire (leTerm', leLogIndex', sigCmd cmd, prevHash))
-  where
-    sigCmd Command{ _cmdProvenance = ReceivedMsg{ _pDig = dig, _pOrig = bdy }} =
-      SignedRPC dig bdy
-    sigCmd Command{ _cmdProvenance = NewMsg } =
-      error "Invariant Failure: for a command to be in a log entry, it needs to have been received!"
-{-# INLINE hashNewEntry #-}
 
 evalQuery :: AtomicQuery -> LogThread QueryResult
 evalQuery GetLastApplied = QrLastApplied <$> lastApplied

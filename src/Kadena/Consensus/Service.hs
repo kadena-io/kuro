@@ -55,10 +55,9 @@ launchCommitService :: Dispatch
   -> NodeId
   -> IO UTCTime
   -> ApplyFn
-  -> (AppliedCommand -> IO ())
   -> IO (Async ())
-launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' applyFn' enqueueApplied' = do
-  commitEnv <- return $! Commit.initCommitEnv dispatch' dbgPrint' applyFn' publishMetric' getTimestamp' enqueueApplied'
+launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' applyFn' = do
+  commitEnv <- return $! Commit.initCommitEnv dispatch' dbgPrint' applyFn' publishMetric' getTimestamp'
   link =<< async (Commit.runCommitService commitEnv nodeId' keySet')
   async $! foreverTick (_commitService dispatch') 1000000 Commit.Tick
 
@@ -93,7 +92,6 @@ runConsensusService renv rconf spec rstate timeCache' mPubConsensus' applyFn' = 
       getTimestamp' = spec ^. getTimestamp
       keySet' = Turbine._keySet renv
       nodeId' = rconf ^. nodeId
-      enqueueApplied' = spec ^. enqueueApplied
 
   publishMetric' $ MetricClusterSize csize
   publishMetric' $ MetricAvailableSize csize
@@ -107,7 +105,7 @@ runConsensusService renv rconf spec rstate timeCache' mPubConsensus' applyFn' = 
 
   link =<< launchHistoryService dispatch' dbgPrint' getTimestamp' rconf
   link =<< launchSenderService dispatch' dbgPrint' publishMetric' mEvState rconf
-  link =<< launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' applyFn' enqueueApplied'
+  link =<< launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' applyFn'
   link =<< launchEvidenceService dispatch' dbgPrint' publishMetric' mEvState rconf' mLeaderNoFollowers
   link =<< launchLogService dispatch' dbgPrint' publishMetric' keySet' rconf
   link =<< async (foreverTick (_internalEvent dispatch') 1000000 (InternalEvent . Tick))

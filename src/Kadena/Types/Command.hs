@@ -32,7 +32,10 @@ instance FromJSON CommandResult where
   parseJSON _ = mempty
 
 newtype RequestKey = RequestKey { unRequestKey :: Hash}
-  deriving (Show, Eq, Ord, Generic, ToJSON, FromJSON, Serialize)
+  deriving (Eq, Ord, Generic, ToJSON, FromJSON, Serialize)
+
+instance Show RequestKey where
+  show (RequestKey rk) = show rk
 
 initialRequestKey :: RequestKey
 initialRequestKey = RequestKey initialHash

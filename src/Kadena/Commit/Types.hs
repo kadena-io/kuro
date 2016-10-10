@@ -7,7 +7,7 @@ module Kadena.Commit.Types
   , Commit(..)
   , CommitEnv(..)
   , commitChannel, applyLogEntry, debugPrint, publishMetric
-  , getTimestamp, publishResults
+  , getTimestamp, historyChannel
   , CommitState(..)
   , nodeId, keySet
   , CommitChannel(..)
@@ -29,6 +29,8 @@ import Kadena.Types.Comms as X
 import Kadena.Types.Metric as X
 import Kadena.Types.Log as X
 import Kadena.Types.Message as X
+
+import Kadena.History.Types (HistoryChannel)
 
 type ApplyFn = LogEntry -> IO CommandResult
 
@@ -52,12 +54,11 @@ instance Comms Commit CommitChannel where
 
 data CommitEnv = CommitEnv
   { _commitChannel :: !CommitChannel
-    -- ^ Function to apply a log entry to the state machine.
-  , _applyLogEntry    :: !ApplyFn
+  , _historyChannel :: !HistoryChannel
+  , _applyLogEntry  :: !ApplyFn
   , _debugPrint :: !(String -> IO ())
   , _publishMetric :: !(Metric -> IO ())
   , _getTimestamp :: !(IO UTCTime)
-  , _publishResults :: !(AppliedCommand -> IO ())
   }
 makeLenses ''CommitEnv
 

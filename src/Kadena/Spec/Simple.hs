@@ -21,7 +21,7 @@ import Data.Thyme.Calendar (showGregorian)
 import Data.Thyme.Clock (UTCTime, getCurrentTime)
 import Data.Thyme.LocalTime
 import qualified Data.ByteString.Char8 as BSC
-import qualified Data.Map.Strict as MS
+
 import qualified Data.Set as Set
 import qualified Data.Yaml as Y
 import qualified Data.Text.IO as T
@@ -34,7 +34,7 @@ import System.Log.FastLogger
 import System.Random
 
 import Kadena.Consensus.Service
-import Kadena.Types.Command
+
 import Kadena.Types.Base
 import Kadena.Types.Config
 import Kadena.Types.Spec hiding (timeCache)
@@ -116,15 +116,12 @@ initSysLog tc = do
 simpleConsensusSpec
   :: (String -> IO ())
   -> (Metric -> IO ())
-  -> MVar (MS.Map RequestId AppliedCommand)
   -> ConsensusSpec
-simpleConsensusSpec debugFn pubMetricFn appliedCmdMap = ConsensusSpec
+simpleConsensusSpec debugFn pubMetricFn = ConsensusSpec
   { _debugPrint      = debugFn
   , _publishMetric   = pubMetricFn
   , _getTimestamp = liftIO getCurrentTime
   , _random = liftIO . randomRIO
-  , _enqueueApplied = \a -> modifyMVar_ appliedCmdMap
-                              (\m -> return $! MS.insert (_acRequestId a) a m)
   }
 
 simpleReceiverEnv :: Dispatch
@@ -154,7 +151,6 @@ runServer :: IO ()
 runServer = do
   setLineBuffering
   T.putStrLn $! "Kadena LLC © (2016-2017)"
-  mAppliedMap <- newMVar MS.empty
   rconf <- getConfig
   utcTimeCache' <- utcTimeCache
   fs <- initSysLog utcTimeCache'
@@ -172,7 +168,6 @@ runServer = do
   let raftSpec = simpleConsensusSpec
                    debugFn
                    (liftIO . pubMetric)
-                   mAppliedMap
 
   restartTurbo <- newEmptyMVar
   receiverEnv <- return $ simpleReceiverEnv dispatch rconf debugFn restartTurbo

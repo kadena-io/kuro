@@ -6,19 +6,19 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Kadena.HTTP.Types
-  ( ApiStatus(..)
-  , ApiResponse(..), apiStatus, apiResponse
+  ( ApiResponse(..), apiResponse, apiError
   , RequestKeys(..), rkRequestKeys
   , SubmitBatch(..), sbCmds
-  , SubmitBatchResponse(..)
+  , SubmitBatchResponse
   , Poll(..)
   , PollResult(..), prRequestKey, prLatency, prResponse
-  , PollResponse(..)
+  , PollResponse
   , ListenerRequest(..)
-  , ListenerResponse(..)
+  , ListenerResponse
   ) where
 
 import Data.Char (toLower)
+import qualified Data.Aeson as A
 import Data.Aeson hiding (Success)
 import Data.Aeson.Types (Options(..))
 import Control.Lens hiding ((.=))
@@ -34,21 +34,24 @@ lensyConstructorToNiceJson n fieldName = firstToLower $ drop n fieldName
     firstToLower (c:cs) = toLower c : cs
     firstToLower _ = error "You've managed to screw up the drop number or the field name"
 
-data ApiStatus = Success | Failure
-  deriving (Eq, Show, Ord, Generic)
-instance ToJSON ApiStatus where
-  toEncoding = genericToEncoding defaultOptions
-instance FromJSON ApiStatus
-
-data ApiResponse a = ApiResponse
-  { _apiStatus :: !ApiStatus
-  , _apiResponse :: !a
-  } deriving (Show, Eq, Generic)
+data ApiResponse a =
+  ApiSuccess
+    { _apiResponse :: !a} |
+  ApiFailure
+    { _apiError :: !String}
+  deriving (Show, Eq, Generic)
 makeLenses ''ApiResponse
 
 instance ToJSON a => ToJSON (ApiResponse a) where
-  toEncoding = genericToEncoding (defaultOptions {fieldLabelModifier = lensyConstructorToNiceJson 4})
-instance FromJSON a => FromJSON (ApiResponse a)
+  toJSON (ApiSuccess a)= object [ "status" .= A.String "success", "response" .= a]
+  toJSON (ApiFailure a)= object [ "status" .= A.String "failure", "response" .= a]
+instance FromJSON a => FromJSON (ApiResponse a) where
+  parseJSON (Object o) = do
+    st <- o .: "status"
+    if st == A.String "success"
+    then ApiSuccess <$> o .: "response"
+    else ApiFailure <$> o .: "response"
+  parseJSON _ = mempty
 
 data RequestKeys = RequestKeys
   { _rkRequestKeys :: ![RequestKey]
@@ -69,13 +72,7 @@ instance ToJSON SubmitBatch where
 instance FromJSON SubmitBatch
 
 -- | What you get back from a SubmitBatch
-data SubmitBatchResponse =
-  SubmitBatchSuccess (ApiResponse RequestKeys) |
-  SubmitBatchFailure (ApiResponse String)
-  deriving (Show, Eq, Generic)
-instance ToJSON SubmitBatchResponse where
-  toEncoding = genericToEncoding defaultOptions
-instance FromJSON SubmitBatchResponse
+type SubmitBatchResponse = ApiResponse RequestKeys
 
 -- | Poll for results by RequestKey
 newtype Poll = Poll [RequestKey]
@@ -95,13 +92,7 @@ instance ToJSON PollResult where
   toEncoding = genericToEncoding (defaultOptions {fieldLabelModifier = lensyConstructorToNiceJson 3})
 instance FromJSON PollResult
 
-data PollResponse =
-  PollSuccess (ApiResponse [PollResult]) |
-  PollFailure (ApiResponse String)
-  deriving (Show, Eq, Generic)
-instance ToJSON PollResponse where
-  toEncoding = genericToEncoding defaultOptions
-instance FromJSON PollResponse
+type PollResponse = ApiResponse [PollResult]
 
 -- | ListenerRequest for results by RequestKey
 newtype ListenerRequest = ListenerRequest RequestKey
@@ -110,10 +101,4 @@ instance ToJSON ListenerRequest where
   toEncoding = genericToEncoding defaultOptions
 instance FromJSON ListenerRequest
 
-data ListenerResponse =
-  ListenerSuccess (ApiResponse PollResult) |
-  ListenerFailure (ApiResponse String)
-  deriving (Show, Eq, Generic)
-instance ToJSON ListenerResponse where
-  toEncoding = genericToEncoding defaultOptions
-instance FromJSON ListenerResponse
+type ListenerResponse = ApiResponse PollResult

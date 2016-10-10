@@ -18,11 +18,10 @@ import Data.Thyme.Clock
 import Data.Maybe (fromJust)
 
 import Kadena.Commit.Types as X
-import Kadena.Types.Dispatch
+import Kadena.Types.Dispatch (Dispatch)
+import qualified Kadena.Types.Dispatch as D
+import qualified Kadena.History.Types as History
 import qualified Kadena.Log.Service as Log
-
-
--- TODO: delete SendResponse from Sender
 
 initCommitEnv
   :: Dispatch
@@ -30,16 +29,15 @@ initCommitEnv
   -> ApplyFn
   -> (Metric -> IO ())
   -> IO UTCTime
-  -> (AppliedCommand -> IO ())
   -> CommitEnv
 initCommitEnv dispatch' debugPrint' applyLogEntry'
-              publishMetric' getTimestamp' publishResults' = CommitEnv
-  { _commitChannel = dispatch' ^. commitService
+              publishMetric' getTimestamp' = CommitEnv
+  { _commitChannel = dispatch' ^. D.commitService
+  , _historyChannel = dispatch' ^. D.historyChannel
   , _applyLogEntry = applyLogEntry'
   , _debugPrint = debugPrint'
   , _publishMetric = publishMetric'
   , _getTimestamp = getTimestamp'
-  , _publishResults = publishResults'
   }
 
 runCommitService :: CommitEnv -> NodeId -> KeySet -> IO ()
@@ -121,8 +119,8 @@ updateCmdStatusMap cmd cmdResult tEnd = do
   lat <- return $ case _pTimeStamp $ _cmdProvenance cmd of
     Nothing -> 1 -- don't want a div by zero error downstream and this is for demo purposes
     Just (ReceivedAt tStart) -> interval tStart tEnd
-  pubResults <- view publishResults
-  liftIO $! pubResults (AppliedCommand cmdResult lat rid)
+  hChan <- view historyChannel
+  liftIO $! writeComm hChan (History.Update $ Map.fromList [(RequestKey $ getCmdHashOrInvariantError "updateCmdStatusMap" cmd, AppliedCommand cmdResult lat rid)])
 
 -- makeCommandResponse :: UTCTime -> Command -> CommandResult -> CommitService CommandResponse
 -- makeCommandResponse tEnd cmd result = do

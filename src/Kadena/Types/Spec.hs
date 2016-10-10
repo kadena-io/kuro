@@ -8,8 +8,6 @@ module Kadena.Types.Spec
   , ConsensusSpec(..)
   , debugPrint, publishMetric, getTimestamp, random
   , viewConfig, readConfig, timerTarget, evidenceState, timeCache
-  -- for API <-> Kadena communication
-  , enqueueApplied
   , ConsensusEnv(..), cfg, enqueueLogQuery, clusterSize, quorumSize, rs
   , enqueue, enqueueMultiple, dequeue, enqueueLater, killEnqueued
   , sendMessage, clientSendMsg, mResetLeaderNoFollowers, mPubConsensus
@@ -71,8 +69,6 @@ data ConsensusSpec = ConsensusSpec
   , _getTimestamp     :: !(IO UTCTime)
 
   , _random           :: !(forall a . Random a => (a, a) -> IO a)
-
-  , _enqueueApplied   :: !(AppliedCommand -> IO ())
 
   }
 makeLenses (''ConsensusSpec)

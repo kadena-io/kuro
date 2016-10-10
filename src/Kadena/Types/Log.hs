@@ -270,8 +270,8 @@ encodeLEWire nid pubKey privKey les =
 {-# INLINE encodeLEWire #-}
 
 -- TODO: This uses the old decode encode trick and should be changed...
-hashLogEntry :: Maybe LogEntry -> LogEntry -> LogEntry
-hashLogEntry (Just LogEntry{ _leHash = prevHash }) le@LogEntry{..} =
+hashLogEntry :: Maybe Hash -> LogEntry -> LogEntry
+hashLogEntry (Just prevHash) le@LogEntry{..} =
   le { _leHash = hash (encode $ (_leTerm, _leLogIndex, getCmdBodyHash le, prevHash))}
 hashLogEntry Nothing le@LogEntry{..} =
   le { _leHash = hash (encode $ (_leTerm, _leLogIndex, getCmdBodyHash le, initialHash))}

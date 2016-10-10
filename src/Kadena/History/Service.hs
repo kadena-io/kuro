@@ -87,6 +87,7 @@ handle oChan = do
 addNewKeys :: Set RequestKey -> HistoryService ()
 addNewKeys srks = do
   pers <- use persistence
+  mapM_ (debug . ("New Key Added: " ++) . show) srks
   case pers of
     InMemory m -> persistence .= InMemory (Map.union m $ Map.fromSet (const Nothing) srks)
     OnDisk dbConn -> liftIO $ insertNewKeysAsNothingSQL dbConn srks
@@ -147,6 +148,7 @@ queryForResults (srks, mRes) = do
   pers <- use persistence
   case pers of
     InMemory m -> do
+      mapM_ (debug . ("Current Keys: " ++) . show) $ Map.toList m
       found <- return $! Map.filterWithKey (checkForIndividualResultInMem srks) m
       liftIO $! putMVar mRes $ PossiblyIncompleteResults $ fmap fromJust found
     OnDisk dbConn -> do

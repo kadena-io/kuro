@@ -82,14 +82,14 @@ api = route [
       ]
 
 log :: String -> Api ()
-log s = view aiLog >>= \f -> liftIO (f s)
+log s = view aiLog >>= \f -> liftIO (f $ "[Service|Api]: " ++ s)
 
-die :: (Show a, ToJSON a) => a -> Api t
+die :: String -> Api t
 die res = do
   _ <- getResponse -- chuck what we've done so far
   setJSON
-  log (show res)
-  writeLBS $ encode res
+  log res
+  writeLBS $ encode $ (ApiFailure res :: ApiResponse ())
   finishWith =<< getResponse
 
 readJSON :: FromJSON t => Api (BS.ByteString,t)
@@ -102,7 +102,7 @@ tryParseJSON
      BSL.ByteString -> Api (BS.ByteString, t)
 tryParseJSON b = case eitherDecode b of
     Right v -> return (toStrict b,v)
-    Left e -> die $ ApiResponse Failure e
+    Left e -> die e
 
 setJSON :: Api ()
 setJSON = modifyResponse $ setHeader "Content-Type" "application/json"
@@ -120,15 +120,15 @@ buildCmdRpc :: PactMessage -> Api (RequestKey,SignedRPC)
 buildCmdRpc PactMessage {..} = do
   (_,PactEnvelope {..} :: PactEnvelope PactRPC) <- tryParseJSON (BSL.fromStrict $ _pmEnvelope)
   storedCK <- Map.lookup _peAlias <$> view (aiConfig.clientPublicKeys)
-  unless (storedCK == Just _pmKey) $ die $ ApiResponse Failure ("Invalid alias/public key" :: String)
+  unless (storedCK == Just _pmKey) $ die "Invalid alias/public key"
   rid <- getNextRequestId
-  let ce = CommandEntry $! _pmEnvelope
+  let ce = CommandEntry $! SZ.encode $ PublicMessage _pmEnvelope
   return (RequestKey _pmHsh,mkCmdRpc ce _peAlias rid (Digest _peAlias _pmSig _pmKey CMD _pmHsh))
 
 sendPublicBatch :: Api ()
 sendPublicBatch = do
   (_,SubmitBatch cmds) <- readJSON
-  when (null cmds) $ die $ SubmitBatchFailure $ ApiResponse Failure "Empty Batch"
+  when (null cmds) $ die "Empty Batch"
   rpcs <- mapM buildCmdRpc cmds
   let PactMessage {..} = head cmds
       btch = map snd rpcs
@@ -136,17 +136,19 @@ sendPublicBatch = do
       dig = Digest "batch" (Sig "") _pmKey CMDB hsh
       rpc = mkCmdBatchRPC (map snd rpcs) dig
   enqueueRPC $! rpc -- CMDB' $! CommandBatch (reverse cmds) NewMsg
-  writeResponse $ SubmitBatchSuccess $ ApiResponse Success $ RequestKeys (map fst rpcs)
+  writeResponse $ ApiSuccess $ RequestKeys (map fst rpcs)
 
 poll :: Api ()
 poll = do
   (_,Poll rks) <- readJSON
+  log $ "Polling for " ++ show rks
   PossiblyIncompleteResults{..} <- checkHistoryForResult (Set.fromList rks)
+  when (Map.null possiblyIncompleteResults) $ log $ "No results found for poll!" ++ show rks
   setJSON
   writeLBS $ encode $ pollResultToReponse possiblyIncompleteResults
 
 pollResultToReponse :: Map RequestKey AppliedCommand -> PollResponse
-pollResultToReponse m = PollSuccess $ ApiResponse Success (kvToRes <$> Map.toList m)
+pollResultToReponse m = ApiSuccess (kvToRes <$> Map.toList m)
   where
     kvToRes (rk,AppliedCommand{..}) = PollResult { _prRequestKey = rk, _prLatency = _acLatency, _prResponse = _acResult}
 
@@ -165,9 +167,9 @@ getNextRequestId = do
 
 enqueueRPC :: SignedRPC -> Api ()
 enqueueRPC signedRPC = do
-  PublishedConsensus{..} <- view aiPubConsensus >>= liftIO . tryReadMVar >>= fromMaybeM (die $ ApiResponse Failure ("Invariant error: consensus unavailable" :: String))
+  PublishedConsensus{..} <- view aiPubConsensus >>= liftIO . tryReadMVar >>= fromMaybeM (die "Invariant error: consensus unavailable")
   conf <- view aiConfig
-  ldr <- fromMaybeM (die $ ApiResponse Failure ("System unavaiable, please try again later" :: String)) _pcLeader
+  ldr <- fromMaybeM (die "System unavaiable, please try again later") _pcLeader
   if _nodeId conf == ldr
   then do -- dispatch internally if we're leader, otherwise send outbound
     ts <- liftIO getCurrentTime
@@ -192,8 +194,8 @@ registerListener = do
   liftIO $ writeComm hChan $ RegisterListener (Map.fromList [(rk,m)])
   res <- liftIO $ readMVar m
   case res of
-    History.GCed -> die $ ListenerFailure $ ApiResponse Failure "Listener was GCed before fulfilled, likely the command doesn't exist"
+    History.GCed -> die "Listener was GCed before fulfilled, likely the command doesn't exist"
     History.ListenerResult AppliedCommand{..} -> do
       setJSON
-      ls <- return $ ListenerSuccess $ ApiResponse Success $ PollResult { _prRequestKey = rk, _prLatency = _acLatency, _prResponse = _acResult}
+      ls <- return $ ApiSuccess $ PollResult { _prRequestKey = rk, _prLatency = _acLatency, _prResponse = _acResult}
       writeLBS $ encode ls

@@ -110,7 +110,9 @@ hash = Hash . BLAKE.hash hashLengthAsBS B.empty
 {-# INLINE hash #-}
 
 newtype Hash = Hash { unHash :: ByteString }
-  deriving (Show, Eq, Ord, Generic)
+  deriving (Eq, Ord, Generic)
+instance Show Hash where
+  show (Hash h) = show $ B16.encode h
 
 initialHash :: Hash
 initialHash = hash B.empty

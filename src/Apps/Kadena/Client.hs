@@ -21,7 +21,7 @@ import qualified Data.ByteString.Lazy.Char8 as BSL
 import Data.Maybe (fromJust, fromMaybe)
 import qualified Data.HashMap.Strict as HM
 import Data.Either ()
-import Data.Aeson hiding ((.=), Result(..))
+import Data.Aeson hiding ((.=), Result(..), Value(..))
 import Data.Aeson.Lens
 import Data.Aeson.Types hiding ((.=),parse, Result(..))
 import qualified Data.Yaml as Y
@@ -114,12 +114,12 @@ sendCmd cmd = do
   r <- liftIO $ post ("http://" ++ s ++ "/api/public/send") (toJSON $ SubmitBatch [e])
   resp <- asJSON r
   case resp ^. responseBody of
-    SubmitBatchFailure ApiResponse{..} -> do
-      flushStrLn $ "Failure: " ++ show _apiResponse
-    SubmitBatchSuccess ApiResponse{..} -> do
-      rid <- return $ head $ _rkRequestKeys _apiResponse
-      flushStrLn $ "Request Id: " ++ show rid
-      showResult 10000 [rid] Nothing
+    ApiFailure{..} -> do
+      flushStrLn $ "Failure: " ++ show _apiError
+    ApiSuccess{..} -> do
+      rk <- return $ head $ _rkRequestKeys _apiResponse
+      flushStrLn $ "Request Id: " ++ show rk
+      showResult 10000 [rk] Nothing
 
 batchTest :: Int -> String -> Repl ()
 batchTest n cmd = do
@@ -130,13 +130,12 @@ batchTest n cmd = do
   flushStrLn $ "Sent, retrieving responses"
   resp <- asJSON r
   case resp ^. responseBody of
-    SubmitBatchFailure ApiResponse{..} -> do
-      flushStrLn $ "Failure: " ++ show _apiResponse
-    SubmitBatchSuccess ApiResponse{..} -> do
-      rid <- return $ last $ _rkRequestKeys _apiResponse
-      flushStrLn $ "Request Id: " ++ show rid
-      flushStrLn $ "Polling response " ++ show rid
-      showResult 10000 [rid] (Just (fromIntegral n))
+    ApiFailure{..} -> do
+      flushStrLn $ "Failure: " ++ show _apiError
+    ApiSuccess{..} -> do
+      rk <- return $ last $ _rkRequestKeys _apiResponse
+      flushStrLn $ "Polling for RequestKey: " ++ show rk
+      showResult 10000 [rk] (Just (fromIntegral n))
 
 setup :: Repl ()
 setup = do
@@ -150,13 +149,12 @@ setup = do
       r <- liftIO $ post ("http://" ++ s ++ "/api/public/send") (toJSON $ SubmitBatch [e])
       resp <- asJSON r
       case resp ^. responseBody of
-        SubmitBatchFailure ApiResponse{..} -> do
-          flushStrLn $ "Failure: " ++ show _apiResponse
-        SubmitBatchSuccess ApiResponse{..} -> do
-          rid <- return $ last $ _rkRequestKeys _apiResponse
-          flushStrLn $ "Request Id: " ++ show rid
-          flushStrLn $ "Polling response " ++ show rid
-          showResult 10000 [rid] Nothing
+        ApiFailure{..} -> do
+          flushStrLn $ "Failure: " ++ show _apiError
+        ApiSuccess{..} -> do
+          rk <- return $ head $ _rkRequestKeys _apiResponse
+          flushStrLn $ "Request Key: " ++ show rk
+          showResult 10000 [rk] Nothing
 
 showResult :: Int -> [RequestKey] -> Maybe Int64 -> Repl ()
 showResult _ [] _ = return ()
@@ -167,16 +165,21 @@ showResult tdelay rks countm = loop (0 :: Int)
       when (c > 100) $ flushStrLn "Timeout"
       s <- use server
       r <- liftIO $ post ("http://" ++ s ++ "/api/poll") (toJSON (Poll [last rks]))
-      v <- asValue r
-      case toListOf (responseBody.key "responses".values) v of
-        [] -> flushStrLn $ "Error: no results received: " ++ show r
-        rs -> case parseEither parseJSON (last rs) of
-            Right (PollSuccess (ApiResponse Success [PollResult{..}])) ->
+      resp <- asJSON r
+      case resp ^. responseBody of
+        ApiFailure err -> flushStrLn $ "Error: no results received: " ++ show err
+        ApiSuccess [] -> loop $ c + 1
+        ApiSuccess [PollResult{..}] ->
                 case countm of
-                  Nothing -> flushStrLn $ fromMaybe (BS8.unpack (Y.encode _prResponse)) (pprintResult $ fromMaybe (Y.String "unable to decode") $ decode $ BSL.fromStrict $ unCommandResult _prResponse)
+                  Nothing -> do
+                    prettyRes <- return $ (pprintResult =<< decode (BSL.fromStrict $ unCommandResult _prResponse))
+                    case prettyRes of
+                      Just r' -> flushStrLn r'
+                      Nothing -> do
+                        uglyRes <- return $ fromMaybe (Y.String "unable to decode") (Y.decode $ unCommandResult _prResponse)
+                        flushStrLn $ BS8.unpack $ Y.encode uglyRes
                   Just cnt -> flushStrLn $ intervalOfNumerous cnt _prLatency
-            Left _ ->  loop (succ c)
-
+        v -> flushStrLn $ "Error: " ++ show v
 
 pprintResult :: Value -> Maybe String
 pprintResult v = do

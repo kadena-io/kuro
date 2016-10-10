@@ -19,6 +19,7 @@ import GHC.Generics
 import Control.Monad.Reader
 import Control.Exception.Safe
 import Data.Text
+import Data.Semigroup
 import Data.Text.Encoding
 import Control.Applicative
 import Control.Lens hiding ((.=))
@@ -39,7 +40,6 @@ import Kadena.Types.Config
 type EntSecretKey = C2.SecretKey
 type EntPublicKey = C2.PublicKey
 
-
 -- | Types of encryption sessions.
 data SessionCipherType =
     -- | Simulate n-way encryption
@@ -48,27 +48,50 @@ data SessionCipherType =
     TwoWay |
     -- | N-way (TBD)
     NWay
-    deriving (Eq,Show,Generic)
+    deriving (Eq,Ord,Show,Generic)
 instance Serialize SessionCipherType
+instance ToJSON SessionCipherType where
+  toEncoding = genericToEncoding defaultOptions
+instance FromJSON SessionCipherType
 
 data MessageTags =
-    SessionInitTags { _mtInitTags :: [ByteString] } |
-    SessionTag { _mtSessionTag :: ByteString }
-               deriving (Eq,Generic)
+  SessionInitTags
+    { _mtInitTags :: ![ByteString] } |
+  SessionTag
+    { _mtSessionTag :: !ByteString }
+  deriving (Eq,Ord,Show,Generic)
 instance Serialize MessageTags
-
-
+instance ToJSON MessageTags where
+  toJSON (SessionInitTags ms) = object ["initTags" .= (decodeUtf8 <$> ms)]
+  toJSON (SessionTag ms) = object ["sessionTag" .= decodeUtf8 ms]
+instance FromJSON MessageTags where
+  parseJSON (A.Object m) = do
+    ts <- m .:? "initTags"
+    case ts of
+      Nothing -> SessionTag <$> (encodeUtf8 <$> m .: "sessionTag")
+      Just ts' -> return $ SessionInitTags $ encodeUtf8 <$> ts'
+  parseJSON _ = mempty
 
 data CommandMessage =
     PublicMessage {
-      _cmMessage :: ByteString
+      _cmMessage :: !ByteString
     } |
     PrivateMessage {
-      _cmType :: SessionCipherType
-    , _cmTags :: MessageTags
-    , _cmMessage :: ByteString
-    } deriving (Eq,Generic)
+      _cmType :: !SessionCipherType
+    , _cmTags :: !MessageTags
+    , _cmMessage :: !ByteString
+    } deriving (Eq,Ord,Show,Generic)
 instance Serialize CommandMessage
+
+instance ToJSON CommandMessage where
+  toJSON (PublicMessage m) = toJSON $ decodeUtf8 m
+  toJSON (PrivateMessage ty ta m) = object [ "type" .= ty, "tags" .= ta, "message" .= decodeUtf8 m]
+instance FromJSON CommandMessage where
+  parseJSON (A.String m) = return $ PublicMessage $ encodeUtf8 m
+  parseJSON (A.Object m) = PrivateMessage <$> m .: "type"
+                                          <*> m .: "tags"
+                                          <*> (encodeUtf8 <$> m .: "message")
+  parseJSON _ = mempty
 
 
 -- | Encryption session message.
@@ -157,7 +180,6 @@ instance FromJSON PactMessage where
 
 mkPactMessage :: ToJSON a => PrivateKey -> PublicKey -> Alias -> String -> a -> PactMessage
 mkPactMessage sk pk al rid a = mkPactMessage' sk pk $ BSL.toStrict $ A.encode (PactEnvelope a rid al)
--- al rid (BSL.toStrict $ A.encode a)
 
 mkPactMessage' :: PrivateKey -> PublicKey -> ByteString -> PactMessage
 mkPactMessage' sk pk env = PactMessage env pk sig hsh

@@ -113,30 +113,30 @@ sendCmd cmd = do
   (e :: PactMessage) <- mkExec cmd Null
   r <- liftIO $ post ("http://" ++ s ++ "/api/public/send") (toJSON $ SubmitBatch [e])
   resp <- asJSON r
-  case resp of
+  case resp ^. responseBody of
     SubmitBatchFailure ApiResponse{..} -> do
       flushStrLn $ "Failure: " ++ show _apiResponse
     SubmitBatchSuccess ApiResponse{..} -> do
-      rid <- return $ head (_apiResponse ^. rkRequestKeys)
+      rid <- return $ head $ _rkRequestKeys _apiResponse
       flushStrLn $ "Request Id: " ++ show rid
-      showResult 10000 rid Nothing
+      showResult 10000 [rid] Nothing
 
 batchTest :: Int -> String -> Repl ()
 batchTest n cmd = do
   s <- use server
-  (es :: SubmitBatch) <- SubmitBatch <$> replicateM n (mkExec cmd Null)
-  flushStrLn $ "Prepared " ++ show (length es) ++ " messages ..."
-  r <- liftIO $ post ("http://" ++ s ++ "/api/public/batch") (toJSON es)
+  es@(SubmitBatch es') <- SubmitBatch <$> replicateM n (mkExec cmd Null)
+  flushStrLn $ "Prepared " ++ show (length es') ++ " messages ..."
+  r <- liftIO $ post ("http://" ++ s ++ "/api/public/send") (toJSON es)
   flushStrLn $ "Sent, retrieving responses"
   resp <- asJSON r
-  case resp of
+  case resp ^. responseBody of
     SubmitBatchFailure ApiResponse{..} -> do
       flushStrLn $ "Failure: " ++ show _apiResponse
     SubmitBatchSuccess ApiResponse{..} -> do
-      rid <- return $ last (_apiResponse ^. rkRequestKeys)
-      flushStrLn $ "Request Id: " ++ show $ rid
+      rid <- return $ last $ _rkRequestKeys _apiResponse
+      flushStrLn $ "Request Id: " ++ show rid
       flushStrLn $ "Polling response " ++ show rid
-      showResult 10000 rid (Just (fromIntegral n))
+      showResult 10000 [rid] (Just (fromIntegral n))
 
 setup :: Repl ()
 setup = do
@@ -147,16 +147,16 @@ setup = do
     Right j -> do
       s <- use server
       e <- mkExec code j
-      r <- liftIO $ post ("http://" ++ s ++ "/api/public/send") (toJSON e)
+      r <- liftIO $ post ("http://" ++ s ++ "/api/public/send") (toJSON $ SubmitBatch [e])
       resp <- asJSON r
-      case resp of
+      case resp ^. responseBody of
         SubmitBatchFailure ApiResponse{..} -> do
           flushStrLn $ "Failure: " ++ show _apiResponse
         SubmitBatchSuccess ApiResponse{..} -> do
-          rid <- return $ last (_apiResponse ^. rkRequestKeys)
-          flushStrLn $ "Request Id: " ++ show $ rid
+          rid <- return $ last $ _rkRequestKeys _apiResponse
+          flushStrLn $ "Request Id: " ++ show rid
           flushStrLn $ "Polling response " ++ show rid
-          showResult 10000 rid Nothing
+          showResult 10000 [rid] Nothing
 
 showResult :: Int -> [RequestKey] -> Maybe Int64 -> Repl ()
 showResult _ [] _ = return ()
@@ -173,7 +173,7 @@ showResult tdelay rks countm = loop (0 :: Int)
         rs -> case parseEither parseJSON (last rs) of
             Right (PollSuccess (ApiResponse Success [PollResult{..}])) ->
                 case countm of
-                  Nothing -> flushStrLn $ fromMaybe (BS8.unpack (Y.encode _prResponse)) (pprintResult $ decode _prResponse)
+                  Nothing -> flushStrLn $ fromMaybe (BS8.unpack (Y.encode _prResponse)) (pprintResult $ fromMaybe (Y.String "unable to decode") $ decode $ BSL.fromStrict $ unCommandResult _prResponse)
                   Just cnt -> flushStrLn $ intervalOfNumerous cnt _prLatency
             Left _ ->  loop (succ c)
 

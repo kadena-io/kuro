@@ -6,7 +6,6 @@
 module Kadena.Types.Message.CMD
   ( Command(..), cmdEntry, cmdClientId, cmdRequestId, cmdProvenance, cmdCryptoVerified
   , Commands(..)
-  , CMDWire(..)
   , mkCmdRpc, mkCmdBatchRPC
   , getCmdSigOrInvariantError
   , getCmdHashOrInvariantError
@@ -71,18 +70,20 @@ instance WireFormat Command where
                   dig = Digest (_alias nid) sig pubKey CMD hsh
               in SignedRPC dig bdy
     ReceivedMsg{..} -> SignedRPC _pDig _pOrig
-  fromWire !ts !_ks s@(SignedRPC !dig !bdy) =
+  fromWire !ts !_ks _s@(SignedRPC !dig !bdy) =
         if _digType dig /= CMD
         then error $ "Invariant Failure: attempting to decode " ++ show (_digType dig) ++ " with CMDWire instance"
         else case S.decode bdy of
           Left !err -> Left $! "Failure to decode CMDWire: " ++ err
-          Right (CMDWire !(ce,nid,rid)) -> let ourHash = hash $ unCommandEntry ce
-            in if ourHash /= _digHash dig
-               then Left $! "Unable to verify SignedRPC hash: "
-                        ++ " our=" ++ show ourHash
-                        ++ " theirs=" ++ show (_digHash dig)
-                        ++ " in " ++ show s
-               else Right $! Command ce nid rid UnVerified $ ReceivedMsg dig bdy ts
+          Right (CMDWire !(ce,nid,rid)) -> Right $! Command ce nid rid UnVerified $ ReceivedMsg dig bdy ts
+-- NB: for now, hashes are checked at the API level -- TODO: this is a bug
+--            let ourHash = hash $ unCommandEntry ce
+--            in if ourHash /= _digHash dig
+--               then Left $! "Unable to verify Cmd hash: "
+--                        ++ " our=" ++ show ourHash
+--                        ++ " theirs=" ++ show (_digHash dig)
+--                        ++ " in " ++ show s
+--               else Right $! Command ce nid rid UnVerified $ ReceivedMsg dig bdy ts
   {-# INLINE toWire #-}
   {-# INLINE fromWire #-}
 

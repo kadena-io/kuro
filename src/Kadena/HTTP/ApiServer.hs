@@ -122,9 +122,8 @@ buildCmdRpc PactMessage {..} = do
   storedCK <- Map.lookup _peAlias <$> view (aiConfig.clientPublicKeys)
   unless (storedCK == Just _pmKey) $ die $ ApiResponse Failure ("Invalid alias/public key" :: String)
   rid <- getNextRequestId
-  let ce = CommandEntry $! SZ.encode $! PublicMessage $! _pmEnvelope
-      hsh = hash $ SZ.encode $ CMDWire (ce,_peAlias,rid)
-  return (RequestKey hsh,mkCmdRpc ce _peAlias rid (Digest _peAlias _pmSig _pmKey CMD hsh))
+  let ce = CommandEntry $! _pmEnvelope
+  return (RequestKey _pmHsh,mkCmdRpc ce _peAlias rid (Digest _peAlias _pmSig _pmKey CMD _pmHsh))
 
 sendPublicBatch :: Api ()
 sendPublicBatch = do
@@ -163,13 +162,6 @@ getNextRequestId = do
   cnt <- liftIO (takeMVar cntr)
   liftIO $ putMVar cntr (cnt + 1)
   return $ RequestId $ show cnt
-
-_mkPublicCommand :: BS.ByteString -> Api (Command, RequestKey)
-_mkPublicCommand bs = do
-  rid <- getNextRequestId
-  nid <- view (aiConfig.nodeId)
-  cmd@Command{..} <- return $! Command (CommandEntry $! SZ.encode $! PublicMessage $! bs) (_alias nid) (RequestId $ show rid) Valid NewMsg
-  return (cmd, RequestKey $ hash $ SZ.encode $ CMDWire (_cmdEntry, _cmdClientId, _cmdRequestId))
 
 enqueueRPC :: SignedRPC -> Api ()
 enqueueRPC signedRPC = do

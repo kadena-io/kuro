@@ -238,18 +238,18 @@ mkTestPact = mkSimplePact "(demo.transfer \"Acct1\" \"Acct2\" 1.0)"
 
 
 
-mkTestSigned :: IO ()
-mkTestSigned = do
-  (Right (msg :: PactRPC)) <- eitherDecode <$> BSL.readFile "tests/exec1.json"
-  let env@PactEnvelope {..} = PactEnvelope msg "a" "rid"
-  let (pm@PactMessage {..}) = mkPactMessage' _sk _pk  (BSL.toStrict $ A.encode env)
-      ce = CommandEntry $! SZ.encode $! PublicMessage $! _pmEnvelope
-      rpc = mkCmdRpc ce _peAlias "rid" (Digest _peAlias _pmSig _pmKey CMD $ hash $ SZ.encode $ CMDWire (ce,_peAlias,"rid"))
-      Right (c :: Command) = fromWire Nothing def rpc
-      cmdbrpc = mkCmdBatchRPC [rpc] (Digest _peAlias _pmSig _pmKey CMDB $ hash $ SZ.encode $ [rpc])
-      Right (cb :: CommandBatch) = fromWire Nothing def cmdbrpc
-  BSL.writeFile "tests/exec1-signed.json" $ encodePretty pm
-  (Just pm') <- A.decode <$> BSL.readFile "tests/exec1-signed.json"
-  print (pm == pm')
-  print c
-  print cb
+--mkTestSigned :: IO ()
+--mkTestSigned = do
+--  (Right (msg :: PactRPC)) <- eitherDecode <$> BSL.readFile "tests/exec1.json"
+--  let env@PactEnvelope {..} = PactEnvelope msg "a" "rid"
+--  let (pm@PactMessage {..}) = mkPactMessage' _sk _pk  (BSL.toStrict $ A.encode env)
+--      ce = CommandEntry $! SZ.encode $! PublicMessage $! _pmEnvelope
+--      rpc = mkCmdRpc ce _peAlias "rid" (Digest _peAlias _pmSig _pmKey CMD $ hash $ SZ.encode $ CMDWire (ce,_peAlias,"rid"))
+--      Right (c :: Command) = fromWire Nothing def rpc
+--      cmdbrpc = mkCmdBatchRPC [rpc] (Digest _peAlias _pmSig _pmKey CMDB $ hash $ SZ.encode $ [rpc])
+--      Right (cb :: CommandBatch) = fromWire Nothing def cmdbrpc
+--  BSL.writeFile "tests/exec1-signed.json" $ encodePretty pm
+--  (Just pm') <- A.decode <$> BSL.readFile "tests/exec1-signed.json"
+--  print (pm == pm')
+--  print c
+--  print cb

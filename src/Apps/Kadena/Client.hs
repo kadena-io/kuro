@@ -235,6 +235,9 @@ runREPL = loop True
     parse cmd = do
       bcmd <- use batchCmd
       case cmd of
+        ":help" -> help
+        ":?" -> help
+        "?" -> help
         ":sleep" -> threadDelay 5000000
         "?cmd" -> use batchCmd >>= flushStrLn
         "?servers" -> view ccEndpoints >>= liftIO . mapM_ print
@@ -257,6 +260,55 @@ runREPL = loop True
           | take 5 cmd == ":cmd " ->
               batchCmd .= drop 5 cmd
           | otherwise ->  sendCmd cmd
+
+help :: Repl ()
+help = flushStrLn
+  "Kadena Client -- Payments Demo -- Kadena LLC © (2016-2017) \n\
+  \Commands: \n\
+  \:setup - ready the payments demo by executing the ./demo/demo.pact smart contract to create the needed tables and modules \n\
+  \       - NB: this command only needs to be run once and must be run for `(demo.read-all)` and `:batch N` to correctly function \n\
+  \   127.0.0.1:8003>> :setup  \n\
+  \   Request Key: \"94d1d46b991c293dbc94016d3d4fc7c7c97302d991458e907c5d6fccd97a32a6\"  \n\
+  \   status: Success  \n\
+  \   result: Write succeeded  \n\
+  \\n\
+  \<Query Accounts> - See <Pact-Code> example\n\
+  \\n\
+  \<Pact-Code> - Run a transaction containing arbitrary pact smart contract code \n\
+  \   127.0.0.1:8003>> (demo.read-all) \n\
+  \   Request Id: \"cba86abd875a332388215a826dae6036c7171a0dd4590d789593d3b97214409d\"  \n\
+  \   account      | amount       | balance      | data  \n\
+  \   ---------------------------------------------------------  \n\
+  \   \"Acct1\"      | \"-1.00\"      | \"95000.00\"   | {\"transfer-to\":\"Acct2\"}  \n\
+  \   \"Acct2\"      | \"1.00\"       | \"5000.00\"    | {\"transfer-from\":\"Acct1\"}  \n\
+  \\n\
+  \:poll <RequestKey> - poll kadena for historical transaction by RequestKey\n\
+  \   127.0.0.1:8003>> :poll cba86abd875a332388215a826dae6036c7171a0dd4590d789593d3b97214409d\n\
+  \   Request Id: \"cba86abd875a332388215a826dae6036c7171a0dd4590d789593d3b97214409d\"  \n\
+  \   account      | amount       | balance      | data  \n\
+  \   ---------------------------------------------------------  \n\
+  \   \"Acct1\"      | \"-1.00\"      | \"95000.00\"   | {\"transfer-to\":\"Acct2\"}  \n\
+  \   \"Acct2\"      | \"1.00\"       | \"5000.00\"    | {\"transfer-from\":\"Acct1\"}  \n\
+  \\n\
+  \:batch N - perform N single dollar individual transactions, print out performance results when finished\n\
+  \           NB: performance results for N > 8000 are not valid via this command, please contact info@kadena.io if more extensive testing is desired \n\
+  \   127.0.0.1:8003>> :batch 5000\n\
+  \   Prepared 5000 messages ...\n\
+  \   Sent, retrieving responses\n\
+  \   Polling for RequestKey: \"416bfaeb7871877f8aae2c5cd4672c5d157daa111fb7d3c5ca09d28a38624143\" \n\
+  \   Completed in 0.478636sec (10447 per sec)  \n\
+  \\n\
+  \:server HOST:PORT - re-target the client to transact via the specified server\n\
+  \   127.0.0.1:8003>> :server 127.0.0.1:8000\n\
+  \   127.0.0.1:8000>>\n\
+  \\n\
+  \?cmd - print last command\n\
+  \\n\
+  \?servers - print configured server nodes' IP:PORT\n\
+  \\n\
+  \:exit - exit Repl\n\
+  \:help | :? | ? - print out this document\n\
+  \"
 
 
 _run :: StateT ReplState m a -> m (a, ReplState)

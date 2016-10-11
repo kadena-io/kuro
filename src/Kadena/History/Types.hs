@@ -83,7 +83,8 @@ data PersistenceSystem =
   InMemory
     {inMemResults :: !(Map RequestKey (Maybe AppliedCommand))} |
   OnDisk
-    {dbConn :: !Connection}
+    { incompleteRequestKeys :: !(Set RequestKey)
+    , dbConn :: !Connection}
 
 data HistoryState = HistoryState
   { _registeredListeners :: !(Map RequestKey [MVar ListenerResult])

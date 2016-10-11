@@ -39,6 +39,7 @@ library
                      , Kadena.Evidence.Service
                      , Kadena.Evidence.Spec
                      , Kadena.Evidence.Types
+                     , Kadena.History.Persistence
                      , Kadena.History.Service
                      , Kadena.History.Types
                      , Kadena.HTTP.ApiServer

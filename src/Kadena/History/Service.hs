@@ -109,11 +109,11 @@ updateExistingKeys updates = do
     InMemory m -> do
       newInMem <- return $! InMemory $! foldr updateInMemKey m $ Map.toList updates
       persistence .= newInMem
-      debug $ "Updated " ++ show (Map.size updates) ++ " keys"
     OnDisk{..} -> do
       liftIO $ DB.insertCompletedCommand dbConn updates
       persistence .= OnDisk { incompleteRequestKeys = Set.filter (\k -> Map.notMember k updates) incompleteRequestKeys
                             , dbConn = dbConn }
+  debug $ "Updated " ++ show (Map.size updates) ++ " keys"
 
 updateInMemKey :: (RequestKey, AppliedCommand) -> Map RequestKey (Maybe AppliedCommand) -> Map RequestKey (Maybe AppliedCommand)
 updateInMemKey (k,v) m = Map.insert k (Just v) m
@@ -126,21 +126,22 @@ alertListeners m = do
   unless (Set.null triggered) $ do
     res <- mapM (alertListener m) $ Map.toList $ Map.filterWithKey (\k _ -> Set.member k triggered) listeners
     registeredListeners %= Map.filterWithKey (\k _ -> Set.notMember k triggered)
-    use registeredListeners >>= debug . ("Active Listeners: " ++) . show . Map.keysSet
+    -- use registeredListeners >>= debug . ("Active Listeners: " ++) . show . Map.keysSet
     end <- now
     debug $ "Serviced " ++ show (sum res) ++ " alerts taking " ++ show (interval start end) ++ "mics"
 
 alertListener :: Map RequestKey AppliedCommand -> (RequestKey, [MVar ListenerResult]) -> HistoryService Int
 alertListener res (k,mvs) = do
   commandRes <- return $! res Map.! k
-  debug $ "Servicing Listener for: " ++ show k
+  -- debug $ "Servicing Listener for: " ++ show k
   fails <- filter not <$> liftIO (mapM (`tryPutMVar` ListenerResult commandRes) mvs)
-  unless (null fails) $ debug $ "Registered Listener Alert Failure for: " ++ show k ++ " (" ++ show (length fails) ++ " failures)"
+  unless (null fails) $ debug $ "Registered listener failure for " ++ show k ++ " (" ++ show (length fails) ++ " of " ++ show (length mvs) ++ " failed)"
   return $ length mvs
 
 queryForExisting :: (Set RequestKey, MVar ExistenceResult) -> HistoryService ()
 queryForExisting (srks, mRes) = do
   pers <- use persistence
+  start <- now
   case pers of
     InMemory m -> do
       found <- return $! Set.intersection srks $ Map.keysSet m
@@ -153,10 +154,13 @@ queryForExisting (srks, mRes) = do
       else do
         foundOnDisk <- liftIO $ DB.queryForExisting dbConn $ Set.filter (`Set.notMember` foundInMem) srks
         liftIO $! putMVar mRes $ ExistenceResult $! Set.union foundInMem foundOnDisk
+  end <- now
+  debug $ "Queried existence of " ++ show (Set.size srks) ++ " entries taking " ++ show (interval start end) ++ "mics"
 
 queryForResults :: (Set RequestKey, MVar PossiblyIncompleteResults) -> HistoryService ()
 queryForResults (srks, mRes) = do
   pers <- use persistence
+  start <- now
   case pers of
     InMemory m -> do
       found <- return $! Map.filterWithKey (checkForIndividualResultInMem srks) m
@@ -170,6 +174,8 @@ queryForResults (srks, mRes) = do
       else do
         found <- liftIO $ DB.selectCompletedCommands dbConn completed
         liftIO $! putMVar mRes $ PossiblyIncompleteResults $ found
+  end <- now
+  debug $ "Queried results of " ++ show (Set.size srks) ++ " entries taking " ++ show (interval start end) ++ "mics"
 
 -- This is here to try to get GHC to check the fast part first
 checkForIndividualResultInMem :: Set RequestKey -> RequestKey -> Maybe AppliedCommand -> Bool
@@ -178,6 +184,7 @@ checkForIndividualResultInMem s k (Just _) = Set.member k s
 
 registerNewListeners :: Map RequestKey (MVar ListenerResult) -> HistoryService ()
 registerNewListeners newListeners' = do
+  start <- now
   srks <- return $! Map.keysSet newListeners'
   pers <- use persistence
   found <- case pers of
@@ -188,5 +195,10 @@ registerNewListeners newListeners' = do
   noNeedToListen <- return $! Set.intersection (Map.keysSet found) srks
   readyToServiceListeners <- return $! Map.filterWithKey (\k _ -> Set.member k noNeedToListen) newListeners'
   realListeners <- return $! Map.filterWithKey (\k _ -> not $ Set.member k noNeedToListen) newListeners'
-  unless (Map.null readyToServiceListeners) $ mapM_ (\(k,v) -> alertListener found (k,[v])) $ Map.toList readyToServiceListeners
-  unless (Map.null realListeners) $ registeredListeners %= Map.unionWith (<>) ((:[]) <$> realListeners)
+  unless (Map.null readyToServiceListeners) $ do
+    mapM_ (\(k,v) -> alertListener found (k,[v])) $ Map.toList readyToServiceListeners
+    end <- now
+    debug $ "Immediately serviced " ++ show (Set.size noNeedToListen) ++ " listeners taking " ++ show (interval start end) ++ "mics"
+  unless (Map.null realListeners) $ do
+    registeredListeners %= Map.unionWith (<>) ((:[]) <$> realListeners)
+    debug $ "Registered " ++ show (Map.size realListeners) ++ " listeners"

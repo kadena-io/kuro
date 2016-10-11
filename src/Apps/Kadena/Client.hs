@@ -16,6 +16,8 @@ import Control.Lens
 import Control.Monad.Catch
 import Control.Concurrent.Lifted (threadDelay)
 
+import qualified Data.ByteString.Base16 as B16
+import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Lazy.Char8 as BSL
 import Data.Maybe (fromJust, fromMaybe)
@@ -77,7 +79,6 @@ data ReplState = ReplState {
       _server :: String
     , _batchCmd :: String
     , _requestId :: Int64
-    , _requestKey :: Maybe RequestKey
 }
 makeLenses ''ReplState
 
@@ -179,6 +180,21 @@ showResult tdelay rks countm = loop (0 :: Int)
                         flushStrLn $ BS8.unpack $ Y.encode uglyRes
                   Just cnt -> flushStrLn $ intervalOfNumerous cnt _prLatency
 
+pollForResult :: RequestKey -> Repl ()
+pollForResult rk = do
+  s <- use server
+  r <- liftIO $ post ("http://" ++ s ++ "/api/poll") (toJSON (Poll [rk]))
+  resp <- asJSON r
+  case resp ^. responseBody of
+    ApiFailure err -> flushStrLn $ "Error: no results received: " ++ show err
+    ApiSuccess (res::[PollResult]) -> mapM_ (\PollResult{..} -> do
+      prettyRes <- return $ (pprintResult =<< decode (BSL.fromStrict $ unCommandResult _prResponse))
+      case prettyRes of
+        Just r' -> flushStrLn r'
+        Nothing -> do
+          uglyRes <- return $ fromMaybe (Y.String "unable to decode") (Y.decode $ unCommandResult _prResponse)
+          flushStrLn $ BS8.unpack $ Y.encode uglyRes) res
+
 pprintResult :: Value -> Maybe String
 pprintResult v = do
   let valKeys rs = either (const Nothing) id $ foldl' checkKeys (Right Nothing) rs
@@ -227,6 +243,15 @@ runREPL = loop True
             case readMaybe $ drop 7 cmd of
               Just n -> batchTest n bcmd
               Nothing -> return ()
+        _ | take 6 cmd == ":poll " -> do
+              b <- return $ B16.decode $ BS8.pack $ drop 6 cmd
+              case b of
+                (rk,leftovers)
+                  | B.empty /= leftovers -> void $ flushStrLn $ "Failed to decode RequestKey: this was converted " ++ show rk ++ " and this was not " ++ show leftovers
+                  | B.length rk /= hashLengthAsBS -> void $ flushStrLn $ "RequestKey is too short, should be "
+                                                              ++ show hashLengthAsBase16
+                                                              ++ " char long but was " ++ show (B.length $ BS8.pack $ drop 7 cmd) ++ " -> " ++ show (B16.encode rk)
+                  | otherwise -> void $ pollForResult $ RequestKey $ Hash $ rk
           | take 8 cmd == ":server " ->
               server .= drop 8 cmd
           | take 5 cmd == ":cmd " ->
@@ -235,7 +260,7 @@ runREPL = loop True
 
 
 _run :: StateT ReplState m a -> m (a, ReplState)
-_run a = runStateT a (ReplState "localhost:8000" "(demo.transfer \"Acct1\" \"Acct2\" 1.00)" 0 Nothing)
+_run a = runStateT a (ReplState "localhost:8000" "(demo.transfer \"Acct1\" \"Acct2\" 1.00)" 0)
 
 intervalOfNumerous :: Int64 -> Int64 -> String
 intervalOfNumerous cnt mics = let
@@ -260,5 +285,4 @@ main = do
          void $ runStateT (runReaderT runREPL conf)
                   (ReplState (snd (head (HM.toList (_ccEndpoints conf))))
                              "(demo.transfer \"Acct1\" \"Acct2\" 1.00)"
-                             i
-                             Nothing)
+                             i)

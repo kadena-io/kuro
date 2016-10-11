@@ -194,6 +194,7 @@ executable kadenaclient
   main-is:             KadenaClient.hs
   build-depends:       base < 5
                      , kadena
+                     , base16-bytestring
   hs-source-dirs:      executables
   ghc-options:         -Wall -threaded -rtsopts
   ghc-prof-options:    -fprof-auto -fprof-auto-calls

@@ -7,7 +7,7 @@ module Kadena.Types.Config
   ( Config(..), otherNodes, nodeId, electionTimeoutRange, heartbeatTimeout
   , enableDebug, publicKeys, clientPublicKeys, myPrivateKey, clientTimeoutLimit
   , myPublicKey, batchTimeDelta, dontDebugFollower, apiPort
-  , logSqlitePath, enableAwsIntegration,entity,dbFile
+  , logSqliteDir, enableAwsIntegration,entity,dbFile
   , KeySet(..), ksClient, ksCluster
   , EntityInfo(..),entName
   ) where
@@ -52,7 +52,7 @@ data Config = Config
   , _clientTimeoutLimit   :: !Int
   , _dontDebugFollower    :: !Bool
   , _apiPort              :: !Int
-  , _logSqlitePath        :: !FilePath
+  , _logSqliteDir         :: !(Maybe FilePath)
   , _enableAwsIntegration :: !Bool
   , _entity               :: EntityInfo
   , _dbFile               :: !(Maybe FilePath)

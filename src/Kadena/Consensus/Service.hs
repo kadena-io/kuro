@@ -30,11 +30,8 @@ launchHistoryService :: Dispatch
   -> Config
   -> IO (Async ())
 launchHistoryService dispatch' dbgPrint' getTimestamp' rconf = do
-  let _dbPath' = "" --rconf ^. logSqlitePath
-      _dbPath'' = if null _dbPath'
-        then Nothing
-        else error "Persistence not yet enabled" --Just dbPath'
-  link =<< async (History.runHistoryService (History.initHistoryEnv dispatch' Nothing dbgPrint' getTimestamp') Nothing)
+  let dbPath' = rconf ^. logSqliteDir
+  link =<< async (History.runHistoryService (History.initHistoryEnv dispatch' dbPath' dbgPrint' getTimestamp') Nothing)
   async (foreverTick (_historyChannel dispatch') 1000000 History.Tick)
 
 launchEvidenceService :: Dispatch
@@ -68,7 +65,7 @@ launchLogService :: Dispatch
   -> Config
   -> IO (Async ())
 launchLogService dispatch' dbgPrint' publishMetric' keySet' rconf = do
-  link =<< async (Log.runLogService dispatch' dbgPrint' publishMetric' (rconf ^. logSqlitePath) keySet')
+  link =<< async (Log.runLogService dispatch' dbgPrint' publishMetric' (rconf ^. logSqliteDir) keySet')
   async (foreverTick (_logService dispatch') 1000000 Log.Tick)
 
 launchSenderService :: Dispatch

@@ -75,13 +75,13 @@ data HistoryEnv = HistoryEnv
   { _historyChannel :: !HistoryChannel
   , _debugPrint :: !(String -> IO ())
   , _getTimestamp :: !(IO UTCTime)
-  , _dbPath :: !(Maybe String)
+  , _dbPath :: !(Maybe FilePath)
   }
 makeLenses ''HistoryEnv
 
 data PersistenceSystem =
   InMemory
-    {inMemResults :: !(Map RequestKey (Maybe AppliedCommand))} |
+    { inMemResults :: !(Map RequestKey (Maybe AppliedCommand))} |
   OnDisk
     { incompleteRequestKeys :: !(Set RequestKey)
     , dbConn :: !Connection}

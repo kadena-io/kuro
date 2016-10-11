@@ -84,7 +84,7 @@ getConfig = do
         Left err -> putStrLn (Y.prettyPrintParseException err) >> exitFailure
         Right conf' -> return $ conf'
           { _apiPort = if optApiPort opts == -1 then conf' ^. apiPort else optApiPort opts
-          , _logSqlitePath = if optDisablePersistence opts then "" else conf' ^. logSqlitePath
+          , _logSqliteDir = if optDisablePersistence opts then Nothing else conf' ^. logSqliteDir
           , _dbFile = if optDisablePersistence opts then Nothing else _dbFile conf'
           }
     (_,_,errs)     -> mapM_ putStrLn errs >> exitFailure

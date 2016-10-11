@@ -6,53 +6,40 @@ module Kadena.History.Persistence
   ( createDB
   , insertCompletedCommand
   , queryForExisting
-  , selectCommpletedCommands
+  , selectCompletedCommands
   ) where
 
 import Control.Monad
+
+import qualified Data.Text as T
+import Data.Text.Encoding (encodeUtf8)
+import qualified Data.ByteString as B
+import qualified Data.ByteString.Base16 as B16
 
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import Data.Serialize
-import Data.ByteString hiding (concat, length, head, null)
-import qualified Data.Text as T
 
 import Database.SQLite.Simple
-import Database.SQLite.Simple.Ok
 import Database.SQLite.Simple.ToField
 import Database.SQLite.Simple.FromField
 
-import qualified Data.Aeson as Aeson
-
 import Kadena.Types
 
--- These live here as orphans, and not in Types, because trying to Serialize these things should be a type level error
--- with rare exception (i.e. for hashing the log entry). Moreover, accidentally sending Provenance over the wire could
--- be hard to catch. Best to make it impossible.
-instance Serialize Command
-instance Serialize Provenance
-instance Serialize LogEntry
-instance Serialize RequestVoteResponse
-
 instance ToField RequestKey where
-  toField n = toField $ Aeson.encode n
+  toField (RequestKey (Hash rk)) = toField $ toB16Text rk
 instance FromField RequestKey where
   fromField f = do
-    s :: ByteString <- fromField f
-    case Aeson.eitherDecodeStrict s of
-      Left err -> returnError ConversionFailed f ("Couldn't deserialize NodeId: " ++ err)
-      Right n -> Ok n
+    s :: T.Text <- fromField f
+    case B16.decode (encodeUtf8 s) of
+      (s',leftovers) | leftovers == B.empty -> return $ RequestKey $ Hash s'
+                     | otherwise -> returnError ConversionFailed f ("Couldn't deserialize RequestKey" ++ show (s,s',leftovers))
 
 instance ToField CommandResult where
-  toField n = toField $ Aeson.encode n
+  toField (CommandResult r) = toField r
 instance FromField CommandResult where
-  fromField f = do
-    s :: ByteString <- fromField f
-    case Aeson.eitherDecodeStrict s of
-      Left err -> returnError ConversionFailed f ("Couldn't deserialize NodeId: " ++ err)
-      Right n -> Ok n
+  fromField f = CommandResult <$> fromField f
 
 instance ToField RequestId where
   toField (RequestId rid) = toField rid
@@ -77,7 +64,9 @@ instance FromRow HistoryRow where
     rid' <- field
     latency' <- field
     result' <- field
-    return $ HistoryRow (rk', AppliedCommand rid' latency' result')
+    return $ HistoryRow (rk', AppliedCommand { _acResult = result'
+                                             , _acLatency = latency'
+                                             , _acRequestId = rid'})
 
 newtype RowExists = RowExists Bool deriving Show
 
@@ -100,7 +89,7 @@ sqlDbSchema = Query $ T.pack
   \( 'requestKey' TEXT PRIMARY KEY NOT NULL UNIQUE\
   \, 'requestId' TEXT\
   \, 'latency' INTEGER\
-  \, 'commandResponse' TEXT\
+  \, 'commandResponse' BLOB\
   \)"
 
 createDB :: FilePath -> IO Connection
@@ -126,16 +115,16 @@ sqlQueryForExisting = "SELECT EXISTS(SELECT 1 FROM 'main'.'appliedCommands' WHER
 
 queryForExisting :: Connection -> Set RequestKey -> IO (Set RequestKey)
 queryForExisting conn v =
-  foldM (\s rk -> do { r <- queryNamed conn sqlQueryForExisting ["requestKey" := rk]
+  foldM (\s rk -> do { r <- queryNamed conn sqlQueryForExisting [":requestKey" := rk]
                      ; if rowExists rk r then return s else return $ Set.delete rk s}) v v
 
 sqlSelectCompletedCommands :: Query
 sqlSelectCompletedCommands =
   "SELECT requestKey,requestId,latency,commandResponse FROM 'main'.'appliedCommands' WHERE requestKey=:requestKey LIMIT 1"
 
-selectCommpletedCommands :: Connection -> Set RequestKey -> IO (Map RequestKey AppliedCommand)
-selectCommpletedCommands conn v = do
-  foldM (\m rk -> do {r <- queryNamed conn sqlSelectCompletedCommands ["requestKey" := rk]
+selectCompletedCommands :: Connection -> Set RequestKey -> IO (Map RequestKey AppliedCommand)
+selectCompletedCommands conn v = do
+  foldM (\m rk -> do {r <- queryNamed conn sqlSelectCompletedCommands [":requestKey" := rk]
                      ; if null r
                        then return m
                        else return $ Map.insert rk (hrGetApplied $ head r) m}) Map.empty v

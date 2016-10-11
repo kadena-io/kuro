@@ -35,17 +35,17 @@ import Kadena.Types (Dispatch)
 runLogService :: Dispatch
               -> (String -> IO())
               -> (Metric -> IO())
-              -> FilePath
+              -> Maybe FilePath
               -> KeySet
               -> IO ()
 runLogService dispatch dbg publishMetric' dbPath keySet' = do
-  dbConn' <- if not (null dbPath)
-    then do
-      dbg $ "[LogThread] Database Connection Opened: " ++ dbPath
-      Just <$> createDB dbPath
-    else do
+  dbConn' <- case dbPath of
+    Nothing -> do
       dbg "[LogThread] Persistence Disabled"
       return Nothing
+    Just dbDir' -> do
+      dbg $ "[LogThread] Database Connection Opened: " ++ (dbDir' ++ ".sqlite")
+      Just <$> createDB (dbDir' ++ ".sqlite")
   cryptoMvar <- newTVarIO Idle
   env <- return LogEnv
     { _logQueryChannel = dispatch ^. Dispatch.logService

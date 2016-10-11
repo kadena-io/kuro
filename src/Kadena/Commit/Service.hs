@@ -41,6 +41,8 @@ initCommitEnv dispatch' debugPrint' applyLogEntry'
   , _getTimestamp = getTimestamp'
   }
 
+data ReplayStatus = ReplayFromDisk | FreshCommands deriving (Show, Eq)
+
 runCommitService :: CommitEnv -> NodeId -> KeySet -> IO ()
 runCommitService env nodeId' keySet' = do
   initCommitState <- return $! CommitState { _nodeId = nodeId', _keySet = keySet'}
@@ -78,16 +80,16 @@ handle = do
         debug $ (show . Log.lesCnt $ logEntriesToApply)
               ++ " new log entries to apply, up to "
               ++ show (fromJust $ Log.lesMaxIndex logEntriesToApply)
-        applyLogEntries logEntriesToApply
+        applyLogEntries FreshCommands logEntriesToApply
       ReloadFromDisk{..} -> do
         debug $ (show . Log.lesCnt $ logEntriesToApply)
               ++ " entries loaded from disk to apply, up to "
               ++ show (fromJust $ Log.lesMaxIndex logEntriesToApply)
-        applyLogEntries logEntriesToApply
+        applyLogEntries ReplayFromDisk logEntriesToApply
 
 
-applyLogEntries :: LogEntries -> CommitService ()
-applyLogEntries les@(LogEntries leToApply) = do
+applyLogEntries :: ReplayStatus -> LogEntries -> CommitService ()
+applyLogEntries rs les@(LogEntries leToApply) = do
   now' <- now
   (results :: [(RequestKey, AppliedCommand)]) <- mapM (applyCommand now') (Map.elems leToApply)
   commitIndex' <- return $ fromJust $ Log.lesMaxIndex les
@@ -96,7 +98,7 @@ applyLogEntries les@(LogEntries leToApply) = do
     then do
       debug $! "Applied " ++ show (length results) ++ " CMD(s)"
       hChan <- view historyChannel
-      liftIO $! writeComm hChan (History.Update $ Map.fromList results)
+      unless (rs == ReplayFromDisk) $ liftIO $! writeComm hChan (History.Update $ Map.fromList results)
     else debug "Applied log entries but did not send results?"
 
 logApplyLatency :: Command -> CommitService ()

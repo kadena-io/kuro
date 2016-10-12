@@ -12,7 +12,7 @@ import Control.Monad.State
 import Control.Monad.Writer
 import Control.Parallel.Strategies
 
-import qualified Data.Set as Set
+import qualified Data.HashSet as HashSet
 
 import Data.BloomFilter (Bloom)
 import qualified Data.BloomFilter as Bloom
@@ -84,29 +84,44 @@ handleBatch cmdbBatch = do
         enqueueRequest $ Sender.BroadcastAE Sender.OnlySendIfFollowersAreInSync
         enqueueRequest $ Sender.BroadcastAER
       -- Bloom filters can give false positives but most of the time the commands will be new, so we do a second pass to double check
-      setOfAlreadySeen <- return $! Set.fromList $ toRequestKey "handleBatch.Leader.1" <$> _unBPAlreadySeen alreadySeen
-      truePositives <- queryHistoryForExisting setOfAlreadySeen
-      falsePositive <- return $! Set.difference setOfAlreadySeen truePositives
-      falsePositiveCommands <- return $! filter (\c' -> Set.member (toRequestKey "handleBatch.Leader.2" c') falsePositive) $ _unBPAlreadySeen alreadySeen
-      unless (Set.null falsePositive) $ do
-        updateLogs $ ULNew $ NewLogEntries (KD._term s) $ KD.NleEntries falsePositiveCommands
-        enqueueRequest $ Sender.BroadcastAE Sender.OnlySendIfFollowersAreInSync
-        enqueueRequest $ Sender.BroadcastAER
+      unless (null $ _unBPAlreadySeen alreadySeen) $ do
+        -- but we can skip it if we have no collisions... it's the whole point of using the filter
+        start <- now
+        setOfAlreadySeen <- return $! HashSet.fromList $ toRequestKey "handleBatch.Leader.1" <$> _unBPAlreadySeen alreadySeen
+        truePositives <- queryHistoryForExisting setOfAlreadySeen
+        falsePositive <- return $! HashSet.difference setOfAlreadySeen truePositives
+        falsePositiveCommands <- return $! filter (\c' -> HashSet.member (toRequestKey "handleBatch.Leader.2" c') falsePositive) $ _unBPAlreadySeen alreadySeen
+        end <- now
+        unless (HashSet.null falsePositive) $ do
+          updateLogs $ ULNew $ NewLogEntries (KD._term s) $ KD.NleEntries falsePositiveCommands
+          enqueueRequest $ Sender.BroadcastAE Sender.OnlySendIfFollowersAreInSync
+          enqueueRequest $ Sender.BroadcastAER
+          debug $ "CMDB - False positives found "
+                  ++ show (HashSet.size falsePositive)
+                  ++ " of " ++ show (HashSet.size setOfAlreadySeen) ++ " collisions ("
+                  ++ show (interval start end) ++ "mics)"
+        sendHistoryNewKeys $ HashSet.union falsePositive $ HashSet.fromList $ toRequestKey "handleBatch.Leader.3" <$> _unBPAlreadySeen alreadySeen
       -- the false positives we already collisions so no need to add them
       KD.cmdBloomFilter .= updateBloom newEntries (KD._cmdBloomFilter s)
       quorumSize' <- view KD.quorumSize
       es <- view KD.evidenceState >>= liftIO
       when (Sender.willBroadcastAE quorumSize' (es ^. Ev.pesNodeStates) (es ^. Ev.pesConvincedNodes)) resetHeartbeatTimer
-      sendHistoryNewKeys $ Set.union falsePositive $ Set.fromList $ toRequestKey "handleBatch.Leader.3" <$> _unBPAlreadySeen alreadySeen
     IAmFollower BatchProcessing{..} -> do
       when (isJust lid) $ do
         enqueueRequest $ Sender.ForwardCommandToLeader (fromJust lid) $ _unBPNewEntries newEntries
-      setOfAlreadySeen <- return $! Set.fromList $ toRequestKey "handleBatch" <$> _unBPAlreadySeen alreadySeen
-      truePositives <- queryHistoryForExisting setOfAlreadySeen
-      falsePositive <- return $! Set.difference setOfAlreadySeen truePositives
-      unless (Set.null falsePositive) $ do
-        falsePositiveCommands <- return $! filter (\c' -> Set.member (toRequestKey "handleBatch.Follower" c') falsePositive) $ _unBPAlreadySeen alreadySeen
-        enqueueRequest $ Sender.ForwardCommandToLeader (fromJust lid) falsePositiveCommands
+      unless (null $ _unBPAlreadySeen alreadySeen) $ do
+        start <- now
+        setOfAlreadySeen <- return $! HashSet.fromList $ toRequestKey "handleBatch" <$> _unBPAlreadySeen alreadySeen
+        truePositives <- queryHistoryForExisting setOfAlreadySeen
+        falsePositive <- return $! HashSet.difference setOfAlreadySeen truePositives
+        end <- now
+        unless (HashSet.null falsePositive) $ do
+          falsePositiveCommands <- return $! filter (\c' -> HashSet.member (toRequestKey "handleBatch.Follower" c') falsePositive) $ _unBPAlreadySeen alreadySeen
+          enqueueRequest $ Sender.ForwardCommandToLeader (fromJust lid) falsePositiveCommands
+          debug $ "CMDB - False positives found "
+                  ++ show (HashSet.size falsePositive)
+                  ++ " of " ++ show (HashSet.size setOfAlreadySeen) ++ " collisions ("
+                  ++ show (interval start end) ++ "mics)"
     IAmCandidate -> return () -- TODO: we should probably respond with something like "availability event"
 
 updateBloom :: BPNewEntries -> Bloom RequestKey -> Bloom RequestKey

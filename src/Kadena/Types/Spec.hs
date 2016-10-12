@@ -31,6 +31,7 @@ import Control.Monad.RWS.Strict (RWST)
 
 import Data.BloomFilter (Bloom)
 import qualified Data.BloomFilter as Bloom
+import qualified Data.BloomFilter.Hash as BHash
 import Data.IORef
 import Data.Map (Map)
 import Data.Set (Set)
@@ -115,7 +116,7 @@ initialConsensusState timerTarget' = ConsensusState
 {-ignoreLeader-}        False
 {-timerThread-}         Nothing
 {-timerTarget-}         timerTarget'
-{-cmdBloomFilter-}      (Bloom.empty hashReqKeyForBloom 536870912)
+{-cmdBloomFilter-}      (Bloom.empty (\(RequestKey (Hash k)) -> BHash.cheapHashes 30 k) 134217728)
 {-cYesVotes-}           Set.empty
 {-cPotentialVotes-}     Set.empty
 {-timeSinceLastAER-}    0

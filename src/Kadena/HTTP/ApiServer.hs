@@ -19,9 +19,10 @@ import Control.Monad.Reader
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy as BSL
 import Data.ByteString.Lazy (toStrict)
-import Data.Set (Set)
-import qualified Data.Set as Set
-import Data.Map.Strict (Map)
+import Data.HashSet (HashSet)
+import qualified Data.HashSet as HashSet
+import Data.HashMap.Strict (HashMap)
+import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Map.Strict as Map
 
 import Data.Aeson hiding (defaultOptions, Result(..))
@@ -145,13 +146,13 @@ poll :: Api ()
 poll = do
   (_,Poll rks) <- readJSON
   log $ "Polling for " ++ show rks
-  PossiblyIncompleteResults{..} <- checkHistoryForResult (Set.fromList rks)
-  when (Map.null possiblyIncompleteResults) $ log $ "No results found for poll!" ++ show rks
+  PossiblyIncompleteResults{..} <- checkHistoryForResult (HashSet.fromList rks)
+  when (HashMap.null possiblyIncompleteResults) $ log $ "No results found for poll!" ++ show rks
   setJSON
   writeLBS $ encode $ pollResultToReponse possiblyIncompleteResults
 
-pollResultToReponse :: Map RequestKey AppliedCommand -> PollResponse
-pollResultToReponse m = ApiSuccess (kvToRes <$> Map.toList m)
+pollResultToReponse :: HashMap RequestKey AppliedCommand -> PollResponse
+pollResultToReponse m = ApiSuccess (kvToRes <$> HashMap.toList m)
   where
     kvToRes (rk,AppliedCommand{..}) = PollResult { _prRequestKey = rk, _prLatency = _acLatency, _prResponse = _acResult}
 
@@ -182,7 +183,7 @@ enqueueRPC signedRPC = do
     oChan <- view (aiDispatch.outboundGeneral)
     liftIO $ writeComm oChan $! directMsg [(ldr,SZ.encode signedRPC)]
 
-checkHistoryForResult :: Set RequestKey -> Api PossiblyIncompleteResults
+checkHistoryForResult :: HashSet RequestKey -> Api PossiblyIncompleteResults
 checkHistoryForResult rks = do
   hChan <- view (aiDispatch.historyChannel)
   m <- liftIO $ newEmptyMVar
@@ -194,7 +195,7 @@ registerListener = do
   (_,ListenerRequest rk) <- readJSON
   hChan <- view (aiDispatch.historyChannel)
   m <- liftIO $ newEmptyMVar
-  liftIO $ writeComm hChan $ RegisterListener (Map.fromList [(rk,m)])
+  liftIO $ writeComm hChan $ RegisterListener (HashMap.fromList [(rk,m)])
   log $ "Registered Listener for: " ++ show rk
   res <- liftIO $ readMVar m
   case res of

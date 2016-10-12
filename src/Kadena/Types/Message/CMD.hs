@@ -115,11 +115,12 @@ toRequestKey :: String -> Command -> RequestKey
 toRequestKey where' cmd = RequestKey $ getCmdHashOrInvariantError where' cmd
 {-# INLINE toRequestKey #-}
 
+
 hashReqKeyForBloom :: RequestKey -> [Word32]
 hashReqKeyForBloom (RequestKey h) = decode . BL.fromStrict <$> go (unHash h)
   where
     go v
-      | B.null v = []
+      | B.length v < 4 = []
       | otherwise = let (a,b) = B.splitAt 4 v in a : go b
 {-# INLINE hashReqKeyForBloom #-}
 

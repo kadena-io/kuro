@@ -97,7 +97,6 @@ library
                      , bloomfilter
                      , bound
                      , binary
-                     , bencoding
                      , BoundedChan
                      , bytestring
                      , cacophony
@@ -120,6 +119,7 @@ library
                      , filepath
                      , ghc-prim
                      , hspec
+                     , hashable
                      , lens >= 4.13
                      , lens-aeson
                      , lifted-base

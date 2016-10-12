@@ -127,6 +127,7 @@ createClusterConfig debugFollower (privMap, pubMap) clientPubMap apiP nid = Conf
   , _enableAwsIntegration = False
   , _entity               = EntityInfo "me"
   , _dbFile               = Just $ "./log/" ++ BSC.unpack (unAlias $ _alias nid) ++ "-pactdb.sqlite"
+  , _batchSize            = 8000
   }
 
 createClientConfig :: [Config] -> (Map NodeId PrivateKey, Map NodeId PublicKey) -> NodeId -> ClientConfig

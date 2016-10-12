@@ -38,6 +38,7 @@ module Kadena.Consensus.Handle.Types (
   , LazyVote(..), lvVoteFor, lvAllReceived
   , HeardFromLeader(..), hflLeaderId, hflYourRvSig, hflLastLogIndex, hflLastLogTerm
   , InvalidCandidateResults(..), icrMyReqVoteSig, icrNoVotes
+  , interval
   ) where
 
 -- This module exists so we don't need to do a bunch of selective/hiding imports

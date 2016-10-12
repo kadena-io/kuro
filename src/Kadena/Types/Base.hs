@@ -48,6 +48,7 @@ import qualified Data.Serialize as S
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.Aeson
 import Data.Aeson.Types
+import Data.Hashable (Hashable)
 
 import Data.Word (Word64)
 import GHC.Int (Int64)
@@ -110,7 +111,7 @@ hash = Hash . BLAKE.hash hashLengthAsBS B.empty
 {-# INLINE hash #-}
 
 newtype Hash = Hash { unHash :: ByteString }
-  deriving (Eq, Ord, Generic)
+  deriving (Eq, Ord, Generic, Hashable)
 instance Show Hash where
   show (Hash h) = show $ B16.encode h
 

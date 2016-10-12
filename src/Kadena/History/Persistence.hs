@@ -16,10 +16,10 @@ import Data.Text.Encoding (encodeUtf8)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Base16 as B16
 
-import Data.Set (Set)
-import qualified Data.Set as Set
-import Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
+import Data.HashSet (HashSet)
+import qualified Data.HashSet as HashSet
+import Data.HashMap.Strict (HashMap)
+import qualified Data.HashMap.Strict as HashMap
 
 import Database.SQLite.Simple
 import Database.SQLite.Simple.ToField
@@ -108,24 +108,24 @@ sqlInsertHistoryRow = Query $ T.pack
     \, 'commandResponse'\
     \) VALUES (?,?,?,?)"
 
-insertCompletedCommand :: Connection -> Map RequestKey AppliedCommand -> IO ()
-insertCompletedCommand conn v = withTransaction conn $ mapM_ (execute conn sqlInsertHistoryRow . HistoryRow) $ Map.toList v
+insertCompletedCommand :: Connection -> HashMap RequestKey AppliedCommand -> IO ()
+insertCompletedCommand conn v = withTransaction conn $ mapM_ (execute conn sqlInsertHistoryRow . HistoryRow) $ HashMap.toList v
 
 sqlQueryForExisting :: Query
 sqlQueryForExisting = "SELECT EXISTS(SELECT 1 FROM 'main'.'appliedCommands' WHERE requestKey=:requestKey LIMIT 1)"
 
-queryForExisting :: Connection -> Set RequestKey -> IO (Set RequestKey)
+queryForExisting :: Connection -> HashSet RequestKey -> IO (HashSet RequestKey)
 queryForExisting conn v =
   foldM (\s rk -> do { r <- queryNamed conn sqlQueryForExisting [":requestKey" := rk]
-                     ; if rowExists rk r then return s else return $ Set.delete rk s}) v v
+                     ; if rowExists rk r then return s else return $ HashSet.delete rk s}) v v
 
 sqlSelectCompletedCommands :: Query
 sqlSelectCompletedCommands =
   "SELECT requestKey,requestId,latency,commandResponse FROM 'main'.'appliedCommands' WHERE requestKey=:requestKey LIMIT 1"
 
-selectCompletedCommands :: Connection -> Set RequestKey -> IO (Map RequestKey AppliedCommand)
+selectCompletedCommands :: Connection -> HashSet RequestKey -> IO (HashMap RequestKey AppliedCommand)
 selectCompletedCommands conn v = do
   foldM (\m rk -> do {r <- queryNamed conn sqlSelectCompletedCommands [":requestKey" := rk]
                      ; if null r
                        then return m
-                       else return $ Map.insert rk (hrGetApplied $ head r) m}) Map.empty v
+                       else return $ HashMap.insert rk (hrGetApplied $ head r) m}) HashMap.empty v

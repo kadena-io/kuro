@@ -16,14 +16,12 @@ import Control.Monad.Trans.RWS.Strict
 import Control.Concurrent.MVar
 
 import Data.Semigroup ((<>))
-import Data.Set (Set)
-import qualified Data.Set as Set
-import Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
+import Data.HashSet (HashSet)
+import qualified Data.HashSet as HashSet
+import Data.HashMap.Strict (HashMap)
+import qualified Data.HashMap.Strict as HashMap
 import Data.Thyme.Clock
-import Data.Maybe (fromJust)
-
-
+import Data.Maybe (fromJust,isJust)
 
 import Kadena.History.Types as X
 import qualified Kadena.History.Persistence as DB
@@ -50,7 +48,7 @@ runHistoryService env mState = do
   initHistoryState <- case mState of
     Nothing -> do
       pers <- setupPersistence dbg (env ^. dbPath)
-      return $! HistoryState { _registeredListeners = Map.empty, _persistence = pers }
+      return $! HistoryState { _registeredListeners = HashMap.empty, _persistence = pers }
     Just mState' -> do
       return mState'
   dbg "[Service|Histoy] Launch!"
@@ -68,11 +66,11 @@ now = view getTimestamp >>= liftIO
 setupPersistence :: (String -> IO ()) -> Maybe FilePath -> IO PersistenceSystem
 setupPersistence dbg Nothing = do
   dbg $ "[Service|History] Persistence Disabled"
-  return $ InMemory Map.empty
+  return $ InMemory HashMap.empty
 setupPersistence dbg (Just dbPath') = do
   dbg $ "[Service|History] Persistence Enabled: " ++ (dbPath' ++ "-cmdr.sqlite")
   conn <- DB.createDB $ (dbPath' ++ "-cmdr.sqlite")
-  return $ OnDisk { incompleteRequestKeys = Set.empty
+  return $ OnDisk { incompleteRequestKeys = HashSet.empty
                   , dbConn = conn }
 
 handle :: HistoryChannel -> HistoryService ()
@@ -84,125 +82,140 @@ handle oChan = do
       AddNew{..} ->  addNewKeys hNewKeys
       Update{..} -> updateExistingKeys hUpdateRks
       QueryForExistence{..} -> queryForExisting hQueryForExistence
+      QueryForPriorApplication{..} -> queryForPriorApplication hQueryForPriorApplication
       QueryForResults{..} -> queryForResults hQueryForResults
       RegisterListener{..} -> registerNewListeners hNewListener
       -- I thought it cleaner to match on bounce above instead of opening up the potential to forget to loop
       Bounce -> error "Unreachable Path: you can't hit bounce twice"
     handle oChan
 
-addNewKeys :: Set RequestKey -> HistoryService ()
+addNewKeys :: HashSet RequestKey -> HistoryService ()
 addNewKeys srks = do
   pers <- use persistence
   start <- now
   case pers of
     InMemory m -> do
-      persistence .= InMemory (Map.union m $ Map.fromSet (const Nothing) srks)
+      persistence .= InMemory (HashMap.union m $ const Nothing <$> HashSet.toMap srks)
     OnDisk{..} -> do
-      persistence .= OnDisk { incompleteRequestKeys = Set.union incompleteRequestKeys srks
+      persistence .= OnDisk { incompleteRequestKeys = HashSet.union incompleteRequestKeys srks
                             , dbConn = dbConn }
   end <- now
-  debug $ "Added " ++ show (Set.size srks) ++ " new keys taking " ++ show (interval start end) ++ "mics"
+  debug $ "Added " ++ show (HashSet.size srks) ++ " new keys taking " ++ show (interval start end) ++ "mics"
 
-updateExistingKeys :: Map RequestKey AppliedCommand -> HistoryService ()
+updateExistingKeys :: HashMap RequestKey AppliedCommand -> HistoryService ()
 updateExistingKeys updates = do
   alertListeners updates
   pers <- use persistence
   start <- now
   case pers of
     InMemory m -> do
-      newInMem <- return $! InMemory $! foldr updateInMemKey m $ Map.toList updates
+      newInMem <- return $! InMemory $! foldr updateInMemKey m $ HashMap.toList updates
       persistence .= newInMem
     OnDisk{..} -> do
       liftIO $ DB.insertCompletedCommand dbConn updates
-      persistence .= OnDisk { incompleteRequestKeys = Set.filter (\k -> Map.notMember k updates) incompleteRequestKeys
+      persistence .= OnDisk { incompleteRequestKeys = HashSet.filter (\k -> not $ HashMap.member k updates) incompleteRequestKeys
                             , dbConn = dbConn }
   end <- now
-  debug $ "Updated " ++ show (Map.size updates) ++ " keys taking " ++ show (interval start end)
+  debug $ "Updated " ++ show (HashMap.size updates) ++ " keys taking " ++ show (interval start end)
 
-updateInMemKey :: (RequestKey, AppliedCommand) -> Map RequestKey (Maybe AppliedCommand) -> Map RequestKey (Maybe AppliedCommand)
-updateInMemKey (k,v) m = Map.insert k (Just v) m
+updateInMemKey :: (RequestKey, AppliedCommand) -> HashMap RequestKey (Maybe AppliedCommand) -> HashMap RequestKey (Maybe AppliedCommand)
+updateInMemKey (k,v) m = HashMap.insert k (Just v) m
 
-alertListeners :: Map RequestKey AppliedCommand -> HistoryService ()
+alertListeners :: HashMap RequestKey AppliedCommand -> HistoryService ()
 alertListeners m = do
   start <- now
   listeners <- use registeredListeners
-  triggered <- return $! Set.intersection (Map.keysSet m) (Map.keysSet listeners)
-  unless (Set.null triggered) $ do
-    res <- mapM (alertListener m) $ Map.toList $ Map.filterWithKey (\k _ -> Set.member k triggered) listeners
-    registeredListeners %= Map.filterWithKey (\k _ -> Set.notMember k triggered)
-    -- use registeredListeners >>= debug . ("Active Listeners: " ++) . show . Map.keysSet
+  triggered <- return $! HashMap.filterWithKey (\k _ -> HashMap.member k m) listeners
+  unless (HashMap.null triggered) $ do
+    res <- mapM (alertListener m) $ HashMap.toList triggered
+    registeredListeners %= HashMap.filterWithKey (\k _ -> not $ HashMap.member k triggered)
+    -- use registeredListeners >>= debug . ("Active Listeners: " ++) . show . HashMap.keysSet
     end <- now
     debug $ "Serviced " ++ show (sum res) ++ " alerts taking " ++ show (interval start end) ++ "mics"
 
-alertListener :: Map RequestKey AppliedCommand -> (RequestKey, [MVar ListenerResult]) -> HistoryService Int
+alertListener :: HashMap RequestKey AppliedCommand -> (RequestKey, [MVar ListenerResult]) -> HistoryService Int
 alertListener res (k,mvs) = do
-  commandRes <- return $! res Map.! k
+  commandRes <- return $! res HashMap.! k
   -- debug $ "Servicing Listener for: " ++ show k
   fails <- filter not <$> liftIO (mapM (`tryPutMVar` ListenerResult commandRes) mvs)
   unless (null fails) $ debug $ "Registered listener failure for " ++ show k ++ " (" ++ show (length fails) ++ " of " ++ show (length mvs) ++ " failed)"
   return $ length mvs
 
-queryForExisting :: (Set RequestKey, MVar ExistenceResult) -> HistoryService ()
+queryForExisting :: (HashSet RequestKey, MVar ExistenceResult) -> HistoryService ()
 queryForExisting (srks, mRes) = do
   pers <- use persistence
   start <- now
   case pers of
     InMemory m -> do
-      found <- return $! Set.intersection srks $ Map.keysSet m
+      found <- return $! HashSet.intersection srks $ HashSet.fromMap $ const () <$> m
       liftIO $! putMVar mRes $ ExistenceResult found
     OnDisk{..} -> do
-      foundInMem <- return $ Set.intersection srks incompleteRequestKeys
-      if Set.size foundInMem == Set.size srks
+      foundInMem <- return $ HashSet.intersection srks incompleteRequestKeys
+      if HashSet.size foundInMem == HashSet.size srks
       -- unlikely but worth a O(1) check
       then liftIO $! putMVar mRes $ ExistenceResult foundInMem
       else do
-        foundOnDisk <- liftIO $ DB.queryForExisting dbConn $ Set.filter (`Set.notMember` foundInMem) srks
-        liftIO $! putMVar mRes $ ExistenceResult $! Set.union foundInMem foundOnDisk
+        foundOnDisk <- liftIO $ DB.queryForExisting dbConn $ HashSet.filter (\k -> not $ HashSet.member k foundInMem) srks
+        liftIO $! putMVar mRes $ ExistenceResult $! HashSet.union foundInMem foundOnDisk
   end <- now
-  debug $ "Queried existence of " ++ show (Set.size srks) ++ " entries taking " ++ show (interval start end) ++ "mics"
+  debug $ "Queried existence of " ++ show (HashSet.size srks) ++ " entries taking " ++ show (interval start end) ++ "mics"
 
-queryForResults :: (Set RequestKey, MVar PossiblyIncompleteResults) -> HistoryService ()
+queryForPriorApplication :: (HashSet RequestKey, MVar ExistenceResult) -> HistoryService ()
+queryForPriorApplication (srks, mRes) = do
+  pers <- use persistence
+  start <- now
+  case pers of
+    InMemory m -> do
+      found <- return $! HashSet.fromMap $ const () <$> HashMap.filterWithKey (\k v -> HashSet.member k srks && isJust v) m
+      liftIO $! putMVar mRes $ ExistenceResult found
+    OnDisk{..} -> do
+      found <- liftIO $ DB.queryForExisting dbConn srks
+      liftIO $! putMVar mRes $ ExistenceResult found
+  end <- now
+  debug $ "Queried prior application of " ++ show (HashSet.size srks) ++ " entries taking " ++ show (interval start end) ++ "mics"
+
+queryForResults :: (HashSet RequestKey, MVar PossiblyIncompleteResults) -> HistoryService ()
 queryForResults (srks, mRes) = do
   pers <- use persistence
   start <- now
   case pers of
     InMemory m -> do
-      found <- return $! Map.filterWithKey (checkForIndividualResultInMem srks) m
+      found <- return $! HashMap.filterWithKey (checkForIndividualResultInMem srks) m
       liftIO $! putMVar mRes $ PossiblyIncompleteResults $ fmap fromJust found
-      debug $ "Querying for " ++ show (Set.size srks) ++ " keys, found " ++ show (Map.size found)
+      debug $ "Querying for " ++ show (HashSet.size srks) ++ " keys, found " ++ show (HashMap.size found)
     OnDisk{..} -> do
-      completed <- return $! Set.filter (`Set.notMember` incompleteRequestKeys) srks
-      if Set.null completed
+      completed <- return $! HashSet.filter (\k -> not $ HashSet.member k incompleteRequestKeys) srks
+      if HashSet.null completed
       then do
-        liftIO $! putMVar mRes $ PossiblyIncompleteResults $ Map.empty
+        liftIO $! putMVar mRes $ PossiblyIncompleteResults $ HashMap.empty
       else do
         found <- liftIO $ DB.selectCompletedCommands dbConn completed
         liftIO $! putMVar mRes $ PossiblyIncompleteResults $ found
   end <- now
-  debug $ "Queried results of " ++ show (Set.size srks) ++ " entries taking " ++ show (interval start end) ++ "mics"
+  debug $ "Queried results of " ++ show (HashSet.size srks) ++ " entries taking " ++ show (interval start end) ++ "mics"
 
 -- This is here to try to get GHC to check the fast part first
-checkForIndividualResultInMem :: Set RequestKey -> RequestKey -> Maybe AppliedCommand -> Bool
+checkForIndividualResultInMem :: HashSet RequestKey -> RequestKey -> Maybe AppliedCommand -> Bool
 checkForIndividualResultInMem _ _ Nothing = False
-checkForIndividualResultInMem s k (Just _) = Set.member k s
+checkForIndividualResultInMem s k (Just _) = HashSet.member k s
 
-registerNewListeners :: Map RequestKey (MVar ListenerResult) -> HistoryService ()
+registerNewListeners :: HashMap RequestKey (MVar ListenerResult) -> HistoryService ()
 registerNewListeners newListeners' = do
   start <- now
-  srks <- return $! Map.keysSet newListeners'
+  srks <- return $! HashSet.fromMap $ const () <$> newListeners'
   pers <- use persistence
   found <- case pers of
     InMemory m -> do
-      return $! fromJust <$> Map.filterWithKey (checkForIndividualResultInMem srks) m
+      return $! fromJust <$> HashMap.filterWithKey (checkForIndividualResultInMem srks) m
     OnDisk{..} -> do
       liftIO $! DB.selectCompletedCommands dbConn srks
-  noNeedToListen <- return $! Set.intersection (Map.keysSet found) srks
-  readyToServiceListeners <- return $! Map.filterWithKey (\k _ -> Set.member k noNeedToListen) newListeners'
-  realListeners <- return $! Map.filterWithKey (\k _ -> not $ Set.member k noNeedToListen) newListeners'
-  unless (Map.null readyToServiceListeners) $ do
-    mapM_ (\(k,v) -> alertListener found (k,[v])) $ Map.toList readyToServiceListeners
+  noNeedToListen <- return $! HashSet.intersection (HashSet.fromMap $ const () <$> found) srks
+  readyToServiceListeners <- return $! HashMap.filterWithKey (\k _ -> HashSet.member k noNeedToListen) newListeners'
+  realListeners <- return $! HashMap.filterWithKey (\k _ -> not $ HashSet.member k noNeedToListen) newListeners'
+  unless (HashMap.null readyToServiceListeners) $ do
+    mapM_ (\(k,v) -> alertListener found (k,[v])) $ HashMap.toList readyToServiceListeners
     end <- now
-    debug $ "Immediately serviced " ++ show (Set.size noNeedToListen) ++ " listeners taking " ++ show (interval start end) ++ "mics"
-  unless (Map.null realListeners) $ do
-    registeredListeners %= Map.unionWith (<>) ((:[]) <$> realListeners)
-    debug $ "Registered " ++ show (Map.size realListeners) ++ " listeners"
+    debug $ "Immediately serviced " ++ show (HashSet.size noNeedToListen) ++ " listeners taking " ++ show (interval start end) ++ "mics"
+  unless (HashMap.null realListeners) $ do
+    registeredListeners %= HashMap.unionWith (<>) ((:[]) <$> realListeners)
+    debug $ "Registered " ++ show (HashMap.size realListeners) ++ " listeners"

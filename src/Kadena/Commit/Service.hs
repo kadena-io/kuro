@@ -14,6 +14,7 @@ import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Trans.RWS.Strict
 
+import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Map.Strict as Map
 import Data.Thyme.Clock
 import Data.Maybe (fromJust)
@@ -98,7 +99,7 @@ applyLogEntries rs les@(LogEntries leToApply) = do
     then do
       debug $! "Applied " ++ show (length results) ++ " CMD(s)"
       hChan <- view historyChannel
-      unless (rs == ReplayFromDisk) $ liftIO $! writeComm hChan (History.Update $ Map.fromList results)
+      unless (rs == ReplayFromDisk) $ liftIO $! writeComm hChan (History.Update $ HashMap.fromList results)
     else debug "Applied log entries but did not send results?"
 
 logApplyLatency :: Command -> CommitService ()

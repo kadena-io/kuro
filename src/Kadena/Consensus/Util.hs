@@ -23,6 +23,8 @@ module Kadena.Consensus.Util
   , enqueueRequest
   , sendHistoryNewKeys
   , queryHistoryForExisting
+  , queryHistoryForPriorApplication
+  , now
   , module X -- convenience for Handlers
   ) where
 
@@ -33,9 +35,11 @@ import Control.Monad.RWS.Strict
 import Control.Concurrent (putMVar, takeMVar, newEmptyMVar)
 import qualified Control.Concurrent.Lifted as CL
 
+import Data.HashSet (HashSet)
 import Data.Set (Set)
 import Data.Map.Strict (Map)
 
+import Data.Thyme.Clock
 import qualified System.Random as R
 
 import Kadena.Types
@@ -212,15 +216,26 @@ runRWS_ ma r s = void $! runRWST ma r s
 --  Tick Tock
 --  deriving (Eq)
 
-sendHistoryNewKeys :: Set RequestKey -> Consensus ()
+sendHistoryNewKeys :: HashSet RequestKey -> Consensus ()
 sendHistoryNewKeys srks = do
   send <- view enqueueHistoryQuery
   liftIO $ send $ History.AddNew srks
 
-queryHistoryForExisting :: Set RequestKey -> Consensus (Set RequestKey)
+queryHistoryForExisting :: HashSet RequestKey -> Consensus (HashSet RequestKey)
 queryHistoryForExisting srks = do
   send <- view enqueueHistoryQuery
   m <- liftIO $ newEmptyMVar
   liftIO $ send $ History.QueryForExistence (srks,m)
   History.ExistenceResult{..} <- liftIO $ takeMVar m
   return rksThatAlreadyExist
+
+queryHistoryForPriorApplication :: HashSet RequestKey -> Consensus (HashSet RequestKey)
+queryHistoryForPriorApplication srks = do
+  send <- view enqueueHistoryQuery
+  m <- liftIO $ newEmptyMVar
+  liftIO $ send $ History.QueryForPriorApplication (srks,m)
+  History.ExistenceResult{..} <- liftIO $ takeMVar m
+  return rksThatAlreadyExist
+
+now :: Consensus UTCTime
+now = view (rs.getTimestamp) >>= liftIO

@@ -16,6 +16,8 @@ import Control.Monad.Writer.Strict
 
 import qualified Data.BloomFilter as Bloom
 import qualified Data.Map.Strict as Map
+import Data.HashSet (HashSet)
+import qualified Data.HashSet as HashSet
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Maybe (fromMaybe)
@@ -65,7 +67,7 @@ data AppendEntriesResult =
 data ValidResponse =
     SendFailureResponse |
     Commit {
-        _newRequestKeys :: Set RequestKey
+        _newRequestKeys :: HashSet RequestKey
       , _newEntries :: ReplicateLogEntries } |
     DoNothing
 
@@ -153,7 +155,7 @@ appendLogEntries pli newEs
           tell ["Failure to Append Logs: " ++ err]
           return SendFailureResponse
       Right rle -> do
-        replay <- return $ Set.fromList $ fmap (toRequestKey "appendLogEntries" . _leCommand) (Map.elems (newEs ^. Log.logEntries))
+        replay <- return $ HashSet.fromList $ fmap (toRequestKey "appendLogEntries" . _leCommand) (Map.elems (newEs ^. Log.logEntries))
         tell ["replicated LogEntry(s): " ++ show (_rleMinLogIdx rle) ++ " through " ++ show (_rleMaxLogIdx rle)]
         return $ Commit replay rle
 
@@ -198,14 +200,23 @@ handle ae = do
       case _validReponse of
         SendFailureResponse -> enqueueRequest $ Sender.SingleAER _responseLeaderId False True
         (Commit rks rle) -> do
-          updateLogs $ Log.ULReplicate rle
-          newMv <- queryLogs $ Set.singleton Log.GetLastLogHash
-          newLastLogHash' <- return $! Log.hasQueryResult Log.LastLogHash newMv
-          -- TODO: look into having `updateLogs Log.ULReplicate` trigger an AER
-          enqueueRequest Sender.BroadcastAER -- NB: this can only happen after `updateLogs` is complete, the tracer query makes sure of this
-          logHashChange newLastLogHash'
-          sendHistoryNewKeys rks
-          KD.cmdBloomFilter %= Bloom.insertList (Set.toList rks)
+-- MASSIVE TODO: analyze if this is the best thing to do. Another option would be to drop entries but then nodes could get out of sync, or should we have
+-- CryptoWorker also do this and take it out of consensus completely
+--          alreadyExist <- queryHistoryForPriorApplication rks
+--          if HashSet.null alreadyExist
+--          then do
+            updateLogs $ Log.ULReplicate rle
+            newMv <- queryLogs $ Set.singleton Log.GetLastLogHash
+            newLastLogHash' <- return $! Log.hasQueryResult Log.LastLogHash newMv
+            -- TODO: look into having `updateLogs Log.ULReplicate` trigger an AER
+            enqueueRequest Sender.BroadcastAER -- NB: this can only happen after `updateLogs` is complete, the tracer query makes sure of this
+            logHashChange newLastLogHash'
+            sendHistoryNewKeys rks
+            KD.cmdBloomFilter %= Bloom.insertList (HashSet.toList rks)
+--          else do
+--            enqueueRequest $ Sender.SingleAER _responseLeaderId False True
+--            enqueueRequest Sender.BroadcastAER -- NB: this can only happen after `updateLogs` is complete, the tracer query makes sure of this
+--            debug $ "Failure! Leader sent us entries with logEntries that have already been committed"
         DoNothing -> enqueueRequest Sender.BroadcastAER
       clearLazyVoteAndInformCandidates
       -- This NEEDS to be last, otherwise we can have an election fire when we are are transmitting proof/accessing the logs

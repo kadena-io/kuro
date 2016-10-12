@@ -4,6 +4,8 @@ aws-conf/*
 .dir-locals.el
 .stack-work/
 .stack-work*
+submodules/pact/.stack-work/
+submodules/snap-cors/.stack-work/
 *~
 log/*
 dist/*

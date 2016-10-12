@@ -12,6 +12,7 @@ module Kadena.Types.Command
 import Data.ByteString (ByteString)
 import Data.Serialize (Serialize)
 import Data.Aeson
+import Data.Hashable (Hashable)
 import qualified Data.Aeson as A
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import GHC.Generics hiding (from)
@@ -32,7 +33,7 @@ instance FromJSON CommandResult where
   parseJSON _ = mempty
 
 newtype RequestKey = RequestKey { unRequestKey :: Hash}
-  deriving (Eq, Ord, Generic, ToJSON, FromJSON, Serialize)
+  deriving (Eq, Ord, Generic, ToJSON, FromJSON, Serialize, Hashable)
 
 instance Show RequestKey where
   show (RequestKey rk) = show rk

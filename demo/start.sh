@@ -1,6 +1,6 @@
 #!/bin/sh
 rm ./log/*.sqlite ./log/10000.log ./log/10001.log ./log/10002.log ./log/10003.log
-stack install
+# stack install
 tmux new-window
 tmux split-window -h
 tmux send-keys '$HOME/.local/bin/kadenaserver +RTS -N4 -T -RTS -c conf/10000-cluster.yaml --apiPort 8000 2>&1 | tee -a log/10000.log ' C-m

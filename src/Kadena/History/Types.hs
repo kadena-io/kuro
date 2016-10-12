@@ -23,8 +23,8 @@ import Control.Monad.Trans.RWS.Strict
 import Control.Concurrent.MVar
 import Control.Concurrent.Chan (Chan)
 
-import Data.Map.Strict (Map)
-import Data.Set (Set)
+import Data.HashMap.Strict (HashMap)
+import Data.HashSet (HashSet)
 
 import Data.Thyme.Clock (UTCTime)
 import Database.SQLite.Simple (Connection(..))
@@ -37,11 +37,11 @@ import Kadena.Types.Metric as X
 import Kadena.Types.Message as X
 
 newtype ExistenceResult = ExistenceResult
-  { rksThatAlreadyExist :: Set RequestKey
+  { rksThatAlreadyExist :: HashSet RequestKey
   } deriving (Show, Eq)
 
 newtype PossiblyIncompleteResults = PossiblyIncompleteResults
-  { possiblyIncompleteResults :: Map RequestKey AppliedCommand
+  { possiblyIncompleteResults :: HashMap RequestKey AppliedCommand
   } deriving (Show, Eq)
 
 data ListenerResult =
@@ -51,15 +51,17 @@ data ListenerResult =
 
 data History =
   AddNew
-    { hNewKeys :: !(Set RequestKey) } |
+    { hNewKeys :: !(HashSet RequestKey) } |
   Update
-    { hUpdateRks :: !(Map RequestKey AppliedCommand) } |
+    { hUpdateRks :: !(HashMap RequestKey AppliedCommand) } |
   QueryForExistence
-    { hQueryForExistence :: !(Set RequestKey, MVar ExistenceResult) } |
+    { hQueryForExistence :: !(HashSet RequestKey, MVar ExistenceResult) } |
+  QueryForPriorApplication
+    { hQueryForPriorApplication :: !(HashSet RequestKey, MVar ExistenceResult) } |
   QueryForResults
-    { hQueryForResults :: !(Set RequestKey, MVar PossiblyIncompleteResults) } |
+    { hQueryForResults :: !(HashSet RequestKey, MVar PossiblyIncompleteResults) } |
   RegisterListener
-    { hNewListener :: !(Map RequestKey (MVar ListenerResult))} |
+    { hNewListener :: !(HashMap RequestKey (MVar ListenerResult))} |
   Bounce |
   Tick Tock
   deriving (Eq)
@@ -81,13 +83,13 @@ makeLenses ''HistoryEnv
 
 data PersistenceSystem =
   InMemory
-    { inMemResults :: !(Map RequestKey (Maybe AppliedCommand))} |
+    { inMemResults :: !(HashMap RequestKey (Maybe AppliedCommand))} |
   OnDisk
-    { incompleteRequestKeys :: !(Set RequestKey)
+    { incompleteRequestKeys :: !(HashSet RequestKey)
     , dbConn :: !Connection}
 
 data HistoryState = HistoryState
-  { _registeredListeners :: !(Map RequestKey [MVar ListenerResult])
+  { _registeredListeners :: !(HashMap RequestKey [MVar ListenerResult])
   , _persistence :: !PersistenceSystem
   }
 makeLenses ''HistoryState

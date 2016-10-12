@@ -43,6 +43,7 @@ library
                      , Kadena.History.Service
                      , Kadena.History.Types
                      , Kadena.HTTP.ApiServer
+                     , Kadena.HTTP.Static
                      , Kadena.HTTP.Types
                      , Kadena.Log.LogApi
                      , Kadena.Log.Persistence

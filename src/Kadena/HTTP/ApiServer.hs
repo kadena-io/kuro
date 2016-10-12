@@ -48,6 +48,7 @@ import Kadena.Types.Dispatch
 import Kadena.Util.Util
 
 import Kadena.HTTP.Types
+import Kadena.HTTP.Static
 
 data ApiEnv = ApiEnv
   { _aiLog :: String -> IO ()
@@ -72,7 +73,9 @@ runApiServer dispatch conf logFn port mPubConsensus' = do
   m <- newMVar =<< initRequestId
   httpServe (serverConf port) $
     applyCORS defaultOptions $ methods [GET, POST] $
-    route [ ("api", runReaderT api (ApiEnv logFn m dispatch conf mPubConsensus'))]
+    route $ ("api", runReaderT api (ApiEnv logFn m dispatch conf mPubConsensus'))
+            :staticRoutes
+
 
 api :: Api ()
 api = route [

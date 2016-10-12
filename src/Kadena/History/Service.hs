@@ -93,18 +93,21 @@ handle oChan = do
 addNewKeys :: Set RequestKey -> HistoryService ()
 addNewKeys srks = do
   pers <- use persistence
+  start <- now
   case pers of
     InMemory m -> do
       persistence .= InMemory (Map.union m $ Map.fromSet (const Nothing) srks)
     OnDisk{..} -> do
       persistence .= OnDisk { incompleteRequestKeys = Set.union incompleteRequestKeys srks
                             , dbConn = dbConn }
-  debug $ "Added " ++ show (Set.size srks) ++ " new keys"
+  end <- now
+  debug $ "Added " ++ show (Set.size srks) ++ " new keys taking " ++ show (interval start end) ++ "mics"
 
 updateExistingKeys :: Map RequestKey AppliedCommand -> HistoryService ()
 updateExistingKeys updates = do
   alertListeners updates
   pers <- use persistence
+  start <- now
   case pers of
     InMemory m -> do
       newInMem <- return $! InMemory $! foldr updateInMemKey m $ Map.toList updates
@@ -113,7 +116,8 @@ updateExistingKeys updates = do
       liftIO $ DB.insertCompletedCommand dbConn updates
       persistence .= OnDisk { incompleteRequestKeys = Set.filter (\k -> Map.notMember k updates) incompleteRequestKeys
                             , dbConn = dbConn }
-  debug $ "Updated " ++ show (Map.size updates) ++ " keys"
+  end <- now
+  debug $ "Updated " ++ show (Map.size updates) ++ " keys taking " ++ show (interval start end)
 
 updateInMemKey :: (RequestKey, AppliedCommand) -> Map RequestKey (Maybe AppliedCommand) -> Map RequestKey (Maybe AppliedCommand)
 updateInMemKey (k,v) m = Map.insert k (Just v) m

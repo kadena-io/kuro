@@ -1,27 +1,31 @@
 FROM local/kadena-base-ubuntu
 
-ADD ./readonly_keys/* /root/.ssh/
-ADD ./Setup.hs /kadena/Setup.hs
-ADD ./conf /kadena/conf
-ADD ./demo /kadena/demo
-ADD ./executables /kadena/executables
-ADD ./kadena.cabal /kadena/kadena.cabal
-ADD ./kadenaclient.sh /kadena/kadenaclient.sh
-ADD ./demo /kadena/demo
-ADD ./src /kadena/src
-ADD ./tests /kadena/tests
-ADD ./stack.yaml /kadena/stack.yaml
+COPY ./stack.yaml /kadena/stack.yaml
+COPY ./submodules/ /kadena/submodules/
+COPY ./kadena.cabal /kadena/kadena.cabal
 
-RUN mkdir /kadena/log && \
-    echo 'IdentityFile ~/.ssh/functional_rsa' >> ~/.ssh/config && \
-    chmod 400 ~/.ssh/* && \
-    chmod g-w ~/.ssh/* && \
-    chmod 400 ~/.ssh && \
-    chmod g-w ~/.ssh && \
-    ls -lart ~/.ssh && \
-    export GIT_SSH_COMMAND="ssh -vvv" && \
-    set GIT_SSH_COMMAND="ssh -vvv" && \
-    cd /kadena && stack build -v && stack install
+RUN cd /kadena && stack build --only-snapshot
 
+COPY ./Setup.hs /kadena/Setup.hs
+COPY ./conf /kadena/conf
+COPY ./demo /kadena/demo
+COPY ./executables /kadena/executables
+COPY ./kadenaclient.sh /kadena/kadenaclient.sh
+COPY ./demo /kadena/demo
+COPY ./src /kadena/src
+COPY ./tests /kadena/tests
+COPY ./LICENSE /kadena/LICENSE
+
+RUN bash -c "mkdir /kadena/log && \
+    cd && source ./build-exports && \
+    cd /kadena && \
+    stack build && \
+    stack install"
+
+RUN mkdir /demo && \
+    cp ~/.local/bin/* /demo && \
+    cp -R /kadena/log /demo && \
+    cp -R /kadena/demo /demo/demo && \
+    cp /kadena/kadenaclient.sh /demo
 
 CMD ["/bin/bash"]

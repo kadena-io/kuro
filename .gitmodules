@@ -1,0 +1,9 @@
+[submodule "submodules/pact"]
+	path = submodules/pact
+	url = git@bitbucket.org:spopejoy/pact.git
+[submodule "submodules/snap-cors"]
+	path = submodules/snap-cors
+	url = https://github.com/slpopejoy/snap-cors.git
+[submodule "submodules/bencoding"]
+	path = submodules/bencoding
+	url = git@github.com:kadena-io/bencoding.git

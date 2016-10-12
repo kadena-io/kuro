@@ -1,5 +1,6 @@
 *.swp
 aws-conf/*
+*.swp
 .dir-locals.el
 .stack-work/
 .stack-work*

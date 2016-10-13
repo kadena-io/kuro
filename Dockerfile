@@ -22,10 +22,12 @@ RUN bash -c "mkdir /kadena/log && \
     stack build && \
     stack install"
 
-RUN mkdir /demo && \
-    cp ~/.local/bin/* /demo && \
-    cp -R /kadena/log /demo && \
-    cp -R /kadena/demo /demo/demo && \
-    cp /kadena/kadenaclient.sh /demo
+RUN mkdir -p /payments-demo/demo && \
+    cp ~/.local/bin/* /payments-demo && \
+    cp -R /kadena/log /payments-demo && \
+    cp /kadena/demo/demo.json /payments-demo/demo && \
+    cp /kadena/demo/demo.pact /payments-demo/demo && \
+    cp /kadena/demo/start.sh /payments-demo/demo && \
+    cp /kadena/kadenaclient.sh /payments-demo
 
 CMD ["/bin/bash"]

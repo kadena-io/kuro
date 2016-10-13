@@ -42,6 +42,7 @@ hscope.out
 *.ps
 *.pdf
 .#*
+payments-demo/
 # Carter's Files
 hist-summary.json
 lalal.summary

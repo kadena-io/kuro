@@ -116,7 +116,7 @@ updateExistingKeys updates = do
       persistence .= OnDisk { incompleteRequestKeys = HashSet.filter (\k -> not $ HashMap.member k updates) incompleteRequestKeys
                             , dbConn = dbConn }
   end <- now
-  debug $ "Updated " ++ show (HashMap.size updates) ++ " keys taking " ++ show (interval start end)
+  debug $ "Updated " ++ show (HashMap.size updates) ++ " keys (" ++ show (interval start end) ++ "mics)"
 
 updateInMemKey :: (RequestKey, AppliedCommand) -> HashMap RequestKey (Maybe AppliedCommand) -> HashMap RequestKey (Maybe AppliedCommand)
 updateInMemKey (k,v) m = HashMap.insert k (Just v) m
@@ -191,8 +191,9 @@ queryForResults (srks, mRes) = do
       else do
         found <- liftIO $ DB.selectCompletedCommands dbConn completed
         liftIO $! putMVar mRes $ PossiblyIncompleteResults $ found
+        debug $ "Querying for " ++ show (HashSet.size srks) ++ " keys, found " ++ show (HashMap.size found)
   end <- now
-  debug $ "Queried results of " ++ show (HashSet.size srks) ++ " entries taking " ++ show (interval start end) ++ "mics"
+  debug $ "Queried results of " ++ show (HashSet.size srks) ++ " entries (" ++ show (interval start end) ++ "mics)"
 
 -- This is here to try to get GHC to check the fast part first
 checkForIndividualResultInMem :: HashSet RequestKey -> RequestKey -> Maybe AppliedCommand -> Bool
@@ -215,7 +216,8 @@ registerNewListeners newListeners' = do
   unless (HashMap.null readyToServiceListeners) $ do
     mapM_ (\(k,v) -> alertListener found (k,[v])) $ HashMap.toList readyToServiceListeners
     end <- now
-    debug $ "Immediately serviced " ++ show (HashSet.size noNeedToListen) ++ " listeners taking " ++ show (interval start end) ++ "mics"
+    debug $ "Immediately serviced " ++ show (HashSet.size noNeedToListen) ++ " listeners (" ++ show (interval start end) ++ "mics)"
   unless (HashMap.null realListeners) $ do
     registeredListeners %= HashMap.unionWith (<>) ((:[]) <$> realListeners)
-    debug $ "Registered " ++ show (HashMap.size realListeners) ++ " listeners"
+    end <- now
+    debug $ "Registered " ++ show (HashMap.size realListeners) ++ " listeners (" ++ show (interval start end) ++ "mics)"

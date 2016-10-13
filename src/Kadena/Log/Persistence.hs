@@ -158,6 +158,7 @@ createDB :: FilePath -> IO Connection
 createDB f = do
   conn <- open f
   execute_ conn sqlDbSchema
+  execute_ conn "PRAGMA locking_mode = EXCLUSIVE"
   return conn
 
 sqlInsertLogEntry :: Query

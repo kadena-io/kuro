@@ -81,8 +81,11 @@ handle = do
 
 runQuery :: QueryApi -> LogThread ()
 runQuery (Query aq mv) = do
+  start <- liftIO $ getCurrentTime
   qr <- Map.fromList <$> mapM (\aq' -> evalQuery aq' >>= \res -> return $ (aq', res)) (Set.toList aq)
   liftIO $ putMVar mv $! qr
+  end <- liftIO $ getCurrentTime
+  debug $ "Query executed (" ++ show (interval start end) ++ "mics)"
 runQuery (Update ul) = do
   updateLogs ul
   updateEvidenceCache ul
@@ -92,11 +95,14 @@ runQuery (Update ul) = do
       toPersist <- getUnpersisted
       case toPersist of
         Just logs -> do
+          start <- liftIO $ getCurrentTime
           lsLastPersisted' <- return (_leLogIndex $ snd $ Map.findMax (logs ^. logEntries))
           lsLastPersisted .= lsLastPersisted'
           lsPersistedLogEntries %= plesAddNew logs
           lsVolatileLogEntries %= lesGetSection (Just $ lsLastPersisted' + 1) Nothing
           liftIO $ insertSeqLogEntry conn logs
+          end <- liftIO $ getCurrentTime
+          debug $ "Persisted " ++ show (lesCnt logs) ++ " to disk (" ++ show (interval start end) ++ "mics)"
           clearPersistedEntriesFromMemory
         Nothing -> return ()
     Nothing ->  return ()

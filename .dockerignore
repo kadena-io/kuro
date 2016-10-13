@@ -12,4 +12,6 @@ README.md
 monitor
 log
 .git
-*/*/.git*
+submodules/pact/.git
+submodules/snap-cors/.git
+monitor/node_modules

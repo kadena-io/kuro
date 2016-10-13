@@ -117,7 +117,7 @@ psl =
  , _commitTx = \tid s -> modifyMVar_ s $ \m -> do
        let tid' = SInt (fromIntegral tid)
            m' = m { _txRecord = M.empty, _sysCache = _tmpSysCache m }
-       forM_ (M.toList $ _txRecord m) $ \(t,es) -> execs' (sRecordTx (_tableStmts m M.! t)) [tid',sencode es]
+--       forM_ (M.toList $ _txRecord m) $ \(t,es) -> execs' (sRecordTx (_tableStmts m M.! t)) [tid',sencode es]
        execs_ (tCommit $ _txStmts m)
        return m'
 

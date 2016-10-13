@@ -4,7 +4,7 @@ COPY ./stack.yaml /kadena/stack.yaml
 COPY ./submodules/ /kadena/submodules/
 COPY ./kadena.cabal /kadena/kadena.cabal
 
-RUN cd /kadena && stack build --only-snapshot
+RUN cd /kadena && stack build --only-snapshot && stack build --only-dependencies
 
 COPY ./Setup.hs /kadena/Setup.hs
 COPY ./conf /kadena/conf
@@ -16,7 +16,7 @@ COPY ./src /kadena/src
 COPY ./tests /kadena/tests
 COPY ./LICENSE /kadena/LICENSE
 
-RUN bash -c "mkdir /kadena/log && \
+RUN bash -c "mkdir -p /kadena/log && \
     cd && source ./build-exports && \
     cd /kadena && \
     stack build && \

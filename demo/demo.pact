@@ -43,5 +43,5 @@
 (create-table 'demo-accounts 'demo)
 
 (create-account "Acct1")
-(fund-account "Acct1" 100000.0)
+(fund-account "Acct1" 1000000.0)
 (create-account "Acct2")

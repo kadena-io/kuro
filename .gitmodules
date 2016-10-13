@@ -1,6 +1,8 @@
 [submodule "submodules/pact"]
 	path = submodules/pact
 	url = git@bitbucket.org:spopejoy/pact.git
+	ignore = untracked
 [submodule "submodules/snap-cors"]
 	path = submodules/snap-cors
 	url = https://github.com/slpopejoy/snap-cors.git
+	ignore = untracked

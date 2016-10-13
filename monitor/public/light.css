@@ -1,26 +1,13 @@
-:root {
-  --background: #F2F2F0;
-  --color: #aaa;
-  --yellow: #FFD601;
-  --border-red: #E06262;
-
-  --dark-text: #747475;
-  --light-text: #B1AF95;
-
-  --follower: #71C37F; /* green */
-  --leader: #61A8DC; /* blue */
-  --candidate: #737172; /* gray */
-}
 
 body {
-  background-color: var(--background);
-  color: var(--color);
+  background-color: #F2F2F0;
+  color: #aaa;
 }
 
 #myApp {
-  border-top: 6px solid var(--border-red);
-  border-bottom: 6px solid var(--border-red);
-  color: var(--dark-text);
+  border-top: 6px solid #E06262; /* border-red */
+  border-bottom: 6px solid #E06262; /* border-red */
+  color: #747475; /* dark-text */
 }
 
 .cluster-header {
@@ -39,16 +26,16 @@ div.div-bar {
 }
 
 .mg-line1-legend-color {
-  color: var(--yellow);
-  fill: var(--yellow);
+  color: #FFD601; /* yellow */
+  fill: #FFD601; /* yellow */
 }
 
 .mg-chart-title {
-  color: var(--dark-text) !important;
+  color: #747475 !important; /* dark-text */
 }
 
 div.border-underline {
-  background-color: var(--dark-text);
+  background-color: #747475; /* dark-text */
 }
 
 span.transaction-datum {
@@ -56,7 +43,7 @@ span.transaction-datum {
 }
 
 div.node-lost-centerer {
-  color: var(--border-red);
+  color: #E06262; /* border-red */
 }
 
 span.node-role-Follower {

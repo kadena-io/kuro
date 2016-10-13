@@ -1,11 +1,6 @@
-:root {
-  --font-family: Monaco, monospace;
-  --font-size: 14px;
-}
-
 #myApp {
-  font-size: var(--font-size);
-  font-family: var(--font-family);
+  font-size: 14px;
+  font-family: Monaco, monospace;
   padding: 40px;
 }
 

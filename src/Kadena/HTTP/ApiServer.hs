@@ -129,10 +129,21 @@ buildCmdRpc PactMessage {..} = do
   let ce = CommandEntry $! SZ.encode $ PublicMessage _pmEnvelope
   return (RequestKey _pmHsh,mkCmdRpc ce _peAlias rid (Digest _peAlias _pmSig _pmKey CMD _pmHsh))
 
+group :: Int -> [a] -> [[a]]
+group _ [] = []
+group n l
+  | n > 0 = take n l : (group n (drop n l))
+  | otherwise = error "Negative n"
+
 sendPublicBatch :: Api ()
 sendPublicBatch = do
   (_,SubmitBatch cmds) <- readJSON
   when (null cmds) $ die "Empty Batch"
+  rks <- mapM sendInSensisbleChunks $ group 8000 cmds
+  writeResponse $ ApiSuccess $ RequestKeys $ concat rks
+
+sendInSensisbleChunks :: [PactMessage] -> Api [RequestKey]
+sendInSensisbleChunks cmds = do
   rpcs <- mapM buildCmdRpc cmds
   let PactMessage {..} = head cmds
       btch = map snd rpcs
@@ -140,7 +151,8 @@ sendPublicBatch = do
       dig = Digest "batch" (Sig "") _pmKey CMDB hsh
       rpc = mkCmdBatchRPC (map snd rpcs) dig
   enqueueRPC $! rpc -- CMDB' $! CommandBatch (reverse cmds) NewMsg
-  writeResponse $ ApiSuccess $ RequestKeys (map fst rpcs)
+  return $ fst <$> rpcs
+
 
 poll :: Api ()
 poll = do
@@ -199,9 +211,9 @@ registerListener = do
   log $ "Registered Listener for: " ++ show rk
   res <- liftIO $ readMVar m
   case res of
-    History.GCed -> do
-      log $ "Listener GCed for: " ++ show rk
-      die "Listener was GCed before fulfilled, likely the command doesn't exist"
+    History.GCed msg -> do
+      log $ "Listener GCed for: " ++ show rk ++ " because " ++ msg
+      die msg
     History.ListenerResult AppliedCommand{..} -> do
       log $ "Listener Serviced for: " ++ show rk
       setJSON

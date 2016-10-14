@@ -4,8 +4,10 @@ resolver: lts-6.12
 packages:
 - '.'
 - location: ./submodules/snap-cors
+  extra-dep: true
   # commit: cc88bab1fd3f62dc4d9f9ad81a231877a639c812
 - location: ./submodules/pact
+  extra-dep: true
   # commit: f4a05f72aa58f54dff57d3c197d0c7beeb5cbf80
   #- location: ./submodules/bencoding
   # commit: 8eb25b3a00579793d4e0ce475791758012d3f5a1

@@ -21,7 +21,7 @@ import qualified Data.HashSet as HashSet
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
 import Data.Thyme.Clock
-import Data.Maybe (fromJust,isJust)
+import Data.Maybe (fromJust,isJust,isNothing)
 
 import Kadena.History.Types as X
 import qualified Kadena.History.Persistence as DB
@@ -85,6 +85,7 @@ handle oChan = do
       QueryForPriorApplication{..} -> queryForPriorApplication hQueryForPriorApplication
       QueryForResults{..} -> queryForResults hQueryForResults
       RegisterListener{..} -> registerNewListeners hNewListener
+      PruneInFlightKeys{..} -> clearSomePendingRks hKeysToPrune
       -- I thought it cleaner to match on bounce above instead of opening up the potential to forget to loop
       Bounce -> error "Unreachable Path: you can't hit bounce twice"
     handle oChan
@@ -221,3 +222,28 @@ registerNewListeners newListeners' = do
     registeredListeners %= HashMap.unionWith (<>) ((:[]) <$> realListeners)
     end <- now
     debug $ "Registered " ++ show (HashMap.size realListeners) ++ " listeners (" ++ show (interval start end) ++ "mics)"
+
+clearSomePendingRks :: HashSet RequestKey -> HistoryService ()
+clearSomePendingRks srks = do
+  pers <- use persistence
+  start <- now
+  case pers of
+    InMemory m -> do
+      pruned <- return $! InMemory $! HashMap.filterWithKey (\k v -> isNothing v && HashSet.member k srks) m
+      persistence .= pruned
+    OnDisk{..} -> do
+      persistence .= OnDisk { incompleteRequestKeys = HashSet.difference incompleteRequestKeys srks
+                            , dbConn = dbConn }
+  end <- now
+  debug $ "Pruned " ++ show (HashSet.size srks) ++ " keys (" ++ show (interval start end) ++ "mics)"
+
+gcVolLogListeners :: HashSet RequestKey -> HistoryService ()
+gcVolLogListeners srks = do
+  toGc <- HashMap.filterWithKey (\k _ -> HashSet.member k srks) <$> use registeredListeners
+  mapM_ (gcListener "Transaction was GCed! This generally occurs because disk I/O is failing") $ HashMap.toList toGc
+  registeredListeners %= HashMap.filterWithKey (\k _ -> not $ HashSet.member k srks)
+
+gcListener :: String -> (RequestKey, [MVar ListenerResult]) -> HistoryService ()
+gcListener res (k,mvs) = do
+  fails <- filter not <$> liftIO (mapM (`tryPutMVar` GCed res) mvs)
+  unless (null fails) $ debug $ "Registered listener failure during GC for " ++ show k ++ " (" ++ show (length fails) ++ " of " ++ show (length mvs) ++ " failed)"

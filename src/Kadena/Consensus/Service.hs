@@ -115,7 +115,9 @@ runConsensusService renv rconf spec rstate timeCache' mPubConsensus' applyFn' = 
 -- THREAD: SERVER MAIN
 kadena :: Consensus ()
 kadena = do
-  la <- Log.hasQueryResult Log.LastApplied <$> queryLogs (Set.singleton Log.GetLastApplied)
+  res <- queryLogs (Set.fromList [Log.GetLastApplied, Log.GetLastLogTerm])
+  la <- return $! Log.hasQueryResult Log.LastApplied res
+  lastValidElectionTerm .= Log.hasQueryResult Log.LastLogTerm res
   when (startIndex /= la) $ debug $ "Launch Sequence: disk sync replayed, Commit Index now " ++ show la
   logStaticMetrics
   resetElectionTimer

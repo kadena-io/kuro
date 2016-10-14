@@ -16,6 +16,7 @@ module Kadena.Types.Spec
   , nodeRole, term, votedFor, lazyVote, currentLeader, ignoreLeader
   , timerThread, cYesVotes, cPotentialVotes, lastCommitTime
   , timeSinceLastAER, cmdBloomFilter, invalidCandidateResults
+  , lastValidElectionTerm
   , Event(..)
   , mkConsensusEnv
   , PublishedConsensus(..),pcLeader,pcRole,pcTerm
@@ -103,6 +104,10 @@ data ConsensusState = ConsensusState
   , _lastCommitTime   :: !(Maybe UTCTime)
   -- used only during Candidate State
   , _invalidCandidateResults :: !(Maybe InvalidCandidateResults)
+  -- read when a candidate, incase of being a runaway, updates ever valid election
+  -- if a valid election votes are received in an AE for >= to it, update it and become a
+  -- follower of that node
+  , _lastValidElectionTerm :: !Term
   }
 makeLenses ''ConsensusState
 
@@ -122,6 +127,7 @@ initialConsensusState timerTarget' = ConsensusState
 {-timeSinceLastAER-}    0
 {-lastCommitTime-}      Nothing
 {-invalidCandidateResults-} Nothing
+{-lastValidElectionTerm-} startTerm
 
 type Consensus = RWST ConsensusEnv () ConsensusState IO
 

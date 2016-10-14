@@ -46,7 +46,7 @@ newtype PossiblyIncompleteResults = PossiblyIncompleteResults
 
 data ListenerResult =
   ListenerResult AppliedCommand |
-  GCed
+  GCed String
   deriving (Show, Eq)
 
 data History =
@@ -62,6 +62,8 @@ data History =
     { hQueryForResults :: !(HashSet RequestKey, MVar PossiblyIncompleteResults) } |
   RegisterListener
     { hNewListener :: !(HashMap RequestKey (MVar ListenerResult))} |
+  PruneInFlightKeys
+    { hKeysToPrune :: !(HashSet RequestKey) } |
   Bounce |
   Tick Tock
   deriving (Eq)

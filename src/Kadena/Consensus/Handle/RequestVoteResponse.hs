@@ -126,6 +126,8 @@ becomeLeader = do
   setCurrentLeader . Just =<< KD.viewConfig KD.nodeId
   enqueueRequest $ Sender.EstablishDominance
   view KD.informEvidenceServiceOfElection >>= liftIO
+  term' <- use KD.term
+  KD.lastValidElectionTerm .= term'
   resetHeartbeatTimer
   resetElectionTimerLeader
 

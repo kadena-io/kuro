@@ -32,7 +32,7 @@ launchHistoryService :: Dispatch
 launchHistoryService dispatch' dbgPrint' getTimestamp' rconf = do
   let dbPath' = rconf ^. logSqliteDir
   link =<< async (History.runHistoryService (History.initHistoryEnv dispatch' dbPath' dbgPrint' getTimestamp') Nothing)
-  async (foreverTick (_historyChannel dispatch') 1000000 History.Tick)
+  async (foreverHeart (_historyChannel dispatch') 1000000 History.Heart)
 
 launchEvidenceService :: Dispatch
   -> (String -> IO ())
@@ -43,7 +43,7 @@ launchEvidenceService :: Dispatch
   -> IO (Async ())
 launchEvidenceService dispatch' dbgPrint' publishMetric' mEvState rconf' mLeaderNoFollowers = do
   link =<< async (Ev.runEvidenceService $! Ev.initEvidenceEnv dispatch' dbgPrint' rconf' mEvState mLeaderNoFollowers publishMetric')
-  async $ foreverTick (_evidence dispatch') 1000000 Ev.Tick
+  async $ foreverHeart (_evidence dispatch') 1000000 Ev.Heart
 
 launchCommitService :: Dispatch
   -> (String -> IO ())
@@ -56,7 +56,7 @@ launchCommitService :: Dispatch
 launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' applyFn' = do
   commitEnv <- return $! Commit.initCommitEnv dispatch' dbgPrint' applyFn' publishMetric' getTimestamp'
   link =<< async (Commit.runCommitService commitEnv nodeId' keySet')
-  async $! foreverTick (_commitService dispatch') 1000000 Commit.Tick
+  async $! foreverHeart (_commitService dispatch') 1000000 Commit.Heart
 
 launchLogService :: Dispatch
   -> (String -> IO ())
@@ -66,7 +66,7 @@ launchLogService :: Dispatch
   -> IO (Async ())
 launchLogService dispatch' dbgPrint' publishMetric' keySet' rconf = do
   link =<< async (Log.runLogService dispatch' dbgPrint' publishMetric' (rconf ^. logSqliteDir) keySet')
-  async (foreverTick (_logService dispatch') 1000000 Log.Tick)
+  async (foreverHeart (_logService dispatch') 1000000 Log.Heart)
 
 launchSenderService :: Dispatch
   -> (String -> IO ())
@@ -76,7 +76,7 @@ launchSenderService :: Dispatch
   -> IO (Async ())
 launchSenderService dispatch' dbgPrint' publishMetric' mEvState rconf = do
   link =<< async (Sender.runSenderService dispatch' rconf dbgPrint' publishMetric' mEvState)
-  async $ foreverTick (_senderService dispatch') 1000000 Sender.Tick
+  async $ foreverHeart (_senderService dispatch') 1000000 Sender.Heart
 
 runConsensusService :: ReceiverEnv -> Config -> ConsensusSpec -> ConsensusState ->
                             IO UTCTime -> MVar PublishedConsensus -> ApplyFn -> IO ()
@@ -105,7 +105,7 @@ runConsensusService renv rconf spec rstate timeCache' mPubConsensus' applyFn' = 
   link =<< launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' applyFn'
   link =<< launchEvidenceService dispatch' dbgPrint' publishMetric' mEvState rconf' mLeaderNoFollowers
   link =<< launchLogService dispatch' dbgPrint' publishMetric' keySet' rconf
-  link =<< async (foreverTick (_internalEvent dispatch') 1000000 (InternalEvent . Tick))
+  link =<< async (foreverHeart (_internalEvent dispatch') 1000000 (InternalEvent . Heart))
   runRWS_
     kadena
     (mkConsensusEnv rconf' csize qsize spec dispatch'

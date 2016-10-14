@@ -119,6 +119,8 @@ checkForNewLeader AppendEntries{..} = do
   lastValidElectionTerm' <- view lastValidElectionTerm
   role' <- view nodeRole
   currentLeader' <- view currentLeader
+  when (role' == Candidate && Set.size _aeQuorumVotes > 0) $
+    tell ["Candidate is judging election results:" ++ show _aeTerm ++ " " ++ show lastValidElectionTerm']
   if (_aeTerm == term' && currentLeader' == Just _leaderId)
     || (if role' == Candidate then _aeTerm < lastValidElectionTerm' else _aeTerm < term')
     || Set.size _aeQuorumVotes == 0
@@ -199,7 +201,7 @@ handle ae = do
               (KD._nodeRole s)
               (KD._lastValidElectionTerm s)
   (AppendEntriesOut{..}, l) <- runReaderT (runWriterT (handleAppendEntries ae)) ape
-  unless (commitIndex' == _prevLogIndex ae && length l == 1) $ mapM_ debug l
+  mapM_ debug l
   applyNewLeader _newLeaderAction
   case _result of
     Ignore -> do

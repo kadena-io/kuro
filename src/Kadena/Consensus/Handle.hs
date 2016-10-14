@@ -30,7 +30,7 @@ handleEvents = forever $ do
     ERPC rpc                      -> handleRPC rpc
     ElectionTimeout s             -> PureElectionTimeout.handle s
     HeartbeatTimeout s            -> PureHeartbeatTimeout.handle s
-    Tick tock'                    -> liftIO (pprintTock tock') >>= debug
+    Heart tock'                    -> liftIO (pprintBeat tock') >>= debug
 
 -- TODO: prune out AER's from RPC if possible
 handleRPC :: RPC -> Consensus ()

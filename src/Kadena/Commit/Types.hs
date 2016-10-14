@@ -43,7 +43,7 @@ data Commit =
     { newNodeId :: !NodeId } |
   UpdateKeySet
     { updateKeySet :: !(KeySet -> KeySet) } |
-  Tick Tock
+  Heart Beat
 
 newtype CommitChannel = CommitChannel (Chan Commit)
 

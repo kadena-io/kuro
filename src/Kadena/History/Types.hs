@@ -65,7 +65,7 @@ data History =
   PruneInFlightKeys
     { hKeysToPrune :: !(HashSet RequestKey) } |
   Bounce |
-  Tick Tock
+  Heart Beat
   deriving (Eq)
 
 newtype HistoryChannel = HistoryChannel (Chan History)

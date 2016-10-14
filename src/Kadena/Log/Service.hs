@@ -110,8 +110,8 @@ runQuery (NeedCacheEvidence lis mv) = do
   qr <- buildNeedCacheEvidence lis
   liftIO $ putMVar mv $! qr
   debug $ "servicing cache miss pertaining to: " ++ show lis
-runQuery (Tick t) = do
-  t' <- liftIO $ pprintTock t
+runQuery (Heart t) = do
+  t' <- liftIO $ pprintBeat t
   debug t'
   volLEs <- use lsVolatileLogEntries
   perLes@(PersistedLogEntries _perLes') <- use lsPersistedLogEntries

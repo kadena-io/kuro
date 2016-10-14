@@ -130,7 +130,7 @@ serviceRequests = do
           BroadcastRV rv -> sendAllRequestVotes rv
           BroadcastRVR{..} -> sendRequestVoteResponse _srCandidate _srHeardFromLeader _srVote
           ForwardCommandToLeader{..} -> mapM_ (sendRPC _srFor . CMD') _srCommands
-      Tick t -> liftIO (pprintTock t) >>= debug
+      Heart t -> liftIO (pprintBeat t) >>= debug
 
 queryLogs :: Set Log.AtomicQuery -> SenderService (Map Log.AtomicQuery Log.QueryResult)
 queryLogs q = do

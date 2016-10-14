@@ -1,7 +1,7 @@
 
 module Kadena.Types.Event
   ( Event(..)
-  , Tock(..)
+  , Beat(..)
   , ResetLeaderNoFollowersTimeout(..)
   ) where
 
@@ -9,7 +9,7 @@ import Data.Thyme.Clock (UTCTime)
 
 import Kadena.Types.Message
 
-data Tock = Tock
+data Beat = Beat
   { _tockTargetDelay :: !Int
   , _tockStartTime :: !UTCTime
   } deriving (Show, Eq)
@@ -20,5 +20,5 @@ data ResetLeaderNoFollowersTimeout = ResetLeaderNoFollowersTimeout
 data Event = ERPC RPC
            | ElectionTimeout String
            | HeartbeatTimeout String
-           | Tick Tock
+           | Heart Beat
   deriving (Show)

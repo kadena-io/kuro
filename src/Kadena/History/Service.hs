@@ -78,7 +78,7 @@ handle oChan = do
   q <- liftIO $ readComm oChan
   unless (q == Bounce) $ do
     case q of
-      Tick t -> liftIO (pprintTock t) >>= debug
+      Heart t -> liftIO (pprintBeat t) >>= debug
       AddNew{..} ->  addNewKeys hNewKeys
       Update{..} -> updateExistingKeys hUpdateRks
       QueryForExistence{..} -> queryForExisting hQueryForExistence

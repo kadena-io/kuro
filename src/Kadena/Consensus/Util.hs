@@ -213,7 +213,7 @@ runRWS_ ma r s = void $! runRWST ma r s
 --  RegisterListener
 --    { hNewListener :: !(Map RequestKey (MVar ListenerResult))} |
 --  Bounce |
---  Tick Tock
+--  Heart Beat
 --  deriving (Eq)
 
 sendHistoryNewKeys :: HashSet RequestKey -> Consensus ()

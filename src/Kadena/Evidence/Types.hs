@@ -41,7 +41,7 @@ data Evidence =
   -- We will have misses -- if nodes are out of sync they may get different batches but overall this should
   -- function fine.
   CacheNewHash { _cLogIndex :: LogIndex , _cHash :: Hash } |
-  Tick Tock
+  Heart Beat
   deriving (Show, Eq, Typeable)
 
 newtype EvidenceChannel = EvidenceChannel (Chan Evidence)

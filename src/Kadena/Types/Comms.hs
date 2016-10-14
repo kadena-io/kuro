@@ -11,12 +11,12 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Kadena.Types.Comms
-  -- Ticks are useful
-  ( Tock(..)
-  , pprintTock
-  , createTock
-  , foreverTick
-  , foreverTickDebugWriteDelay
+  -- Hearts are useful
+  ( Beat(..)
+  , pprintBeat
+  , createBeat
+  , foreverHeart
+  , foreverHeartDebugWriteDelay
   -- Comm Channels
   , Comms(..)
   , BatchedComms(..)
@@ -72,33 +72,33 @@ import Kadena.Types.Event
 import Kadena.Types.Message.Signed
 import Kadena.Types.Message
 
--- Tocks are useful for seeing how backed up things are
-pprintTock :: Tock -> IO String
-pprintTock Tock{..} = do
+-- Beats are useful for seeing how backed up things are
+pprintBeat :: Beat -> IO String
+pprintBeat Beat{..} = do
   t' <- getCurrentTime
   (delay :: Int) <- return $! (fromIntegral $ view microseconds $ t' .-. _tockStartTime)
-  return $! "Tock delayed by " ++ show delay ++ "mics"
+  return $! "Heartbeat delayed by " ++ show delay ++ "mics"
 
-createTock :: Int -> IO Tock
-createTock delay = Tock <$> pure delay <*> getCurrentTime
+createBeat :: Int -> IO Beat
+createBeat delay = Beat <$> pure delay <*> getCurrentTime
 
-fireTick :: (Comms a b) => b -> Int -> (Tock -> a) -> IO UTCTime
-fireTick comm delay mkTock = do
-  !t@(Tock _ st) <- createTock delay
-  writeComm comm $ mkTock t
+fireHeart :: (Comms a b) => b -> Int -> (Beat -> a) -> IO UTCTime
+fireHeart comm delay mkBeat = do
+  !t@(Beat _ st) <- createBeat delay
+  writeComm comm $ mkBeat t
   return st
 
-foreverTick :: Comms a b => b -> Int -> (Tock -> a) -> IO ()
-foreverTick comm delay mkTock = forever $ do
-  _ <- fireTick comm delay mkTock
+foreverHeart :: Comms a b => b -> Int -> (Beat -> a) -> IO ()
+foreverHeart comm delay mkBeat = forever $ do
+  _ <- fireHeart comm delay mkBeat
   threadDelay delay
 
-foreverTickDebugWriteDelay :: Comms a b => (String -> IO ()) -> b -> Int -> (Tock -> a) -> IO ()
-foreverTickDebugWriteDelay debug' comm delay mkTock = forever $ do
-  !st <- fireTick comm delay mkTock
+foreverHeartDebugWriteDelay :: Comms a b => (String -> IO ()) -> b -> Int -> (Beat -> a) -> IO ()
+foreverHeartDebugWriteDelay debug' comm delay mkBeat = forever $ do
+  !st <- fireHeart comm delay mkBeat
   !t' <- getCurrentTime
   !(writeDelay :: Int) <- return $! (fromIntegral $ view microseconds $ t' .-. st)
-  debug' $ "writing Tock to channel took " ++ show writeDelay ++ "mics"
+  debug' $ "writing heartbeat to channel took " ++ show writeDelay ++ "mics"
   threadDelay delay
 
 newtype InboundAER = InboundAER { _unInboundAER :: (ReceivedAt, SignedRPC)}

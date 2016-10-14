@@ -69,7 +69,7 @@ handle = do
   forever $ do
     q <- liftIO $ readComm oChan
     case q of
-      Tick t -> liftIO (pprintTock t) >>= debug
+      Heart t -> liftIO (pprintBeat t) >>= debug
       ChangeNodeId{..} -> do
         prevNodeId <- use nodeId
         nodeId .= newNodeId

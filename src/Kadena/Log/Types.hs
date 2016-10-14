@@ -60,7 +60,7 @@ data QueryApi =
   Query (Set AtomicQuery) (MVar (Map AtomicQuery QueryResult)) |
   Update UpdateLogs |
   NeedCacheEvidence (Set LogIndex) (MVar (Map LogIndex Hash)) |
-  Tick Tock
+  Heart Beat
   deriving (Eq)
 
 newtype LogServiceChannel = LogServiceChannel (Chan QueryApi)

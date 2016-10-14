@@ -15,6 +15,7 @@ import Control.Monad.Reader
 import Control.Lens
 import Control.Monad.Catch
 import Control.Concurrent.Lifted (threadDelay)
+import Control.Concurrent.MVar
 
 import qualified Data.ByteString.Base16 as B16
 import qualified Data.ByteString as B
@@ -78,7 +79,7 @@ instance FromJSON ClientConfig where
 data ReplState = ReplState {
       _server :: String
     , _batchCmd :: String
-    , _requestId :: Int64
+    , _requestId :: MVar Int64 -- this needs to be an MVar in case we get an exception mid function... it's our entropy
 }
 makeLenses ''ReplState
 
@@ -104,8 +105,7 @@ mkExec code mdata = do
   sk <- view ccSecretKey
   pk <- view ccPublicKey
   a <- view ccAlias
-  requestId %= succ
-  rid <- use requestId
+  rid <- use requestId >>= liftIO . (`modifyMVar` (\i -> return $ (succ i, i)))
   return $ mkPactMessage sk pk a (show rid) (Exec (ExecMsg (T.pack code) mdata))
 
 sendCmd :: String -> Repl ()
@@ -311,8 +311,8 @@ help = flushStrLn
   \"
 
 
-_run :: StateT ReplState m a -> m (a, ReplState)
-_run a = runStateT a (ReplState "localhost:8000" "(demo.transfer \"Acct1\" \"Acct2\" 1.00)" 0)
+_run :: (Monad m, MonadIO m) => StateT ReplState m a -> m (a, ReplState)
+_run a = liftIO (newMVar 1) >>= \mrid -> runStateT a (ReplState "localhost:8000" "(demo.transfer \"Acct1\" \"Acct2\" 1.00)" mrid)
 
 intervalOfNumerous :: Int64 -> Int64 -> String
 intervalOfNumerous cnt mics = let
@@ -332,7 +332,7 @@ main = do
     (_,_,es@(_:_)) -> print es >> exitFailure
     (o,_,_) -> do
          let opts = foldl (flip id) def o
-         i <- initRequestId
+         i <- newMVar =<< initRequestId
          (conf :: ClientConfig) <- either (\e -> print e >> exitFailure) return =<< Y.decodeFileEither (_oConfig opts)
          void $ runStateT (runReaderT runREPL conf)
                   (ReplState (snd (head (HM.toList (_ccEndpoints conf))))

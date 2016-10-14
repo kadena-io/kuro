@@ -101,8 +101,8 @@ runEvidenceProcessor es = do
           if (not $ Set.null $ newEs ^. esCacheMissAers)
           then processCacheMisses newEs >>= runEvidenceProcessor
           else runEvidenceProcessor newEs
-    Tick tock -> do
-      liftIO (pprintTock tock) >>= debug
+    Heart tock -> do
+      liftIO (pprintBeat tock) >>= debug
       runEvidenceProcessor $ garbageCollectCache es
     Bounce -> do
       debug "restart command received!"

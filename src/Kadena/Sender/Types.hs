@@ -33,7 +33,7 @@ data ServiceRequest' =
   ServiceRequest'
     { _unSS :: StateSnapshot
     , _unSR :: ServiceRequest } |
-  Tick Tock
+  Heart Beat
   deriving (Eq, Show)
 
 newtype SenderServiceChannel = SenderServiceChannel (Chan ServiceRequest')

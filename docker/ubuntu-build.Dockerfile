@@ -23,7 +23,8 @@ RUN bash -c "mkdir -p /kadena/log && \
     stack install"
 
 RUN mkdir -p /payments-demo/demo && \
-    cp ~/.local/bin/* /payments-demo && \
+    mkdir -p /payments-demo/bin && \
+    cp ~/.local/bin/* /payments-demo/bin && \
     cp -R /kadena/log /payments-demo && \
     cp /kadena/demo/demo.json /payments-demo/demo && \
     cp /kadena/demo/demo.pact /payments-demo/demo && \

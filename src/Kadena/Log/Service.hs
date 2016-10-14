@@ -37,8 +37,9 @@ runLogService :: Dispatch
               -> (Metric -> IO())
               -> Maybe FilePath
               -> KeySet
+              -> Int
               -> IO ()
-runLogService dispatch dbg publishMetric' dbPath keySet' = do
+runLogService dispatch dbg publishMetric' dbPath keySet' batchSize' = do
   dbConn' <- case dbPath of
     Nothing -> do
       dbg "[LogThread] Persistence Disabled"
@@ -55,6 +56,7 @@ runLogService dispatch dbg publishMetric' dbPath keySet' = do
     , _debugPrint = dbg
     , _keySet = keySet'
     , _persistedLogEntriesToKeepInMemory = 24000
+    , _batchSize = batchSize'
     , _cryptoWorkerTVar = cryptoMvar
     , _dbConn = dbConn'
     , _publishMetric = publishMetric'
@@ -206,7 +208,8 @@ tellKadenaToApplyLogEntries = do
 tellTinyCryptoWorkerToDoMore :: LogThread ()
 tellTinyCryptoWorkerToDoMore = do
   mv <- view cryptoWorkerTVar
-  unverifiedLes' <- getUnverifiedEntries
+  bSize <- Just <$> view batchSize
+  unverifiedLes' <- getUnverifiedEntries $ bSize
   case unverifiedLes' of
     Nothing -> return ()
     Just v -> do

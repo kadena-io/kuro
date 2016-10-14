@@ -237,13 +237,13 @@ clearSomePendingRks srks = do
   end <- now
   debug $ "Pruned " ++ show (HashSet.size srks) ++ " keys (" ++ show (interval start end) ++ "mics)"
 
-gcVolLogListeners :: HashSet RequestKey -> HistoryService ()
-gcVolLogListeners srks = do
+_gcVolLogListeners :: HashSet RequestKey -> HistoryService ()
+_gcVolLogListeners srks = do
   toGc <- HashMap.filterWithKey (\k _ -> HashSet.member k srks) <$> use registeredListeners
-  mapM_ (gcListener "Transaction was GCed! This generally occurs because disk I/O is failing") $ HashMap.toList toGc
+  mapM_ (_gcListener "Transaction was GCed! This generally occurs because disk I/O is failing") $ HashMap.toList toGc
   registeredListeners %= HashMap.filterWithKey (\k _ -> not $ HashSet.member k srks)
 
-gcListener :: String -> (RequestKey, [MVar ListenerResult]) -> HistoryService ()
-gcListener res (k,mvs) = do
+_gcListener :: String -> (RequestKey, [MVar ListenerResult]) -> HistoryService ()
+_gcListener res (k,mvs) = do
   fails <- filter not <$> liftIO (mapM (`tryPutMVar` GCed res) mvs)
   unless (null fails) $ debug $ "Registered listener failure during GC for " ++ show k ++ " (" ++ show (length fails) ++ " of " ++ show (length mvs) ++ " failed)"

@@ -19,7 +19,7 @@ module Kadena.Log.Types
   , LogEnv(..)
   , logQueryChannel, commitChannel, internalEvent, debugPrint
   , dbConn, evidence, keySet, publishMetric, cryptoWorkerTVar
-  , persistedLogEntriesToKeepInMemory
+  , persistedLogEntriesToKeepInMemory, batchSize
   , LogThread
   , LogServiceChannel(..)
   , UpdateLogs(..)
@@ -83,6 +83,7 @@ data LogEnv = LogEnv
   , _evidence :: !EvidenceChannel
   , _keySet :: !KeySet
   , _persistedLogEntriesToKeepInMemory :: !Int
+  , _batchSize :: !Int
   , _cryptoWorkerTVar :: !(TVar CryptoWorkerStatus)
   , _debugPrint :: !(String -> IO ())
   , _dbConn :: !(Maybe Connection)

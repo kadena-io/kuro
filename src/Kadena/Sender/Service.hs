@@ -89,7 +89,7 @@ runSenderService dispatch conf debugFn publishMetric' mPubEvState = do
     , _myPrivateKey = conf ^. KD.myPrivateKey
     , _yesVotes = Set.empty
     , _debugPrint = debugFn
-    , _aeReplicationLogLimit = conf ^. KD.batchSize
+    , _aeReplicationLogLimit = conf ^. KD.aeBatchSize
     -- Comm Channels
     , _serviceRequestChan = dispatch ^. senderService
     , _outboundGeneral = dispatch ^. KD.outboundGeneral

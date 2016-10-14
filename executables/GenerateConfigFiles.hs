@@ -69,7 +69,7 @@ mainAws clustersFile clientsFile = do
   clientIds <- return $ awsNodes clients
   clientKeys <- return $ makeKeys (length clients) g'
   clientKeyMaps <- return $ awsKeyMaps clientIds clientKeys
-  clusterConfs <- return (createClusterConfig True 8000 clusterKeyMaps (snd clientKeyMaps) 8000 <$> clusterIds)
+  clusterConfs <- return (createClusterConfig True 8000 8000 clusterKeyMaps (snd clientKeyMaps) 8000 <$> clusterIds)
   clientConfs <- return (createClientConfig clusterConfs clientKeyMaps <$> clientIds)
   mapM_ (\c' -> Y.encodeFile
           ("aws-conf" </> _host (_nodeId c') ++ "-cluster-aws.yaml")
@@ -91,18 +91,21 @@ mainLocal = do
   putStrLn "Number of client nodes?"
   hFlush stdout
   cn <- fmap readMaybe getLine
-  putStrLn "Max Batch Size?"
+  putStrLn "Max AE Batch Size?"
   hFlush stdout
-  bSize' <- fmap readMaybe getLine
+  aeSize' <- fmap readMaybe getLine
+  putStrLn "Max Crypto Batch Size?"
+  hFlush stdout
+  cSize' <- fmap readMaybe getLine
   putStrLn "Enable logging for Followers (True/False)?"
   hFlush stdout
   debugFollower <- fmap readMaybe getLine
-  case (mn,cn,debugFollower,bSize') of
-    (Just n,Just c,Just df, Just bSize)-> do
+  case (mn,cn,debugFollower,aeSize', cSize') of
+    (Just n,Just c,Just df, Just aeSize, Just cSize)-> do
       g <- newGenIO :: IO SystemRandom
       let clusterKeyMaps = mkNodes (mkNode "127.0.0.1" 10000 "node") $ makeKeys n g
           clientKeyMaps = mkNodes (mkNode "127.0.0.1" 11000 "client") $ makeKeys c g
-          clusterConfs = zipWith (createClusterConfig df bSize clusterKeyMaps (snd clientKeyMaps)) [8000..] (M.keys (fst clusterKeyMaps))
+          clusterConfs = zipWith (createClusterConfig df aeSize cSize clusterKeyMaps (snd clientKeyMaps)) [8000..] (M.keys (fst clusterKeyMaps))
       clientConfs <- return (createClientConfig clusterConfs clientKeyMaps <$> M.keys (fst clientKeyMaps))
       mapM_ (\c' -> Y.encodeFile ("conf" </> show (_port $ _nodeId c') ++ "-cluster.yaml") c') clusterConfs
       mapM_ (\c' -> Y.encodeFile ("conf" </> show (_ccAlias c') ++ "-client.yaml") c') clientConfs
@@ -111,8 +114,8 @@ mainLocal = do
 toAliasMap :: Map NodeId a -> Map Alias a
 toAliasMap = M.fromList . map (first _alias) . M.toList
 
-createClusterConfig :: Bool -> Int -> (Map NodeId PrivateKey, Map NodeId PublicKey) -> Map NodeId PublicKey -> Int -> NodeId -> Config
-createClusterConfig debugFollower bSize (privMap, pubMap) clientPubMap apiP nid = Config
+createClusterConfig :: Bool -> Int -> Int -> (Map NodeId PrivateKey, Map NodeId PublicKey) -> Map NodeId PublicKey -> Int -> NodeId -> Config
+createClusterConfig debugFollower aeBatchSize' cryptoBatchSize' (privMap, pubMap) clientPubMap apiP nid = Config
   { _otherNodes           = Set.delete nid $ M.keysSet pubMap
   , _nodeId               = nid
   , _publicKeys           = toAliasMap $ pubMap
@@ -130,7 +133,8 @@ createClusterConfig debugFollower bSize (privMap, pubMap) clientPubMap apiP nid 
   , _enableAwsIntegration = False
   , _entity               = EntityInfo "me"
   , _dbFile               = Just $ "./log/" ++ BSC.unpack (unAlias $ _alias nid) ++ "-pactdb.sqlite"
-  , _batchSize            = bSize
+  , _aeBatchSize          = aeBatchSize'
+  , _cryptoBatchSize      = cryptoBatchSize'
   }
 
 createClientConfig :: [Config] -> (Map NodeId PrivateKey, Map NodeId PublicKey) -> NodeId -> ClientConfig

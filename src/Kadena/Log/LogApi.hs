@@ -148,13 +148,16 @@ getUnpersisted = do
            else Nothing
 {-# INLINE getUnpersisted #-}
 
-getUnverifiedEntries :: LogThread (Maybe LogEntries)
-getUnverifiedEntries = do
+getUnverifiedEntries :: Maybe Int -> LogThread (Maybe LogEntries)
+getUnverifiedEntries mInt = do
   lstIndex <- maxIndex
   fstIndex <- use lsLastCryptoVerified
+  let takeTillIdx = case mInt of
+        Nothing -> Nothing
+        Just i -> Just $ fstIndex + 1 + fromIntegral i
   vles <- use lsVolatileLogEntries
   return $! if fstIndex < lstIndex
-            then Just $! lesGetSection (Just $ fstIndex + 1) Nothing vles
+            then Just $! lesGetSection (Just $ fstIndex + 1) takeTillIdx vles
             else Nothing
 {-# INLINE getUnverifiedEntries #-}
 

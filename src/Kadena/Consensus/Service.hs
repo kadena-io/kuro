@@ -65,7 +65,7 @@ launchLogService :: Dispatch
   -> Config
   -> IO (Async ())
 launchLogService dispatch' dbgPrint' publishMetric' keySet' rconf = do
-  link =<< async (Log.runLogService dispatch' dbgPrint' publishMetric' (rconf ^. logSqliteDir) keySet')
+  link =<< async (Log.runLogService dispatch' dbgPrint' publishMetric' (rconf ^. logSqliteDir) keySet' (rconf ^. cryptoBatchSize))
   async (foreverHeart (_logService dispatch') 1000000 Log.Heart)
 
 launchSenderService :: Dispatch

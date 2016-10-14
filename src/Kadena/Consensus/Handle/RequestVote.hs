@@ -109,17 +109,24 @@ handle :: RequestVote -> KD.Consensus ()
 handle rv = do
   s <- get
   mv <- queryLogs $ Set.fromList [Log.GetMaxIndex, Log.GetLastLogTerm]
-  let rve = RequestVoteEnv
-              (KD._term s)
-              (KD._votedFor s)
-              (KD._lazyVote s)
-              (KD._currentLeader s)
-              (KD._ignoreLeader s)
-              (Log.hasQueryResult Log.MaxIndex mv)
-              (Log.hasQueryResult Log.LastLogTerm mv)
-  (rvo, l) <- runReaderT (runWriterT (handleRequestVote rv)) rve
-  mapM_ debug l
-  case rvo of
-    NoAction -> return ()
-    UpdateLazyVote stateUpdate -> KD.lazyVote .= Just stateUpdate
-    ReplyToRPCSender{..} -> enqueueRequest $ Sender.BroadcastRVR _targetNode Nothing _vote
+  if KD._nodeRole s == Leader
+  then do
+    enqueueRequest Sender.EstablishDominance
+    nodeId' <- view KD.nodeId <$> KD.readConfig
+    hfl <- return $! mkHeardFromLeader (Just nodeId') (_rvProvenance rv) (Log.hasQueryResult Log.LastLogTerm mv) (Log.hasQueryResult Log.MaxIndex mv)
+    enqueueRequest $ Sender.BroadcastRVR (_rvCandidateId rv) hfl False
+  else do
+    let rve = RequestVoteEnv
+                (KD._term s)
+                (KD._votedFor s)
+                (KD._lazyVote s)
+                (KD._currentLeader s)
+                (KD._ignoreLeader s)
+                (Log.hasQueryResult Log.MaxIndex mv)
+                (Log.hasQueryResult Log.LastLogTerm mv)
+    (rvo, l) <- runReaderT (runWriterT (handleRequestVote rv)) rve
+    mapM_ debug l
+    case rvo of
+      NoAction -> return ()
+      UpdateLazyVote stateUpdate -> KD.lazyVote .= Just stateUpdate
+      ReplyToRPCSender{..} -> enqueueRequest $ Sender.BroadcastRVR _targetNode Nothing _vote

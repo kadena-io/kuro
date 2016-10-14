@@ -69,7 +69,7 @@ publishEvidence es = do
   liftIO $ void $ swapMVar esPub $ PublishedEvidenceState (es ^. esConvincedNodes) (es ^. esNodeStates)
 --  debug $ "Published Evidence" ++ show (es ^. esNodeStates)
 
-runEvidenceProcessor :: EvidenceState -> EvidenceProcEnv (EvidenceState)
+runEvidenceProcessor :: EvidenceState -> EvidenceProcEnv EvidenceState
 runEvidenceProcessor es = do
   newEv <- view evidence >>= liftIO . readComm
   -- every time we process evidence, we want to tick the 'alert consensus that they aren't talking to a wall' variable' to False

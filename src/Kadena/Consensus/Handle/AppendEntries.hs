@@ -38,12 +38,6 @@ data AppendEntriesEnv = AppendEntriesEnv {
   , _logEntryAtPrevIdx :: Maybe LogEntry
 -- New Constructors
   , _quorumSize       :: Int
--- Used for getting runaway candidates back in line
--- The idea is that IFF in candidate mode && _aeTerm >= _lastValidElectionTerm && votesValid THEN become follower
--- Worst case, this moves the node back to it's last known good state
--- TODO: an int is needed on messages so they can't be sent twice, otherwise we could get a replay attack
-  , _nodeRole :: Role
-  , _lastValidElectionTerm :: Term
   }
 makeLenses ''AppendEntriesEnv
 
@@ -116,13 +110,9 @@ handleAppendEntries ae@AppendEntries{..} = do
 checkForNewLeader :: (MonadWriter [String] m, MonadReader AppendEntriesEnv m) => AppendEntries -> m CheckForNewLeaderOut
 checkForNewLeader AppendEntries{..} = do
   term' <- view term
-  lastValidElectionTerm' <- view lastValidElectionTerm
-  role' <- view nodeRole
   currentLeader' <- view currentLeader
-  when (role' == Candidate && Set.size _aeQuorumVotes > 0) $
-    tell ["Candidate is judging election results:" ++ show _aeTerm ++ " " ++ show lastValidElectionTerm']
   if (_aeTerm == term' && currentLeader' == Just _leaderId)
-    || (if role' == Candidate then _aeTerm < lastValidElectionTerm' else _aeTerm < term')
+    || _aeTerm < term'
     || Set.size _aeQuorumVotes == 0
   then return LeaderUnchanged
   else do
@@ -175,7 +165,6 @@ applyNewLeader :: CheckForNewLeaderOut -> KD.Consensus ()
 applyNewLeader LeaderUnchanged = return ()
 applyNewLeader NewLeaderConfirmed{..} = do
   setTerm _stateRsUpdateTerm
-  KD.lastValidElectionTerm .= _stateRsUpdateTerm
   KD.ignoreLeader .= _stateIgnoreLeader
   setCurrentLeader $ Just _stateCurrentLeader
   view KD.informEvidenceServiceOfElection >>= liftIO
@@ -191,15 +180,12 @@ handle ae = do
   s <- get
   mv <- queryLogs $ Set.fromList [Log.GetSomeEntry (_prevLogIndex ae),Log.GetCommitIndex]
   logAtAEsLastLogIdx <- return $ Log.hasQueryResult (Log.SomeEntry $ _prevLogIndex ae) mv
-  commitIndex' <- return $ Log.hasQueryResult Log.CommitIndex mv
   let ape = AppendEntriesEnv
               (KD._term s)
               (KD._currentLeader s)
               (KD._ignoreLeader s)
               logAtAEsLastLogIdx
               (KD._quorumSize r)
-              (KD._nodeRole s)
-              (KD._lastValidElectionTerm s)
   (AppendEntriesOut{..}, l) <- runReaderT (runWriterT (handleAppendEntries ae)) ape
   mapM_ debug l
   applyNewLeader _newLeaderAction

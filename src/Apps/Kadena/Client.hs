@@ -126,7 +126,7 @@ batchTest :: Int -> String -> Repl ()
 batchTest n cmd = do
   s <- use server
   es@(SubmitBatch es') <- SubmitBatch <$> replicateM n (mkExec cmd Null)
-  flushStrLn $ "Prepared " ++ show (length es') ++ " messages ..."
+  flushStrLn $ "Preparing " ++ show (length es') ++ " messages ..."
   r <- liftIO $ post ("http://" ++ s ++ "/api/public/send") (toJSON es)
   flushStrLn $ "Sent, retrieving responses"
   resp <- asJSON r

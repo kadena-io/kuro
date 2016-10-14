@@ -66,7 +66,7 @@ checkElection votes = do
 
 checkInvalids :: (MonadReader RequestVoteResponseEnv m, MonadWriter [String] m) =>
                  RequestVoteResponse -> m RequestVoteResponseOut
-checkInvalids RequestVoteResponse{..} = do
+checkInvalids rvr@RequestVoteResponse{..} = do
   maybeIcr' <- view icr
   quorumSize' <- view quorumSize
   case maybeIcr' of
@@ -74,7 +74,7 @@ checkInvalids RequestVoteResponse{..} = do
     Just icr'@InvalidCandidateResults{..} -> do
       case _rvrHeardFromLeader of
         Nothing -> do
-          tell ["Received negative RVR but HFL was unpopulated, taking no action"]
+          tell ["Received negative RVR but HFL was unpopulated, taking no action: " ++ show rvr]
           return NoAction
         Just HeardFromLeader{..} -> do
           if _hflYourRvSig == _icrMyReqVoteSig
@@ -126,8 +126,6 @@ becomeLeader = do
   setCurrentLeader . Just =<< KD.viewConfig KD.nodeId
   enqueueRequest $ Sender.EstablishDominance
   view KD.informEvidenceServiceOfElection >>= liftIO
-  term' <- use KD.term
-  KD.lastValidElectionTerm .= term'
   resetHeartbeatTimer
   resetElectionTimerLeader
 

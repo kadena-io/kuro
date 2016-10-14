@@ -1,4 +1,4 @@
-FROM local/kadena-base-ubuntu
+FROM kadena-base:ubuntu-16.04
 
 COPY ./stack.yaml /kadena/stack.yaml
 COPY ./submodules/ /kadena/submodules/

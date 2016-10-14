@@ -10,7 +10,7 @@ safe() { "$@" || barf "cannot $*"; }
 
 safe rm -rf ./payments-demo/*
 
-safe docker build --cpuset-cpus="0-3" --cpu-shares=1024 --memory=4g -t kadena:ubuntu-16.04 .
+safe docker build --cpuset-cpus="0-3" --cpu-shares=1024 --memory=8g -t kadena:ubuntu-16.04 .
 
 safe docker run -i -v ${PWD}:/work_dir kadena:ubuntu-16.04 << COMMANDS
 cp -R /payments-demo /work_dir

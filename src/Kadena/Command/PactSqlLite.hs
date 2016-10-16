@@ -25,13 +25,14 @@ import qualified Data.Map.Strict as M
 import qualified Data.HashMap.Strict as HM
 import Criterion hiding (env)
 import Data.Text.Encoding
-import Data.Int
 import System.CPUTime
 import Data.Default
 import Prelude hiding (log)
 import Control.Monad
 import Control.Concurrent.MVar
 import Data.Maybe
+
+import Kadena.Types.Sqlite
 
 
 import qualified Data.Attoparsec.Text as AP
@@ -41,11 +42,6 @@ import Pact.Types.Orphans ()
 import Pact.Compile
 import Pact.Eval
 import Pact.Repl
-
-
-data SType = SInt Int64 | SDouble Double | SText Utf8 | SBlob BS.ByteString deriving (Eq,Show)
-data RType = RInt | RDouble | RText | RBlob deriving (Eq,Show)
-
 
 data TableStmts = TableStmts {
       sInsertReplace :: Statement
@@ -100,11 +96,11 @@ psl =
 
  , _keys = \tn e -> withMVar e $ \m ->
        mapM decodeText_ =<<
-           qry_ m ("select key from " <> userTable tn <> " order by key") [RText]
+           qry_ (_conn m) ("select key from " <> userTable tn <> " order by key") [RText]
 
  , _txids = \tn tid e -> withMVar e $ \m ->
        mapM decodeInt_ =<<
-           qry m ("select txid from " <> userTxRecord tn <> " where txid > ? order by txid")
+           qry (_conn m) ("select txid from " <> userTxRecord tn <> " where txid > ? order by txid")
                [SInt (fromIntegral tid)] [RInt]
 
  , _createUserTable = \tn mn ksn e ->
@@ -117,7 +113,7 @@ psl =
  , _commitTx = \tid s -> modifyMVar_ s $ \m -> do
        let tid' = SInt (fromIntegral tid)
            m' = m { _txRecord = M.empty, _sysCache = _tmpSysCache m }
---       forM_ (M.toList $ _txRecord m) $ \(t,es) -> execs' (sRecordTx (_tableStmts m M.! t)) [tid',sencode es]
+       forM_ (M.toList $ _txRecord m) $ \(t,es) -> execs (sRecordTx (_tableStmts m M.! t)) [tid',sencode es]
        execs_ (tCommit $ _txStmts m)
        return m'
 
@@ -147,7 +143,7 @@ readUserTable' m t k = do
     j@Just {} -> return (m,j)
     Nothing -> do
       _log m "readUserTable: cache miss" k
-      r <- qrys m (userTable t) sRead [stext k] [RBlob]
+      r <- qrys' m (userTable t) sRead [stext k] [RBlob]
       case r of
         [] -> return (m,Nothing)
         [a] -> do
@@ -162,7 +158,7 @@ readSysTable e t l k = modifyMVar e $ \m -> do
     j@Just {} -> return (m,j)
     Nothing -> do
       _log m "readSysTable: cache miss" k
-      r <- qrys m t sRead [stext k] [RBlob]
+      r <- qrys' m t sRead [stext k] [RBlob]
       case r of
         [] -> return (m,Nothing)
         [a] -> do
@@ -182,7 +178,7 @@ writeSys s wt cache tbl k v = modifyMVar_ s $ \m -> do
               Write -> sInsertReplace
               Insert -> sInsert
               Update -> sReplace
-    execs m tbl q [stext k,sencode v]
+    execs' m tbl q [stext k,sencode v]
     return $ m { _tmpSysCache = over cache (HM.insert (asString k) v) (_tmpSysCache m) }
 {-# INLINE writeSys #-}
 
@@ -194,12 +190,12 @@ writeUser s wt tn rk row = modifyMVar_ s $ \m -> do
   let ins = do
         _log m "writeUser: insert" (tn,rk)
         let row' = sencode row
-        execs m ut sInsert [rk',row']
+        execs' m ut sInsert [rk',row']
         finish row
       upd oldrow = do
         let row' = Columns (M.union (_columns row) (_columns oldrow))
             v = sencode row'
-        execs m ut sReplace [rk',v]
+        execs' m ut sReplace [rk',v]
         finish row'
       finish row' = do
         let tbl = fromMaybe HM.empty $ HM.lookup tn $ _cachedUserTables (_tmpSysCache m)
@@ -222,7 +218,7 @@ getUserTableInfo' e tn = modifyMVar e $ \m -> do
     Just r -> return (m,r)
     Nothing -> do
       _log m "getUserTableInfo': cache miss" tn
-      r <- qry m "select module,keyset from usertables where name = ?" [stext tn] [RText,RText]
+      r <- qry (_conn m) "select module,keyset from usertables where name = ?" [stext tn] [RText,RText]
       case r of
         [[SText mn,SText kn]] -> do
           let p = (convertUtf8 mn,convertUtf8 kn)
@@ -287,18 +283,18 @@ stext a = SText $ fromString $ asString a
 
 createUserTable' :: MVar PSL -> TableName -> ModuleName -> KeySetName -> IO ()
 createUserTable' s tn mn ksn = modifyMVar_ s $ \m -> do
-  exec' m "insert into usertables values (?,?,?)" [stext tn,stext mn,stext ksn]
+  exec' (_conn m) "insert into usertables values (?,?,?)" [stext tn,stext mn,stext ksn]
   m' <- return $ over (tmpSysCache . cachedTableInfo) (HM.insert tn (mn,ksn)) m
   createTable (userTable tn) (userTxRecord tn) m'
 
 createTable :: Utf8 -> Utf8 -> PSL -> IO PSL
 createTable ut ur e = do
   _log e "createTables" (ut,ur)
-  exec_ e $ "create table " <> ut <>
+  exec_ (_conn e) $ "create table " <> ut <>
               " (key text primary key not null unique, value SQLBlob) without rowid;"
-  exec_ e $ "create table " <> ur <>
+  exec_ (_conn e) $ "create table " <> ur <>
           " (txid integer primary key not null unique, txlogs SQLBlob);" -- 'without rowid' crashes!!
-  let mkstmt q = prepStmt e q
+  let mkstmt q = prepStmt' e q
   ss <- TableStmts <$>
            mkstmt ("INSERT OR REPLACE INTO " <> ut <> " VALUES (?,?)") <*>
            mkstmt ("INSERT INTO " <> ut <> " VALUES (?,?)") <*>
@@ -310,129 +306,37 @@ createTable ut ur e = do
 
 createSchema :: MVar PSL -> IO ()
 createSchema e = modifyMVar_ e $ \s -> do
-  exec_ s "CREATE TABLE IF NOT EXISTS usertables (\
+  exec_ (_conn s) "CREATE TABLE IF NOT EXISTS usertables (\
     \ name TEXT PRIMARY KEY NOT NULL UNIQUE \
     \,module text NOT NULL \
     \,keyset text NOT NULL);"
   createTable keysetsTable keysetsTxRecord s >>= createTable modulesTable modulesTxRecord
 
 
-exec_ :: PSL -> Utf8 -> IO ()
-exec_ e q = liftEither $ SQ3.exec (_conn e) q
-{-# INLINE exec_ #-}
-
-execs_ :: Statement -> IO ()
-execs_ s = do
-  r <- step s
-  void $ reset s
-  void $ liftEither (return r)
-{-# INLINE execs_ #-}
-
-liftEither :: Show a => IO (Either a b) -> IO b
-liftEither a = do
-  er <- a
-  case er of
-    (Left e) -> throwDbError (show e)
-    (Right r) -> return r
-{-# INLINE liftEither #-}
-
-exec' :: PSL -> Utf8 -> [SType] -> IO ()
-exec' e q as = do
-             stmt <- prepStmt e q
-             bindParams stmt as
-             r <- step stmt
-             void $ finalize stmt
-             void $ liftEither (return r)
-{-# INLINE exec' #-}
-
-execs :: PSL -> Utf8 -> (TableStmts -> Statement) -> [SType] -> IO ()
-execs s tn stmtf as = do
+execs' :: PSL -> Utf8 -> (TableStmts -> Statement) -> [SType] -> IO ()
+execs' s tn stmtf as = do
   stmt <- return $ stmtf $ getTableStmts s tn
-  execs' stmt as
-{-# INLINE execs #-}
-
-execs' :: Statement -> [SType] -> IO ()
-execs' stmt as = do
-    clearBindings stmt
-    bindParams stmt as
-    r <- step stmt
-    void $ reset stmt
-    void $ liftEither (return r)
+  execs stmt as
 {-# INLINE execs' #-}
 
 
-bindParams :: Statement -> [SType] -> IO ()
-bindParams stmt as =
-    void $ liftEither
-    (sequence <$> forM (zip as [1..]) ( \(a,i) -> do
-      case a of
-        SInt n -> bindInt64 stmt i n
-        SDouble n -> bindDouble stmt i n
-        SText n -> bindText stmt i n
-        SBlob n -> bindBlob stmt i n))
-{-# INLINE bindParams #-}
 
-prepStmt :: PSL -> Utf8 -> IO Statement
-prepStmt c q = prepStmt' (_conn c) q
+prepStmt' :: PSL -> Utf8 -> IO Statement
+prepStmt' c q = prepStmt (_conn c) q
 
-prepStmt' :: Database -> Utf8 -> IO Statement
-prepStmt' c q = do
-    r <- prepare c q
-    case r of
-      Left e -> throwDbError (show e)
-      Right Nothing -> throwDbError "Statement prep failed"
-      Right (Just s) -> return s
-
-qry :: PSL -> Utf8 -> [SType] -> [RType] -> IO [[SType]]
-qry e q as rts = do
-  stmt <- prepStmt e q
-  bindParams stmt as
-  rows <- stepStmt stmt rts
-  void $ finalize stmt
-  return (reverse rows)
-{-# INLINE qry #-}
-
-qrys :: PSL -> Utf8 -> (TableStmts -> Statement) -> [SType] -> [RType] -> IO [[SType]]
-qrys s tn stmtf as rts = do
+qrys' :: PSL -> Utf8 -> (TableStmts -> Statement) -> [SType] -> [RType] -> IO [[SType]]
+qrys' s tn stmtf as rts = do
   stmt <- return $ stmtf $ getTableStmts s tn
-  clearBindings stmt
-  bindParams stmt as
-  rows <- stepStmt stmt rts
-  void $ reset stmt
-  return (reverse rows)
-{-# INLINE qrys #-}
-
-qry_ :: PSL -> Utf8 -> [RType] -> IO [[SType]]
-qry_ e q rts = do
-            stmt <- prepStmt e q
-            rows <- stepStmt stmt rts
-            _ <- finalize stmt
-            return (reverse rows)
-{-# INLINE qry_ #-}
-
-stepStmt :: Statement -> [RType] -> IO [[SType]]
-stepStmt stmt rts = do
-  let acc rs Done = return rs
-      acc rs Row = do
-        as <- forM (zip rts [0..]) $ \(rt,ci) -> do
-                      case rt of
-                        RInt -> SInt <$> columnInt64 stmt ci
-                        RDouble -> SDouble <$> columnDouble stmt ci
-                        RText -> SText <$> columnText stmt ci
-                        RBlob -> SBlob <$> columnBlob stmt ci
-        sr <- liftEither $ step stmt
-        acc (as:rs) sr
-  sr <- liftEither $ step stmt
-  acc [] sr
-{-# INLINE stepStmt #-}
+  qrys stmt as rts
+{-# INLINE qrys' #-}
 
 
 initPSL :: FilePath -> IO PSL
 initPSL f = do
   c <- liftEither $ open (fromString f)
-  ts <- TxStmts <$> prepStmt' c "BEGIN TRANSACTION"
-         <*> prepStmt' c "COMMIT TRANSACTION"
-         <*> prepStmt' c "ROLLBACK TRANSACTION"
+  ts <- TxStmts <$> prepStmt c "BEGIN TRANSACTION"
+         <*> prepStmt c "COMMIT TRANSACTION"
+         <*> prepStmt c "ROLLBACK TRANSACTION"
   s <- return $ PSL c (\m s -> putStrLn $ m ++ ": " ++ show s) M.empty M.empty ts def def
   runPragmas s
   return s
@@ -441,7 +345,7 @@ initPSL f = do
 
 qry1 :: PSL -> Utf8 -> [SType] -> [RType] -> IO [SType]
 qry1 e q as rts = do
-  r <- qry e q as rts
+  r <- qry (_conn e) q as rts
   case r of
     [r'] -> return r'
     [] -> throwDbError "qry1: no results!"
@@ -449,10 +353,10 @@ qry1 e q as rts = do
 
 runPragmas :: PSL -> IO ()
 runPragmas e = do
-  exec_ e "PRAGMA synchronous = OFF"
-  exec_ e "PRAGMA journal_mode = MEMORY"
-  exec_ e "PRAGMA locking_mode = EXCLUSIVE"
-  exec_ e "PRAGMA temp_store = MEMORY"
+  exec_ (_conn e) "PRAGMA synchronous = OFF"
+  exec_ (_conn e) "PRAGMA journal_mode = MEMORY"
+  exec_ (_conn e) "PRAGMA locking_mode = EXCLUSIVE"
+  exec_ (_conn e) "PRAGMA temp_store = MEMORY"
 
 
 _initPSL :: IO PSL
@@ -477,7 +381,7 @@ _test1 =
       _beginTx psl e
       createSchema e
       createUserTable' e "stuff" "module" "keyset"
-      withMVar e $ \m -> qry_ m "select * from usertables" [RText,RText,RText] >>= print
+      withMVar e $ \m -> qry_ (_conn m) "select * from usertables" [RText,RText,RText] >>= print
       void $ commit' e
       _beginTx psl e
       print =<< _getUserTableInfo psl "stuff" e

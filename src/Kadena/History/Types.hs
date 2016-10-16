@@ -4,6 +4,7 @@
 
 module Kadena.History.Types
   ( History(..)
+  , DbEnv(..)
   , ExistenceResult(..)
   , PossiblyIncompleteResults(..)
   , ListenerResult(..)
@@ -27,7 +28,8 @@ import Data.HashMap.Strict (HashMap)
 import Data.HashSet (HashSet)
 
 import Data.Thyme.Clock (UTCTime)
-import Database.SQLite.Simple (Connection(..))
+
+import Database.SQLite3.Direct
 
 import Kadena.Types.Base as X
 import Kadena.Types.Config as X hiding (nodeId, _nodeId)
@@ -83,12 +85,22 @@ data HistoryEnv = HistoryEnv
   }
 makeLenses ''HistoryEnv
 
+
+data DbEnv = DbEnv
+  { _conn :: !Database
+  , _insertStatement :: !Statement
+  , _qryExistingStmt :: !Statement
+  , _qryCompletedStmt :: !Statement
+  }
+
+
+
 data PersistenceSystem =
   InMemory
     { inMemResults :: !(HashMap RequestKey (Maybe AppliedCommand))} |
   OnDisk
     { incompleteRequestKeys :: !(HashSet RequestKey)
-    , dbConn :: !Connection}
+    , dbConn :: !DbEnv}
 
 data HistoryState = HistoryState
   { _registeredListeners :: !(HashMap RequestKey [MVar ListenerResult])

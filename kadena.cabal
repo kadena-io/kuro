@@ -81,6 +81,7 @@ library
                      , Kadena.Types.Message.Signed
                      , Kadena.Types.Metric
                      , Kadena.Types.Spec
+                     , Kadena.Types.Sqlite
                      , Kadena.Util.Util
 
   build-depends:       aeson

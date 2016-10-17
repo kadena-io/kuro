@@ -244,7 +244,8 @@ runREPL = loop True
         ":setup" -> setup
         _ | take 7 cmd == ":batch " ->
             case readMaybe $ drop 7 cmd of
-              Just n -> batchTest n bcmd
+              Just n | n <= 50000 -> batchTest n bcmd
+                     | otherwise -> void $ flushStrLn "batch test is limited to a maximum of 50k transactions at a time."
               Nothing -> return ()
         _ | take 6 cmd == ":poll " -> do
               b <- return $ B16.decode $ BS8.pack $ drop 6 cmd
@@ -291,7 +292,7 @@ help = flushStrLn
   \   \"Acct2\"      | \"1.00\"       | \"5000.00\"    | {\"transfer-from\":\"Acct1\"}  \n\
   \\n\
   \:batch N - perform N single dollar individual transactions, print out performance results when finished\n\
-  \           NB: performance results for N > 8000 are not valid via this command, please contact info@kadena.io if more extensive testing is desired \n\
+  \           NB: performance results for N > 8000 are inaccurate, please contact info@kadena.io if more extensive testing is desired \n\
   \   127.0.0.1:8003>> :batch 5000\n\
   \   Prepared 5000 messages ...\n\
   \   Sent, retrieving responses\n\

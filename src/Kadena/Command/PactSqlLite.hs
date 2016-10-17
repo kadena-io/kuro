@@ -9,6 +9,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE CPP #-}
 module Kadena.Command.PactSqlLite where
 
 import Database.SQLite3.Direct as SQ3
@@ -113,7 +114,9 @@ psl =
  , _commitTx = \tid s -> modifyMVar_ s $ \m -> do
        let tid' = SInt (fromIntegral tid)
            m' = m { _txRecord = M.empty, _sysCache = _tmpSysCache m }
+#if ENABLE_PACT_PERSISTENCE
        forM_ (M.toList $ _txRecord m) $ \(t,es) -> execs (sRecordTx (_tableStmts m M.! t)) [tid',sencode es]
+#endif
        execs_ (tCommit $ _txStmts m)
        return m'
 
@@ -306,10 +309,9 @@ createTable ut ur e = do
 
 createSchema :: MVar PSL -> IO ()
 createSchema e = modifyMVar_ e $ \s -> do
-  exec_ (_conn s) "CREATE TABLE IF NOT EXISTS usertables (\
-    \ name TEXT PRIMARY KEY NOT NULL UNIQUE \
-    \,module text NOT NULL \
-    \,keyset text NOT NULL);"
+  exec_ (_conn s)
+  -- CPP breaks multi-line strings
+    "CREATE TABLE IF NOT EXISTS usertables (name TEXT PRIMARY KEY NOT NULL UNIQUE,module text NOT NULL,keyset text NOT NULL);"
   createTable keysetsTable keysetsTxRecord s >>= createTable modulesTable modulesTxRecord
 
 

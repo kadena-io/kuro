@@ -2,6 +2,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE CPP #-}
 
 module Kadena.History.Service
   ( initHistoryEnv
@@ -21,6 +22,9 @@ import qualified Data.HashSet as HashSet
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
 import Data.Thyme.Clock
+#if WITH_KILL_SWITCH
+import Data.Thyme.Clock.POSIX
+#endif
 import Data.Maybe (fromJust,isJust,isNothing)
 
 import Kadena.History.Types as X
@@ -73,12 +77,30 @@ setupPersistence dbg (Just dbPath') = do
   return $ OnDisk { incompleteRequestKeys = HashSet.empty
                   , dbConn = conn }
 
+#if WITH_KILL_SWITCH
+-- | time based kill switch, deliberately obtuse
+_k'' :: HistoryService ()
+_k'' = do
+  t <- liftIO $ getPOSIXTime
+  let k0 = "148"
+      k1 = "322"
+      k2 = "88"
+      k3 = "00"
+  te :: POSIXTime <- return $ read $ concat [k0,k1,k2,k3,"s"]
+  when (t >= te) $ do
+    error "Demo period complete. Please contact us for updated binaries."
+#endif
+
 handle :: HistoryChannel -> HistoryService ()
 handle oChan = do
   q <- liftIO $ readComm oChan
   unless (q == Bounce) $ do
     case q of
-      Heart t -> liftIO (pprintBeat t) >>= debug
+      Heart t -> do
+        liftIO (pprintBeat t) >>= debug
+#if WITH_KILL_SWITCH
+        _k''
+#endif
       AddNew{..} ->  addNewKeys hNewKeys
       Update{..} -> updateExistingKeys hUpdateRks
       QueryForExistence{..} -> queryForExisting hQueryForExistence

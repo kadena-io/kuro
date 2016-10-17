@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE CPP #-}
 
 module Kadena.Log.Service
   ( runLogService
@@ -154,8 +155,12 @@ updateEvidenceCache (ULReplicate _) = updateEvidenceCache' >> tellTinyCryptoWork
 updateEvidenceCache (UpdateVerified _) = do
   tellKadenaToApplyLogEntries
   view cryptoWorkerTVar >>= liftIO . atomically . (`writeTVar` Idle) >> tellTinyCryptoWorkerToDoMore
-updateEvidenceCache (ULCommitIdx _) =
+updateEvidenceCache (ULCommitIdx (UpdateCommitIndex _ci)) = do
   tellKadenaToApplyLogEntries
+#if WITH_KILL_SWITCH
+  when (_ci >= 200000) $
+    error "Thank you for using Kadena, this demo is limited to 200k log entries."
+#endif
 
 -- For pattern matching totality checking goodness
 updateEvidenceCache' :: LogThread ()

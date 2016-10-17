@@ -19,7 +19,7 @@ COPY ./LICENSE /kadena/LICENSE
 RUN bash -c "mkdir -p /kadena/log && \
     cd && source ./build-exports && \
     cd /kadena && \
-    stack build && \
+    stack build --flag kadena:kill-switch && \
     stack install"
 
 RUN mkdir -p /payments-demo/demo && \

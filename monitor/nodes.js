@@ -97,7 +97,7 @@ class Node extends React.Component {
             <HorizontalGridLines color="steelblue" />
             <VerticalGridLines color="steelblue" />
             <XAxis title="seconds ago" />
-            <YAxis title="commits" />
+            <YAxis title="tps" />
             <VerticalBarSeries data={computedData2} />
           </XYPlot>
         </div>
@@ -153,7 +153,7 @@ export default class Nodes extends React.Component {
           NODES
           <div className="border-underline" />
         </h2>
-        <h3 className="cps-header">Commits per second</h3>
+        <h3 className="cps-header">tx per second</h3>
 
         {/*
         <div className="nodes-selector">
@@ -165,7 +165,7 @@ export default class Nodes extends React.Component {
               {Radio => (
                 <ul>
                   <li className="node-option"><label><Radio value="appliedIndex" /><span className="check" />Applied Index</label></li>
-                  <li className="node-option"><label><Radio value="commitPeriod" /><span className="check" />Commit Period</label></li>
+                  <li className="node-option"><label><Radio value="commitPeriod" /><span className="check" />Tx Period</label></li>
                 </ul>
               )}
             </RadioGroup>

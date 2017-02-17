@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE DeriveAnyClass #-}
@@ -45,8 +46,13 @@ import Kadena.Messaging.ZMQ
 import Kadena.Monitoring.Server (startMonitoring)
 import Kadena.HTTP.ApiServer
 import qualified Kadena.Messaging.Turbine as Turbine
-import Kadena.Command.CommandLayer
-import Kadena.Command.Types
+-- import Kadena.Command.Types
+import Kadena.Commit.Types (ApplyFn)
+import Kadena.Types.Log (LogEntry(..))
+
+import Pact.Server.PactService
+import Pact.Types.Server
+import Pact.Types.Command
 
 data Options = Options
   {  optConfigFile :: FilePath
@@ -147,6 +153,15 @@ resetAwsEnv awsEnabled = do
   awsDashVar awsEnabled "AppliedIndex" "Startup"
   awsDashVar awsEnabled "CommitIndex" "Startup"
 
+applyPact :: CommandConfig -> IO ApplyFn
+applyPact cc = do
+  CommandExecInterface {..} <- initPactService cc
+  return $ \LogEntry {..} -> do
+    let pactCmd = undefined
+    r <- _ceiApplyCmd (Transactional (fromIntegral _leLogIndex)) pactCmd
+    return undefined
+
+
 runServer :: IO ()
 runServer = do
   setLineBuffering
@@ -155,7 +170,7 @@ runServer = do
   utcTimeCache' <- utcTimeCache
   fs <- initSysLog utcTimeCache'
   let debugFn = if rconf ^. enableDebug then showDebug fs else noDebug
-  (applyFn,_) <- initCommandLayer (CommandConfig (_entity rconf) (_dbFile rconf) debugFn)
+  (applyFn,_) <- undefined -- initCommandLayer (CommandConfig (_entity rconf) (_dbFile rconf) debugFn)
   resetAwsEnv (rconf ^. enableAwsIntegration)
   me <- return $ rconf ^. nodeId
   oNodes <- return $ Set.toList $ Set.delete me (rconf ^. otherNodes)-- (Map.keysSet $ rconf ^. clientPublicKeys)

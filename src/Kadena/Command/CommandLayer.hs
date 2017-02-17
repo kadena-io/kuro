@@ -29,14 +29,14 @@ import System.Directory
 
 import Crypto.Ed25519.Pure (valid)
 
-import Pact.Types hiding (PublicKey)
-import qualified Pact.Types as Pact
+import Pact.Types.Runtime hiding (PublicKey)
+import qualified Pact.Types.Runtime as Pact
 import Pact.Pure
 import Pact.Eval
 import Pact.Compile as Pact
 import Pact.Repl
 
-import Kadena.Command.PactSqlLite as PactSL
+import Pact.Server.SQLite as PactSL
 
 import Kadena.Types.Log
 import Kadena.Types.Base hiding (Term, valid, sign)
@@ -49,9 +49,9 @@ import Kadena.Commit.Types (ApplyFn)
 type PactMVars = (DBVar,MVar CommandState)
 
 initCommandLayer :: CommandConfig -> IO (ApplyFn,ApplyLocal)
-initCommandLayer config = do
-  let klog s = _ccDebugFn config ("[Pact] " ++ s)
-  mvars <- case _ccDbFile config of
+initCommandLayer config@CommandConfig {..} = do
+  let klog s = _ccDebugFn ("[Pact] " ++ s)
+  mvars <- case _ccDbFile of
     Nothing -> do
       klog "Initializing pure pact"
       ee <- initEvalEnv def puredb
@@ -63,7 +63,7 @@ initCommandLayer config = do
       if dbExists
         then klog "Deleting Existing Pact DB File" >> removeFile f
         else klog "No Pact DB File Found"
-      p <- (\a -> a { _log = \m s -> klog $ m ++ ": " ++ show s }) <$> initPSL f
+      p <- initPSL [] _ccDebugFn f
       ee <- initEvalEnv p psl
       rv <- newMVar (CommandState $ _eeRefStore ee)
       let v = _eePactDbVar ee

@@ -27,10 +27,10 @@ import Data.Maybe
 import Prelude hiding (log,exp)
 import Control.Concurrent.MVar
 
-import Pact.Types hiding (PublicKey)
+import Pact.Types.Runtime hiding (PublicKey,toB16JSON,parseB16JSON)
 import Pact.Pure
 
-import Kadena.Command.PactSqlLite
+import Pact.Server.SQLite
 
 import Kadena.Types.Base hiding (Term)
 import Kadena.Types.Command

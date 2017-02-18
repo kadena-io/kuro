@@ -5,7 +5,6 @@ module Kadena.Types
 -- NB: This is really the Consensus Service's type module but as consensus is all encompassing, it's also the primary types file
 
 import Kadena.Types.Base as X
-import Kadena.Types.Command as X
 import Kadena.Types.Comms as X
 import Kadena.Types.Config as X
 import Kadena.Types.Dispatch as X

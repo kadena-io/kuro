@@ -45,7 +45,7 @@ instance WireFormat AppendEntries where
                                           ,_leaderId
                                           ,_prevLogIndex
                                           ,_prevLogTerm
-                                          ,encodeLEWire nid pubKey privKey _aeEntries
+                                          ,encodeLEWire _aeEntries
                                           ,toWire nid pubKey privKey <$> toList _aeQuorumVotes)
                   hsh = hash bdy
                   sig = sign hsh privKey pubKey
@@ -59,14 +59,12 @@ instance WireFormat AppendEntries where
       else case maybe (Left "Decompression failure") S.decode $ decompress bdy of
         Left err -> Left $! "Failure to decode AEWire: " ++ err
         Right (AEWire (t,lid,pli,pt,les,vts)) -> runEval $ do
-          eLes <- rpar (toLogEntries ((decodeLEWire' ts ks <$> les) `using` parList rseq))
+          eLes <- rpar (toLogEntries ((decodeLEWire' ts <$> les) `using` parList rseq))
           eRvr <- rseq (toSetRvr ((fromWire ts ks <$> vts) `using` parList rseq))
           case eRvr of
             Left !err -> return $! Left $! "Caught an invalid RVR in an AE: " ++ err
             Right !vts' -> do
               _ <- rseq eLes
-              case eLes of
-                Left !err -> return $! Left $ "Found a LogEntry with an invalid Command: " ++ err
-                Right !les' -> return $! Right $! AppendEntries t lid pli pt les' vts' $ ReceivedMsg dig bdy ts
+              return $! Right $! AppendEntries t lid pli pt eLes vts' $ ReceivedMsg dig bdy ts
   {-# INLINE toWire #-}
   {-# INLINE fromWire #-}

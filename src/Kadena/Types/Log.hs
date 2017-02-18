@@ -12,7 +12,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 
 module Kadena.Types.Log
-  ( LogEntry(..), leTerm, leLogIndex, leCommand, leHash
+  ( LogEntry(..), leTerm, leLogIndex, leCommand, leHash, leReceivedAt
   , LogEntries(..), logEntries, lesCnt, lesMinEntry, lesMaxEntry
   , lesMinIndex, lesMaxIndex, lesEmpty, lesNull, checkLogEntries, lesGetSection
   , lesUnion, lesUnions, lesLookupEntry
@@ -27,8 +27,6 @@ module Kadena.Types.Log
   , UpdateLogs(..)
   , hashLogEntry
   , hash
-  , VerifiedLogEntries(..)
-  , verifyLogEntry, verifySeqLogEntries
   , AtomicQuery(..)
   , FirstEntry(..), LastEntry(..), MaxIndex(..), EntryCount(..), SomeEntry(..)
   , LogInfoForNextIndex(..) , LastLogHash(..), LastLogTerm(..)
@@ -40,24 +38,18 @@ module Kadena.Types.Log
   , NleEntries(..)
   ) where
 
-import Control.Parallel.Strategies
 import Control.Lens hiding (Index, (|>))
 
-import Data.IntMap.Strict (IntMap)
-import qualified Data.IntMap.Strict as IntMap
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 
 import Data.Serialize hiding (get)
-import Data.Foldable
 
 import Data.Thyme.Time.Core ()
 import GHC.Generics
 
 import Kadena.Types.Base
-import Kadena.Types.Config
-import Kadena.Types.Message.Signed
-import Kadena.Types.Message.CMD
+import Kadena.Types.Command
 
 -- TODO: add discrimination here, so we can get a better map construction
 data LogEntry = LogEntry
@@ -65,11 +57,12 @@ data LogEntry = LogEntry
   , _leLogIndex :: !LogIndex
   , _leCommand  :: !Command
   , _leHash     :: !Hash
+  , _leReceivedAt :: !(Maybe ReceivedAt)
   }
   deriving (Show, Eq, Ord, Generic)
 makeLenses ''LogEntry
 
-data LEWire = LEWire (Term, LogIndex, SignedRPC, Hash)
+data LEWire = LEWire (Term, LogIndex, CMDWire, Hash)
   deriving (Show, Generic)
 instance Serialize LEWire
 
@@ -222,65 +215,41 @@ findSplitKey atLeast' mapOfCounts =
 {-# SPECIALIZE INLINE findSplitKey :: Int -> Map LogIndex Int -> Maybe LogIndex #-}
 
 
-decodeLEWire' :: Maybe ReceivedAt -> KeySet -> LEWire -> Either String LogEntry
-decodeLEWire' !ts !ks (LEWire !(t,i,cmd,hsh)) = case fromWire ts ks cmd of
-      Left !err -> Left $!err
-      Right !cmd' -> Right $! LogEntry t i cmd' hsh
+decodeLEWire' :: Maybe ReceivedAt -> LEWire -> LogEntry
+decodeLEWire' !ts (LEWire !(t,i,cmd,hsh)) = LogEntry t i (decodeCommand cmd) hsh ts
 {-# INLINE decodeLEWire' #-}
 
 insertOrError :: LogEntry -> LogEntry -> LogEntry
 insertOrError old new = error $ "Invariant Failure: duplicate LogEntry found!\n Old: " ++ (show old) ++ "\n New: " ++ (show new)
 
--- TODO: check if `toSeqLogEntry ele = Seq.fromList <$> sequence ele` is fusable?
-toLogEntries :: [Either String LogEntry] -> Either String LogEntries
+toLogEntries :: [LogEntry] -> LogEntries
 toLogEntries !ele = go ele Map.empty
   where
-    go [] s = Right $! LogEntries s
-    go (Right le:les) s = go les $! Map.insertWith insertOrError (_leLogIndex le) le s
-    go (Left err:_) _ = Left $! err
+    go [] s = LogEntries s
+    go (le:les) s = go les $! Map.insertWith insertOrError (_leLogIndex le) le s
 {-# INLINE toLogEntries #-}
 
-verifyLogEntry :: KeySet -> LogEntry -> (Int, CryptoVerified)
-verifyLogEntry !ks LogEntry{..} = res `seq` res
-  where
-    res = (fromIntegral _leLogIndex, v `seq` v)
-    v = verifyCmd ks _leCommand
-{-# INLINE verifyLogEntry #-}
-
-verifySeqLogEntries :: KeySet -> LogEntries -> IntMap CryptoVerified
-verifySeqLogEntries !ks !s = foldr' (\(k,v) -> IntMap.insert k v) IntMap.empty $! ((verifyLogEntry ks <$> (_logEntries s)) `using` parTraversable rseq)
-{-# INLINE verifySeqLogEntries #-}
-
-newtype VerifiedLogEntries = VerifiedLogEntries
-  { _vleResults :: IntMap CryptoVerified}
-  deriving (Show, Eq)
-
-decodeLEWire :: Maybe ReceivedAt -> KeySet -> [LEWire] -> Either String LogEntries
-decodeLEWire !ts !ks !les = go les Map.empty
+decodeLEWire :: Maybe ReceivedAt -> [LEWire] -> Either String LogEntries
+decodeLEWire !ts !les = go les Map.empty
   where
     go [] s = Right $! LogEntries s
-    go (LEWire !(t,i,cmd,hsh):ls) v = case fromWire ts ks cmd of
-      Left err -> Left $! err
-      Right cmd' -> go ls $! Map.insertWith insertOrError i (LogEntry t i cmd' hsh) v
+    go (l:ls) v =
+      let logEntry'@LogEntry{..} = decodeLEWire' ts l
+      in go ls $! Map.insertWith insertOrError _leLogIndex logEntry' v
 {-# INLINE decodeLEWire #-}
 
-encodeLEWire :: NodeId -> PublicKey -> PrivateKey -> LogEntries -> [LEWire]
-encodeLEWire nid pubKey privKey les =
-  (\LogEntry{..} -> LEWire (_leTerm, _leLogIndex, toWire nid pubKey privKey _leCommand, _leHash)) <$> Map.elems (_logEntries les)
+encodeLEWire :: LogEntries -> [LEWire]
+encodeLEWire les =
+  (\LogEntry{..} -> LEWire (_leTerm, _leLogIndex, encodeCommand _leCommand, _leHash)) <$> Map.elems (_logEntries les)
 {-# INLINE encodeLEWire #-}
 
 -- TODO: This uses the old decode encode trick and should be changed...
 hashLogEntry :: Maybe Hash -> LogEntry -> LogEntry
 hashLogEntry (Just prevHash) le@LogEntry{..} =
-  le { _leHash = hash (encode $ (_leTerm, _leLogIndex, getCmdBodyHash le, prevHash))}
+  le { _leHash = hash (encode $ (_leTerm, _leLogIndex, getCmdBodyHash _leCommand, prevHash))}
 hashLogEntry Nothing le@LogEntry{..} =
-  le { _leHash = hash (encode $ (_leTerm, _leLogIndex, getCmdBodyHash le, initialHash))}
+  le { _leHash = hash (encode $ (_leTerm, _leLogIndex, getCmdBodyHash _leCommand, initialHash))}
 {-# INLINE hashLogEntry #-}
-
-getCmdBodyHash :: LogEntry -> Hash
-getCmdBodyHash LogEntry{ _leCommand = Command{ _cmdProvenance = ReceivedMsg{ _pDig = dig }}} = _digHash dig
-getCmdBodyHash LogEntry{ _leCommand = Command{ _cmdProvenance = NewMsg }} =
-  error "Invariant Failure: for a command to be in a log entry, it needs to have been received!"
 
 data ReplicateLogEntries = ReplicateLogEntries
   { _rleMinLogIdx :: LogIndex
@@ -330,8 +299,7 @@ data UpdateLogs =
   ULReplicate ReplicateLogEntries |
   ULNew NewLogEntries |
   ULCommitIdx UpdateCommitIndex |
-  UpdateLastApplied LogIndex |
-  UpdateVerified VerifiedLogEntries
+  UpdateLastApplied LogIndex
   deriving (Show, Eq, Generic)
 
 data AtomicQuery =

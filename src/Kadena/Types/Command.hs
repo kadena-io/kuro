@@ -1,49 +1,79 @@
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Kadena.Types.Command
-  ( CommandEntry(..)
-  , CommandResult(..)
-  , RequestKey(..), initialRequestKey
-  , AppliedCommand(..),acResult,acLatency,acRequestId
+  ( Command(..), sccCmd, sccPreProc
+  , encodeCommand, decodeCommand, getCmdBodyHash
+  , CMDWire(..)
+  , toRequestKey
+  , CommandResult(..), scrResult, cmdrLatency
   ) where
 
-import Data.ByteString (ByteString)
+import Control.Exception
+import Control.Parallel
+import Control.Lens
+
 import Data.Serialize (Serialize)
-import Data.Aeson
-import Data.Hashable (Hashable)
-import qualified Data.Aeson as A
-import Data.Text.Encoding (decodeUtf8, encodeUtf8)
-import GHC.Generics hiding (from)
+import qualified Data.Serialize as S
+import Data.ByteString (ByteString)
+
+import Data.Thyme.Time.Core ()
+import GHC.Generics
 import GHC.Int (Int64)
-import Control.Lens (makeLenses)
 
 import Kadena.Types.Base
+import Kadena.Types.Message.Signed
 
-newtype CommandEntry = CommandEntry { unCommandEntry :: ByteString }
-  deriving (Show, Eq, Ord, Generic, Serialize)
+import qualified Pact.Types.Command as Pact
+import qualified Pact.Types.RPC as Pact
 
-newtype CommandResult = CommandResult { unCommandResult :: ByteString }
-  deriving (Show, Eq, Ord, Generic, Serialize)
-instance ToJSON CommandResult where
-  toJSON (CommandResult a) = toJSON $ decodeUtf8 a
-instance FromJSON CommandResult where
-  parseJSON (A.String t) = return $ CommandResult (encodeUtf8 t)
-  parseJSON _ = mempty
+-- TODO: upgrade pact to have this
+deriving instance (Ord a) => Ord (Pact.Command a)
 
-newtype RequestKey = RequestKey { unRequestKey :: Hash}
-  deriving (Eq, Ord, Generic, ToJSON, FromJSON, Serialize, Hashable)
+data Command = SmartContractCommand
+  { _sccCmd :: !(Pact.Command ByteString)
+  -- it's important to keep this lazy! we'll be sparking it at decode time
+  , _sccPreProc :: Pact.ProcessedCommand Pact.PactRPC
+  }
+  deriving (Show, Eq, Generic)
+makeLenses ''Command
 
-instance Show RequestKey where
-  show (RequestKey rk) = show rk
+instance Ord Command where
+  compare a b = compare (_sccCmd a) (_sccCmd b)
 
-initialRequestKey :: RequestKey
-initialRequestKey = RequestKey initialHash
+data CMDWire = SCCWire !ByteString deriving (Show, Eq, Generic)
 
-data AppliedCommand = AppliedCommand {
-      _acResult :: !CommandResult
-    , _acLatency :: !Int64
-    , _acRequestId :: !RequestId
-    } deriving (Eq,Show)
-makeLenses ''AppliedCommand
+encodeCommand :: Command -> CMDWire
+encodeCommand SmartContractCommand{..} = SCCWire $ S.encode _sccCmd
+{-# INLINE encodeCommand #-}
+
+-- | Decode the  Throws `DeserializationError`
+decodeCommand :: CMDWire -> Command
+decodeCommand (SCCWire b) =
+  let
+    !cmd = case S.decode b of
+      Left err -> throw $ DeserializationError $ err ++ "\n### for ###\n" ++ show b
+      Right v -> v
+    pp = Pact.verifyCommand cmd
+  in pp `par` (SmartContractCommand cmd pp)
+{-# INLINE decodeCommand #-}
+
+instance Serialize CMDWire
+
+getCmdBodyHash :: Command -> Hash
+getCmdBodyHash SmartContractCommand{ _sccCmd = Pact.PublicCommand{..}} = _cmdHash
+
+toRequestKey :: Command -> RequestKey
+toRequestKey SmartContractCommand{..} = RequestKey (Pact._cmdHash _sccCmd)
+{-# INLINE toRequestKey #-}
+
+data CommandResult = SmartContractResult
+  { _scrResult :: !Pact.CommandResult
+  , _cmdrLatency :: !Int64
+  }
+  deriving (Show, Eq, Generic)
+makeLenses ''CommandResult

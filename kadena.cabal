@@ -74,8 +74,8 @@ library
                      , Kadena.Spec.Simple
                      , Kadena.Types
                      , Kadena.Types.Base
-                     , Kadena.Types.Command
                      , Kadena.Types.Comms
+                     , Kadena.Types.Command
                      , Kadena.Types.Config
                      , Kadena.Types.Dispatch
                      , Kadena.Types.Event
@@ -83,8 +83,6 @@ library
                      , Kadena.Types.Message
                      , Kadena.Types.Message.AE
                      , Kadena.Types.Message.AER
-                     , Kadena.Types.Message.CMD
-                     , Kadena.Types.Message.CMDR
                      , Kadena.Types.Message.RV
                      , Kadena.Types.Message.RVR
                      , Kadena.Types.Message.Signed

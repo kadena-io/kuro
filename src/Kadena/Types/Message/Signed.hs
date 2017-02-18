@@ -11,10 +11,13 @@ module Kadena.Types.Message.Signed
   -- for testing & benchmarks
   , verifySignedRPC, verifySignedRPCNoReHash
   , WireFormat(..)
+  , DeserializationError(..)
   ) where
 
+import Control.Exception
 import Control.Lens hiding (Index, (|>))
 import Control.Parallel.Strategies
+import Data.Typeable
 
 import qualified Data.Map as Map
 import Data.ByteString (ByteString)
@@ -28,7 +31,7 @@ import Kadena.Types.Config
 -- | One way or another we need a way to figure our what set of public keys to use for verification of signatures.
 -- By placing the message type in the digest, we can make the WireFormat implementation easier as well. CMD and REV
 -- need to use the Client Public Key maps.
-data MsgType = AE | AER | RV | RVR | CMD | CMDR | CMDB
+data MsgType = AE | AER | RV | RVR
   deriving (Show, Eq, Ord, Generic)
 instance Serialize MsgType
 
@@ -68,21 +71,18 @@ class WireFormat a where
   toWire   :: NodeId -> PublicKey -> PrivateKey -> a -> SignedRPC
   fromWire :: Maybe ReceivedAt -> KeySet -> SignedRPC -> Either String a
 
+newtype DeserializationError = DeserializationError String deriving (Show, Eq, Typeable)
+
+instance Exception DeserializationError
+
 -- | Based on the MsgType in the SignedRPC's Digest, choose the keySet to try to find the key in
 pickKey :: KeySet -> SignedRPC -> Either String PublicKey
-pickKey !KeySet{..} s@(SignedRPC !Digest{..} _)
-  | _digType == CMD || _digType == CMDB =
-      case Map.lookup _digNodeId _ksClient of
-        Nothing -> Left $! "PubKey not found for NodeId: " ++ show _digNodeId
-        Just !key
-          | key /= _digPubkey -> Left $! "Public key in storage doesn't match digest's key for msg: " ++ show s
-          | otherwise -> Right $! key
-  | otherwise =
-      case Map.lookup _digNodeId _ksCluster of
-        Nothing -> Left $! "PubKey not found for NodeId: " ++ show _digNodeId
-        Just !key
-          | key /= _digPubkey -> Left $! "Public key in storage doesn't match digest's key for msg: " ++ show s
-          | otherwise -> Right $! key
+pickKey !KeySet{..} s@(SignedRPC !Digest{..} _) =
+  case Map.lookup _digNodeId _ksCluster of
+    Nothing -> Left $! "PubKey not found for NodeId: " ++ show _digNodeId
+    Just !key
+      | key /= _digPubkey -> Left $! "Public key in storage doesn't match digest's key for msg: " ++ show s
+      | otherwise -> Right $! key
 {-# INLINE pickKey #-}
 
 verifySignedRPC :: KeySet -> SignedRPC -> Either String ()

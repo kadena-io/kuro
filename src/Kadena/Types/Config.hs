@@ -9,7 +9,7 @@ module Kadena.Types.Config
   , myPublicKey, batchTimeDelta, dontDebugFollower, apiPort
   , logSqliteDir, enableAwsIntegration, entity, dbFile
   , aeBatchSize, cryptoBatchSize
-  , KeySet(..), ksClient, ksCluster
+  , KeySet(..), ksCluster
   , EntityInfo(..),entName
   ) where
 
@@ -77,7 +77,6 @@ instance FromJSON Config where
 
 data KeySet = KeySet
   { _ksCluster :: !(Map Alias PublicKey)
-  , _ksClient  :: !(Map Alias PublicKey)
   } deriving (Show)
 makeLenses ''KeySet
-instance Default KeySet where def = KeySet empty empty
+instance Default KeySet where def = KeySet empty

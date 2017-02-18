@@ -6,6 +6,7 @@ module Kadena.Types
 
 import Kadena.Types.Base as X
 import Kadena.Types.Comms as X
+import Kadena.Types.Command as X
 import Kadena.Types.Config as X
 import Kadena.Types.Dispatch as X
 import Kadena.Types.Event as X

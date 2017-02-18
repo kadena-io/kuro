@@ -8,7 +8,6 @@ module Kadena.Util.Util
   , getQuorumSize
   , awsDashVar
   , fromMaybeM
-  , makeCommandResponse'
   , foreverRetry
   ) where
 
@@ -18,9 +17,6 @@ import System.Process (system)
 
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
-import Data.Int (Int64)
-
-import Kadena.Types
 
 --TODO: this is pretty ghetto, there has to be a better/cleaner way
 foreverRetry :: (String -> IO ()) -> String -> IO () -> IO ()
@@ -55,9 +51,3 @@ getQuorumSize n = 1 + floor (fromIntegral n / 2 :: Float)
 
 fromMaybeM :: Monad m => m b -> Maybe b -> m b
 fromMaybeM errM = maybe errM (return $!)
-
-makeCommandResponse' :: NodeId -> Command -> CommandResult -> Int64 -> CommandResponse
-makeCommandResponse' nid Command{..} result lat =
-  let !res = CommandResponse result nid _cmdRequestId lat NewMsg
-  in res
-{-# INLINE makeCommandResponse' #-}

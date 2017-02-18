@@ -7,7 +7,9 @@
 
 module Kadena.Types.Command
   ( Command(..), sccCmd, sccPreProc
-  , encodeCommand, decodeCommand, getCmdBodyHash
+  , encodeCommand, decodeCommand
+  , encodeCommand', decodeCommand'
+  , getCmdBodyHash
   , CMDWire(..)
   , toRequestKey
   , CommandResult(..), scrResult, cmdrLatency
@@ -51,9 +53,16 @@ encodeCommand :: Command -> CMDWire
 encodeCommand SmartContractCommand{..} = SCCWire $ S.encode _sccCmd
 {-# INLINE encodeCommand #-}
 
--- | Decode the  Throws `DeserializationError`
+encodeCommand' :: Command -> CMDWire
+encodeCommand' SmartContractCommand{..} = SCCWire $! S.encode _sccCmd
+{-# INLINE encodeCommand' #-}
+
+-- | Decodes CMDWire to Command but sparks the crypto portion using `Control.Parallel.par`.
+-- The behavior of this is effectively, if the RTS can perform the crypto in parallel at some point do it
+-- but if we need the value before that, run the computation sequentially. This tactic is experimental as of 2/2017.
+--   Decode the  Throws `DeserializationError`
 decodeCommand :: CMDWire -> Command
-decodeCommand (SCCWire b) =
+decodeCommand (SCCWire !b) =
   let
     !cmd = case S.decode b of
       Left err -> throw $ DeserializationError $ err ++ "\n### for ###\n" ++ show b
@@ -61,6 +70,19 @@ decodeCommand (SCCWire b) =
     pp = Pact.verifyCommand cmd
   in pp `par` (SmartContractCommand cmd pp)
 {-# INLINE decodeCommand #-}
+
+-- | Decode the  Throws `DeserializationError`
+decodeCommand' :: CMDWire -> Command
+decodeCommand' (SCCWire !b) =
+  let
+    !cmd = case S.decode b of
+      Left !err -> throw $ DeserializationError $ err ++ "\n### for ###\n" ++ show b
+      Right !v -> v
+    !pp = Pact.verifyCommand cmd
+  in pp `seq` (SmartContractCommand cmd pp)
+{-# INLINE decodeCommand' #-}
+
+
 
 instance Serialize CMDWire
 

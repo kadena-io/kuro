@@ -12,7 +12,7 @@ import Kadena.Util.Util (foreverRetry)
 
 import Kadena.Messaging.Turbine.Types
 import Kadena.Messaging.Turbine.AER
-import Kadena.Messaging.Turbine.CMD
+import Kadena.Messaging.Turbine.NewCMD
 import Kadena.Messaging.Turbine.General
 import Kadena.Messaging.Turbine.RV
 
@@ -26,6 +26,6 @@ messageReceiver = do
   debug <- view debugPrint
   void $ liftIO $ foreverRetry debug turbineRv $ runReaderT rvAndRvrTurbine env
   void $ liftIO $ foreverRetry debug turbineAer $ runReaderT aerTurbine env
-  void $ liftIO $ foreverRetry debug turbineCmd $ runReaderT cmdTurbine env
+  void $ liftIO $ foreverRetry debug turbineCmd $ runReaderT newCmdTurbine env
   void $ liftIO $ foreverRetry debug turbineGeneral $ runReaderT generalTurbine env
   liftIO $ takeMVar (_restartTurbo env) >>= debug . (++) "restartTurbo MVar caught saying: "

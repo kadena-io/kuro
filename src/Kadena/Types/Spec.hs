@@ -41,7 +41,6 @@ import Data.Thyme.Time.Core ()
 import System.Random (Random)
 
 import Kadena.Types.Base
-import Kadena.Types.Command
 import Kadena.Types.Config
 import Kadena.Types.Event
 import Kadena.Types.Message

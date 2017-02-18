@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Kadena.Messaging.Turbine.CMD
-  ( cmdTurbine
+module Kadena.Messaging.Turbine.NewCMD
+  ( newCmdTurbine
   ) where
 
 import Control.Concurrent (threadDelay)

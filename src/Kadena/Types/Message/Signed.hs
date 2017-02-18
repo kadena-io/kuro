@@ -31,7 +31,7 @@ import Kadena.Types.Config
 -- | One way or another we need a way to figure our what set of public keys to use for verification of signatures.
 -- By placing the message type in the digest, we can make the WireFormat implementation easier as well. CMD and REV
 -- need to use the Client Public Key maps.
-data MsgType = AE | AER | RV | RVR
+data MsgType = AE | AER | RV | RVR | NEW
   deriving (Show, Eq, Ord, Generic)
 instance Serialize MsgType
 

@@ -60,7 +60,7 @@ library
                      , Kadena.Log.Types
                      , Kadena.Messaging.Turbine
                      , Kadena.Messaging.Turbine.AER
-                     , Kadena.Messaging.Turbine.CMD
+                     , Kadena.Messaging.Turbine.NewCMD
                      , Kadena.Messaging.Turbine.General
                      , Kadena.Messaging.Turbine.RV
                      , Kadena.Messaging.Turbine.Types
@@ -83,7 +83,7 @@ library
                      , Kadena.Types.Message
                      , Kadena.Types.Message.AE
                      , Kadena.Types.Message.AER
-                     , Kadena.Types.Message.FwdedCMDs
+                     , Kadena.Types.Message.NewCMD
                      , Kadena.Types.Message.RV
                      , Kadena.Types.Message.RVR
                      , Kadena.Types.Message.Signed

@@ -12,7 +12,7 @@ module Kadena.Types.Message.NewCMD
 import Codec.Compression.LZ4
 import Control.Lens
 import Data.Serialize (Serialize)
-import Data.Either
+import Data.Either (partitionEithers)
 import qualified Data.Serialize as S
 import Data.Thyme.Time.Core ()
 import GHC.Generics
@@ -21,12 +21,14 @@ import Kadena.Types.Command
 import Kadena.Types.Base
 import Kadena.Types.Message.Signed
 
+-- | This is what you use to send new commands into consensus' state machine
 data NewCmdInternal = NewCmdInternal
   { _newCmdInternal :: ![Command]
   }
   deriving (Show, Eq, Generic)
 makeLenses ''NewCmdInternal
 
+-- | This is what a follower uses to forward commands it's received to the leader
 data NewCmdRPC = NewCmdRPC
   { _newCmd :: ![Command]
   , _newProvenance :: !Provenance

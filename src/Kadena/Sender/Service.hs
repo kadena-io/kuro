@@ -129,7 +129,7 @@ serviceRequests = do
           BroadcastAER -> sendAllAppendEntriesResponse
           BroadcastRV rv -> sendAllRequestVotes rv
           BroadcastRVR{..} -> sendRequestVoteResponse _srCandidate _srHeardFromLeader _srVote
-          ForwardCommandToLeader{..} -> sendRPC _srFor $ FWD' $ ForwardedCmds _srCommands NewMsg
+          ForwardCommandToLeader{..} -> sendRPC _srFor $ NEW' $ NewCmdRPC _srCommands NewMsg
       Heart t -> liftIO (pprintBeat t) >>= debug
 
 queryLogs :: Set Log.AtomicQuery -> SenderService (Map Log.AtomicQuery Log.QueryResult)

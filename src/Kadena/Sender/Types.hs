@@ -28,6 +28,7 @@ import Data.Set (Set)
 import Kadena.Types.Base
 import Kadena.Types.Message
 import Kadena.Types.Comms
+import Kadena.Types.Command
 
 data ServiceRequest' =
   ServiceRequest'

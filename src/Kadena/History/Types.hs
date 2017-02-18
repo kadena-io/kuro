@@ -43,11 +43,11 @@ newtype ExistenceResult = ExistenceResult
   } deriving (Show, Eq)
 
 newtype PossiblyIncompleteResults = PossiblyIncompleteResults
-  { possiblyIncompleteResults :: HashMap RequestKey AppliedCommand
+  { possiblyIncompleteResults :: HashMap RequestKey CommandResult
   } deriving (Show, Eq)
 
 data ListenerResult =
-  ListenerResult AppliedCommand |
+  ListenerResult CommandResult |
   GCed String
   deriving (Show, Eq)
 
@@ -55,7 +55,7 @@ data History =
   AddNew
     { hNewKeys :: !(HashSet RequestKey) } |
   Update
-    { hUpdateRks :: !(HashMap RequestKey AppliedCommand) } |
+    { hUpdateRks :: !(HashMap RequestKey CommandResult) } |
   QueryForExistence
     { hQueryForExistence :: !(HashSet RequestKey, MVar ExistenceResult) } |
   QueryForPriorApplication
@@ -97,7 +97,7 @@ data DbEnv = DbEnv
 
 data PersistenceSystem =
   InMemory
-    { inMemResults :: !(HashMap RequestKey (Maybe AppliedCommand))} |
+    { inMemResults :: !(HashMap RequestKey (Maybe CommandResult))} |
   OnDisk
     { incompleteRequestKeys :: !(HashSet RequestKey)
     , dbConn :: !DbEnv}

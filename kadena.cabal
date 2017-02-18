@@ -83,6 +83,7 @@ library
                      , Kadena.Types.Message
                      , Kadena.Types.Message.AE
                      , Kadena.Types.Message.AER
+                     , Kadena.Types.Message.FwdedCMDs
                      , Kadena.Types.Message.RV
                      , Kadena.Types.Message.RVR
                      , Kadena.Types.Message.Signed

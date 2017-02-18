@@ -30,7 +30,6 @@ import qualified Data.Map.Strict as Map
 import Kadena.Types.Base
 import Kadena.Log.Types
 import qualified Kadena.Log.Types as X
-import Kadena.Types.Message.CMD
 import Kadena.Log.Persistence
 
 lastPersisted :: LogThread LogIndex

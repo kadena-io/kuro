@@ -43,7 +43,7 @@ data RPC = AE'   AppendEntries
          | AER'  AppendEntriesResponse
          | RV'   RequestVote
          | RVR'  RequestVoteResponse
-         | NEW'  NewCmd
+         | NEW'  NewCmdRPC -- NB: this should never go in ERPC as an internal event, use NewCmd
   deriving (Show, Eq, Generic)
 
 signedRPCtoRPC :: Maybe ReceivedAt -> KeySet -> SignedRPC -> Either String RPC

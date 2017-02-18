@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Kadena.Messaging.Turbine.NewCMD
@@ -11,49 +12,41 @@ import Control.Monad.Reader
 
 import Data.Either (partitionEithers)
 import Data.Sequence (Seq)
-import qualified Data.Set as Set
 
 import Kadena.Types hiding (debugPrint, nodeId)
 import Kadena.Messaging.Turbine.Types
 
-cmdTurbine :: ReaderT ReceiverEnv IO ()
-cmdTurbine = do
+newCmdTurbine :: ReaderT ReceiverEnv IO ()
+newCmdTurbine = do
   getCmds' <- view (dispatch.inboundCMD)
   let getCmds n = readComms getCmds' n
   enqueueEvent' <- view (dispatch.internalEvent)
   let enqueueEvent = writeComm enqueueEvent' . InternalEvent
   debug <- view debugPrint
   ks <- view keySet
-  liftIO $ cmdDynamicTurbine ks getCmds debug enqueueEvent
+  liftIO $ newCmdDynamicTurbine ks getCmds debug enqueueEvent
 
-cmdDynamicTurbine
+newCmdDynamicTurbine
   :: Num a =>
      KeySet
      -> (a -> IO (Seq InboundCMD))
      -> (String -> IO ())
      -> (Event -> IO ())
      -> IO ()
-cmdDynamicTurbine ks' getCmds' debug' enqueueEvent' = forever $ do
+newCmdDynamicTurbine ks' getCmds' debug' enqueueEvent' = forever $ do
   verifiedCmds <- parallelVerify _unInboundCMD ks' <$> getCmds' 5000
   (invalidCmds, validCmds) <- return $ partitionEithers verifiedCmds
   mapM_ debug' invalidCmds
-  cmds@(CommandBatch cmds' _) <- return $ batchCommands validCmds
-  lenCmdBatch <- return $ length $ unCommands cmds'
+  cmdInt@(NewCmdInternal cmds) <- return $ toNewCmdInternal validCmds
+  lenCmdBatch <- return $ length cmds
   unless (lenCmdBatch == 0) $ do
-    enqueueEvent' $ ERPC $ CMDB' cmds
-    src <- return (Set.fromList $ fmap (\v' -> case v' of
-      CMD' v -> ( unAlias $ _cmdClientId v, unAlias $ _digNodeId $ _pDig $ _cmdProvenance v )
-      CMDB' v -> ( "CMDB", unAlias $ _digNodeId $ _pDig $ _cmdbProvenance v )
-      v -> error $ "deep invariant failure: caught something that wasn't a CMDB/CMD " ++ show v
-      ) validCmds)
-    debug' $ turbineCmd ++ "batched " ++ show (length $ unCommands cmds') ++ " CMD(s) from " ++ show src
+    enqueueEvent' $ NewCmd cmdInt
+    debug' $ turbineCmd ++ "batched " ++ show (length cmds) ++ " CMD(s)"
   when (lenCmdBatch > 100) $ threadDelay 500000 -- .5sec
 
-batchCommands :: [RPC] -> CommandBatch
-batchCommands cmdRPCs = cmdBatch
+toNewCmdInternal :: [RPC] -> NewCmdInternal
+toNewCmdInternal cmdRPCs = NewCmdInternal $! concat $! getCmds <$> cmdRPCs
   where
-    cmdBatch = CommandBatch (Commands $! concat (prepCmds <$> cmdRPCs)) NewMsg
-    prepCmds (CMD' cmd) = [cmd]
-    prepCmds (CMDB' (CommandBatch (Commands cmds) _)) = cmds
-    prepCmds o = error $ "Invariant failure in batchCommands: pattern match failure " ++ show o
-{-# INLINE batchCommands #-}
+    getCmds (NEW' NewCmdRPC{..}) = _newCmd
+    getCmds o = error $ "Invariant failure in toNewCmdInternal: pattern match failure " ++ show o
+{-# INLINE toNewCmdInternal #-}

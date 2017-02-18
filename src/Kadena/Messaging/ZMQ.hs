@@ -87,7 +87,7 @@ runMsgServer dispatch me addrList debug = Async.async $ forever $ do
                 | _digType dig == RV || _digType dig == RVR -> do
                   --liftIO $ debug $ "[ZMQ_GENERAL_SUB] Received RVR from: " ++ (show $ _alias $ _digNodeId dig)
                   liftIO $ writeComm rvAndRvrWrite (InboundRVorRVR (ReceivedAt ts, s)) >> yield
-                | _digType dig == FWD -> do
+                | _digType dig == NEW -> do
                   --liftIO $ debug $ "[ZMQ_GENERAL_SUB] Received CMD or CMDB from: " ++ (show $ _alias $ _digNodeId dig)
                   liftIO $ writeComm cmdInboxWrite (InboundCMD (ReceivedAt ts, s)) >> yield
                 | _digType dig == AER -> do
@@ -151,7 +151,7 @@ runMsgServer dispatch me addrList debug = Async.async $ forever $ do
                 | _digType dig == RV || _digType dig == RVR -> do
                   --liftIO $ debug $ zmqAerSub ++ "received RVR from: " ++ (show $ _alias $ _digNodeId dig)
                   liftIO $ writeComm rvAndRvrWrite (InboundRVorRVR (ReceivedAt ts, s)) >> yield
-                | _digType dig == FWD -> do
+                | _digType dig == NEW -> do
                   liftIO $ debug $ zmqAerSub ++ "Received a CMD or CMDB but shouldn't have from: " ++ (show $ _digNodeId dig)
                   liftIO $ writeComm cmdInboxWrite (InboundCMD (ReceivedAt ts, s)) >> yield
                 | _digType dig == AER -> do

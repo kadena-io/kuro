@@ -18,6 +18,7 @@ data ResetLeaderNoFollowersTimeout = ResetLeaderNoFollowersTimeout
   deriving Show
 
 data Event = ERPC RPC
+           | NewCmd NewCmdInternal
            | ElectionTimeout String
            | HeartbeatTimeout String
            | Heart Beat

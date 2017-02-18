@@ -7,8 +7,8 @@
 
 module Kadena.Types.Command
   ( Command(..), sccCmd, sccPreProc
-  , encodeCommand, decodeCommand
-  , encodeCommand', decodeCommand'
+  , encodeCommand, decodeCommand, decodeCommandEither
+  , encodeCommand', decodeCommand', decodeCommandEither'
   , getCmdBodyHash
   , CMDWire(..)
   , toRequestKey
@@ -71,6 +71,12 @@ decodeCommand (SCCWire !b) =
   in pp `par` (SmartContractCommand cmd pp)
 {-# INLINE decodeCommand #-}
 
+decodeCommandEither :: CMDWire -> Either String Command
+decodeCommandEither (SCCWire !b) = case S.decode b of
+  Left !err -> Left $! err ++ "\n### for ###\n" ++ show b
+  Right !cmd -> Right $! let pp = Pact.verifyCommand cmd in pp `par` (SmartContractCommand cmd pp)
+{-# INLINE decodeCommandEither #-}
+
 -- | Decode the  Throws `DeserializationError`
 decodeCommand' :: CMDWire -> Command
 decodeCommand' (SCCWire !b) =
@@ -81,6 +87,12 @@ decodeCommand' (SCCWire !b) =
     !pp = Pact.verifyCommand cmd
   in pp `seq` (SmartContractCommand cmd pp)
 {-# INLINE decodeCommand' #-}
+
+decodeCommandEither' :: CMDWire -> Either String Command
+decodeCommandEither' (SCCWire !b) = case S.decode b of
+  Left !err -> Left $! err ++ "\n### for ###\n" ++ show b
+  Right !cmd -> Right $! let !pp = Pact.verifyCommand cmd in pp `seq` (SmartContractCommand cmd pp)
+{-# INLINE decodeCommandEither' #-}
 
 
 

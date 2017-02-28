@@ -125,7 +125,7 @@ addNewKeys srks = do
   end <- now
   debug $ "Added " ++ show (HashSet.size srks) ++ " new keys taking " ++ show (interval start end) ++ "mics"
 
-updateExistingKeys :: HashMap RequestKey AppliedCommand -> HistoryService ()
+updateExistingKeys :: HashMap RequestKey CommandResult -> HistoryService ()
 updateExistingKeys updates = do
   alertListeners updates
   pers <- use persistence
@@ -135,16 +135,16 @@ updateExistingKeys updates = do
       newInMem <- return $! InMemory $! foldr updateInMemKey m $ HashMap.toList updates
       persistence .= newInMem
     OnDisk{..} -> do
-      liftIO $ DB.insertCompletedCommand dbConn updates
+      liftIO $ DB.insertCompletedCommand dbConn $ HashMap.elems updates
       persistence .= OnDisk { incompleteRequestKeys = HashSet.filter (\k -> not $ HashMap.member k updates) incompleteRequestKeys
                             , dbConn = dbConn }
   end <- now
   debug $ "Updated " ++ show (HashMap.size updates) ++ " keys (" ++ show (interval start end) ++ "mics)"
 
-updateInMemKey :: (RequestKey, AppliedCommand) -> HashMap RequestKey (Maybe AppliedCommand) -> HashMap RequestKey (Maybe AppliedCommand)
+updateInMemKey :: (RequestKey, CommandResult) -> HashMap RequestKey (Maybe CommandResult) -> HashMap RequestKey (Maybe CommandResult)
 updateInMemKey (k,v) m = HashMap.insert k (Just v) m
 
-alertListeners :: HashMap RequestKey AppliedCommand -> HistoryService ()
+alertListeners :: HashMap RequestKey CommandResult -> HistoryService ()
 alertListeners m = do
   start <- now
   listeners <- use registeredListeners
@@ -156,7 +156,7 @@ alertListeners m = do
     end <- now
     debug $ "Serviced " ++ show (sum res) ++ " alerts taking " ++ show (interval start end) ++ "mics"
 
-alertListener :: HashMap RequestKey AppliedCommand -> (RequestKey, [MVar ListenerResult]) -> HistoryService Int
+alertListener :: HashMap RequestKey CommandResult -> (RequestKey, [MVar ListenerResult]) -> HistoryService Int
 alertListener res (k,mvs) = do
   commandRes <- return $! res HashMap.! k
   -- debug $ "Servicing Listener for: " ++ show k
@@ -219,7 +219,7 @@ queryForResults (srks, mRes) = do
   debug $ "Queried results of " ++ show (HashSet.size srks) ++ " entries (" ++ show (interval start end) ++ "mics)"
 
 -- This is here to try to get GHC to check the fast part first
-checkForIndividualResultInMem :: HashSet RequestKey -> RequestKey -> Maybe AppliedCommand -> Bool
+checkForIndividualResultInMem :: HashSet RequestKey -> RequestKey -> Maybe CommandResult -> Bool
 checkForIndividualResultInMem _ _ Nothing = False
 checkForIndividualResultInMem s k (Just _) = HashSet.member k s
 

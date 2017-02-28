@@ -32,9 +32,7 @@ import Kadena.Types
 -- These live here as orphans, and not in Types, because trying to Serialize these things should be a type level error
 -- with rare exception (i.e. for hashing the log entry). Moreover, accidentally sending Provenance over the wire could
 -- be hard to catch. Best to make it impossible.
-instance Serialize Command
 instance Serialize Provenance
-instance Serialize LogEntry
 instance Serialize RequestVoteResponse
 
 instance ToField NodeId where
@@ -83,10 +81,14 @@ instance FromField Hash where
       Left err -> returnError ConversionFailed f ("Couldn't deserialize Set: " ++ err)
       Right v -> Ok v
 
-instance ToField CommandEntry where
-  toField (CommandEntry e) = toField e
-instance FromField CommandEntry where
-  fromField f = CommandEntry <$> fromField f
+instance ToField Command where
+  toField n = toField $ encode $ encodeCommand' n
+instance FromField Command where
+  fromField f = do
+    s :: ByteString <- fromField f
+    case decode s >>= decodeCommandEither' of
+      Left err -> returnError ConversionFailed f ("Couldn't deserialize Command: " ++ err)
+      Right n -> Ok n
 
 instance ToField RequestId where
   toField (RequestId rid) = toField rid
@@ -98,24 +100,11 @@ instance ToField Alias where
 instance FromField Alias where
   fromField f = Alias <$> fromField f
 
-instance ToField CryptoVerified where
-  toField = toField . encode
-instance FromField CryptoVerified where
-  fromField f = do
-    s :: ByteString <- fromField f
-    case decode s of
-      Left err -> returnError ConversionFailed f ("Couldn't deserialize CryptoVerified: " ++ err)
-      Right v -> Ok v
-
 instance ToRow LogEntry where
   toRow LogEntry{..} = [toField _leLogIndex
                        ,toField _leTerm
                        ,toField _leHash
-                       ,toField $ _cmdEntry _leCommand
-                       ,toField $ _cmdClientId _leCommand
-                       ,toField $ _cmdRequestId _leCommand
-                       ,toField $ _cmdCryptoVerified _leCommand
-                       ,toField $ _cmdProvenance _leCommand
+                       ,toField _leCommand
                        ]
 
 instance FromRow LogEntry where
@@ -123,22 +112,13 @@ instance FromRow LogEntry where
     leLogIndex' <- field
     leTerm' <- field
     leHash' <- field
-    cmdEntry' <- field
-    cmdClientId' <- field
-    cmdRequestId' <- field
-    cmdCryptoVerified' <- field
-    cmdProvenance' <- field
+    command' <- field
     return $ LogEntry
       { _leTerm = leTerm'
       , _leLogIndex = leLogIndex'
-      , _leCommand = Command
-        { _cmdEntry = cmdEntry'
-        , _cmdClientId = cmdClientId'
-        , _cmdRequestId = cmdRequestId'
-        , _cmdCryptoVerified = cmdCryptoVerified'
-        , _cmdProvenance = cmdProvenance'
-        }
+      , _leCommand = command'
       , _leHash = leHash'
+      , _leReceivedAt = Nothing
       }
 
 sqlDbSchema :: Query
@@ -147,11 +127,7 @@ sqlDbSchema = Query $ T.pack
   \( 'logIndex' INTEGER PRIMARY KEY NOT NULL UNIQUE\
   \, 'term' INTEGER\
   \, 'hash' TEXT\
-  \, 'commandEntry' TEXT\
-  \, 'clientId' TEXT\
-  \, 'requestId' TEXT\
-  \, 'cryptoVerified' TEXT\
-  \, 'provenance' TEXT\
+  \, 'command' TEXT\
   \)"
 
 createDB :: FilePath -> IO Connection
@@ -167,19 +143,15 @@ sqlInsertLogEntry = Query $ T.pack
     \( 'logIndex'\
     \, 'term'\
     \, 'hash'\
-    \, 'commandEntry'\
-    \, 'clientId'\
-    \, 'requestId'\
-    \, 'cryptoVerified'\
-    \, 'provenance'\
-    \) VALUES (?,?,?,?,?,?,?,?)"
+    \, 'command'\
+    \) VALUES (?,?,?,?)"
 
 insertSeqLogEntry :: Connection -> LogEntries -> IO ()
 insertSeqLogEntry conn (LogEntries les) = withTransaction conn $ mapM_ (execute conn sqlInsertLogEntry) $ Map.elems les
 
 sqlSelectAllLogEntries :: Query
 sqlSelectAllLogEntries = Query $ T.pack
-  "SELECT logIndex,term,hash,commandEntry,clientId,requestId,cryptoVerified,provenance\
+  "SELECT logIndex,term,hash,command\
   \ FROM 'main'.'logEntry'\
   \ ORDER BY logIndex ASC"
 
@@ -191,7 +163,7 @@ selectAllLogEntries conn = do
 
 sqlSelectLastLogEntry :: Query
 sqlSelectLastLogEntry = Query $ T.pack
-  "SELECT logIndex,term,hash,commandEntry,clientId,requestId,cryptoVerified,provenance\
+  "SELECT logIndex,term,hash,command\
   \ FROM 'main'.'logEntry'\
   \ ORDER BY logIndex DESC\
   \ LIMIT 1"
@@ -206,7 +178,7 @@ selectLastLogEntry conn = do
 
 sqlSelectAllLogEntryAfter :: LogIndex -> Query
 sqlSelectAllLogEntryAfter (LogIndex li) = Query $ T.pack $
-  "SELECT logIndex,term,hash,commandEntry,clientId,requestId,cryptoVerified,provenance\
+  "SELECT logIndex,term,hash,command\
   \ FROM 'main'.'logEntry'\
   \ WHERE logIndex > " ++ show li ++
   " ORDER BY logIndex ASC"
@@ -219,7 +191,7 @@ selectAllLogEntriesAfter li conn = do
 
 sqlSelectLogEntriesInclusiveSection :: LogIndex -> LogIndex -> Query
 sqlSelectLogEntriesInclusiveSection (LogIndex liFrom) (LogIndex liTo) = Query $ T.pack $
-  "SELECT logIndex,term,hash,commandEntry,clientId,requestId,cryptoVerified,provenance\
+  "SELECT logIndex,term,hash,command\
   \ FROM 'main'.'logEntry'\
   \ WHERE logIndex >= " ++ show liFrom ++
   " AND logIndex <= " ++ show liTo ++
@@ -233,7 +205,7 @@ selectLogEntriesInclusiveSection liFrom liTo conn = do
 
 sqlSelectSpecificLogEntry :: LogIndex -> Query
 sqlSelectSpecificLogEntry (LogIndex li) = Query $ T.pack $
-  "SELECT logIndex,term,hash,commandEntry,clientId,requestId,cryptoVerified,provenance\
+  "SELECT logIndex,term,hash,command\
   \ FROM 'main'.'logEntry'\
   \ WHERE logIndex == " ++ show li ++
   " ORDER BY logIndex ASC"

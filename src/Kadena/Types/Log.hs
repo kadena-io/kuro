@@ -22,7 +22,7 @@ module Kadena.Types.Log
   , LEWire(..), encodeLEWire, decodeLEWire, decodeLEWire', toLogEntries
   , ReplicateLogEntries(..), rleMinLogIdx, rleMaxLogIdx, rlePrvLogIdx, rleEntries
   , toReplicateLogEntries
-  , NewLogEntries(..), nleTerm, nleEntries
+  , NewLogEntries(..), nleTerm, nleEntries, nleReceivedAt
   , UpdateCommitIndex(..), uci
   , UpdateLogs(..)
   , hashLogEntry
@@ -288,6 +288,7 @@ newtype NleEntries = NleEntries { unNleEntries :: [Command] } deriving (Eq,Show)
 data NewLogEntries = NewLogEntries
   { _nleTerm :: !Term
   , _nleEntries :: !NleEntries
+  , _nleReceivedAt :: !(Maybe ReceivedAt)
   } deriving (Show, Eq, Generic)
 makeLenses ''NewLogEntries
 

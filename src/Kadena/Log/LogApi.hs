@@ -6,7 +6,6 @@ module Kadena.Log.LogApi
   , getUnappliedEntries
   , getUncommitedHashes
   , getUnpersisted
-  , getUnverifiedEntries
   , updateLogs
   , evalQuery
   -- ReExports
@@ -22,12 +21,11 @@ import Control.Lens hiding (Index, (|>))
 import Control.Monad
 import Control.Monad.IO.Class
 
-import Data.IntMap.Strict (IntMap)
-import qualified Data.IntMap.Strict as IntMap
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 
 import Kadena.Types.Base
+import Kadena.Types.Command (Command(..))
 import Kadena.Log.Types
 import qualified Kadena.Log.Types as X
 import Kadena.Log.Persistence
@@ -120,13 +118,11 @@ getUncommitedHashes = do
 -- | get every entry that hasn't been applied yet (betweek LastApplied and CommitIndex)
 getUnappliedEntries :: LogThread (Maybe LogEntries)
 getUnappliedEntries = do
-  lv       <- use lsLastCryptoVerified
   vles     <- use lsVolatileLogEntries
   ci       <- commitIndex
-  finalIdx <- return $! if lv > ci then ci else lv
   la       <- lastApplied
-  les      <- return $! if la < finalIdx
-                        then Just $ lesGetSection (Just $ la + 1) (Just finalIdx) vles
+  les      <- return $! if la < ci
+                        then Just $ lesGetSection (Just $ la + 1) (Just ci) vles
                         else Nothing
   case les of
     Just (LogEntries v) | Map.null v -> return $ Nothing
@@ -146,19 +142,6 @@ getUnpersisted = do
                 else Just uples
            else Nothing
 {-# INLINE getUnpersisted #-}
-
-getUnverifiedEntries :: Maybe Int -> LogThread (Maybe LogEntries)
-getUnverifiedEntries mInt = do
-  lstIndex <- maxIndex
-  fstIndex <- use lsLastCryptoVerified
-  let takeTillIdx = case mInt of
-        Nothing -> Nothing
-        Just i -> Just $ fstIndex + 1 + fromIntegral i
-  vles <- use lsVolatileLogEntries
-  return $! if fstIndex < lstIndex
-            then Just $! lesGetSection (Just $ fstIndex + 1) takeTillIdx vles
-            else Nothing
-{-# INLINE getUnverifiedEntries #-}
 
 logInfoForNextIndex :: Maybe LogIndex -> LogThread (LogIndex,Term)
 logInfoForNextIndex Nothing          = return (startIndex, startTerm)
@@ -229,17 +212,7 @@ updateLogs (ULNew nle) = appendLogEntry nle
 updateLogs (ULReplicate ReplicateLogEntries{..}) = addLogEntriesAt _rlePrvLogIdx _rleEntries
 updateLogs (ULCommitIdx UpdateCommitIndex{..}) = lsCommitIndex .= _uci
 updateLogs (UpdateLastApplied li) = lsLastApplied .= li
-updateLogs (UpdateVerified (VerifiedLogEntries res)) = do
-  lsVolatileLogEntries %= applyCryptoVerify' res
-  lsLastCryptoVerified .= LogIndex (fst $ IntMap.findMax res)
 {-# INLINE updateLogs  #-}
-
-applyCryptoVerify' :: IntMap CryptoVerified -> LogEntries -> LogEntries
-applyCryptoVerify' m (LogEntries les) = LogEntries $! fmap (\le@LogEntry{..} -> case IntMap.lookup (fromIntegral $ _leLogIndex) m of
-      Nothing -> le
-      Just c -> le { _leCommand = _leCommand { _cmdCryptoVerified = c }}
-      ) les
-{-# INLINE applyCryptoVerify' #-}
 
 addLogEntriesAt :: LogIndex -> LogEntries -> LogThread ()
 addLogEntriesAt pli newLEs = do
@@ -274,7 +247,7 @@ appendLogEntry NewLogEntries{..} = do
   nli <- use lsNextLogIndex
   case lastEntry' of
     Just ple -> do
-      nle <- return $! newEntriesToLog _nleTerm (_leHash ple) nli (unNleEntries _nleEntries)
+      nle <- return $! newEntriesToLog _nleTerm (_leHash ple) nli _nleReceivedAt (unNleEntries _nleEntries)
       mLastLog' <- return $! lesMaxEntry nle
       case mLastLog' of
         Nothing -> return ()
@@ -286,7 +259,7 @@ appendLogEntry NewLogEntries{..} = do
           lsNextLogIndex .= lastIdx' + 1
           lsLastLogTerm  .= _leTerm lastLog'
     Nothing -> do
-      nle <- return $! newEntriesToLog _nleTerm initialHash nli (unNleEntries _nleEntries)
+      nle <- return $! newEntriesToLog _nleTerm initialHash nli _nleReceivedAt (unNleEntries _nleEntries)
       mLastLog' <- return $! lesMaxEntry nle
       case mLastLog' of
         Nothing -> return ()
@@ -299,15 +272,15 @@ appendLogEntry NewLogEntries{..} = do
           lsLastLogTerm  .= _leTerm lastLog'
 {-# INLINE appendLogEntry #-}
 
-newEntriesToLog :: Term -> Hash -> LogIndex -> [Command] -> LogEntries
-newEntriesToLog ct prevHash idx cmds = res `seq` LogEntries res
+newEntriesToLog :: Term -> Hash -> LogIndex -> Maybe ReceivedAt -> [Command] -> LogEntries
+newEntriesToLog ct prevHash idx mra cmds = res `seq` LogEntries res
   where
     res = Map.fromList $! go (Just prevHash) idx cmds
     go _ _ [] = []
-    go prevHash' i [c] = [(i,hashLogEntry prevHash' (LogEntry ct i c initialHash))]
+    go prevHash' i [c] = [(i,hashLogEntry prevHash' (LogEntry ct i c initialHash mra))]
     go prevHash' i (c:cs) =
       let
-        hashedEntry = hashLogEntry prevHash' $ LogEntry ct i c initialHash
+        hashedEntry = hashLogEntry prevHash' $ LogEntry ct i c initialHash mra
       in (:) (i, hashedEntry) $! go (Just $ _leHash hashedEntry) (i + 1) cs
 {-# INLINE newEntriesToLog #-}
 

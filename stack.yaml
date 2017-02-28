@@ -3,15 +3,14 @@ resolver: lts-6.12
 # Local packages, usually specified by relative directory name
 packages:
 - '.'
-- location: ./submodules/snap-cors
+- location:
+    git: https://github.com/slpopejoy/snap-cors.git
+    commit: cc88bab1fd3f62dc4d9f9ad81a231877a639c812
   extra-dep: true
-  # commit: cc88bab1fd3f62dc4d9f9ad81a231877a639c812
-- location: ./submodules/pact
+- location:
+    git: https://github.com/kadena-io/pact.git
+    commit: 6768e2c4438314b7af5429363ac92ca752e2907c
   extra-dep: true
-  # commit: f4a05f72aa58f54dff57d3c197d0c7beeb5cbf80
-  #- location: ./submodules/bencoding
-  # commit: 8eb25b3a00579793d4e0ce475791758012d3f5a1
-
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)
 extra-deps:

@@ -12,7 +12,7 @@ module Kadena.Types.Command
   , getCmdBodyHash
   , CMDWire(..)
   , toRequestKey
-  , CommandResult(..), scrResult, cmdrLatency
+  , CommandResult(..), scrResult, scrHash, cmdrLogIndex, cmdrLatency
   ) where
 
 import Control.Exception
@@ -106,7 +106,9 @@ toRequestKey SmartContractCommand{..} = RequestKey (Pact._cmdHash _sccCmd)
 {-# INLINE toRequestKey #-}
 
 data CommandResult = SmartContractResult
-  { _scrResult :: !Pact.CommandResult
+  { _scrHash :: !Hash
+  , _scrResult :: !Pact.CommandResult
+  , _cmdrLogIndex :: !LogIndex
   , _cmdrLatency :: !Int64
   }
   deriving (Show, Eq, Generic)

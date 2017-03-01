@@ -22,6 +22,8 @@ import Control.Concurrent.Chan (Chan)
 
 import Data.Thyme.Clock (UTCTime)
 
+import qualified Pact.Types.Command as Pact
+
 import Kadena.Types.Base as X
 import Kadena.Types.Config as X hiding (nodeId, _nodeId)
 import Kadena.Types.Command as X
@@ -32,7 +34,7 @@ import Kadena.Types.Message as X
 
 import Kadena.History.Types (HistoryChannel)
 
-type ApplyFn = LogEntry -> IO CommandResult
+type ApplyFn = LogEntry -> IO Pact.CommandResult
 
 data Commit =
   ReloadFromDisk

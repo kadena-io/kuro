@@ -22,7 +22,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Maybe (fromMaybe)
 
-import Kadena.Consensus.Handle.Types
+import Kadena.Types hiding (term, currentLeader, ignoreLeader, quorumSize)
 import Kadena.Sender.Service (createAppendEntriesResponse')
 import Kadena.Consensus.Util
 import qualified Kadena.Types as KD
@@ -157,7 +157,7 @@ appendLogEntries pli newEs
           tell ["Failure to Append Logs: " ++ err]
           return SendFailureResponse
       Right rle -> do
-        replay <- return $ HashSet.fromList $ fmap (toRequestKey "appendLogEntries" . _leCommand) (Map.elems (newEs ^. Log.logEntries))
+        replay <- return $ HashSet.fromList $ fmap (toRequestKey . _leCommand) (Map.elems (newEs ^. Log.logEntries))
         tell ["replicated LogEntry(s): " ++ show (_rleMinLogIdx rle) ++ " through " ++ show (_rleMaxLogIdx rle)]
         return $ Commit replay rle
 

@@ -19,7 +19,7 @@ import qualified Data.BloomFilter as Bloom
 import Data.Maybe (isJust, fromJust)
 import Data.Either (partitionEithers)
 
-import Kadena.Consensus.Handle.Types
+import Kadena.Types hiding (nodeRole, cmdBloomFilter)
 import Kadena.Consensus.Util
 import qualified Kadena.Types as KD
 
@@ -45,12 +45,12 @@ data CommandBatchOut =
   IAmFollower BatchProcessing |
   IAmCandidate
 
-filterBatch :: Bloom RequestKey -> Commands -> BatchProcessing
-filterBatch bfilter (Commands cs) = BatchProcessing (BPNewEntries brandNew) (BPAlreadySeen likelySeen)
+filterBatch :: Bloom RequestKey -> [Command] -> BatchProcessing
+filterBatch bfilter cs = BatchProcessing (BPNewEntries brandNew) (BPAlreadySeen likelySeen)
   where
-    probablyAlreadySaw cmd@Command{..} =
+    probablyAlreadySaw cmd@SmartContractCommand{..} =
       -- forcing the inside of an either is notoriously hard. in' is trying to at least force the majority of the work
-      let in' = Bloom.elem (toRequestKey "filterBatch" cmd) bfilter
+      let in' = Bloom.elem (toRequestKey cmd) bfilter
           res = if in'
             then Left cmd
             else Right cmd
@@ -58,7 +58,7 @@ filterBatch bfilter (Commands cs) = BatchProcessing (BPNewEntries brandNew) (BPA
     (likelySeen, brandNew) = partitionEithers $! ((probablyAlreadySaw <$> cs) `using` parListN 100 rseq)
 {-# INLINE filterBatch #-}
 
-handleCommandBatch :: (MonadReader CommandEnv m,MonadWriter [String] m) => Commands -> m CommandBatchOut
+handleCommandBatch :: (MonadReader CommandEnv m,MonadWriter [String] m) => [Command] -> m CommandBatchOut
 handleCommandBatch cmdbBatch = do
   tell ["got a command RPC"]
   r <- view nodeRole
@@ -68,7 +68,7 @@ handleCommandBatch cmdbBatch = do
     Follower -> IAmFollower $ filterBatch bloom cmdbBatch
     Candidate -> IAmCandidate
 
-handleBatch :: Commands -> KD.Consensus ()
+handleBatch :: [Command] -> KD.Consensus ()
 handleBatch cmdbBatch = do
   debug "Received Command Batch"
   s <- get
@@ -77,9 +77,10 @@ handleBatch cmdbBatch = do
              CommandEnv (KD._nodeRole s)
                         (KD._cmdBloomFilter s)
   debug "Finished processing command batch"
+  recAt <- now
   case out of
     IAmLeader BatchProcessing{..} -> do
-      updateLogs $ ULNew $ NewLogEntries (KD._term s) $ KD.NleEntries $  _unBPNewEntries newEntries
+      updateLogs $ ULNew $ NewLogEntries (KD._term s) (KD.NleEntries $  _unBPNewEntries newEntries) (Just $ ReceivedAt recAt)
       unless (null $ _unBPNewEntries newEntries) $ do
         enqueueRequest $ Sender.BroadcastAE Sender.OnlySendIfFollowersAreInSync
         enqueueRequest $ Sender.BroadcastAER
@@ -87,20 +88,20 @@ handleBatch cmdbBatch = do
       unless (null $ _unBPAlreadySeen alreadySeen) $ do
         -- but we can skip it if we have no collisions... it's the whole point of using the filter
         start <- now
-        setOfAlreadySeen <- return $! HashSet.fromList $ toRequestKey "handleBatch.Leader.1" <$> _unBPAlreadySeen alreadySeen
+        setOfAlreadySeen <- return $! HashSet.fromList $ toRequestKey <$> _unBPAlreadySeen alreadySeen
         truePositives <- queryHistoryForExisting setOfAlreadySeen
         falsePositive <- return $! HashSet.difference setOfAlreadySeen truePositives
-        falsePositiveCommands <- return $! filter (\c' -> HashSet.member (toRequestKey "handleBatch.Leader.2" c') falsePositive) $ _unBPAlreadySeen alreadySeen
+        falsePositiveCommands <- return $! filter (\c' -> HashSet.member (toRequestKey c') falsePositive) $ _unBPAlreadySeen alreadySeen
         end <- now
         unless (HashSet.null falsePositive) $ do
-          updateLogs $ ULNew $ NewLogEntries (KD._term s) $ KD.NleEntries falsePositiveCommands
+          updateLogs $ ULNew $ NewLogEntries (KD._term s) (KD.NleEntries falsePositiveCommands) (Just $ ReceivedAt recAt)
           enqueueRequest $ Sender.BroadcastAE Sender.OnlySendIfFollowersAreInSync
           enqueueRequest $ Sender.BroadcastAER
           debug $ "CMDB - False positives found "
                   ++ show (HashSet.size falsePositive)
                   ++ " of " ++ show (HashSet.size setOfAlreadySeen) ++ " collisions ("
                   ++ show (interval start end) ++ "mics)"
-        sendHistoryNewKeys $ HashSet.union falsePositive $ HashSet.fromList $ toRequestKey "handleBatch.Leader.3" <$> _unBPAlreadySeen alreadySeen
+        sendHistoryNewKeys $ HashSet.union falsePositive $ HashSet.fromList $ toRequestKey <$> _unBPAlreadySeen alreadySeen
       -- the false positives we already collisions so no need to add them
       KD.cmdBloomFilter .= updateBloom newEntries (KD._cmdBloomFilter s)
       quorumSize' <- view KD.quorumSize
@@ -111,12 +112,12 @@ handleBatch cmdbBatch = do
         enqueueRequest $ Sender.ForwardCommandToLeader (fromJust lid) $ _unBPNewEntries newEntries
       unless (null $ _unBPAlreadySeen alreadySeen) $ do
         start <- now
-        setOfAlreadySeen <- return $! HashSet.fromList $ toRequestKey "handleBatch" <$> _unBPAlreadySeen alreadySeen
+        setOfAlreadySeen <- return $! HashSet.fromList $ toRequestKey <$> _unBPAlreadySeen alreadySeen
         truePositives <- queryHistoryForExisting setOfAlreadySeen
         falsePositive <- return $! HashSet.difference setOfAlreadySeen truePositives
         end <- now
         unless (HashSet.null falsePositive) $ do
-          falsePositiveCommands <- return $! filter (\c' -> HashSet.member (toRequestKey "handleBatch.Follower" c') falsePositive) $ _unBPAlreadySeen alreadySeen
+          falsePositiveCommands <- return $! filter (\c' -> HashSet.member (toRequestKey c') falsePositive) $ _unBPAlreadySeen alreadySeen
           enqueueRequest $ Sender.ForwardCommandToLeader (fromJust lid) falsePositiveCommands
           debug $ "CMDB - False positives found "
                   ++ show (HashSet.size falsePositive)
@@ -125,5 +126,5 @@ handleBatch cmdbBatch = do
     IAmCandidate -> return () -- TODO: we should probably respond with something like "availability event"
 
 updateBloom :: BPNewEntries -> Bloom RequestKey -> Bloom RequestKey
-updateBloom (BPNewEntries firstPass) oldBloom = Bloom.insertList (toRequestKey "updateBloom" <$> firstPass) oldBloom
+updateBloom (BPNewEntries firstPass) oldBloom = Bloom.insertList (toRequestKey <$> firstPass) oldBloom
 {-# INLINE updateBloom #-}

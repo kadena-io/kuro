@@ -92,7 +92,7 @@ handle = do
 applyLogEntries :: ReplayStatus -> LogEntries -> CommitService ()
 applyLogEntries rs les@(LogEntries leToApply) = do
   now' <- now
-  (results :: [(RequestKey, AppliedCommand)]) <- mapM (applyCommand now') (Map.elems leToApply)
+  (results :: [(RequestKey, CommandResult)]) <- mapM (applyCommand now') (Map.elems leToApply)
   commitIndex' <- return $ fromJust $ Log.lesMaxIndex les
   logMetric $ MetricAppliedIndex commitIndex'
   if not (null results)
@@ -102,24 +102,28 @@ applyLogEntries rs les@(LogEntries leToApply) = do
       unless (rs == ReplayFromDisk) $ liftIO $! writeComm hChan (History.Update $ HashMap.fromList results)
     else debug "Applied log entries but did not send results?"
 
-logApplyLatency :: Command -> CommitService ()
-logApplyLatency (Command _ _ _ _ provenance) = case provenance of
-  NewMsg -> return ()
-  ReceivedMsg _digest _orig mReceivedAt -> case mReceivedAt of
-    Just (ReceivedAt arrived) -> do
-      now' <- now
-      logMetric $ MetricApplyLatency $ fromIntegral $ interval arrived now'
-    Nothing -> return ()
+logApplyLatency :: LogEntry -> CommitService ()
+logApplyLatency LogEntry{..} = case _leReceivedAt of
+  Nothing -> return ()
+  Just (ReceivedAt n) -> do
+    now' <- now
+    logMetric $ MetricApplyLatency $ fromIntegral $ interval n now'
 {-# INLINE logApplyLatency #-}
 
-applyCommand :: UTCTime -> LogEntry -> CommitService (RequestKey, AppliedCommand)
-applyCommand tEnd le = do
-  let cmd = _leCommand le
+applyCommand :: UTCTime -> LogEntry -> CommitService (RequestKey, CommandResult)
+applyCommand tEnd le@LogEntry{..} = do
   apply <- view applyLogEntry
-  logApplyLatency cmd
+  logApplyLatency le
   result <- liftIO $ apply le
-  rid <- return $ _cmdRequestId cmd
-  lat <- return $ case _pTimeStamp $ _cmdProvenance cmd of
+  lat <- return $ case _leReceivedAt of
     Nothing -> 1 -- don't want a div by zero error downstream and this is for demo purposes
     Just (ReceivedAt tStart) -> interval tStart tEnd
-  return (RequestKey $ getCmdHashOrInvariantError "updateCmdStatusMap" cmd, AppliedCommand result lat rid)
+  case _leCommand of
+    SmartContractCommand{} -> return
+      ( RequestKey $ getCmdBodyHash _leCommand
+      , SmartContractResult
+        { _scrHash = getCmdBodyHash _leCommand
+        , _scrResult = result
+        , _cmdrLogIndex = _leLogIndex
+        , _cmdrLatency = lat
+        })

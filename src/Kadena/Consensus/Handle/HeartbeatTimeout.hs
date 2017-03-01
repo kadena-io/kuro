@@ -12,7 +12,7 @@ import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer
 
-import Kadena.Consensus.Handle.Types
+import Kadena.Types hiding (nodeRole)
 import Kadena.Consensus.Handle.AppendEntries (clearLazyVoteAndInformCandidates)
 import qualified Kadena.Sender.Service as Sender
 import Kadena.Consensus.Util

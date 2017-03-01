@@ -42,7 +42,6 @@ library
                      , Kadena.Consensus.Handle.HeartbeatTimeout
                      , Kadena.Consensus.Handle.RequestVote
                      , Kadena.Consensus.Handle.RequestVoteResponse
-                     , Kadena.Consensus.Handle.Types
                      , Kadena.Consensus.Service
                      , Kadena.Consensus.Util
                      , Kadena.Evidence.Service

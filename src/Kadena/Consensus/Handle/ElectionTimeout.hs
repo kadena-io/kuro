@@ -16,7 +16,7 @@ import Control.Monad.Writer
 import Data.Set (Set)
 import qualified Data.Set as Set
 
-import Kadena.Consensus.Handle.Types
+import Kadena.Types hiding (nodeRole, term, lazyVote, nodeId, otherNodes, myPrivateKey, myPublicKey)
 import qualified Kadena.Sender.Service as Sender
 import qualified Kadena.Log.Service as Log
 import Kadena.Consensus.Util

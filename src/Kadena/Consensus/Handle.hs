@@ -28,6 +28,7 @@ handleEvents = forever $ do
     Just v -> return v
   case e of
     ERPC rpc                      -> handleRPC rpc
+    NewCmd (NewCmdInternal cmds)  -> PureCommand.handleBatch cmds
     ElectionTimeout s             -> PureElectionTimeout.handle s
     HeartbeatTimeout s            -> PureHeartbeatTimeout.handle s
     Heart tock'                    -> liftIO (pprintBeat tock') >>= debug
@@ -39,6 +40,4 @@ handleRPC rpc = case rpc of
   AER' aer        -> error $ "Invariant Error: AER received by Consensus Service" ++ show aer
   RV' rv          -> PureRequestVote.handle rv
   RVR' rvr        -> PureRequestVoteResponse.handle rvr
-  CMD' cmd        -> PureCommand.handleBatch $ Commands [cmd]
-  CMDB' cmdb      -> PureCommand.handleBatch $ _cmdbBatch cmdb
-  CMDR' _         -> debug "got a command response RPC"
+  NEW' _          -> error "Invariant Error: new commands should never be `RPC (NEW' _) :: Event`, use `NewCmd :: Event` instead"

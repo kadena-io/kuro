@@ -7,6 +7,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE BangPatterns #-}
 
+-- TODO: add latency back into the apiResult
+
 module Kadena.HTTP.ApiServer
   ( runApiServer
   ) where
@@ -14,26 +16,30 @@ module Kadena.HTTP.ApiServer
 import Prelude hiding (log)
 import Control.Lens hiding ((.=))
 import Control.Concurrent
+import Data.IORef
 import Control.Monad.Reader
 
+import Data.Aeson hiding (defaultOptions, Result(..))
+import Data.ByteString (ByteString)
+import Data.ByteString.Lazy (toStrict)
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy as BSL
-import Data.ByteString.Lazy (toStrict)
+import qualified Data.Text as T
+import Data.Text.Encoding
+
 import Data.HashSet (HashSet)
 import qualified Data.HashSet as HashSet
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
-import qualified Data.Map.Strict as Map
 
-import Data.Aeson hiding (defaultOptions, Result(..))
 import qualified Data.Serialize as SZ
-
-import Data.Thyme.Clock
-import Data.Thyme.Time.Core (unUTCTime, toMicroseconds)
 
 import Snap.Core
 import Snap.Http.Server as Snap
 import Snap.CORS
+
+import qualified Pact.Types.Command as Pact
+import Pact.Types.API
 
 import Kadena.Types.Command
 import Kadena.Types.Base
@@ -41,49 +47,97 @@ import Kadena.Types.Comms
 import Kadena.Types.Message
 import Kadena.Types.Config as Config
 import Kadena.Types.Spec
-import Kadena.Command.Types
 import Kadena.History.Types ( History(..)
                             , PossiblyIncompleteResults(..))
 import qualified Kadena.History.Types as History
 import Kadena.Types.Dispatch
 import Kadena.Util.Util
 
-import Kadena.HTTP.Types
 import Kadena.HTTP.Static
 
 data ApiEnv = ApiEnv
   { _aiLog :: String -> IO ()
-  , _aiIdCounter :: MVar Int
   , _aiDispatch :: Dispatch
-  , _aiConfig :: Config.Config
+  , _aiConfig :: IORef Config.Config
   , _aiPubConsensus :: MVar PublishedConsensus
   }
 makeLenses ''ApiEnv
 
 type Api a = ReaderT ApiEnv Snap a
 
-initRequestId :: IO Int
-initRequestId = do
-  UTCTime _ time <- unUTCTime <$> getCurrentTime
-  return $ fromIntegral $ toMicroseconds time
-
-runApiServer :: Dispatch -> Config.Config -> (String -> IO ())
+runApiServer :: Dispatch -> IORef Config.Config -> (String -> IO ())
              -> Int -> MVar PublishedConsensus -> IO ()
 runApiServer dispatch conf logFn port mPubConsensus' = do
-  putStrLn $ "runApiServer: starting on port " ++ show port
-  m <- newMVar =<< initRequestId
+  putStrLn $ "[Service|API]: starting on port " ++ show port
+  let conf' = ApiEnv logFn dispatch conf mPubConsensus'
   httpServe (serverConf port) $
     applyCORS defaultOptions $ methods [GET, POST] $
-    route $ ("api", runReaderT api (ApiEnv logFn m dispatch conf mPubConsensus'))
-            :staticRoutes
-
+    route $ ("api/v1", runReaderT api conf'):staticRoutes
 
 api :: Api ()
 api = route [
-       ("public/send",sendPublicBatch)
+       ("send",sendPublicBatch)
       ,("poll",poll)
       ,("listen",registerListener)
+      ,("local",sendLocal)
       ]
+
+sendLocal :: Api ()
+sendLocal = undefined
+
+sendPublicBatch :: Api ()
+sendPublicBatch = do
+  SubmitBatch cmds <- readJSON
+  when (null cmds) $ die "Empty Batch"
+  PublishedConsensus{..} <- view aiPubConsensus >>= liftIO . tryReadMVar >>= fromMaybeM (die "Invariant error: consensus unavailable")
+  conf <- view aiConfig >>= liftIO . readIORef
+  ldr <- fromMaybeM (die "System unavaiable, please try again later") _pcLeader
+  if _nodeId conf == ldr
+  then do -- dispatch internally if we're leader, otherwise send outbound
+    rpcs <- return $ group 8000 $ buildCmdRpc <$> cmds
+    oChan <- view (aiDispatch.internalEvent)
+    mapM_ (\rpcs' -> liftIO $ writeComm oChan $ InternalEvent $ NewCmd $ NewCmdInternal $ snd <$> rpcs') rpcs
+    writeResponse $ ApiSuccess $ RequestKeys $ concat $ fmap fst <$> rpcs
+  else do
+    oChan <- view (aiDispatch.outboundGeneral)
+    let me = Config._nodeId conf
+        sk = Config._myPrivateKey conf
+        pk = Config._myPublicKey conf
+    cmds' <- return $ pactTextToPactBS <$> cmds
+    liftIO $ writeComm oChan $! directMsg [(ldr,SZ.encode $ toWire me pk sk $ NewCmdRPC cmds' NewMsg)]
+
+pactTextToPactBS :: Pact.Command T.Text -> Pact.Command ByteString
+pactTextToPactBS = fmap encodeUtf8
+
+buildCmdRpc :: Pact.Command T.Text -> (RequestKey,Pact.Command ByteString)
+buildCmdRpc c@Pact.PublicCommand{..} = (RequestKey _cmdHash, pactTextToPactBS c)
+
+poll :: Api ()
+poll = do
+  (Poll rks) <- readJSON
+  log $ "Polling for " ++ show rks
+  PossiblyIncompleteResults{..} <- checkHistoryForResult (HashSet.fromList rks)
+  when (HashMap.null possiblyIncompleteResults) $ log $ "No results found for poll!" ++ show rks
+  writeResponse $ pollResultToReponse possiblyIncompleteResults
+
+pollResultToReponse :: HashMap RequestKey CommandResult -> ApiResponse PollResponses
+pollResultToReponse m = ApiSuccess $ PollResponses $ scrToAr <$> m
+
+scrToAr :: CommandResult -> ApiResult
+scrToAr SmartContractResult{..} = ApiResult (toJSON (Pact._crResult _scrResult)) (Pact._crTxId _scrResult)
+
+serverConf :: MonadSnap m => Int -> Snap.Config m a
+serverConf port =
+  setErrorLog (ConfigFileLog "log/error.log") $
+  setAccessLog (ConfigFileLog "log/access.log") $
+  setPort port defaultConfig
+
+checkHistoryForResult :: HashSet RequestKey -> Api PossiblyIncompleteResults
+checkHistoryForResult rks = do
+  hChan <- view (aiDispatch.historyChannel)
+  m <- liftIO $ newEmptyMVar
+  liftIO $ writeComm hChan $ QueryForResults (rks,m)
+  liftIO $ readMVar m
 
 log :: String -> Api ()
 log s = view aiLog >>= \f -> liftIO (f $ "[Service|Api]: " ++ s)
@@ -96,10 +150,10 @@ die res = do
   writeLBS $ encode $ (ApiFailure res :: ApiResponse ())
   finishWith =<< getResponse
 
-readJSON :: FromJSON t => Api (BS.ByteString,t)
+readJSON :: FromJSON t => Api t
 readJSON = do
   b <- readRequestBody 1000000000
-  tryParseJSON b
+  snd <$> tryParseJSON b
 
 tryParseJSON
   :: FromJSON t =>
@@ -114,97 +168,15 @@ setJSON = modifyResponse $ setHeader "Content-Type" "application/json"
 writeResponse :: ToJSON j => j -> Api ()
 writeResponse j = setJSON >> writeLBS (encode j)
 
-{-
-aliases need to be verified by api against public key
-then, alias can be paired with requestId in message to create unique rid
-polling can then be on alias and client rid
--}
-
-buildCmdRpc :: PactMessage -> Api (RequestKey,SignedRPC)
-buildCmdRpc PactMessage {..} = do
-  (_,PactEnvelope {..} :: PactEnvelope PactRPC) <- tryParseJSON (BSL.fromStrict $ _pmEnvelope)
-  storedCK <- Map.lookup _peAlias <$> view (aiConfig.clientPublicKeys)
-  unless (storedCK == Just _pmKey) $ die "Invalid alias/public key"
-  rid <- getNextRequestId
-  let ce = CommandEntry $! SZ.encode $ PublicMessage _pmEnvelope
-  return (RequestKey _pmHsh,mkCmdRpc ce _peAlias rid (Digest _peAlias _pmSig _pmKey CMD _pmHsh))
-
 group :: Int -> [a] -> [[a]]
 group _ [] = []
 group n l
   | n > 0 = take n l : (group n (drop n l))
   | otherwise = error "Negative n"
 
-sendPublicBatch :: Api ()
-sendPublicBatch = do
-  (_,SubmitBatch cmds) <- readJSON
-  when (null cmds) $ die "Empty Batch"
-  rks <- mapM sendInSensisbleChunks $ group 8000 cmds
-  writeResponse $ ApiSuccess $ RequestKeys $ concat rks
-
-sendInSensisbleChunks :: [PactMessage] -> Api [RequestKey]
-sendInSensisbleChunks cmds = do
-  rpcs <- mapM buildCmdRpc cmds
-  let PactMessage {..} = head cmds
-      btch = map snd rpcs
-      hsh = hash $ SZ.encode $ btch
-      dig = Digest "batch" (Sig "") _pmKey CMDB hsh
-      rpc = mkCmdBatchRPC (map snd rpcs) dig
-  enqueueRPC $! rpc -- CMDB' $! CommandBatch (reverse cmds) NewMsg
-  return $ fst <$> rpcs
-
-
-poll :: Api ()
-poll = do
-  (_,Poll rks) <- readJSON
-  log $ "Polling for " ++ show rks
-  PossiblyIncompleteResults{..} <- checkHistoryForResult (HashSet.fromList rks)
-  when (HashMap.null possiblyIncompleteResults) $ log $ "No results found for poll!" ++ show rks
-  setJSON
-  writeLBS $ encode $ pollResultToReponse possiblyIncompleteResults
-
-pollResultToReponse :: HashMap RequestKey AppliedCommand -> PollResponse
-pollResultToReponse m = ApiSuccess (kvToRes <$> HashMap.toList m)
-  where
-    kvToRes (rk,AppliedCommand{..}) = PollResult { _prRequestKey = rk, _prLatency = _acLatency, _prResponse = _acResult}
-
-serverConf :: MonadSnap m => Int -> Snap.Config m a
-serverConf port =
-  setErrorLog (ConfigFileLog "log/error.log") $
-  setAccessLog (ConfigFileLog "log/access.log") $
-  setPort port defaultConfig
-
-getNextRequestId :: Api RequestId
-getNextRequestId = do
-  cntr <- view aiIdCounter
-  cnt <- liftIO (takeMVar cntr)
-  liftIO $ putMVar cntr (cnt + 1)
-  return $ RequestId $ show cnt
-
-enqueueRPC :: SignedRPC -> Api ()
-enqueueRPC signedRPC = do
-  PublishedConsensus{..} <- view aiPubConsensus >>= liftIO . tryReadMVar >>= fromMaybeM (die "Invariant error: consensus unavailable")
-  conf <- view aiConfig
-  ldr <- fromMaybeM (die "System unavaiable, please try again later") _pcLeader
-  if _nodeId conf == ldr
-  then do -- dispatch internally if we're leader, otherwise send outbound
-    ts <- liftIO getCurrentTime
-    oChan <- view (aiDispatch.inboundCMD)
-    liftIO $ writeComm oChan $! InboundCMD (ReceivedAt ts, signedRPC)
-  else do
-    oChan <- view (aiDispatch.outboundGeneral)
-    liftIO $ writeComm oChan $! directMsg [(ldr,SZ.encode signedRPC)]
-
-checkHistoryForResult :: HashSet RequestKey -> Api PossiblyIncompleteResults
-checkHistoryForResult rks = do
-  hChan <- view (aiDispatch.historyChannel)
-  m <- liftIO $ newEmptyMVar
-  liftIO $ writeComm hChan $ QueryForResults (rks,m)
-  liftIO $ readMVar m
-
 registerListener :: Api ()
 registerListener = do
-  (_,ListenerRequest rk) <- readJSON
+  (ListenerRequest rk) <- readJSON
   hChan <- view (aiDispatch.historyChannel)
   m <- liftIO $ newEmptyMVar
   liftIO $ writeComm hChan $ RegisterListener (HashMap.fromList [(rk,m)])
@@ -214,8 +186,8 @@ registerListener = do
     History.GCed msg -> do
       log $ "Listener GCed for: " ++ show rk ++ " because " ++ msg
       die msg
-    History.ListenerResult AppliedCommand{..} -> do
+    History.ListenerResult scr -> do
       log $ "Listener Serviced for: " ++ show rk
       setJSON
-      ls <- return $ ApiSuccess $ PollResult { _prRequestKey = rk, _prLatency = _acLatency, _prResponse = _acResult}
+      ls <- return $ ApiSuccess $ scrToAr scr
       writeLBS $ encode ls

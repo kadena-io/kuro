@@ -45,9 +45,7 @@ import GHC.Generics
 import Data.Int
 
 import Kadena.Types.Base
-import Kadena.Command.Types
 import Kadena.Types.Command
-import Kadena.HTTP.Types
 
 data ClientOpts = ClientOpts {
       _oConfig :: FilePath

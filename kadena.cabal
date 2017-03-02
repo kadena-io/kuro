@@ -31,8 +31,6 @@ flag pact-persistence
 library
   exposed-modules:     Apps.Kadena.Client
                      , Apps.Kadena.Server
-                     , Kadena.Command.CommandLayer
-                     , Kadena.Command.Types
                      , Kadena.Commit.Service
                      , Kadena.Commit.Types
                      , Kadena.Consensus.Handle
@@ -52,7 +50,6 @@ library
                      , Kadena.History.Types
                      , Kadena.HTTP.ApiServer
                      , Kadena.HTTP.Static
-                     , Kadena.HTTP.Types
                      , Kadena.Log.LogApi
                      , Kadena.Log.Persistence
                      , Kadena.Log.Service

@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -12,6 +13,7 @@ import Control.Monad.Reader
 
 import Data.Either (partitionEithers)
 import Data.Sequence (Seq)
+import Data.Foldable (toList)
 
 import Kadena.Types hiding (debugPrint, nodeId)
 import Kadena.Messaging.Turbine.Types
@@ -34,19 +36,21 @@ newCmdDynamicTurbine
      -> (Event -> IO ())
      -> IO ()
 newCmdDynamicTurbine ks' getCmds' debug' enqueueEvent' = forever $ do
-  verifiedCmds <- parallelVerify _unInboundCMD ks' <$> getCmds' 5000
+  verifiedCmds <- do
+    cmds' <- toList <$> getCmds' 5000
+    return $! concat $! verifyCmds ks' <$> cmds'
   (invalidCmds, validCmds) <- return $ partitionEithers verifiedCmds
   mapM_ debug' invalidCmds
-  cmdInt@(NewCmdInternal cmds) <- return $ toNewCmdInternal validCmds
-  lenCmdBatch <- return $ length cmds
+  lenCmdBatch <- return $ length validCmds
   unless (lenCmdBatch == 0) $ do
-    enqueueEvent' $ NewCmd cmdInt
-    debug' $ turbineCmd ++ "batched " ++ show (length cmds) ++ " CMD(s)"
+    enqueueEvent' $ NewCmd validCmds
+    debug' $ turbineCmd ++ "batched " ++ show (length validCmds) ++ " CMD(s)"
   when (lenCmdBatch > 100) $ threadDelay 500000 -- .5sec
 
-toNewCmdInternal :: [RPC] -> NewCmdInternal
-toNewCmdInternal cmdRPCs = NewCmdInternal $! concat $! getCmds <$> cmdRPCs
-  where
-    getCmds (NEW' NewCmdRPC{..}) = _newCmd
-    getCmds o = error $ "Invariant failure in toNewCmdInternal: pattern match failure " ++ show o
-{-# INLINE toNewCmdInternal #-}
+verifyCmds :: KeySet -> InboundCMD -> [Either String Command]
+verifyCmds ks (InboundCMD (_rAt, srpc)) = case signedRPCtoRPC (Just _rAt) ks srpc of
+  Left !err -> [Left $ err]
+  Right !(NEW' (NewCmdRPC pcmds _)) -> decodeCommandEither <$> pcmds -- (\x -> decodeCommandEither x >>= \y -> Right (rAt, y)) <$> pcmds
+  Right !x -> error $! "Invariant Error: verifyCmds, encountered a non-`NEW'` SRPC in the CMD turbine: " ++ show x
+verifyCmds _ (InboundCMDFromApi (_rAt, NewCmdInternal{..})) = decodeCommandEither <$> _newCmdInternal -- (\x -> decodeCommandEither x >>= \y -> Right (rAt, y)) <$> _newCmdInternal
+{-# INLINE verifyCmds #-}

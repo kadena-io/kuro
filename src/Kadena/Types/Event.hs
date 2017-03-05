@@ -7,6 +7,7 @@ module Kadena.Types.Event
 
 import Data.Thyme.Clock (UTCTime)
 
+import Kadena.Types.Command
 import Kadena.Types.Message
 
 data Beat = Beat
@@ -18,7 +19,7 @@ data ResetLeaderNoFollowersTimeout = ResetLeaderNoFollowersTimeout
   deriving Show
 
 data Event = ERPC RPC
-           | NewCmd NewCmdInternal
+           | NewCmd [Command] -- [(ReceivedAt, Command)]
            | ElectionTimeout String
            | HeartbeatTimeout String
            | Heart Beat

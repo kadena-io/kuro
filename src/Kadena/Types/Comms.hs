@@ -104,7 +104,11 @@ foreverHeartDebugWriteDelay debug' comm delay mkBeat = forever $ do
 newtype InboundAER = InboundAER { _unInboundAER :: (ReceivedAt, SignedRPC)}
   deriving (Show, Eq, Typeable)
 
-newtype InboundCMD = InboundCMD { _unInboundCMD :: (ReceivedAt, SignedRPC)}
+data InboundCMD =
+  InboundCMD
+  { _unInboundCMD :: (ReceivedAt, SignedRPC)} |
+  InboundCMDFromApi
+  { _unInboundCMDFromApi :: (ReceivedAt, NewCmdInternal)}
   deriving (Show, Eq, Typeable)
 
 newtype InboundGeneral = InboundGeneral { _unInboundGeneral :: (ReceivedAt, SignedRPC)}

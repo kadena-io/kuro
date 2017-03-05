@@ -11,32 +11,31 @@ module Kadena.Types.Message.NewCMD
 
 import Codec.Compression.LZ4
 import Control.Lens
-import Data.ByteString (ByteString)
 import Data.Serialize (Serialize)
 import qualified Data.Serialize as S
 import Data.Thyme.Time.Core ()
 import GHC.Generics
 
-import qualified Pact.Types.Command as Pact
 import Kadena.Types.Base
+import Kadena.Types.Command
 import Kadena.Types.Message.Signed
 
 -- | This is what you use to send new commands into consensus' state machine
 data NewCmdInternal = NewCmdInternal
-  { _newCmdInternal :: ![Pact.Command ByteString]
+  { _newCmdInternal :: ![CMDWire]
   }
   deriving (Show, Eq, Generic)
 makeLenses ''NewCmdInternal
 
 -- | This is what a follower uses to forward commands it's received to the leader
 data NewCmdRPC = NewCmdRPC
-  { _newCmd :: ![Pact.Command ByteString]
+  { _newCmd :: ![CMDWire]
   , _newProvenance :: !Provenance
   }
   deriving (Show, Eq, Generic)
 makeLenses ''NewCmdRPC
 
-data NewCmdWire = NewCmdWire ![Pact.Command ByteString]
+data NewCmdWire = NewCmdWire ![CMDWire]
   deriving (Show, Generic)
 instance Serialize NewCmdWire
 

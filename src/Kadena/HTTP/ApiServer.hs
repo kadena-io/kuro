@@ -20,7 +20,6 @@ import Data.IORef
 import Control.Monad.Reader
 
 import Data.Aeson hiding (defaultOptions, Result(..))
-import Data.ByteString (ByteString)
 import Data.ByteString.Lazy (toStrict)
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy as BSL
@@ -37,6 +36,7 @@ import qualified Data.Serialize as SZ
 import Snap.Core
 import Snap.Http.Server as Snap
 import Snap.CORS
+import Data.Thyme.Clock
 
 import qualified Pact.Types.Command as Pact
 import Pact.Types.API
@@ -60,16 +60,17 @@ data ApiEnv = ApiEnv
   , _aiDispatch :: Dispatch
   , _aiConfig :: IORef Config.Config
   , _aiPubConsensus :: MVar PublishedConsensus
+  , _aiGetTimestamp :: IO UTCTime
   }
 makeLenses ''ApiEnv
 
 type Api a = ReaderT ApiEnv Snap a
 
 runApiServer :: Dispatch -> IORef Config.Config -> (String -> IO ())
-             -> Int -> MVar PublishedConsensus -> IO ()
-runApiServer dispatch conf logFn port mPubConsensus' = do
+             -> Int -> MVar PublishedConsensus -> IO UTCTime -> IO ()
+runApiServer dispatch conf logFn port mPubConsensus' timeCache' = do
   putStrLn $ "[Service|API]: starting on port " ++ show port
-  let conf' = ApiEnv logFn dispatch conf mPubConsensus'
+  let conf' = ApiEnv logFn dispatch conf mPubConsensus' timeCache'
   httpServe (serverConf port) $
     applyCORS defaultOptions $ methods [GET, POST] $
     route $ ("api/v1", runReaderT api conf'):staticRoutes
@@ -92,25 +93,26 @@ sendPublicBatch = do
   PublishedConsensus{..} <- view aiPubConsensus >>= liftIO . tryReadMVar >>= fromMaybeM (die "Invariant error: consensus unavailable")
   conf <- view aiConfig >>= liftIO . readIORef
   ldr <- fromMaybeM (die "System unavaiable, please try again later") _pcLeader
+  rAt <- ReceivedAt <$> now
   if _nodeId conf == ldr
   then do -- dispatch internally if we're leader, otherwise send outbound
     rpcs <- return $ group 8000 $ buildCmdRpc <$> cmds
-    oChan <- view (aiDispatch.internalEvent)
-    mapM_ (\rpcs' -> liftIO $ writeComm oChan $ InternalEvent $ NewCmd $ NewCmdInternal $ snd <$> rpcs') rpcs
+    oChan <- view (aiDispatch.inboundCMD)
+    mapM_ (\rpcs' -> liftIO $ writeComm oChan $ InboundCMDFromApi $ (rAt, NewCmdInternal $ snd <$> rpcs')) rpcs
     writeResponse $ ApiSuccess $ RequestKeys $ concat $ fmap fst <$> rpcs
   else do
     oChan <- view (aiDispatch.outboundGeneral)
     let me = Config._nodeId conf
         sk = Config._myPrivateKey conf
         pk = Config._myPublicKey conf
-    cmds' <- return $ pactTextToPactBS <$> cmds
+    cmds' <- return $ pactTextToCMDWire <$> cmds
     liftIO $ writeComm oChan $! directMsg [(ldr,SZ.encode $ toWire me pk sk $ NewCmdRPC cmds' NewMsg)]
 
-pactTextToPactBS :: Pact.Command T.Text -> Pact.Command ByteString
-pactTextToPactBS = fmap encodeUtf8
+pactTextToCMDWire :: Pact.Command T.Text -> CMDWire
+pactTextToCMDWire cmd = SCCWire $ SZ.encode (encodeUtf8 <$> cmd)
 
-buildCmdRpc :: Pact.Command T.Text -> (RequestKey,Pact.Command ByteString)
-buildCmdRpc c@Pact.PublicCommand{..} = (RequestKey _cmdHash, pactTextToPactBS c)
+buildCmdRpc :: Pact.Command T.Text -> (RequestKey,CMDWire)
+buildCmdRpc c@Pact.PublicCommand{..} = (RequestKey _cmdHash, pactTextToCMDWire c)
 
 poll :: Api ()
 poll = do
@@ -191,3 +193,6 @@ registerListener = do
       setJSON
       ls <- return $ ApiSuccess $ scrToAr scr
       writeLBS $ encode ls
+
+now :: Api UTCTime
+now = view (aiGetTimestamp) >>= liftIO

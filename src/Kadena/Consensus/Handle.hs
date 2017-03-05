@@ -28,10 +28,10 @@ handleEvents = forever $ do
     Just v -> return v
   case e of
     ERPC rpc                      -> handleRPC rpc
-    NewCmd (NewCmdInternal cmds)  -> PureCommand.handleBatch cmds
+    NewCmd cmds                   -> PureCommand.handleBatch cmds
     ElectionTimeout s             -> PureElectionTimeout.handle s
     HeartbeatTimeout s            -> PureHeartbeatTimeout.handle s
-    Heart tock'                    -> liftIO (pprintBeat tock') >>= debug
+    Heart tock'                   -> liftIO (pprintBeat tock') >>= debug
 
 -- TODO: prune out AER's from RPC if possible
 handleRPC :: RPC -> Consensus ()

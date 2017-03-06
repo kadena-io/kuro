@@ -10,6 +10,7 @@ module Kadena.Commit.Service
   ) where
 
 import Control.Lens hiding (Index, (|>))
+import Control.Concurrent
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Trans.RWS.Strict
@@ -18,6 +19,11 @@ import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Map.Strict as Map
 import Data.Thyme.Clock
 import Data.Maybe (fromJust)
+import Data.ByteString (ByteString)
+
+import qualified Pact.Types.Command as Pact
+import qualified Pact.Types.Server as Pact
+import qualified Pact.Server.PactService as Pact
 
 import Kadena.Commit.Types as X
 import Kadena.Types.Dispatch (Dispatch)
@@ -28,15 +34,15 @@ import qualified Kadena.Log.Service as Log
 initCommitEnv
   :: Dispatch
   -> (String -> IO ())
-  -> ApplyFn
+  -> Pact.CommandConfig
   -> (Metric -> IO ())
   -> IO UTCTime
   -> CommitEnv
-initCommitEnv dispatch' debugPrint' applyLogEntry'
+initCommitEnv dispatch' debugPrint' commandConfig'
               publishMetric' getTimestamp' = CommitEnv
   { _commitChannel = dispatch' ^. D.commitService
   , _historyChannel = dispatch' ^. D.historyChannel
-  , _applyLogEntry = applyLogEntry'
+  , _commandConfig = commandConfig'
   , _debugPrint = debugPrint'
   , _publishMetric = publishMetric'
   , _getTimestamp = getTimestamp'
@@ -46,7 +52,8 @@ data ReplayStatus = ReplayFromDisk | FreshCommands deriving (Show, Eq)
 
 runCommitService :: CommitEnv -> NodeId -> KeySet -> IO ()
 runCommitService env nodeId' keySet' = do
-  initCommitState <- return $! CommitState { _nodeId = nodeId', _keySet = keySet'}
+  cmdExecInter <- Pact.initPactService (env ^. commandConfig)
+  initCommitState <- return $! CommitState { _nodeId = nodeId', _keySet = keySet', _commandExecInterface = cmdExecInter}
   void $ runRWST handle env initCommitState
 
 debug :: String -> CommitService ()
@@ -112,9 +119,11 @@ logApplyLatency LogEntry{..} = case _leReceivedAt of
 
 applyCommand :: UTCTime -> LogEntry -> CommitService (RequestKey, CommandResult)
 applyCommand tEnd le@LogEntry{..} = do
-  apply <- view applyLogEntry
+  apply <- Pact._ceiApplyPPCmd <$> use commandExecInterface
   logApplyLatency le
-  result <- liftIO $ apply le
+  result <- case _leCommand of
+    SmartContractCommand{..} -> do
+      liftIO $ apply (Pact.Transactional (fromIntegral _leLogIndex)) _sccCmd _sccPreProc
   lat <- return $ case _leReceivedAt of
     Nothing -> 1 -- don't want a div by zero error downstream and this is for demo purposes
     Just (ReceivedAt tStart) -> interval tStart tEnd
@@ -127,3 +136,9 @@ applyCommand tEnd le@LogEntry{..} = do
         , _cmdrLogIndex = _leLogIndex
         , _cmdrLatency = lat
         })
+
+_applyLocalCommand :: (Pact.Command ByteString, MVar Pact.CommandResult) -> CommitService ()
+_applyLocalCommand (cmd, mv) = do
+  applyLocal <- Pact._ceiApplyCmd <$> use commandExecInterface
+  cr <- liftIO $ applyLocal Pact.Local cmd
+  liftIO $ putMVar mv cr

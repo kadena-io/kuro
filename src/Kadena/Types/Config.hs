@@ -17,6 +17,7 @@ import Control.Lens hiding (Index, (|>))
 import Data.Map (Map,empty)
 import Data.Set (Set)
 import Text.Read (readMaybe)
+import Data.Text (Text)
 import qualified Data.Text as Text
 import Data.Thyme.Clock
 import Data.Thyme.Time.Core ()
@@ -30,7 +31,7 @@ import Kadena.Types.Base
 
 
 data EntityInfo = EntityInfo {
-      _entName :: String
+      _entName :: Text
 } deriving (Eq,Show,Generic)
 $(makeLenses ''EntityInfo)
 instance ToJSON EntityInfo where

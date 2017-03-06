@@ -6,10 +6,10 @@ module Kadena.Commit.Types
   ( ApplyFn
   , Commit(..)
   , CommitEnv(..)
-  , commitChannel, applyLogEntry, debugPrint, publishMetric
+  , commitChannel, commandConfig, debugPrint, publishMetric
   , getTimestamp, historyChannel
   , CommitState(..)
-  , nodeId, keySet
+  , nodeId, keySet, commandExecInterface
   , CommitChannel(..)
   , CommitService
   , module X
@@ -23,6 +23,8 @@ import Control.Concurrent.Chan (Chan)
 import Data.Thyme.Clock (UTCTime)
 
 import qualified Pact.Types.Command as Pact
+import qualified Pact.Types.Server as Pact
+import qualified Pact.Types.RPC as Pact
 
 import Kadena.Types.Base as X
 import Kadena.Types.Config as X hiding (nodeId, _nodeId)
@@ -57,7 +59,7 @@ instance Comms Commit CommitChannel where
 data CommitEnv = CommitEnv
   { _commitChannel :: !CommitChannel
   , _historyChannel :: !HistoryChannel
-  , _applyLogEntry  :: !ApplyFn
+  , _commandConfig :: !Pact.CommandConfig
   , _debugPrint :: !(String -> IO ())
   , _publishMetric :: !(Metric -> IO ())
   , _getTimestamp :: !(IO UTCTime)
@@ -67,6 +69,7 @@ makeLenses ''CommitEnv
 data CommitState = CommitState
   { _nodeId :: !NodeId
   , _keySet :: !KeySet
+  , _commandExecInterface :: !(Pact.CommandExecInterface Pact.PactRPC)
   }
 makeLenses ''CommitState
 

@@ -12,7 +12,6 @@ module Kadena.Spec.Simple
 import Control.AutoUpdate (mkAutoUpdate, defaultUpdateSettings,updateAction,updateFreq)
 import Control.Concurrent.Async
 import Control.Concurrent
-import qualified Control.Concurrent.Lifted as CL
 import Control.Lens
 import Control.Monad
 import Control.Monad.IO.Class
@@ -44,15 +43,7 @@ import Kadena.Types.Dispatch
 import Kadena.Util.Util (awsDashVar)
 import Kadena.Messaging.ZMQ
 import Kadena.Monitoring.Server (startMonitoring)
-import Kadena.HTTP.ApiServer
 import qualified Kadena.Messaging.Turbine as Turbine
--- import Kadena.Command.Types
-import Kadena.Commit.Types (ApplyFn)
-import Kadena.Types.Log (LogEntry(..))
-
-import Pact.Server.PactService
-import Pact.Types.Server
-import Pact.Types.Command
 
 data Options = Options
   {  optConfigFile :: FilePath
@@ -137,7 +128,7 @@ simpleReceiverEnv :: Dispatch
                   -> Turbine.ReceiverEnv
 simpleReceiverEnv dispatch conf debugFn restartTurbo' = Turbine.ReceiverEnv
   dispatch
-  (KeySet (view publicKeys conf) (view clientPublicKeys conf))
+  (KeySet (view publicKeys conf))
   debugFn
   restartTurbo'
 
@@ -153,15 +144,6 @@ resetAwsEnv awsEnabled = do
   awsDashVar awsEnabled "AppliedIndex" "Startup"
   awsDashVar awsEnabled "CommitIndex" "Startup"
 
-applyPact :: CommandConfig -> IO ApplyFn
-applyPact cc = do
-  CommandExecInterface {..} <- initPactService cc
-  return $ \LogEntry {..} -> do
-    let pactCmd = undefined
-    r <- _ceiApplyCmd (Transactional (fromIntegral _leLogIndex)) pactCmd
-    return undefined
-
-
 runServer :: IO ()
 runServer = do
   setLineBuffering
@@ -170,24 +152,19 @@ runServer = do
   utcTimeCache' <- utcTimeCache
   fs <- initSysLog utcTimeCache'
   let debugFn = if rconf ^. enableDebug then showDebug fs else noDebug
-  (applyFn,_) <- undefined -- initCommandLayer (CommandConfig (_entity rconf) (_dbFile rconf) debugFn)
   resetAwsEnv (rconf ^. enableAwsIntegration)
   me <- return $ rconf ^. nodeId
   oNodes <- return $ Set.toList $ Set.delete me (rconf ^. otherNodes)-- (Map.keysSet $ rconf ^. clientPublicKeys)
   dispatch <- initDispatch
 
-
   -- each node has its own snap monitoring server
   pubMetric <- startMonitoring rconf
   link =<< runMsgServer dispatch me oNodes debugFn -- ZMQ
-  let raftSpec = simpleConsensusSpec
-                   debugFn
-                   (liftIO . pubMetric)
+  let raftSpec = simpleConsensusSpec debugFn (liftIO . pubMetric)
 
   restartTurbo <- newEmptyMVar
   receiverEnv <- return $ simpleReceiverEnv dispatch rconf debugFn restartTurbo
   timerTarget' <- newEmptyMVar
   rstate <- return $ initialConsensusState timerTarget'
   mPubConsensus' <- newMVar $! PublishedConsensus (rstate ^. currentLeader) (rstate ^. nodeRole) (rstate ^. term)
-  void $ CL.fork $ runApiServer dispatch rconf debugFn (_apiPort rconf) mPubConsensus'
-  runConsensusService receiverEnv rconf raftSpec rstate getCurrentTime mPubConsensus' (liftIO . applyFn)
+  runConsensusService receiverEnv rconf raftSpec rstate getCurrentTime mPubConsensus'

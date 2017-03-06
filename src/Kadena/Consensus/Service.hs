@@ -11,10 +11,12 @@ import qualified Data.Set as Set
 import Data.IORef
 import Data.Thyme.Clock (UTCTime)
 
+import qualified Pact.Types.Server as Pact
+import Pact.Types.Server (CommandConfig(..))
+
 import Kadena.Consensus.Handle
 import Kadena.Consensus.Util
 import Kadena.Types
-import Kadena.Commit.Types (ApplyFn)
 
 import Kadena.Messaging.Turbine
 import qualified Kadena.Messaging.Turbine as Turbine
@@ -23,6 +25,18 @@ import qualified Kadena.Sender.Service as Sender
 import qualified Kadena.Log.Service as Log
 import qualified Kadena.Evidence.Service as Ev
 import qualified Kadena.History.Service as History
+import qualified Kadena.HTTP.ApiServer as ApiServer
+
+launchApiService
+  :: Dispatch
+  -> IORef Config
+  -> (String -> IO ())
+  -> MVar PublishedConsensus
+  -> IO UTCTime
+  -> IO (Async ())
+launchApiService dispatch' rconf' debugFn' mPubConsensus' getCurrentTime' = do
+  apiPort' <- _apiPort <$> readIORef rconf'
+  async (ApiServer.runApiServer dispatch' rconf' debugFn' apiPort' mPubConsensus' getCurrentTime')
 
 launchHistoryService :: Dispatch
   -> (String -> IO ())
@@ -51,10 +65,10 @@ launchCommitService :: Dispatch
   -> KeySet
   -> NodeId
   -> IO UTCTime
-  -> ApplyFn
+  -> Pact.CommandConfig
   -> IO (Async ())
-launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' applyFn' = do
-  commitEnv <- return $! Commit.initCommitEnv dispatch' dbgPrint' applyFn' publishMetric' getTimestamp'
+launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' commandConfig' = do
+  commitEnv <- return $! Commit.initCommitEnv dispatch' dbgPrint' commandConfig' publishMetric' getTimestamp'
   link =<< async (Commit.runCommitService commitEnv nodeId' keySet')
   async $! foreverHeart (_commitService dispatch') 1000000 Commit.Heart
 
@@ -79,8 +93,8 @@ launchSenderService dispatch' dbgPrint' publishMetric' mEvState rconf = do
   async $ foreverHeart (_senderService dispatch') 1000000 Sender.Heart
 
 runConsensusService :: ReceiverEnv -> Config -> ConsensusSpec -> ConsensusState ->
-                            IO UTCTime -> MVar PublishedConsensus -> ApplyFn -> IO ()
-runConsensusService renv rconf spec rstate timeCache' mPubConsensus' applyFn' = do
+                            IO UTCTime -> MVar PublishedConsensus -> IO ()
+runConsensusService renv rconf spec rstate timeCache' mPubConsensus' = do
   let csize = 1 + Set.size (rconf ^. otherNodes)
       qsize = getQuorumSize csize
       publishMetric' = (spec ^. publishMetric)
@@ -89,6 +103,15 @@ runConsensusService renv rconf spec rstate timeCache' mPubConsensus' applyFn' = 
       getTimestamp' = spec ^. getTimestamp
       keySet' = Turbine._keySet renv
       nodeId' = rconf ^. nodeId
+      commandConfig' = CommandConfig
+        { _ccDbFile = case rconf ^. logSqliteDir of
+            -- TODO: fix this, it's terrible
+            Just dbDir' -> Just (dbDir' ++ (show $ _alias nodeId') ++ "pact.sqlite")
+            Nothing -> Nothing
+        , _ccDebugFn = dbgPrint'
+        , _ccEntity = rconf ^. entity.entName
+        , _ccPragmas = []
+        }
 
   publishMetric' $ MetricClusterSize csize
   publishMetric' $ MetricAvailableSize csize
@@ -102,9 +125,10 @@ runConsensusService renv rconf spec rstate timeCache' mPubConsensus' applyFn' = 
 
   link =<< launchHistoryService dispatch' dbgPrint' getTimestamp' rconf
   link =<< launchSenderService dispatch' dbgPrint' publishMetric' mEvState rconf
-  link =<< launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' applyFn'
+  link =<< launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' commandConfig'
   link =<< launchEvidenceService dispatch' dbgPrint' publishMetric' mEvState rconf' mLeaderNoFollowers
   link =<< launchLogService dispatch' dbgPrint' publishMetric' keySet' rconf
+  link =<< launchApiService dispatch' rconf' dbgPrint' mPubConsensus' getTimestamp'
   link =<< async (foreverHeart (_internalEvent dispatch') 1000000 (InternalEvent . Heart))
   runRWS_
     kadena

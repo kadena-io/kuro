@@ -94,6 +94,7 @@ sendPublicBatch = do
   conf <- view aiConfig >>= liftIO . readIORef
   ldr <- fromMaybeM (die "System unavaiable, please try again later") _pcLeader
   rAt <- ReceivedAt <$> now
+  log $ "received batch of " ++ show (length cmds)
   if _nodeId conf == ldr
   then do -- dispatch internally if we're leader, otherwise send outbound
     rpcs <- return $ group 8000 $ buildCmdRpc <$> cmds

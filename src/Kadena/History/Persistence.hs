@@ -116,10 +116,10 @@ selectCompletedCommands :: DbEnv -> HashSet RequestKey -> IO (HashMap RequestKey
 selectCompletedCommands e v = foldM f HashMap.empty v
   where
     f m rk = do
-      rs' <- qrys (_qryCompletedStmt e) [hashToField $ unRequestKey rk] [RText,RInt]
+      rs' <- qrys (_qryCompletedStmt e) [hashToField $ unRequestKey rk] [RInt, RInt, RText, RInt]
       if null rs'
       then return m
       else case head rs' of
           [SInt li, SInt tid, SText (Utf8 cr),SInt lat] ->
             return $ HashMap.insert rk (crFromField (unRequestKey rk) (fromIntegral li) (if tid < 0 then Nothing else Just (fromIntegral tid)) cr lat) m
-          r -> dbError $ "Invalid result from query: " ++ show r
+          r -> dbError $ "Invalid result from query `History.selectCompletedCommands`: " ++ show r

@@ -7,7 +7,8 @@
 {-# LANGUAGE BangPatterns #-}
 
 module Apps.Kadena.Client
-  ( main,ClientConfig(..)
+  ( main
+  , ClientConfig(..), ccAlias, ccSecretKey, ccPublicKey, ccEndpoints
   ) where
 
 import Control.Monad.State
@@ -17,42 +18,46 @@ import Control.Monad.Catch
 import Control.Concurrent.Lifted (threadDelay)
 import Control.Concurrent.MVar
 
+import Text.Read (readMaybe)
+import qualified Data.Text as T
+import Data.Text.Encoding (decodeUtf8)
 import qualified Data.ByteString.Base16 as B16
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Lazy.Char8 as BSL
-import Data.Maybe (fromJust, fromMaybe)
 import qualified Data.HashMap.Strict as HM
-import Data.Either ()
+
+import qualified Data.Aeson as A
 import Data.Aeson hiding ((.=), Result(..), Value(..))
 import Data.Aeson.Lens
 import Data.Aeson.Types hiding ((.=),parse, Result(..))
 import qualified Data.Yaml as Y
-import Text.Read (readMaybe)
-import qualified Data.Text as T
-import Data.Foldable
-import Data.List
-import System.Environment
-import System.Exit
-import System.Console.GetOpt
+
 import Data.Default
+import Data.Foldable
+import Data.Int
+import Data.List
 import Data.Thyme.Clock
 import Data.Thyme.Time.Core (unUTCTime, toMicroseconds)
-
-import Network.Wreq
-import System.IO
 import GHC.Generics
-import Data.Int
+import Network.Wreq
+import System.Console.GetOpt
+import System.Environment
+import System.Exit
+import System.IO
+
+import Pact.Types.API
+import Pact.Types.RPC
+import qualified Pact.Types.Command as Pact
+import qualified Pact.Types.Crypto as Pact
 
 import Kadena.Types.Base
-import Kadena.Types.Command
 
 data ClientOpts = ClientOpts {
       _oConfig :: FilePath
 }
 makeLenses ''ClientOpts
 instance Default ClientOpts where def = ClientOpts ""
-
 
 coptions :: [OptDescr (ClientOpts -> ClientOpts)]
 coptions =
@@ -98,19 +103,18 @@ readPrompt = do
   e <- liftIO $ isEOF
   if e then return Nothing else Just <$> liftIO getLine
 
-mkExec :: String -> Value -> Repl PactMessage
+mkExec :: String -> Value -> Repl (Pact.Command T.Text)
 mkExec code mdata = do
   sk <- view ccSecretKey
   pk <- view ccPublicKey
-  a <- view ccAlias
   rid <- use requestId >>= liftIO . (`modifyMVar` (\i -> return $ (succ i, i)))
-  return $ mkPactMessage sk pk a (show rid) (Exec (ExecMsg (T.pack code) mdata))
+  return $ decodeUtf8 <$> Pact.mkCommand [(Pact.ED25519, sk, pk)] (T.pack $ show rid) (Exec (ExecMsg (T.pack code) mdata))
 
 sendCmd :: String -> Repl ()
 sendCmd cmd = do
   s <- use server
-  (e :: PactMessage) <- mkExec cmd Null
-  r <- liftIO $ post ("http://" ++ s ++ "/api/public/send") (toJSON $ SubmitBatch [e])
+  e <- mkExec cmd Null
+  r <- liftIO $ post ("http://" ++ s ++ "/api/v1/send") (toJSON $ SubmitBatch [e])
   resp <- asJSON r
   case resp ^. responseBody of
     ApiFailure{..} -> do
@@ -125,7 +129,7 @@ batchTest n cmd = do
   s <- use server
   es@(SubmitBatch es') <- SubmitBatch <$> replicateM n (mkExec cmd Null)
   flushStrLn $ "Preparing " ++ show (length es') ++ " messages ..."
-  r <- liftIO $ post ("http://" ++ s ++ "/api/public/send") (toJSON es)
+  r <- liftIO $ post ("http://" ++ s ++ "/api/v1/send") (toJSON es)
   flushStrLn $ "Sent, retrieving responses"
   resp <- asJSON r
   case resp ^. responseBody of
@@ -145,7 +149,7 @@ setup = do
     Right j -> do
       s <- use server
       e <- mkExec code j
-      r <- liftIO $ post ("http://" ++ s ++ "/api/public/send") (toJSON $ SubmitBatch [e])
+      r <- liftIO $ post ("http://" ++ s ++ "/api/v1/send") (toJSON $ SubmitBatch [e])
       resp <- asJSON r
       case resp ^. responseBody of
         ApiFailure{..} -> do
@@ -163,35 +167,35 @@ showResult tdelay rks countm = loop (0 :: Int)
       threadDelay tdelay
       when (c > 100) $ flushStrLn "Timeout"
       s <- use server
-      r <- liftIO $ post ("http://" ++ s ++ "/api/listen") (toJSON (ListenerRequest $ last rks))
+      r <- liftIO $ post ("http://" ++ s ++ "/api/v1/listen") (toJSON (ListenerRequest $ last rks))
       resp <- asJSON r
       case resp ^. responseBody of
         ApiFailure err -> flushStrLn $ "Error: no results received: " ++ show err
-        ApiSuccess PollResult{..} ->
+        ApiSuccess ApiResult{..} ->
                 case countm of
                   Nothing -> do
-                    prettyRes <- return $ (pprintResult =<< decode (BSL.fromStrict $ unCommandResult _prResponse))
+                    prettyRes <- return $ pprintResult _arResult
                     case prettyRes of
                       Just r' -> flushStrLn r'
                       Nothing -> do
-                        uglyRes <- return $ fromMaybe (Y.String "unable to decode") (Y.decode $ unCommandResult _prResponse)
-                        flushStrLn $ BS8.unpack $ Y.encode uglyRes
-                  Just cnt -> flushStrLn $ intervalOfNumerous cnt _prLatency
+                        flushStrLn $ BS8.unpack $ Y.encode _arResult
+                  Just cnt -> case fromJSON <$>_arMetaData of
+                    Nothing -> undefined
+                    Just (A.Success LatencyMetrics{..}) -> flushStrLn $ intervalOfNumerous cnt _lmFullLatency
+                    Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
 
 pollForResult :: RequestKey -> Repl ()
 pollForResult rk = do
   s <- use server
-  r <- liftIO $ post ("http://" ++ s ++ "/api/poll") (toJSON (Poll [rk]))
+  r <- liftIO $ post ("http://" ++ s ++ "/api/v1/poll") (toJSON (Poll [rk]))
   resp <- asJSON r
   case resp ^. responseBody of
     ApiFailure err -> flushStrLn $ "Error: no results received: " ++ show err
-    ApiSuccess (res::[PollResult]) -> mapM_ (\PollResult{..} -> do
-      prettyRes <- return $ (pprintResult =<< decode (BSL.fromStrict $ unCommandResult _prResponse))
-      case prettyRes of
+    ApiSuccess (PollResponses prs) -> mapM_ (\ApiResult{..} -> do
+      case pprintResult _arResult of
         Just r' -> flushStrLn r'
         Nothing -> do
-          uglyRes <- return $ fromMaybe (Y.String "unable to decode") (Y.decode $ unCommandResult _prResponse)
-          flushStrLn $ BS8.unpack $ Y.encode uglyRes) res
+          flushStrLn $ BS8.unpack $ Y.encode _arResult) $ HM.elems prs
 
 pprintResult :: Value -> Maybe String
 pprintResult v = do
@@ -210,12 +214,6 @@ pprintResult v = do
   rows <- return $ (`map` o) $ \(Object r) ->
           intercalate " | " (map (fill colwidth . render . (r HM.!)) ks)
   return (intercalate "\n" (h1:hr:rows))
-
-
-_s2 :: Value
-_s2 = fromJust $ decode "{\"status\":\"Success\",\"result\":[{\"amount\":100000.0,\"data\":\"Admin account funding\",\"balance\":100000.0,\"account\":\"Acct1\"},{\"amount\":0.0,\"data\":\"Created account\",\"balance\":0.0,\"account\":\"Acct2\"}]}"
-
-
 
 runREPL :: Repl ()
 runREPL = loop True

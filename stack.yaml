@@ -8,8 +8,8 @@ packages:
     commit: cc88bab1fd3f62dc4d9f9ad81a231877a639c812
   extra-dep: true
 - location:
-    git: https://github.com/kadena-io/pact.git
-    commit: 6768e2c4438314b7af5429363ac92ca752e2907c
+    git: git@bitbucket.org:spopejoy/pact.git
+    commit: 1efcad2f197521eb031c5fe578f81cf5d824b5c4
   extra-dep: true
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)

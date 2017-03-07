@@ -33,9 +33,6 @@ import Kadena.Types.Message.Signed
 import qualified Pact.Types.Command as Pact
 import qualified Pact.Types.RPC as Pact
 
--- TODO: upgrade pact to have this
-deriving instance (Ord a) => Ord (Pact.Command a)
-
 data Command = SmartContractCommand
   { _sccCmd :: !(Pact.Command ByteString)
   -- it's important to keep this lazy! we'll be sparking it at decode time

@@ -147,7 +147,7 @@ resetAwsEnv awsEnabled = do
 runServer :: IO ()
 runServer = do
   setLineBuffering
-  T.putStrLn $! "Kadena LLC © (2016-2017)"
+  T.putStrLn $! "Kadena LLC (c) (2016-2017)"
   rconf <- getConfig
   utcTimeCache' <- utcTimeCache
   fs <- initSysLog utcTimeCache'

@@ -136,7 +136,7 @@ library
                      , mtl
                      , mtl-compat
                      , network
-                     , pact == 2.1.0
+                     , pact >= 2.1.0
                      , parallel
                      , parsers
                      , prelude-extras

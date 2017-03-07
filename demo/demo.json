@@ -1,1 +1,1 @@
-{ "keyset": { "keys": ["demoadmin"], "pred": ">" } }
+{ "demo-admin-keyset": { "keys": ["demoadmin"], "pred": ">" } }

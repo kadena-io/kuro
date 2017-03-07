@@ -1,46 +1,51 @@
-(define-keyset 'demo-admin (read-keyset "keyset"))
+(define-keyset 'demo-admin (read-keyset "demo-admin-keyset"))
 
 (module demo 'demo-admin
 
- (defun keys-all (count matched) (= count matched))
+  (defschema account
+    balance:decimal
+    amount:decimal
+    data)
 
- (defun create-account (address)
-   (insert 'demo-accounts address
+  (deftable accounts:{account})
+
+  (defun keys-all (count matched) (= count matched))
+
+  (defun create-account (id)
+    (insert accounts id
          { "balance": 0.0, "amount": 0.0, "data": "Created account" }))
 
- (defun transfer (src dest amount)
-   "transfer AMOUNT from SRC to DEST"
-  (with-read 'demo-accounts src { "balance":= src-balance }
-   (check-balance src-balance amount)
-    (with-read 'demo-accounts dest { "balance":= dest-balance }
-     (update 'demo-accounts src
-            { "balance": (- src-balance amount), "amount": (- amount)
-            , "data": { "transfer-to": dest } })
-     (update 'demo-accounts dest
-            { "balance": (+ dest-balance amount), "amount": amount
-            , "data": { "transfer-from": src } }))))
+  (defun transfer (src dest amount)
+    "transfer AMOUNT from SRC to DEST"
+    (with-read accounts src { "balance":= src-balance }
+    (check-balance src-balance amount)
+      (with-read accounts dest { "balance":= dest-balance }
+      (update accounts src
+              { "balance": (- src-balance amount), "amount": (- amount)
+              , "data": { "transfer-to": dest } })
+      (update accounts dest
+              { "balance": (+ dest-balance amount), "amount": amount
+              , "data": { "transfer-from": src } }))))
 
- (defun read-account (id)
-   "Read data for account ID"
-   (+ { "account": id } (read 'demo-accounts id 'balance 'amount 'data)))
+  (defun read-account (id)
+    "Read data for account ID"
+    (+ { "account": id } (read accounts id)))
 
+  (defun check-balance (balance amount)
+    (enforce (<= amount balance) "Insufficient funds"))
 
- (defun check-balance (balance amount)
-   (enforce (<= amount balance) "Insufficient funds"))
-
- (defun fund-account (address amount)
-   (update 'demo-accounts address
-           { "balance": amount, "amount": amount
-           , "data": "Admin account funding" }))
+  (defun fund-account (address amount)
+    (update accounts address
+            { "balance": amount
+            , "amount": amount
+            , "data": "Admin account funding" }))
 
  (defun read-all ()
-   (map (read-account) (keys 'demo-accounts)))
-
- (defun table-info () (describe-table 'demo-accounts) (describe-table 'demo-accounts))
+   (map (read-account) (keys accounts)))
 
 )
 
-(create-table 'demo-accounts 'demo)
+(create-table accounts)
 
 (create-account "Acct1")
 (fund-account "Acct1" 1000000.0)

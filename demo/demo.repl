@@ -1,0 +1,14 @@
+(env-data { "demo-admin-keyset": { "keys": ["demoadmin"], "pred": ">"}})
+(env-keys ["demo-admin"])
+
+(begin-tx)
+(load "demo.pact")
+(commit-tx)
+
+;sample transfer
+(begin-tx "Single Dollar Transfer")
+(use 'demo)
+(transfer "Acct1" "Acct2" 1.0)
+(read-account "Acct1")
+(read-account "Acct2")
+(commit-tx)

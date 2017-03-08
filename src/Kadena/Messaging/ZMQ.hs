@@ -77,7 +77,7 @@ runMsgServer dispatch me addrList debug = Async.async $ forever $ do
           Left err ->
             liftIO $ debug $  zmqGenSub ++ show err
           Right (Envelope (_topic',newMsg)) -> do
-            --liftIO $ debug $  zmqGenSub ++ "got msg on topic: " ++ show (_unTopic topic')
+            liftIO $ debug $  zmqGenSub ++ "got msg on topic: " ++ show (_unTopic _topic')
             case decode newMsg of
               Left err -> do
                 liftIO $ debug $  zmqGenSub ++ "failed to deserialize to SignedRPC [Msg]: " ++ show newMsg
@@ -85,16 +85,16 @@ runMsgServer dispatch me addrList debug = Async.async $ forever $ do
                 liftIO yield
               Right s@(SignedRPC dig _)
                 | _digType dig == RV || _digType dig == RVR -> do
-                  --liftIO $ debug $ "[ZMQ_GENERAL_SUB] Received RVR from: " ++ (show $ _alias $ _digNodeId dig)
+                  liftIO $ debug $ "[ZMQ_GENERAL_SUB] Received RVR from: " ++ (show $ _digNodeId dig)
                   liftIO $ writeComm rvAndRvrWrite (InboundRVorRVR (ReceivedAt ts, s)) >> yield
                 | _digType dig == NEW -> do
-                  --liftIO $ debug $ "[ZMQ_GENERAL_SUB] Received CMD or CMDB from: " ++ (show $ _alias $ _digNodeId dig)
+                  liftIO $ debug $ "[ZMQ_GENERAL_SUB] Received CMD or CMDB from: " ++ (show $ _digNodeId dig)
                   liftIO $ writeComm cmdInboxWrite (InboundCMD (ReceivedAt ts, s)) >> yield
                 | _digType dig == AER -> do
-                  --liftIO $ debug $ "[ZMQ_GENERAL_SUB] Received AER from: " ++ (show $ _alias $ _digNodeId dig)
+                  liftIO $ debug $ "[ZMQ_GENERAL_SUB] Received AER from: " ++ (show $ _digNodeId dig)
                   liftIO $ writeComm aerInboxWrite (InboundAER (ReceivedAt ts, s)) >> yield
                 | otherwise           -> do
-                  --liftIO $ debug $ "[ZMQ_GENERAL_SUB] Received " ++ (show $ _digType dig) ++ " from " ++ (show $ _alias $ _digNodeId dig)
+                  liftIO $ debug $ "[ZMQ_GENERAL_SUB] Received " ++ (show $ _digType dig) ++ " from " ++ (show $ _digNodeId dig)
                   liftIO $ writeComm inboxWrite (InboundGeneral (ReceivedAt ts, s)) >> yield
 
     liftIO $ do
@@ -141,7 +141,7 @@ runMsgServer dispatch me addrList debug = Async.async $ forever $ do
           Left err ->
             liftIO $ debug $ zmqAerSub ++ show err
           Right (Envelope (_topic',newMsg)) -> do
-            --liftIO $ debug $  zmqAerSub ++ "got msg on topic: " ++ show (_unTopic topic')
+            liftIO $ debug $  zmqAerSub ++ "got msg on topic: " ++ show (_unTopic _topic')
             case decode newMsg of
               Left err -> do
                 liftIO $ debug $ zmqAerSub ++ "failed to deserialize to SignedRPC [Msg]: " ++ show newMsg
@@ -149,13 +149,13 @@ runMsgServer dispatch me addrList debug = Async.async $ forever $ do
                 liftIO yield
               Right s@(SignedRPC dig _)
                 | _digType dig == RV || _digType dig == RVR -> do
-                  --liftIO $ debug $ zmqAerSub ++ "received RVR from: " ++ (show $ _alias $ _digNodeId dig)
+                  liftIO $ debug $ zmqAerSub ++ "received RVR from: " ++ (show $ _digNodeId dig)
                   liftIO $ writeComm rvAndRvrWrite (InboundRVorRVR (ReceivedAt ts, s)) >> yield
                 | _digType dig == NEW -> do
-                  liftIO $ debug $ zmqAerSub ++ "Received a CMD or CMDB but shouldn't have from: " ++ (show $ _digNodeId dig)
+                  liftIO $ debug $ zmqAerSub ++ "Received a NEW from: " ++ (show $ _digNodeId dig)
                   liftIO $ writeComm cmdInboxWrite (InboundCMD (ReceivedAt ts, s)) >> yield
                 | _digType dig == AER -> do
-                  --liftIO $ debug $ zmqAerSub ++ "received AER from: " ++ (show $ _alias $ _digNodeId dig)
+                  liftIO $ debug $ zmqAerSub ++ "received AER from: " ++ (show $ _digNodeId dig)
                   liftIO $ writeComm aerInboxWrite (InboundAER (ReceivedAt ts, s)) >> yield
                 | otherwise           -> do
                   liftIO $ debug $ zmqAerSub ++ "received a "

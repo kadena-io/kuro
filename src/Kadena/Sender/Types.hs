@@ -28,12 +28,13 @@ import Data.Set (Set)
 import Kadena.Types.Base
 import Kadena.Types.Message
 import Kadena.Types.Comms
-import Kadena.Types.Command
 
 data ServiceRequest' =
   ServiceRequest'
-    { _unSS :: StateSnapshot
-    , _unSR :: ServiceRequest } |
+  { _unSS :: StateSnapshot
+  , _unSR :: ServiceRequest } |
+  ForwardCommandToLeader
+  { _srCommands :: !NewCmdRPC} |
   Heart Beat
   deriving (Eq, Show)
 
@@ -63,10 +64,7 @@ data ServiceRequest =
     BroadcastRVR
     { _srCandidate :: !NodeId
     , _srHeardFromLeader :: !(Maybe HeardFromLeader)
-    , _srVote :: !Bool} |
-    ForwardCommandToLeader
-    { _srFor :: !NodeId
-    , _srCommands :: [Command]}
+    , _srVote :: !Bool}
     deriving (Eq, Show)
 
 data StateSnapshot = StateSnapshot

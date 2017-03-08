@@ -9,7 +9,6 @@ module Kadena.Types.Message.NewCMD
   , NewCmdWire(..)
   ) where
 
-import Codec.Compression.LZ4
 import Control.Lens
 import Data.Serialize (Serialize)
 import qualified Data.Serialize as S
@@ -44,14 +43,14 @@ instance WireFormat NewCmdRPC where
     NewMsg -> let bdy = S.encode $ NewCmdWire $ _newCmd
                   hsh = hash bdy
                   sig = sign hsh privKey pubKey
-                  dig = Digest (_alias nid) sig pubKey AE hsh
+                  dig = Digest (_alias nid) sig pubKey NEW hsh
               in SignedRPC dig bdy
     ReceivedMsg{..} -> SignedRPC _pDig _pOrig
   fromWire !ts !ks s@(SignedRPC !dig !bdy) = case verifySignedRPC ks s of
     Left !err -> Left err
     Right () -> if _digType dig /= NEW
-      then error $ "Invariant Failure: attempting to decode " ++ show (_digType dig) ++ " with AEWire instance"
-      else case maybe (Left "Decompression failure") S.decode $ decompress bdy of
+      then error $ "Invariant Failure: attempting to decode " ++ show (_digType dig) ++ " with CMDWire instance"
+      else case S.decode bdy of
         Left err -> Left $! "Failure to decode NewCMDWire: " ++ err
         Right (NewCmdWire cmdwire') -> Right $! NewCmdRPC cmdwire' $ ReceivedMsg dig bdy ts
   {-# INLINE toWire #-}

@@ -25,6 +25,7 @@ import Control.Monad.Trans.Reader
 import Control.Monad
 import Control.Monad.IO.Class
 
+import Data.IORef
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Set (Set)
@@ -38,6 +39,8 @@ import Kadena.Types hiding (debugPrint, ConsensusState(..), Config(..)
   , myPublicKey, myPrivateKey, otherNodes, nodeRole, term, Event(..), logService, publishMetric
   , currentLeader)
 import qualified Kadena.Types as KD
+
+import qualified Kadena.Types.Spec as Spec
 
 import Kadena.Log.Types (LogServiceChannel)
 import qualified Kadena.Log.Types as Log
@@ -66,19 +69,38 @@ data ServiceEnv = ServiceEnv
   -- Evidence Thread's Published State
   , _getEvidenceState :: !(IO PublishedEvidenceState)
   , _publishMetric :: !(Metric -> IO ())
+  , _config :: !(IORef KD.Config)
+  , _pubCons :: !(MVar Spec.PublishedConsensus)
   }
 makeLenses ''ServiceEnv
 
 type SenderService = ReaderT ServiceEnv IO
 
+getStateSnapshot :: IORef KD.Config -> MVar PublishedConsensus -> IO StateSnapshot
+getStateSnapshot conf' pcons' = do
+  conf <- readIORef conf'
+  st <- readMVar pcons'
+  return $! StateSnapshot
+    { _newNodeId = conf ^. KD.nodeId
+    , _newRole = st ^. Spec.pcRole
+    , _newOtherNodes = conf ^. KD.otherNodes
+    , _newLeader = st ^. Spec.pcLeader
+    , _newTerm = st ^. Spec.pcTerm
+    , _newPublicKey = conf ^. KD.myPublicKey
+    , _newPrivateKey = conf ^. KD.myPrivateKey
+    , _newYesVotes = st ^. Spec.pcYesVotes
+    }
+
 runSenderService
   :: Dispatch
-  -> KD.Config
+  -> IORef KD.Config
   -> (String -> IO ())
   -> (Metric -> IO ())
   -> MVar Ev.PublishedEvidenceState
+  -> MVar Spec.PublishedConsensus
   -> IO ()
-runSenderService dispatch conf debugFn publishMetric' mPubEvState = do
+runSenderService dispatch iorConf debugFn publishMetric' mPubEvState mPubCons = do
+  conf <- readIORef iorConf
   s <- return $ ServiceEnv
     { _myNodeId = conf ^. KD.nodeId
     , _nodeRole = Follower
@@ -98,6 +120,8 @@ runSenderService dispatch conf debugFn publishMetric' mPubEvState = do
     , _logService = dispatch ^. KD.logService
     , _getEvidenceState = readMVar mPubEvState
     , _publishMetric = publishMetric'
+    , _config = iorConf
+    , _pubCons = mPubCons
     }
   void $ liftIO $ runReaderT serviceRequests s
 
@@ -120,6 +144,17 @@ serviceRequests = do
   forever $ do
     sr <- liftIO $ readComm rrc
     case sr of
+      ForwardCommandToLeader{..} -> do
+        mPubCons <- view pubCons
+        conf <- view config
+        newSt <- liftIO $ getStateSnapshot conf mPubCons
+        local (updateEnv newSt) $ do
+          ldr <- view currentLeader
+          case ldr of
+            Nothing -> debug $ "Leader is down, unable to forward commands. Dropping..."
+            Just ldr' -> do
+              debug $ "fowarding " ++ show (length $ _newCmd $ _srCommands) ++ "commands to leader"
+              sendRPC ldr' $ NEW' _srCommands
       (ServiceRequest' ss m) -> local (updateEnv ss) $ case m of
           BroadcastAE{..} -> do
             evState <- view getEvidenceState >>= liftIO
@@ -129,7 +164,6 @@ serviceRequests = do
           BroadcastAER -> sendAllAppendEntriesResponse
           BroadcastRV rv -> sendAllRequestVotes rv
           BroadcastRVR{..} -> sendRequestVoteResponse _srCandidate _srHeardFromLeader _srVote
-          ForwardCommandToLeader{..} -> sendRPC _srFor $ NEW' $ NewCmdRPC (encodeCommand <$> _srCommands) NewMsg
       Heart t -> liftIO (pprintBeat t) >>= debug
 
 queryLogs :: Set Log.AtomicQuery -> SenderService (Map Log.AtomicQuery Log.QueryResult)

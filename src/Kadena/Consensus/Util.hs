@@ -21,6 +21,7 @@ module Kadena.Consensus.Util
   , setRole
   , setCurrentLeader
   , enqueueRequest
+  , enqueueRequest'
   , sendHistoryNewKeys
   , queryHistoryForExisting
   , queryHistoryForPriorApplication
@@ -118,6 +119,8 @@ debug s = do
 randomRIO :: R.Random a => (a,a) -> Consensus a
 randomRIO rng = view (rs.random) >>= \f -> liftIO $! f rng -- R.randomRIO
 
+
+-- TODO: refactor this so that sender service can directly query for the state it needs
 enqueueRequest :: Sender.ServiceRequest -> Consensus ()
 enqueueRequest s = do
   sendMsg <- view sendMessage
@@ -134,6 +137,11 @@ enqueueRequest s = do
     , Sender._newYesVotes = st ^. cYesVotes
     }
   liftIO $! sendMsg $! Sender.ServiceRequest' ss s
+
+enqueueRequest' :: Sender.ServiceRequest' -> Consensus ()
+enqueueRequest' s = do
+  sendMsg <- view sendMessage
+  liftIO $! sendMsg s
 
 -- no state update
 enqueueEvent :: Event -> Consensus ()
@@ -161,8 +169,9 @@ publishConsensus = do
   !currentLeader' <- use currentLeader
   !nodeRole' <- use nodeRole
   !term' <- use term
+  !cYesVotes' <- use cYesVotes
   p <- view mPubConsensus
-  newPubCons <- return $! PublishedConsensus currentLeader' nodeRole' term'
+  newPubCons <- return $! PublishedConsensus currentLeader' nodeRole' term' cYesVotes'
   _ <- liftIO $! takeMVar p
   liftIO $! putMVar p $! newPubCons
 

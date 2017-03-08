@@ -50,6 +50,7 @@ import Kadena.Types.Spec
 import Kadena.History.Types ( History(..)
                             , PossiblyIncompleteResults(..))
 import qualified Kadena.History.Types as History
+import qualified Kadena.Sender.Types as Sender
 import Kadena.Types.Dispatch
 import Kadena.Util.Util
 
@@ -95,19 +96,18 @@ sendPublicBatch = do
   ldr <- fromMaybeM (die "System unavaiable, please try again later") _pcLeader
   rAt <- ReceivedAt <$> now
   log $ "received batch of " ++ show (length cmds)
+  rpcs <- return $ buildCmdRpc <$> cmds
+  cmds' <- return $! snd <$> rpcs
+  rks' <- return $ RequestKeys $! fst <$> rpcs
   if _nodeId conf == ldr
   then do -- dispatch internally if we're leader, otherwise send outbound
-    rpcs <- return $ group 8000 $ buildCmdRpc <$> cmds
     oChan <- view (aiDispatch.inboundCMD)
-    mapM_ (\rpcs' -> liftIO $ writeComm oChan $ InboundCMDFromApi $ (rAt, NewCmdInternal $ snd <$> rpcs')) rpcs
-    writeResponse $ ApiSuccess $ RequestKeys $ concat $ fmap fst <$> rpcs
+    liftIO $ writeComm oChan $ InboundCMDFromApi $ (rAt, NewCmdInternal cmds')
+    writeResponse $ ApiSuccess rks'
   else do
-    oChan <- view (aiDispatch.outboundGeneral)
-    let me = Config._nodeId conf
-        sk = Config._myPrivateKey conf
-        pk = Config._myPublicKey conf
-    cmds' <- return $ pactTextToCMDWire <$> cmds
-    liftIO $ writeComm oChan $! directMsg [(ldr,SZ.encode $ toWire me pk sk $ NewCmdRPC cmds' NewMsg)]
+    oChan <- view (aiDispatch.senderService)
+    liftIO $ writeComm oChan $! Sender.ForwardCommandToLeader (NewCmdRPC cmds' NewMsg)
+    writeResponse $ ApiSuccess rks'
 
 pactTextToCMDWire :: Pact.Command T.Text -> CMDWire
 pactTextToCMDWire cmd = SCCWire $ SZ.encode (encodeUtf8 <$> cmd)

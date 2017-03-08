@@ -16,7 +16,7 @@ import qualified Data.HashSet as HashSet
 
 import Data.BloomFilter (Bloom)
 import qualified Data.BloomFilter as Bloom
-import Data.Maybe (isJust, fromJust)
+import Data.Maybe (isJust)
 import Data.Either (partitionEithers)
 
 import Kadena.Types hiding (nodeRole, cmdBloomFilter)
@@ -109,7 +109,7 @@ handleBatch cmdbBatch = do
       when (Sender.willBroadcastAE quorumSize' (es ^. Ev.pesNodeStates) (es ^. Ev.pesConvincedNodes)) resetHeartbeatTimer
     IAmFollower BatchProcessing{..} -> do
       when (isJust lid) $ do
-        enqueueRequest $ Sender.ForwardCommandToLeader (fromJust lid) $ _unBPNewEntries newEntries
+        enqueueRequest' $ Sender.ForwardCommandToLeader $ NewCmdRPC (encodeCommand <$> _unBPNewEntries newEntries) NewMsg
       unless (null $ _unBPAlreadySeen alreadySeen) $ do
         start <- now
         setOfAlreadySeen <- return $! HashSet.fromList $ toRequestKey <$> _unBPAlreadySeen alreadySeen
@@ -118,7 +118,7 @@ handleBatch cmdbBatch = do
         end <- now
         unless (HashSet.null falsePositive) $ do
           falsePositiveCommands <- return $! filter (\c' -> HashSet.member (toRequestKey c') falsePositive) $ _unBPAlreadySeen alreadySeen
-          enqueueRequest $ Sender.ForwardCommandToLeader (fromJust lid) falsePositiveCommands
+          enqueueRequest' $ Sender.ForwardCommandToLeader $ NewCmdRPC (encodeCommand <$> falsePositiveCommands) NewMsg
           debug $ "CMDB - False positives found "
                   ++ show (HashSet.size falsePositive)
                   ++ " of " ++ show (HashSet.size setOfAlreadySeen) ++ " collisions ("

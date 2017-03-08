@@ -86,10 +86,11 @@ launchSenderService :: Dispatch
   -> (String -> IO ())
   -> (Metric -> IO ())
   -> MVar Ev.PublishedEvidenceState
-  -> Config
+  -> MVar PublishedConsensus
+  -> IORef Config
   -> IO (Async ())
-launchSenderService dispatch' dbgPrint' publishMetric' mEvState rconf = do
-  link =<< async (Sender.runSenderService dispatch' rconf dbgPrint' publishMetric' mEvState)
+launchSenderService dispatch' dbgPrint' publishMetric' mEvState mPubCons rconf = do
+  link =<< async (Sender.runSenderService dispatch' rconf dbgPrint' publishMetric' mEvState mPubCons)
   async $ foreverHeart (_senderService dispatch') 1000000 Sender.Heart
 
 runConsensusService :: ReceiverEnv -> Config -> ConsensusSpec -> ConsensusState ->
@@ -124,7 +125,7 @@ runConsensusService renv rconf spec rstate timeCache' mPubConsensus' = do
   mLeaderNoFollowers <- newEmptyMVar
 
   link =<< launchHistoryService dispatch' dbgPrint' getTimestamp' rconf
-  link =<< launchSenderService dispatch' dbgPrint' publishMetric' mEvState rconf
+  link =<< launchSenderService dispatch' dbgPrint' publishMetric' mEvState mPubConsensus' rconf'
   link =<< launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' commandConfig'
   link =<< launchEvidenceService dispatch' dbgPrint' publishMetric' mEvState rconf' mLeaderNoFollowers
   link =<< launchLogService dispatch' dbgPrint' publishMetric' keySet' rconf

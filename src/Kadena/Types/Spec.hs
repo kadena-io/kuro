@@ -18,7 +18,7 @@ module Kadena.Types.Spec
   , timeSinceLastAER, cmdBloomFilter, invalidCandidateResults
   , Event(..)
   , mkConsensusEnv
-  , PublishedConsensus(..),pcLeader,pcRole,pcTerm
+  , PublishedConsensus(..),pcLeader,pcRole,pcTerm,pcYesVotes
   , LazyVote(..), lvVoteFor, lvAllReceived
   , InvalidCandidateResults(..), icrMyReqVoteSig, icrNoVotes
   ) where
@@ -56,6 +56,7 @@ data PublishedConsensus = PublishedConsensus
     { _pcLeader :: !(Maybe NodeId)
     , _pcRole :: !Role
     , _pcTerm :: !Term
+    , _pcYesVotes :: !(Set RequestVoteResponse)
     }
 makeLenses ''PublishedConsensus
 

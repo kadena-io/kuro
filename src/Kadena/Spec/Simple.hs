@@ -166,5 +166,5 @@ runServer = do
   receiverEnv <- return $ simpleReceiverEnv dispatch rconf debugFn restartTurbo
   timerTarget' <- newEmptyMVar
   rstate <- return $ initialConsensusState timerTarget'
-  mPubConsensus' <- newMVar $! PublishedConsensus (rstate ^. currentLeader) (rstate ^. nodeRole) (rstate ^. term)
+  mPubConsensus' <- newMVar $! PublishedConsensus (rstate ^. currentLeader) (rstate ^. nodeRole) (rstate ^. term) (rstate ^. cYesVotes)
   runConsensusService receiverEnv rconf raftSpec rstate getCurrentTime mPubConsensus'

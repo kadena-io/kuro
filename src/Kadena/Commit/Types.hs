@@ -19,8 +19,11 @@ import Control.Lens hiding (Index)
 
 import Control.Monad.Trans.RWS.Strict
 import Control.Concurrent.Chan (Chan)
+import Control.Concurrent (MVar)
 
 import Data.Thyme.Clock (UTCTime)
+import Data.ByteString (ByteString)
+import Data.Aeson (Value)
 
 import qualified Pact.Types.Command as Pact
 import qualified Pact.Types.Server as Pact
@@ -47,7 +50,11 @@ data Commit =
     { newNodeId :: !NodeId } |
   UpdateKeySet
     { updateKeySet :: !(KeySet -> KeySet) } |
-  Heart Beat
+  Heart Beat |
+  ExecLocal
+    { localCmd :: !(Pact.Command ByteString),
+      localResult :: !(MVar Value) }
+
 
 newtype CommitChannel = CommitChannel (Chan Commit)
 

@@ -193,7 +193,7 @@ sendCmd m cmd = do
         rk <- return $ head $ _rkRequestKeys resp
         showResult 10000 [rk] Nothing)
     Local -> postAPI "local" e >>=
-             handleResp (\(resp :: Value) -> flushStrLn (show resp))
+             handleResp (\(resp :: Value) -> putJSON resp)
 
 putJSON :: ToJSON a => a -> Repl ()
 putJSON a = use fmt >>= \f -> flushStrLn $ case f of

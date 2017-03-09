@@ -51,6 +51,7 @@ import Kadena.History.Types ( History(..)
                             , PossiblyIncompleteResults(..))
 import qualified Kadena.History.Types as History
 import qualified Kadena.Sender.Types as Sender
+import qualified Kadena.Commit.Types as Commit
 import Kadena.Types.Dispatch
 import Kadena.Util.Util
 
@@ -85,7 +86,13 @@ api = route [
       ]
 
 sendLocal :: Api ()
-sendLocal = undefined
+sendLocal = do
+  (cmd :: Pact.Command BS.ByteString) <- fmap encodeUtf8 <$> readJSON
+  mv <- liftIO newEmptyMVar
+  c <- view $ aiDispatch . commitService
+  liftIO $ writeComm c (Commit.ExecLocal cmd mv)
+  r <- liftIO $ takeMVar mv
+  writeResponse $ ApiSuccess $ r
 
 sendPublicBatch :: Api ()
 sendPublicBatch = do
@@ -173,12 +180,6 @@ setJSON = modifyResponse $ setHeader "Content-Type" "application/json"
 writeResponse :: ToJSON j => j -> Api ()
 writeResponse j = setJSON >> writeLBS (encode j)
 
-group :: Int -> [a] -> [[a]]
-group _ [] = []
-group n l
-  | n > 0 = take n l : (group n (drop n l))
-  | otherwise = error "Negative n"
-
 registerListener :: Api ()
 registerListener = do
   (ListenerRequest rk) <- readJSON
@@ -198,4 +199,4 @@ registerListener = do
       writeLBS $ encode ls
 
 now :: Api UTCTime
-now = view (aiGetTimestamp) >>= liftIO
+now = view aiGetTimestamp >>= liftIO

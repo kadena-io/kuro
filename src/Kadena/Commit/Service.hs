@@ -20,6 +20,7 @@ import qualified Data.Map.Strict as Map
 import Data.Thyme.Clock
 import Data.Maybe (fromJust)
 import Data.ByteString (ByteString)
+import Data.Aeson (Value)
 
 import qualified Pact.Types.Command as Pact
 import qualified Pact.Types.Server as Pact
@@ -94,6 +95,8 @@ handle = do
               ++ " entries loaded from disk to apply, up to "
               ++ show (fromJust $ Log.lesMaxIndex logEntriesToApply)
         applyLogEntries ReplayFromDisk logEntriesToApply
+      ExecLocal{..} -> applyLocalCommand (localCmd,localResult)
+
 
 
 applyLogEntries :: ReplayStatus -> LogEntries -> CommitService ()
@@ -137,8 +140,8 @@ applyCommand tEnd le@LogEntry{..} = do
         , _cmdrLatency = lat
         })
 
-_applyLocalCommand :: (Pact.Command ByteString, MVar Pact.CommandResult) -> CommitService ()
-_applyLocalCommand (cmd, mv) = do
+applyLocalCommand :: (Pact.Command ByteString, MVar Value) -> CommitService ()
+applyLocalCommand (cmd, mv) = do
   applyLocal <- Pact._ceiApplyCmd <$> use commandExecInterface
   cr <- liftIO $ applyLocal Pact.Local cmd
-  liftIO $ putMVar mv cr
+  liftIO $ putMVar mv (Pact._crResult cr)

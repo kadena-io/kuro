@@ -265,7 +265,7 @@ showResult tdelay rks countm = loop (0 :: Int)
                       Just r' -> flushStrLn r'
                       Nothing -> putJSON _arResult
                   Just cnt -> case fromJSON <$>_arMetaData of
-                    Nothing -> undefined
+                    Nothing -> flushStrLn "Success"
                     Just (A.Success LatencyMetrics{..}) ->
                       flushStrLn $ intervalOfNumerous cnt _lmFullLatency
                     Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err

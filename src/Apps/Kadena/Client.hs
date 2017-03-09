@@ -8,7 +8,7 @@
 
 module Apps.Kadena.Client
   ( main
-  , ClientConfig(..), ccAlias, ccSecretKey, ccPublicKey, ccEndpoints
+  , ClientConfig(..), ccSecretKey, ccPublicKey, ccEndpoints
   ) where
 
 import Control.Monad.State
@@ -17,8 +17,8 @@ import Control.Lens
 import Control.Monad.Catch
 import Control.Concurrent.Lifted (threadDelay)
 import Control.Concurrent.MVar
+import Control.Applicative
 
-import Text.Read (readMaybe)
 import qualified Data.Text as T
 import Data.Text.Encoding (decodeUtf8)
 import qualified Data.ByteString.Base16 as B16
@@ -31,27 +31,54 @@ import qualified Data.Aeson as A
 import Data.Aeson hiding ((.=), Result(..), Value(..))
 import Data.Aeson.Lens
 import Data.Aeson.Types hiding ((.=),parse, Result(..))
+import Data.Aeson.Encode.Pretty
 import qualified Data.Yaml as Y
+
+import Text.Trifecta as TF hiding (err,render)
 
 import Data.Default
 import Data.Foldable
 import Data.Int
+import Data.Maybe
 import Data.List
 import Data.Thyme.Clock
 import Data.Thyme.Time.Core (unUTCTime, toMicroseconds)
 import GHC.Generics
-import Network.Wreq
+import Network.Wreq hiding (Raw)
 import System.Console.GetOpt
 import System.Environment
-import System.Exit
+import System.Exit hiding (die)
 import System.IO
+import System.Directory
+import System.FilePath
 
-import Pact.Types.API
+import Pact.Types.API hiding (Poll)
+import qualified Pact.Types.API as Pact
 import Pact.Types.RPC
 import qualified Pact.Types.Command as Pact
 import qualified Pact.Types.Crypto as Pact
+import Pact.Types.Util
+
 
 import Kadena.Types.Base
+
+data KeyPair = KeyPair {
+  _kpSecret :: PrivateKey,
+  _kpPublic :: PublicKey
+  } deriving (Eq,Show,Generic)
+instance ToJSON KeyPair where toJSON = lensyToJSON 3
+instance FromJSON KeyPair where parseJSON = lensyParseJSON 3
+
+data YamlLoad = YamlLoad {
+  _ylData :: Maybe String,
+  _ylDataFile :: Maybe FilePath,
+  _ylCode :: Maybe String,
+  _ylCodeFile :: Maybe FilePath,
+  _ylKeyPairs :: [KeyPair],
+  _ylBatchCmd :: Maybe String
+  } deriving (Eq,Show,Generic)
+instance ToJSON YamlLoad where toJSON = lensyToJSON 3
+instance FromJSON YamlLoad where parseJSON = lensyParseJSON 3
 
 data ClientOpts = ClientOpts {
       _oConfig :: FilePath
@@ -68,8 +95,7 @@ coptions =
   ]
 
 data ClientConfig = ClientConfig {
-      _ccAlias :: Alias
-    , _ccSecretKey :: PrivateKey
+      _ccSecretKey :: PrivateKey
     , _ccPublicKey :: PublicKey
     , _ccEndpoints :: HM.HashMap String String
     } deriving (Eq,Show,Generic)
@@ -79,23 +105,58 @@ instance ToJSON ClientConfig where
 instance FromJSON ClientConfig where
   parseJSON = genericParseJSON defaultOptions { fieldLabelModifier = drop 3 }
 
+
+data Mode = Transactional|Local
+  deriving (Eq,Show,Ord,Enum)
+
+data Formatter = YAML|Raw|PrettyJSON deriving (Eq,Show)
+
+data CliCmd =
+  Batch Int |
+  Cmd (Maybe String) |
+  Data (Maybe String) |
+  Exit |
+  Format (Maybe Formatter) |
+  Help |
+  Keys (Maybe (T.Text,T.Text)) |
+  Load FilePath Mode |
+  Poll String |
+  Send Mode String |
+  Server (Maybe String) |
+  Sleep Int
+  deriving (Eq,Show)
+
 data ReplState = ReplState {
       _server :: String
     , _batchCmd :: String
     , _requestId :: MVar Int64 -- this needs to be an MVar in case we get an exception mid function... it's our entropy
+    , _cmdData :: Value
+    , _keys :: [KeyPair]
+    , _fmt :: Formatter
 }
 makeLenses ''ReplState
 
 type Repl a = ReaderT ClientConfig (StateT ReplState IO) a
 
 prompt :: String -> String
-prompt s = "\ESC[0;31m" ++ s ++ ">> \ESC[0m"
+prompt s = "\ESC[0;31m" ++ s ++ "> \ESC[0m"
+
+die :: MonadThrow m => String -> m a
+die = throwM . userError
 
 flushStr :: MonadIO m => String -> m ()
 flushStr str = liftIO (putStr str >> hFlush stdout)
 
 flushStrLn :: MonadIO m => String -> m ()
 flushStrLn str = liftIO (putStrLn str >> hFlush stdout)
+
+getServer :: Repl String
+getServer = do
+  ss <- view ccEndpoints
+  s <- use server
+  case HM.lookup s ss of
+    Nothing -> die $ "Invalid server id: " ++ show s
+    Just a -> return a
 
 readPrompt :: Repl (Maybe String)
 readPrompt = do
@@ -105,33 +166,48 @@ readPrompt = do
 
 mkExec :: String -> Value -> Repl (Pact.Command T.Text)
 mkExec code mdata = do
-  sk <- view ccSecretKey
-  pk <- view ccPublicKey
+  kps <- use keys
   rid <- use requestId >>= liftIO . (`modifyMVar` (\i -> return $ (succ i, i)))
-  return $ decodeUtf8 <$> Pact.mkCommand [(Pact.ED25519, sk, pk)] (T.pack $ show rid) (Exec (ExecMsg (T.pack code) mdata))
+  return $ decodeUtf8 <$>
+    Pact.mkCommand
+    (map (\KeyPair {..} -> (Pact.ED25519,_kpSecret,_kpPublic)) kps)
+    (T.pack $ show rid)
+    (Exec (ExecMsg (T.pack code) mdata))
 
-sendCmd :: String -> Repl ()
-sendCmd cmd = do
-  s <- use server
-  e <- mkExec cmd Null
-  r <- liftIO $ post ("http://" ++ s ++ "/api/v1/send") (toJSON $ SubmitBatch [e])
-  resp <- asJSON r
-  case resp ^. responseBody of
-    ApiFailure{..} -> do
-      flushStrLn $ "Failure: " ++ show _apiError
-    ApiSuccess{..} -> do
-      rk <- return $ head $ _rkRequestKeys _apiResponse
-      flushStrLn $ "Request Id: " ++ show rk
-      showResult 10000 [rk] Nothing
+postAPI :: (ToJSON req,FromJSON resp) => String -> req -> Repl (Response resp)
+postAPI ep rq = do
+  s <- getServer
+  r <- liftIO $ post ("http://" ++ s ++ "/api/v1/" ++ ep) (toJSON rq)
+  asJSON r
+
+sendCmd :: Mode -> String -> Repl ()
+sendCmd m cmd = do
+  j <- use cmdData
+  e <- mkExec cmd j
+  let handleResp a r = do
+        case r ^. responseBody of
+          ApiFailure{..} -> flushStrLn $ "Failure in API Send: " ++ show _apiError
+          ApiSuccess{..} -> a _apiResponse
+  case m of
+    Transactional -> postAPI "send" (SubmitBatch [e]) >>= handleResp (\resp -> do
+        rk <- return $ head $ _rkRequestKeys resp
+        showResult 10000 [rk] Nothing)
+    Local -> postAPI "local" e >>=
+             handleResp (\(resp :: Value) -> flushStrLn (show resp))
+
+putJSON :: ToJSON a => a -> Repl ()
+putJSON a = use fmt >>= \f -> flushStrLn $ case f of
+  Raw -> BSL.unpack $ encode a
+  PrettyJSON -> BSL.unpack $ encodePretty a
+  YAML -> BS8.unpack $ Y.encode a
 
 batchTest :: Int -> String -> Repl ()
 batchTest n cmd = do
-  s <- use server
-  es@(SubmitBatch es') <- SubmitBatch <$> replicateM n (mkExec cmd Null)
+  j <- use cmdData
+  es@(SubmitBatch es') <- SubmitBatch <$> replicateM n (mkExec cmd j)
   flushStrLn $ "Preparing " ++ show (length es') ++ " messages ..."
-  r <- liftIO $ post ("http://" ++ s ++ "/api/v1/send") (toJSON es)
+  resp <- postAPI "send" es
   flushStrLn $ "Sent, retrieving responses"
-  resp <- asJSON r
   case resp ^. responseBody of
     ApiFailure{..} -> do
       flushStrLn $ "Failure: " ++ show _apiError
@@ -140,24 +216,36 @@ batchTest n cmd = do
       flushStrLn $ "Polling for RequestKey: " ++ show rk
       showResult 10000 [rk] (Just (fromIntegral n))
 
-setup :: Repl ()
-setup = do
-  code <- liftIO (readFile "demo/demo.pact")
-  (ej :: Either String Value) <- eitherDecode <$> liftIO (BSL.readFile "demo/demo.json")
-  case ej of
-    Left err -> liftIO (flushStrLn $ "ERROR: demo.json file invalid: " ++ show err)
-    Right j -> do
-      s <- use server
-      e <- mkExec code j
-      r <- liftIO $ post ("http://" ++ s ++ "/api/v1/send") (toJSON $ SubmitBatch [e])
-      resp <- asJSON r
-      case resp ^. responseBody of
-        ApiFailure{..} -> do
-          flushStrLn $ "Failure: " ++ show _apiError
-        ApiSuccess{..} -> do
-          rk <- return $ head $ _rkRequestKeys _apiResponse
-          flushStrLn $ "Request Key: " ++ show rk
-          showResult 10000 [rk] Nothing
+load :: Mode -> FilePath -> Repl ()
+load m fp = do
+  YamlLoad {..} <- either (\pe -> die $ "File load failed: " ++ show pe) return =<<
+        liftIO (Y.decodeFileEither fp)
+  oldCwd <- liftIO $ getCurrentDirectory
+  liftIO $ setCurrentDirectory (takeDirectory fp)
+  (code,cdata) <- (`finally` liftIO (setCurrentDirectory oldCwd)) $ do
+    code <- case (_ylCodeFile,_ylCode) of
+      (Nothing,Just c) -> return c
+      (Just f,Nothing) -> liftIO (readFile f)
+      _ -> die "Expected either a 'code' or 'codeFile' entry"
+    cdata <- case (_ylDataFile,_ylData) of
+      (Nothing,Just v) -> either (\e -> die $ "Data decode failed: " ++ show e) return $ eitherDecode (BSL.pack v)
+      (Just f,Nothing) -> liftIO (BSL.readFile f) >>=
+                          either (\e -> die $ "Data file load failed: " ++ show e) return .
+                          eitherDecode
+      (Nothing,Nothing) -> return Null
+      _ -> die "Expected either a 'data' or 'dataFile' entry, or neither"
+    return (code,cdata)
+  keys .= _ylKeyPairs
+  cmdData .= cdata
+  sendCmd m code
+  case _ylBatchCmd of
+    Nothing -> return ()
+    Just c -> flushStrLn ("Setting batch command to: " ++ c) >> batchCmd .= c
+  cmdData .= Null
+
+
+
+
 
 showResult :: Int -> [RequestKey] -> Maybe Int64 -> Repl ()
 showResult _ [] _ = return ()
@@ -166,9 +254,7 @@ showResult tdelay rks countm = loop (0 :: Int)
     loop c = do
       threadDelay tdelay
       when (c > 100) $ flushStrLn "Timeout"
-      s <- use server
-      r <- liftIO $ post ("http://" ++ s ++ "/api/v1/listen") (toJSON (ListenerRequest $ last rks))
-      resp <- asJSON r
+      resp <- postAPI "listen" (ListenerRequest $ last rks)
       case resp ^. responseBody of
         ApiFailure err -> flushStrLn $ "Error: no results received: " ++ show err
         ApiSuccess ApiResult{..} ->
@@ -177,25 +263,24 @@ showResult tdelay rks countm = loop (0 :: Int)
                     prettyRes <- return $ pprintResult _arResult
                     case prettyRes of
                       Just r' -> flushStrLn r'
-                      Nothing -> do
-                        flushStrLn $ BS8.unpack $ Y.encode _arResult
+                      Nothing -> putJSON _arResult
                   Just cnt -> case fromJSON <$>_arMetaData of
                     Nothing -> undefined
-                    Just (A.Success LatencyMetrics{..}) -> flushStrLn $ intervalOfNumerous cnt _lmFullLatency
+                    Just (A.Success LatencyMetrics{..}) ->
+                      flushStrLn $ intervalOfNumerous cnt _lmFullLatency
                     Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
 
 pollForResult :: RequestKey -> Repl ()
 pollForResult rk = do
-  s <- use server
-  r <- liftIO $ post ("http://" ++ s ++ "/api/v1/poll") (toJSON (Poll [rk]))
+  s <- getServer
+  r <- liftIO $ post ("http://" ++ s ++ "/api/v1/poll") (toJSON (Pact.Poll [rk]))
   resp <- asJSON r
   case resp ^. responseBody of
     ApiFailure err -> flushStrLn $ "Error: no results received: " ++ show err
     ApiSuccess (PollResponses prs) -> mapM_ (\ApiResult{..} -> do
       case pprintResult _arResult of
         Just r' -> flushStrLn r'
-        Nothing -> do
-          flushStrLn $ BS8.unpack $ Y.encode _arResult) $ HM.elems prs
+        Nothing -> putJSON _arResult) $ HM.elems prs
 
 pprintResult :: Value -> Maybe String
 pprintResult v = do
@@ -215,6 +300,48 @@ pprintResult v = do
           intercalate " | " (map (fill colwidth . render . (r HM.!)) ks)
   return (intercalate "\n" (h1:hr:rows))
 
+parseMode :: TF.Parser Mode
+parseMode =
+  (symbol "tx" >> pure Transactional) <|>
+  (symbol "transactional" >> pure Transactional) <|>
+  (symbol "local" >> pure Local)
+
+cliCmds :: [(String,String,String,TF.Parser CliCmd)]
+cliCmds = [
+  ("sleep","[MILLIS]","Pause for 5 sec or MILLIS",
+   Sleep . fromIntegral . fromMaybe 5000 <$> optional integer),
+  ("cmd","[COMMAND]","Show/set current batch command",
+   Cmd <$> optional (some anyChar)),
+  ("data","[JSON]","Show/set current JSON data payload",
+   Data <$> optional (some anyChar)),
+  ("load","YAMLFILE [MODE]",
+   "Load and submit yaml file with optional mode (transactional|local), defaults to transactional",
+   Load <$> some anyChar <*> (fromMaybe Transactional <$> optional parseMode)),
+  ("batch","TIMES","Repeat command in batch message specified times",
+   Batch . fromIntegral <$> integer),
+  ("poll","REQUESTKEY", "Poll server for request key",
+   Poll <$> some anyChar),
+  ("exec","COMMAND","Send command transactionally to server",
+   Send Transactional <$> some anyChar),
+  ("local","COMMAND","Send command locally to server",
+   Send Local <$> some anyChar),
+  ("server","[SERVERID]","Show server info or set current server",
+   Server <$> optional (some anyChar)),
+  ("help","","Show command help", pure Help),
+  ("keys","[PUBLIC PRIVATE]","Show or set signing keypair",
+   Keys <$> optional ((,) <$> (T.pack <$> some alphaNum) <*> (spaces >> (T.pack <$> some alphaNum)))),
+  ("exit","","Exit client", pure Exit),
+  ("format","[FORMATTER]","Show/set current output formatter (yaml|raw|pretty)",
+   Format <$> optional ((symbol "yaml" >> pure YAML) <|>
+                        (symbol "raw" >> pure Raw) <|>
+                        (symbol "pretty" >> pure PrettyJSON)))
+  ]
+
+parseCliCmd :: TF.Parser CliCmd
+parseCliCmd = foldl1 (<|>) (map (\(c,_,_,p) -> symbol c >> p) cliCmds)
+
+
+
 runREPL :: Repl ()
 runREPL = loop True
   where
@@ -226,96 +353,72 @@ runREPL = loop True
       case cmd' of
         Nothing -> loop False
         Just "" -> loop True
-        Just ":exit" -> loop False
-        Just cmd -> parse cmd >> loop True
-    parse cmd = do
-      bcmd <- use batchCmd
-      case cmd of
-        ":help" -> help
-        ":?" -> help
-        "?" -> help
-        ":sleep" -> threadDelay 5000000
-        "?cmd" -> use batchCmd >>= flushStrLn
-        "?servers" -> view ccEndpoints >>= liftIO . mapM_ print
-        ":setup" -> setup
-        _ | take 7 cmd == ":batch " ->
-            case readMaybe $ drop 7 cmd of
-              Just n | n <= 50000 -> batchTest n bcmd
-                     | otherwise -> void $ flushStrLn "batch test is limited to a maximum of 50k transactions at a time."
-              Nothing -> return ()
-        _ | take 6 cmd == ":poll " -> do
-              b <- return $ B16.decode $ BS8.pack $ drop 6 cmd
-              case b of
-                (rk,leftovers)
-                  | B.empty /= leftovers -> void $ flushStrLn $ "Failed to decode RequestKey: this was converted " ++ show rk ++ " and this was not " ++ show leftovers
-                  | B.length rk /= hashLengthAsBS -> void $ flushStrLn $ "RequestKey is too short, should be "
-                                                              ++ show hashLengthAsBase16
-                                                              ++ " char long but was " ++ show (B.length $ BS8.pack $ drop 7 cmd) ++ " -> " ++ show (B16.encode rk)
-                  | otherwise -> void $ pollForResult $ RequestKey $ Hash $ rk
-          | take 8 cmd == ":server " ->
-              server .= drop 8 cmd
-          | take 5 cmd == ":cmd " ->
-              batchCmd .= drop 5 cmd
-          | otherwise ->  sendCmd cmd
+        Just cmd -> case parseString parseCliCmd mempty cmd of
+          Failure (ErrInfo e _) -> do
+            flushStrLn $ "Parse failure (help for command help):\n" ++ show e
+            loop True
+          Success c -> case c of
+            Exit -> loop False
+            _ -> handleCmd c >> loop True
+
+handleCmd :: CliCmd -> Repl ()
+handleCmd cmd = case cmd of
+  Help -> help
+  Sleep i -> threadDelay (i * 1000)
+  Cmd Nothing -> use batchCmd >>= flushStrLn
+  Cmd (Just c) -> batchCmd .= c
+  Send m c -> sendCmd m c
+  Server Nothing -> do
+    use server >>= \s -> flushStrLn $ "Current server: " ++ s
+    flushStrLn "Servers:"
+    view ccEndpoints >>= \es -> forM_ (HM.toList es) $ \(i,e) -> do
+      flushStrLn $ i ++ ": " ++ e
+  Server (Just s) -> server .= s
+  Batch n | n <= 50000 -> use batchCmd >>= batchTest n
+          | otherwise -> void $ flushStrLn "Aborting: batch count limited to 50000"
+  Load s m -> load m s
+  Poll s -> parseRK s >>= void . pollForResult . RequestKey . Hash
+  Exit -> return ()
+  Data Nothing -> use cmdData >>= flushStrLn . BSL.unpack . encode
+  Data (Just s) -> either (\e -> flushStrLn $ "Bad JSON value: " ++ show e) (cmdData .=) $ eitherDecode (BSL.pack s)
+  Keys Nothing -> use keys >>= mapM_ putJSON
+  Keys (Just (p,s)) -> do
+    sk <- case fromJSON (String s) of
+      A.Error e -> die $ "Bad secret key value: " ++ show e
+      A.Success k -> return k
+    pk <- case fromJSON (String p) of
+      A.Error e -> die $ "Bad public key value: " ++ show e
+      A.Success k -> return k
+    keys .= [KeyPair sk pk]
+  Format Nothing -> use fmt >>= flushStrLn . show
+  Format (Just f) -> fmt .= f
+
+parseRK :: String -> Repl B.ByteString
+parseRK cmd = case B16.decode $ BS8.pack cmd of
+  (rk,leftovers)
+    | B.empty /= leftovers ->
+      die $ "Failed to decode RequestKey: this was converted " ++
+      show rk ++ " and this was not " ++ show leftovers
+    | B.length rk /= hashLengthAsBS ->
+      die $ "RequestKey is too short, should be "
+              ++ show hashLengthAsBase16
+              ++ " char long but was " ++ show (B.length $ BS8.pack $ drop 7 cmd) ++
+              " -> " ++ show (B16.encode rk)
+    | otherwise -> return rk
 
 help :: Repl ()
-help = flushStrLn
-  "Kadena Client -- Payments Demo -- Kadena LLC © (2016-2017) \n\
-  \Commands: \n\
-  \:setup - ready the payments demo by executing the ./demo/demo.pact smart contract to create the needed tables and modules \n\
-  \       - NB: this command only needs to be run once and must be run for `(demo.read-all)` and `:batch N` to correctly function \n\
-  \   127.0.0.1:8003>> :setup  \n\
-  \   Request Key: \"94d1d46b991c293dbc94016d3d4fc7c7c97302d991458e907c5d6fccd97a32a6\"  \n\
-  \   status: Success  \n\
-  \   result: Write succeeded  \n\
-  \\n\
-  \<Query Accounts> - See <Pact-Code> example\n\
-  \\n\
-  \<Pact-Code> - Run a transaction containing arbitrary pact smart contract code \n\
-  \   127.0.0.1:8003>> (demo.read-all) \n\
-  \   Request Id: \"cba86abd875a332388215a826dae6036c7171a0dd4590d789593d3b97214409d\"  \n\
-  \   account      | amount       | balance      | data  \n\
-  \   ---------------------------------------------------------  \n\
-  \   \"Acct1\"      | \"-1.00\"      | \"95000.00\"   | {\"transfer-to\":\"Acct2\"}  \n\
-  \   \"Acct2\"      | \"1.00\"       | \"5000.00\"    | {\"transfer-from\":\"Acct1\"}  \n\
-  \\n\
-  \:poll <RequestKey> - poll kadena for historical transaction by RequestKey\n\
-  \   127.0.0.1:8003>> :poll cba86abd875a332388215a826dae6036c7171a0dd4590d789593d3b97214409d\n\
-  \   Request Id: \"cba86abd875a332388215a826dae6036c7171a0dd4590d789593d3b97214409d\"  \n\
-  \   account      | amount       | balance      | data  \n\
-  \   ---------------------------------------------------------  \n\
-  \   \"Acct1\"      | \"-1.00\"      | \"95000.00\"   | {\"transfer-to\":\"Acct2\"}  \n\
-  \   \"Acct2\"      | \"1.00\"       | \"5000.00\"    | {\"transfer-from\":\"Acct1\"}  \n\
-  \\n\
-  \:batch N - perform N single dollar individual transactions, print out performance results when finished\n\
-  \           NB: performance results for N > 8000 are inaccurate, please contact info@kadena.io if more extensive testing is desired \n\
-  \   127.0.0.1:8003>> :batch 5000\n\
-  \   Prepared 5000 messages ...\n\
-  \   Sent, retrieving responses\n\
-  \   Polling for RequestKey: \"416bfaeb7871877f8aae2c5cd4672c5d157daa111fb7d3c5ca09d28a38624143\" \n\
-  \   Completed in 0.478636sec (10447 per sec)  \n\
-  \\n\
-  \:server HOST:PORT - re-target the client to transact via the specified server\n\
-  \   127.0.0.1:8003>> :server 127.0.0.1:8000\n\
-  \   127.0.0.1:8000>>\n\
-  \\n\
-  \?cmd - print last command\n\
-  \\n\
-  \?servers - print configured server nodes' IP:PORT\n\
-  \\n\
-  \:exit - exit Repl\n\
-  \:help | :? | ? - print out this document\n\
-  \"
-
-
-_run :: (Monad m, MonadIO m) => StateT ReplState m a -> m (a, ReplState)
-_run a = liftIO (newMVar 1) >>= \mrid -> runStateT a (ReplState "localhost:8000" "(demo.transfer \"Acct1\" \"Acct2\" 1.00)" mrid)
+help = do
+  flushStrLn "Command Help:"
+  forM_ cliCmds $ \(cmd,args,docs,_) -> do
+    flushStrLn $ cmd ++ " " ++ args
+    flushStrLn $ "    " ++ docs
 
 intervalOfNumerous :: Int64 -> Int64 -> String
 intervalOfNumerous cnt mics = let
   interval' = fromIntegral mics / 1000000
   perSec = ceiling (fromIntegral cnt / interval')
-  in "Completed in " ++ show (interval' :: Double) ++ "sec (" ++ show (perSec::Integer) ++ " per sec)"
+  in "Completed in " ++ show (interval' :: Double) ++
+     "sec (" ++ show (perSec::Integer) ++ " per sec)"
 
 initRequestId :: IO Int64
 initRequestId = do
@@ -330,8 +433,14 @@ main = do
     (o,_,_) -> do
          let opts = foldl (flip id) def o
          i <- newMVar =<< initRequestId
-         (conf :: ClientConfig) <- either (\e -> print e >> exitFailure) return =<< Y.decodeFileEither (_oConfig opts)
-         void $ runStateT (runReaderT runREPL conf)
-                  (ReplState (snd (head (HM.toList (_ccEndpoints conf))))
-                             "(demo.transfer \"Acct1\" \"Acct2\" 1.00)"
-                             i)
+         (conf :: ClientConfig) <- either (\e -> print e >> exitFailure) return =<<
+           Y.decodeFileEither (_oConfig opts)
+         void $ runStateT (runReaderT runREPL conf) $ ReplState
+           {
+             _server = fst (head (HM.toList (_ccEndpoints conf))),
+             _batchCmd = "\"Hello Kadena\"",
+             _requestId = i,
+             _cmdData = Null,
+             _keys = [KeyPair (_ccSecretKey conf) (_ccPublicKey conf)],
+             _fmt = YAML
+           }

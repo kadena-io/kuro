@@ -1,3 +1,4 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE PackageImports #-}
@@ -78,10 +79,10 @@ mainAws clustersFile clientsFile = do
               , _heartbeatTimeout = 2000000
               })
         ) clusterConfs
-  mapM_ (\c' -> Y.encodeFile
-          ("aws-conf" </> show (_ccAlias c') ++ "-client-aws.yaml")
+  mapM_ (\(ci,c') -> Y.encodeFile
+          ("aws-conf" </> show ci ++ "-client-aws.yaml")
           c'
-        ) clientConfs
+        ) $ zip clientIds clientConfs
 
 mainLocal :: IO ()
 mainLocal = do
@@ -108,7 +109,7 @@ mainLocal = do
           clusterConfs = zipWith (createClusterConfig df aeSize cSize clusterKeyMaps (snd clientKeyMaps)) [8000..] (M.keys (fst clusterKeyMaps))
       clientConfs <- return (createClientConfig clusterConfs clientKeyMaps <$> M.keys (fst clientKeyMaps))
       mapM_ (\c' -> Y.encodeFile ("conf" </> show (_port $ _nodeId c') ++ "-cluster.yaml") c') clusterConfs
-      mapM_ (\c' -> Y.encodeFile ("conf" </> show (_ccAlias c') ++ "-client.yaml") c') clientConfs
+      mapM_ (\(i :: Int,c') -> Y.encodeFile ("conf" </> "client" ++ show i ++ "-client.yaml") c') (zip [0..] clientConfs)
     _ -> putStrLn "Failed to read either input into a number, please try again"
 
 toAliasMap :: Map NodeId a -> Map Alias a
@@ -140,8 +141,7 @@ createClusterConfig debugFollower aeBatchSize' cryptoBatchSize' (privMap, pubMap
 createClientConfig :: [Config] -> (Map NodeId PrivateKey, Map NodeId PublicKey) -> NodeId -> ClientConfig
 createClientConfig clusterConfs (privMap, pubMap) nid =
     ClientConfig
-    { _ccAlias = _alias nid
-    , _ccSecretKey = privMap M.! nid
+    { _ccSecretKey = privMap M.! nid
     , _ccPublicKey = pubMap M.! nid
     , _ccEndpoints = HM.fromList $ map (\n -> (show $ _alias (_nodeId n), _host (_nodeId n) ++ ":" ++ show (_apiPort n))) clusterConfs
     }

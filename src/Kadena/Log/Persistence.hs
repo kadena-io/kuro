@@ -82,11 +82,11 @@ instance FromField Hash where
       Right v -> Ok v
 
 instance ToField Command where
-  toField n = toField $ encode $ encodeCommand' n
+  toField n = toField $ encode $ encodeCommand n
 instance FromField Command where
   fromField f = do
     s :: ByteString <- fromField f
-    case decode s >>= decodeCommandEither' of
+    case decode s >>= fmap preprocessCmd . decodeCommandEither of
       Left err -> returnError ConversionFailed f ("Couldn't deserialize Command: " ++ err)
       Right n -> Ok n
 

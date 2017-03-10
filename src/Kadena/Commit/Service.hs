@@ -97,8 +97,6 @@ handle = do
         applyLogEntries ReplayFromDisk logEntriesToApply
       ExecLocal{..} -> applyLocalCommand (localCmd,localResult)
 
-
-
 applyLogEntries :: ReplayStatus -> LogEntries -> CommitService ()
 applyLogEntries rs les@(LogEntries leToApply) = do
   now' <- now
@@ -126,7 +124,13 @@ applyCommand tEnd le@LogEntry{..} = do
   logApplyLatency le
   result <- case _leCommand of
     SmartContractCommand{..} -> do
-      liftIO $ apply (Pact.Transactional (fromIntegral _leLogIndex)) _sccCmd _sccPreProc
+      pproc <- case _sccPreProc of
+        Unprocessed -> do
+          debug $ "WARNING: non-preproccessed command found for " ++ show _leLogIndex
+          case (preprocessCmd _leCommand) of
+            SmartContractCommand{..} -> return $! _ppProcessed _sccPreProc
+        Processed v -> return $! v
+      liftIO $ apply (Pact.Transactional (fromIntegral _leLogIndex)) _sccCmd pproc
   lat <- return $ case _leReceivedAt of
     Nothing -> 1 -- don't want a div by zero error downstream and this is for demo purposes
     Just (ReceivedAt tStart) -> interval tStart tEnd

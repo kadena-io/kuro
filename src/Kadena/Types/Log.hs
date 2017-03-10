@@ -22,6 +22,8 @@ module Kadena.Types.Log
   , LEWire(..), encodeLEWire, decodeLEWire, decodeLEWire', toLogEntries
   , ReplicateLogEntries(..), rleMinLogIdx, rleMaxLogIdx, rlePrvLogIdx, rleEntries
   , toReplicateLogEntries
+  , VerifiedLogEntries(..)
+  , verifyLogEntry, verifySeqLogEntries
   , NewLogEntries(..), nleTerm, nleEntries, nleReceivedAt
   , UpdateCommitIndex(..), uci
   , UpdateLogs(..)
@@ -39,9 +41,13 @@ module Kadena.Types.Log
   ) where
 
 import Control.Lens hiding (Index, (|>))
+import Control.Parallel.Strategies
 
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import Data.IntMap.Strict (IntMap)
+import qualified Data.IntMap.Strict as IntMap
+import Data.Foldable
 
 import Data.Serialize hiding (get)
 
@@ -214,6 +220,20 @@ findSplitKey atLeast' mapOfCounts =
       | otherwise = go (cnt+v) rest
 {-# SPECIALIZE INLINE findSplitKey :: Int -> Map LogIndex Int -> Maybe LogIndex #-}
 
+verifyLogEntry :: LogEntry -> (Int, Command)
+verifyLogEntry LogEntry{..} = res `seq` res
+  where
+    res = (fromIntegral _leLogIndex, v `seq` v)
+    v = preprocessCmd _leCommand
+{-# INLINE verifyLogEntry #-}
+
+verifySeqLogEntries :: LogEntries -> IntMap Command
+verifySeqLogEntries !s = foldr' (\(k,v) -> IntMap.insert k v) IntMap.empty $! ((verifyLogEntry <$> (_logEntries s)) `using` parTraversable rseq)
+{-# INLINE verifySeqLogEntries #-}
+
+newtype VerifiedLogEntries = VerifiedLogEntries
+  { _vleResults :: IntMap Command}
+  deriving (Show, Eq)
 
 decodeLEWire' :: Maybe ReceivedAt -> LEWire -> LogEntry
 decodeLEWire' !ts (LEWire !(t,i,cmd,hsh)) = LogEntry t i (decodeCommand cmd) hsh ts
@@ -300,7 +320,8 @@ data UpdateLogs =
   ULReplicate ReplicateLogEntries |
   ULNew NewLogEntries |
   ULCommitIdx UpdateCommitIndex |
-  UpdateLastApplied LogIndex
+  UpdateLastApplied LogIndex |
+  UpdateVerified VerifiedLogEntries
   deriving (Show, Eq, Generic)
 
 data AtomicQuery =

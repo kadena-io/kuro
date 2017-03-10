@@ -8,7 +8,7 @@
 module Kadena.Types.Command
   ( Command(..), sccCmd, sccPreProc
   , encodeCommand, decodeCommand, decodeCommandEither
-  , encodeCommand', decodeCommand', decodeCommandEither'
+  , Preprocessed(..), preprocessCmd
   , getCmdBodyHash
   , CMDWire(..)
   , toRequestKey
@@ -16,7 +16,6 @@ module Kadena.Types.Command
   ) where
 
 import Control.Exception
-import Control.Parallel
 import Control.Lens
 
 import Data.Serialize (Serialize)
@@ -33,10 +32,12 @@ import Kadena.Types.Message.Signed
 import qualified Pact.Types.Command as Pact
 import qualified Pact.Types.RPC as Pact
 
+data Preprocessed a = Unprocessed | Processed { _ppProcessed :: !a}
+  deriving (Show, Eq, Ord, Generic)
+
 data Command = SmartContractCommand
   { _sccCmd :: !(Pact.Command ByteString)
-  -- it's important to keep this lazy! we'll be sparking it at decode time
-  , _sccPreProc :: Pact.ProcessedCommand Pact.PactRPC
+  , _sccPreProc :: !(Preprocessed (Pact.ProcessedCommand Pact.PactRPC))
   }
   deriving (Show, Eq, Generic)
 makeLenses ''Command
@@ -45,55 +46,34 @@ instance Ord Command where
   compare a b = compare (_sccCmd a) (_sccCmd b)
 
 data CMDWire = SCCWire !ByteString deriving (Show, Eq, Generic)
+instance Serialize CMDWire
 
 encodeCommand :: Command -> CMDWire
-encodeCommand SmartContractCommand{..} = SCCWire $ S.encode _sccCmd
+encodeCommand SmartContractCommand{..} = SCCWire $! S.encode _sccCmd
 {-# INLINE encodeCommand #-}
 
-encodeCommand' :: Command -> CMDWire
-encodeCommand' SmartContractCommand{..} = SCCWire $! S.encode _sccCmd
-{-# INLINE encodeCommand' #-}
-
--- | Decodes CMDWire to Command but sparks the crypto portion using `Control.Parallel.par`.
--- The behavior of this is effectively, if the RTS can perform the crypto in parallel at some point do it
--- but if we need the value before that, run the computation sequentially. This tactic is experimental as of 2/2017.
---   Decode the  Throws `DeserializationError`
+-- | Decode that throws `DeserializationError`
 decodeCommand :: CMDWire -> Command
 decodeCommand (SCCWire !b) =
   let
     !cmd = case S.decode b of
       Left err -> throw $ DeserializationError $ err ++ "\n### for ###\n" ++ show b
       Right v -> v
-    pp = Pact.verifyCommand cmd
-  in pp `par` (SmartContractCommand cmd pp)
+    !res = SmartContractCommand cmd Unprocessed
+  in res `seq` res
 {-# INLINE decodeCommand #-}
 
 decodeCommandEither :: CMDWire -> Either String Command
 decodeCommandEither (SCCWire !b) = case S.decode b of
   Left !err -> Left $! err ++ "\n### for ###\n" ++ show b
-  Right !cmd -> Right $! let pp = Pact.verifyCommand cmd in pp `par` (SmartContractCommand cmd pp)
+  Right !cmd -> Right $! (SmartContractCommand cmd Unprocessed)
 {-# INLINE decodeCommandEither #-}
 
--- | Decode the  Throws `DeserializationError`
-decodeCommand' :: CMDWire -> Command
-decodeCommand' (SCCWire !b) =
-  let
-    !cmd = case S.decode b of
-      Left !err -> throw $ DeserializationError $ err ++ "\n### for ###\n" ++ show b
-      Right !v -> v
-    !pp = Pact.verifyCommand cmd
-  in pp `seq` (SmartContractCommand cmd pp)
-{-# INLINE decodeCommand' #-}
-
-decodeCommandEither' :: CMDWire -> Either String Command
-decodeCommandEither' (SCCWire !b) = case S.decode b of
-  Left !err -> Left $! err ++ "\n### for ###\n" ++ show b
-  Right !cmd -> Right $! let !pp = Pact.verifyCommand cmd in pp `seq` (SmartContractCommand cmd pp)
-{-# INLINE decodeCommandEither' #-}
-
-
-
-instance Serialize CMDWire
+preprocessCmd :: Command -> Command
+preprocessCmd SmartContractCommand{..} =
+  let !pp = Pact.verifyCommand _sccCmd
+  in pp `seq` (SmartContractCommand _sccCmd $! Processed pp)
+{-# INLINE preprocessCmd #-}
 
 getCmdBodyHash :: Command -> Hash
 getCmdBodyHash SmartContractCommand{ _sccCmd = Pact.PublicCommand{..}} = _cmdHash

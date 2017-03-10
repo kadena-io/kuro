@@ -11,6 +11,7 @@ import qualified Data.Set as Set
 import Data.IORef
 import Data.Thyme.Clock (UTCTime)
 
+import qualified Pact.Types.SQLite as Pact
 import qualified Pact.Types.Server as Pact
 import Pact.Types.Server (CommandConfig(..))
 
@@ -109,10 +110,15 @@ runConsensusService renv rconf spec rstate timeCache' mPubConsensus' = do
             -- TODO: fix this, it's terrible
             Just dbDir' -> Just (dbDir' ++ (show $ _alias nodeId') ++ "pact.sqlite")
             Nothing -> Nothing
-        , _ccDebugFn = dbgPrint'
+        , _ccDebugFn = return . const () -- dbgPrint'
         , _ccEntity = rconf ^. entity.entName
-        , _ccPragmas = []
+        , _ccPragmas = Pact.fastNoJournalPragmas
         }
+--        { _ccDbFile = Nothing
+--        , _ccDebugFn = return . const ()
+--        , _ccEntity = rconf ^. entity.entName
+--        , _ccPragmas = Pact.fastNoJournalPragmas
+--        }
 
   publishMetric' $ MetricClusterSize csize
   publishMetric' $ MetricAvailableSize csize

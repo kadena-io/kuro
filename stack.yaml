@@ -9,7 +9,7 @@ packages:
   extra-dep: true
 - location:
     git: git@bitbucket.org:spopejoy/pact.git
-    commit: 1efcad2f197521eb031c5fe578f81cf5d824b5c4
+    commit: 023dc4fbdd828d2a7df25c01809d9bb7a47ef72b
   extra-dep: true
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)

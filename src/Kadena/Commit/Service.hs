@@ -141,7 +141,9 @@ applyCommand tEnd le@LogEntry{..} = do
           case (verifyCommand _leCommand) of
             SmartContractCommand{..} -> return $! result _sccPreProc
         Pending{..} -> getPendingPreProcSCC startTime pending
-        Result{..}  -> return $! result
+        Result{..}  -> do
+          debug $ "WARNING: fully resolved command found for " ++ show _leLogIndex
+          return $! result
       liftIO $ apply (Pact.Transactional (fromIntegral _leLogIndex)) _sccCmd pproc
   lat <- return $ case _leReceivedAt of
     Nothing -> 1 -- don't want a div by zero error downstream and this is for demo purposes

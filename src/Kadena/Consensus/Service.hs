@@ -56,7 +56,7 @@ launchPreProcService :: Dispatch
   -> Config
   -> IO (Async ())
 launchPreProcService dispatch' dbgPrint' getTimestamp' _rconf = do
-  let threadCount = 4 -- Config.threadCount rconf
+  let threadCount = 8 -- Config.threadCount rconf
   link =<< async (PreProc.runPreProcService (PreProc.initPreProcEnv dispatch' threadCount dbgPrint' getTimestamp'))
   async (foreverHeart (_processRequestChannel dispatch') 1000000 PreProc.Heart)
 

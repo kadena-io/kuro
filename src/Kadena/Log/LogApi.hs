@@ -6,7 +6,6 @@ module Kadena.Log.LogApi
   , getUnappliedEntries
   , getUncommitedHashes
   , getUnpersisted
-  , getUnverifiedEntries
   , updateLogs
   , evalQuery
   -- ReExports
@@ -22,8 +21,6 @@ import Control.Lens hiding (Index, (|>))
 import Control.Monad
 import Control.Monad.IO.Class
 
-import Data.IntMap.Strict (IntMap)
-import qualified Data.IntMap.Strict as IntMap
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 
@@ -121,10 +118,8 @@ getUncommitedHashes = do
 -- | get every entry that hasn't been applied yet (betweek LastApplied and CommitIndex)
 getUnappliedEntries :: LogThread (Maybe LogEntries)
 getUnappliedEntries = do
-  lv       <- use lsLastPreProc
   vles     <- use lsVolatileLogEntries
-  ci       <- commitIndex
-  finalIdx <- return $! if lv > ci then ci else lv
+  finalIdx <- commitIndex
   la       <- lastApplied
   les      <- return $! if la < finalIdx
                         then Just $ lesGetSection (Just $ la + 1) (Just finalIdx) vles
@@ -147,19 +142,6 @@ getUnpersisted = do
                 else Just uples
            else Nothing
 {-# INLINE getUnpersisted #-}
-
-getUnverifiedEntries :: Maybe Int -> LogThread (Maybe LogEntries)
-getUnverifiedEntries mInt = do
-  lstIndex <- maxIndex
-  fstIndex <- use lsLastPreProc
-  let takeTillIdx = case mInt of
-        Nothing -> Nothing
-        Just i -> Just $ fstIndex + 1 + fromIntegral i
-  vles <- use lsVolatileLogEntries
-  return $! if fstIndex < lstIndex
-            then Just $! lesGetSection (Just $ fstIndex + 1) takeTillIdx vles
-            else Nothing
-{-# INLINE getUnverifiedEntries #-}
 
 logInfoForNextIndex :: Maybe LogIndex -> LogThread (LogIndex,Term)
 logInfoForNextIndex Nothing          = return (startIndex, startTerm)
@@ -230,17 +212,7 @@ updateLogs (ULNew nle) = appendLogEntry nle
 updateLogs (ULReplicate ReplicateLogEntries{..}) = addLogEntriesAt _rlePrvLogIdx _rleEntries
 updateLogs (ULCommitIdx UpdateCommitIndex{..}) = lsCommitIndex .= _uci
 updateLogs (UpdateLastApplied li) = lsLastApplied .= li
-updateLogs (UpdateVerified (VerifiedLogEntries res)) = do
-  lsVolatileLogEntries %= applyPreProcVerify' res
-  lsLastPreProc .= LogIndex (fst $ IntMap.findMax res)
 {-# INLINE updateLogs  #-}
-
-applyPreProcVerify' :: IntMap Command -> LogEntries -> LogEntries
-applyPreProcVerify' m (LogEntries les) = LogEntries $! fmap (\le@LogEntry{..} -> case IntMap.lookup (fromIntegral $ _leLogIndex) m of
-      Nothing -> le
-      Just c -> le { _leCommand = c }
-      ) les
-{-# INLINE applyPreProcVerify' #-}
 
 addLogEntriesAt :: LogIndex -> LogEntries -> LogThread ()
 addLogEntriesAt pli newLEs = do

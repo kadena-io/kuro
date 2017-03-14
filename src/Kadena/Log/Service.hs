@@ -8,8 +8,6 @@ module Kadena.Log.Service
 
 import Control.Lens hiding (Index, (|>))
 import Control.Concurrent (putMVar)
-import Control.Concurrent.Async
-import Control.Concurrent.STM
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Trans.RWS.Strict
@@ -43,12 +41,11 @@ runLogService :: Dispatch
 runLogService dispatch dbg publishMetric' dbPath keySet' batchSize' = do
   dbConn' <- case dbPath of
     Nothing -> do
-      dbg "[LogThread] Persistence Disabled"
+      dbg "[Service|Log] Persistence Disabled"
       return Nothing
     Just dbDir' -> do
-      dbg $ "[LogThread] Database Connection Opened: " ++ (dbDir' ++ ".sqlite")
+      dbg $ "[Service|Log] Database Connection Opened: " ++ (dbDir' ++ ".sqlite")
       Just <$> createDB (dbDir' ++ ".sqlite")
-  cryptoMvar <- newTVarIO Idle
   env <- return LogEnv
     { _logQueryChannel = dispatch ^. Dispatch.logService
     , _internalEvent = dispatch ^. Dispatch.internalEvent
@@ -58,11 +55,9 @@ runLogService dispatch dbg publishMetric' dbPath keySet' batchSize' = do
     , _keySet = keySet'
     , _persistedLogEntriesToKeepInMemory = 24000
     , _batchSize = batchSize'
-    , _cryptoWorkerTVar = cryptoMvar
     , _dbConn = dbConn'
     , _publishMetric = publishMetric'
     }
-  void (link <$> tinyPreProcWorker dbg (dispatch ^. Dispatch.logService) cryptoMvar)
   initLogState' <- case dbConn' of
     Just conn' -> syncLogsFromDisk (env ^. persistedLogEntriesToKeepInMemory) (dispatch ^. Dispatch.commitService) conn'
     Nothing -> return initLogState
@@ -122,25 +117,6 @@ runQuery (Heart t) = do
         ++ "{ V: " ++ show (lesCnt volLEs)
         ++ ", P: " ++ show (plesCnt perLes) ++ " }"
 
-tinyPreProcWorker :: (String -> IO ()) -> LogServiceChannel -> TVar PreProcWorkerStatus -> IO (Async ())
-tinyPreProcWorker dbg c mv = async $ forever $ do
-  unverifiedLes <- atomically $ getWork mv
-  stTime <- getCurrentTime
-  !postVerify <- return $! verifySeqLogEntries unverifiedLes
-  atomically $ writeTVar mv Idle
-  writeComm c $ Update $ UpdateVerified $ VerifiedLogEntries postVerify
-  endTime <- getCurrentTime
-  dbg $ "[Service|PreProc]: processed " ++ show (Map.size (unverifiedLes ^. logEntries))
-      ++ " in " ++ show (interval stTime endTime) ++ "mics"
-
-getWork :: TVar PreProcWorkerStatus -> STM LogEntries
-getWork t = do
-  r <- readTVar t
-  case r of
-    Unprocessed v -> writeTVar t Processing >> return v
-    Idle -> retry
-    Processing -> error "PreProcWorker tried to get work but found the TVar Processing"
-
 buildNeedCacheEvidence :: Set LogIndex -> LogThread (Map LogIndex Hash)
 buildNeedCacheEvidence lis = do
   let go li = maybe Nothing (\le -> Just $ (li,_leHash le)) <$> lookupEntry li
@@ -150,11 +126,8 @@ buildNeedCacheEvidence lis = do
 updateEvidenceCache :: UpdateLogs -> LogThread ()
 updateEvidenceCache (UpdateLastApplied _) = return ()
 -- In these cases, we need to update the cache because we have something new
-updateEvidenceCache (ULNew _) = updateEvidenceCache' >> tellTinyPreProcWorkerToDoMore
-updateEvidenceCache (ULReplicate _) = updateEvidenceCache' >> tellTinyPreProcWorkerToDoMore
-updateEvidenceCache (UpdateVerified _) = do
-  tellKadenaToApplyLogEntries
-  view cryptoWorkerTVar >>= liftIO . atomically . (`writeTVar` Idle) >> tellTinyPreProcWorkerToDoMore
+updateEvidenceCache (ULNew _) = updateEvidenceCache'
+updateEvidenceCache (ULReplicate _) = updateEvidenceCache'
 updateEvidenceCache (ULCommitIdx (UpdateCommitIndex _ci)) = do
   tellKadenaToApplyLogEntries
 #if WITH_KILL_SWITCH
@@ -191,7 +164,6 @@ syncLogsFromDisk keepInMem commitChannel' conn = do
         , _lsCommitIndex = _leLogIndex log'
         , _lsLastPersisted = _leLogIndex log'
         , _lsLastInMemory = plesMinIndex pLogs
-        , _lsLastPreProc = _leLogIndex log'
         , _lsLastLogTerm = _leTerm log'
         }
     Nothing -> return initLogState
@@ -208,22 +180,6 @@ tellKadenaToApplyLogEntries = do
       publishMetric' <- view publishMetric
       liftIO $ publishMetric' $ MetricCommitIndex appliedIndex'
     Nothing -> return ()
-
-tellTinyPreProcWorkerToDoMore :: LogThread ()
-tellTinyPreProcWorkerToDoMore = do
-  mv <- view cryptoWorkerTVar
-  bSize <- Just <$> view batchSize
-  unverifiedLes' <- getUnverifiedEntries $ bSize
-  case unverifiedLes' of
-    Nothing -> return ()
-    Just v -> do
-      res <- liftIO $ atomically $ do
-        r <- readTVar mv
-        case r of
-          Unprocessed _ -> writeTVar mv (Unprocessed v) >> return "Added more work the PreProc's TVar"
-          Idle -> writeTVar mv (Unprocessed v) >> return "PreProcWorker was Idle, gave it something to do"
-          Processing -> return "PreProc hasn't finished yet..."
-      debug res
 
 clearPersistedEntriesFromMemory :: LogThread ()
 clearPersistedEntriesFromMemory = do

@@ -338,8 +338,7 @@ data UpdateLogs =
   ULReplicate ReplicateLogEntries |
   ULNew NewLogEntries |
   ULCommitIdx UpdateCommitIndex |
-  UpdateLastApplied LogIndex |
-  UpdateVerified VerifiedLogEntries
+  UpdateLastApplied LogIndex
   deriving (Show, Eq, Generic)
 
 data AtomicQuery =

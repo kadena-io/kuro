@@ -14,17 +14,16 @@
 module Kadena.Log.Types
   ( LogState(..)
   , lsVolatileLogEntries, lsPersistedLogEntries, lsLastApplied, lsLastLogIndex, lsNextLogIndex, lsCommitIndex
-  , lsLastPersisted, lsLastLogTerm, lsLastLogHash, lsLastPreProc, lsLastInMemory
+  , lsLastPersisted, lsLastLogTerm, lsLastLogHash, lsLastInMemory
   , initLogState
   , LogEnv(..)
   , logQueryChannel, commitChannel, internalEvent, debugPrint
-  , dbConn, evidence, keySet, publishMetric, cryptoWorkerTVar
+  , dbConn, evidence, keySet, publishMetric
   , persistedLogEntriesToKeepInMemory, batchSize
   , LogThread
   , LogServiceChannel(..)
   , UpdateLogs(..)
   , QueryApi(..)
-  , PreProcWorkerStatus(..)
   -- ReExports
   , module X
   , LogIndex(..)
@@ -36,7 +35,6 @@ import Control.Lens hiding (Index, (|>))
 
 import Control.Concurrent (MVar)
 import Control.Concurrent.Chan (Chan)
-import Control.Concurrent.STM.TVar (TVar)
 import Control.Monad.Trans.RWS.Strict
 
 import Data.Map.Strict (Map)
@@ -70,12 +68,6 @@ instance Comms QueryApi LogServiceChannel where
   readComm (LogServiceChannel c) = readCommNormal c
   writeComm (LogServiceChannel c) = writeCommNormal c
 
-data PreProcWorkerStatus =
-  Unprocessed LogEntries |
-  Processing |
-  Idle
-  deriving (Show, Eq)
-
 data LogEnv = LogEnv
   { _logQueryChannel :: !LogServiceChannel
   , _internalEvent :: !InternalEventChannel
@@ -84,7 +76,6 @@ data LogEnv = LogEnv
   , _keySet :: !KeySet
   , _persistedLogEntriesToKeepInMemory :: !Int
   , _batchSize :: !Int
-  , _cryptoWorkerTVar :: !(TVar PreProcWorkerStatus)
   , _debugPrint :: !(String -> IO ())
   , _dbConn :: !(Maybe Connection)
   , _publishMetric :: !(Metric -> IO ())}
@@ -100,7 +91,6 @@ data LogState = LogState
   , _lsCommitIndex      :: !LogIndex
   , _lsLastPersisted    :: !LogIndex
   , _lsLastInMemory     :: !(Maybe LogIndex)
-  , _lsLastPreProc :: !LogIndex
   , _lsLastLogTerm      :: !Term
   } deriving (Show, Eq, Generic)
 makeLenses ''LogState
@@ -116,7 +106,6 @@ initLogState = LogState
   , _lsCommitIndex = startIndex
   , _lsLastPersisted = startIndex
   , _lsLastInMemory = Nothing
-  , _lsLastPreProc = startIndex
   , _lsLastLogTerm = startTerm
   }
 

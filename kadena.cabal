@@ -45,6 +45,8 @@ library
                      , Kadena.Evidence.Service
                      , Kadena.Evidence.Spec
                      , Kadena.Evidence.Types
+                     , Kadena.PreProc.Service
+                     , Kadena.PreProc.Types
                      , Kadena.History.Persistence
                      , Kadena.History.Service
                      , Kadena.History.Types

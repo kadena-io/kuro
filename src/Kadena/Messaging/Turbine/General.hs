@@ -12,15 +12,18 @@ import Data.Either (partitionEithers)
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import qualified Data.Set as Set
+import qualified Data.Map.Strict as Map
 
 import Data.Thyme.Clock (getCurrentTime)
 
 import Kadena.Types hiding (debugPrint, nodeId)
+import Kadena.PreProc.Types (ProcessRequestChannel(..), ProcessRequest(..))
 import Kadena.Messaging.Turbine.Types
 
 generalTurbine :: ReaderT ReceiverEnv IO ()
 generalTurbine = do
   gm' <- view (dispatch.inboundGeneral)
+  prChan <- view (dispatch.processRequestChannel)
   let gm n = readComms gm' n
   enqueueEvent' <- view (dispatch.internalEvent)
   let enqueueEvent = writeComm enqueueEvent' . InternalEvent
@@ -33,15 +36,17 @@ generalTurbine = do
     when (length aes - length prunedAes /= 0) $ debug $ turbineGeneral ++ "pruned " ++ show (length aes - length prunedAes) ++ " redundant AE(s)"
     unless (null aes) $ do
       l <- return $ show (length aes)
-      mapM_ (\(ts,msg) -> case signedRPCtoRPC (Just ts) ks msg of
+      forM_ prunedAes $ \(ts,msg) -> case signedRPCtoRPC (Just ts) ks msg of
         Left err -> debug err
-        Right v -> do
+        Right (AE' ae'@AppendEntries{..}) -> do
+          newLes' <- startPreProcForLes prChan _aeEntries
+          newAE' <- return $ ae' { _aeEntries = newLes' }
           t' <- getCurrentTime
           debug $ turbineGeneral ++ "enqueued 1 of " ++ l ++ " AE(s) taking "
                 ++ show (interval (_unReceivedAt ts) t')
                 ++ "mics since it was received"
-          enqueueEvent (ERPC v)
-            ) prunedAes
+          enqueueEvent (ERPC $ AE' newAE')
+        Right err -> error $ "unreachable error in GeneralTurbine's 2nd AE match: " ++ show err
     (invalid, validNoAes) <- return $ partitionEithers $ parallelVerify id ks noAes
     unless (null validNoAes) $ mapM_ (enqueueEvent . ERPC) validNoAes
     unless (null invalid) $ mapM_ debug invalid
@@ -54,3 +59,9 @@ pruneRedundantAEs m = go m Set.empty
     go aeSeq s = case Seq.viewl aeSeq of
       Seq.EmptyL -> []
       ae Seq.:< aes -> if Set.member (getSig ae) s then go aes (Set.insert (getSig ae) s) else ae : go aes (Set.insert (getSig ae) s)
+
+startPreProcForLes :: ProcessRequestChannel -> LogEntries -> IO LogEntries
+startPreProcForLes prChan les = do
+  (newLes', mapRpps) <- preprocLogEntries les
+  forM_ (Map.toAscList $ mapRpps) $ writeComm prChan . CommandPreProc . snd
+  return newLes'

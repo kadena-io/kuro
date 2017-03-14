@@ -25,6 +25,7 @@ import qualified Kadena.Commit.Service as Commit
 import qualified Kadena.Sender.Service as Sender
 import qualified Kadena.Log.Service as Log
 import qualified Kadena.Evidence.Service as Ev
+import qualified Kadena.PreProc.Service as PreProc
 import qualified Kadena.History.Service as History
 import qualified Kadena.HTTP.ApiServer as ApiServer
 
@@ -48,6 +49,16 @@ launchHistoryService dispatch' dbgPrint' getTimestamp' rconf = do
   let dbPath' = rconf ^. logSqliteDir
   link =<< async (History.runHistoryService (History.initHistoryEnv dispatch' dbPath' dbgPrint' getTimestamp') Nothing)
   async (foreverHeart (_historyChannel dispatch') 1000000 History.Heart)
+
+launchPreProcService :: Dispatch
+  -> (String -> IO ())
+  -> IO UTCTime
+  -> Config
+  -> IO (Async ())
+launchPreProcService dispatch' dbgPrint' getTimestamp' _rconf = do
+  let threadCount = 4 -- Config.threadCount rconf
+  link =<< async (PreProc.runPreProcService (PreProc.initPreProcEnv dispatch' threadCount dbgPrint' getTimestamp'))
+  async (foreverHeart (_processRequestChannel dispatch') 1000000 PreProc.Heart)
 
 launchEvidenceService :: Dispatch
   -> (String -> IO ())
@@ -131,6 +142,7 @@ runConsensusService renv rconf spec rstate timeCache' mPubConsensus' = do
   mLeaderNoFollowers <- newEmptyMVar
 
   link =<< launchHistoryService dispatch' dbgPrint' getTimestamp' rconf
+  link =<< launchPreProcService dispatch' dbgPrint' getTimestamp' rconf
   link =<< launchSenderService dispatch' dbgPrint' publishMetric' mEvState mPubConsensus' rconf'
   link =<< launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' commandConfig'
   link =<< launchEvidenceService dispatch' dbgPrint' publishMetric' mEvState rconf' mLeaderNoFollowers

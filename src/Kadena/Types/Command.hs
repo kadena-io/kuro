@@ -8,8 +8,11 @@
 module Kadena.Types.Command
   ( Command(..), sccCmd, sccPreProc
   , encodeCommand, decodeCommand, decodeCommandEither
-  , Preprocessed(..), preprocessCmd
+  , decodeCommandIO, decodeCommandEitherIO
+  , verifyCommand, prepPreprocCommand
+  , Preprocessed(..), RunPreProc(..), runPreproc
   , getCmdBodyHash
+  , SCCPreProcResult
   , CMDWire(..)
   , toRequestKey
   , CommandResult(..), scrResult, scrHash, cmdrLogIndex, cmdrLatency
@@ -17,6 +20,8 @@ module Kadena.Types.Command
 
 import Control.Exception
 import Control.Lens
+import Control.Monad
+import Control.Concurrent
 
 import Data.Serialize (Serialize)
 import qualified Data.Serialize as S
@@ -32,8 +37,27 @@ import Kadena.Types.Message.Signed
 import qualified Pact.Types.Command as Pact
 import qualified Pact.Types.RPC as Pact
 
-data Preprocessed a = Unprocessed | Processed { _ppProcessed :: !a}
-  deriving (Show, Eq, Ord, Generic)
+data Preprocessed a =
+  Unprocessed |
+  Pending {pending :: !(MVar a)} |
+  Result {result :: a}
+  deriving (Eq, Generic)
+instance (Show a) => Show (Preprocessed a) where
+  show Unprocessed = "Unprocessed"
+  show Pending{} = "Pending {unPending = <MVar>}"
+  show (Result a) = "Result {unResult = " ++ show a ++ "}"
+
+type SCCPreProcResult = Pact.ProcessedCommand Pact.PactRPC
+
+data RunPreProc =
+  RunSCCPreProc
+    { _rpSccRaw :: !(Pact.Command ByteString)
+    , _rpSccMVar :: !(MVar SCCPreProcResult)}
+
+runPreproc :: RunPreProc -> IO ()
+runPreproc RunSCCPreProc{..} = do
+  succPut <- tryPutMVar _rpSccMVar $! Pact.verifyCommand _rpSccRaw
+  unless succPut $ putStrLn $ "Preprocessor encountered a duplicate: " ++ show _rpSccRaw
 
 data Command = SmartContractCommand
   { _sccCmd :: !(Pact.Command ByteString)
@@ -69,11 +93,37 @@ decodeCommandEither (SCCWire !b) = case S.decode b of
   Right !cmd -> Right $! (SmartContractCommand cmd Unprocessed)
 {-# INLINE decodeCommandEither #-}
 
-preprocessCmd :: Command -> Command
-preprocessCmd SmartContractCommand{..} =
-  let !pp = Pact.verifyCommand _sccCmd
-  in pp `seq` (SmartContractCommand _sccCmd $! Processed pp)
-{-# INLINE preprocessCmd #-}
+decodeCommandIO :: CMDWire -> IO (Command, RunPreProc)
+decodeCommandIO cmd = do
+  mv <- newEmptyMVar
+  return $ case decodeCommand cmd of
+    r@SmartContractCommand{..} ->
+      let rpp = RunSCCPreProc _sccCmd mv
+      in (r { _sccPreProc = Pending mv }, rpp)
+
+decodeCommandEitherIO :: CMDWire -> IO (Either String (Command, RunPreProc))
+decodeCommandEitherIO cmd = do
+  case decodeCommandEither cmd of
+    Left err -> return $ Left $ err ++ "\n### for ###\n" ++ show cmd
+    Right v -> do
+      mv <- newEmptyMVar
+      case v of
+        r@SmartContractCommand{..} ->
+          let rpp = RunSCCPreProc _sccCmd mv
+          in return $ Right (r { _sccPreProc = Pending mv }, rpp)
+
+prepPreprocCommand :: Command -> IO (Command, RunPreProc)
+prepPreprocCommand cmd@SmartContractCommand{..} = do
+  case _sccPreProc of
+    Unprocessed -> do
+      mv <- newEmptyMVar
+      return $ (cmd { _sccPreProc = Pending mv}, RunSCCPreProc _sccCmd mv)
+    err -> error $ "Invariant Error: cmd has already been preped: " ++ show err ++ "\n### for ###\n" ++ show _sccCmd
+
+verifyCommand :: Command -> Command
+verifyCommand cmd@SmartContractCommand{..} =
+  let !res = Result $! Pact.verifyCommand _sccCmd
+  in res `seq` cmd { _sccPreProc = res }
 
 getCmdBodyHash :: Command -> Hash
 getCmdBodyHash SmartContractCommand{ _sccCmd = Pact.PublicCommand{..}} = _cmdHash

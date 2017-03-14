@@ -86,7 +86,8 @@ instance ToField Command where
 instance FromField Command where
   fromField f = do
     s :: ByteString <- fromField f
-    case decode s >>= fmap preprocessCmd . decodeCommandEither of
+    -- TODO: add preproc to a DB column so we don't get stuck with this
+    case decode s >>= fmap verifyCommand . decodeCommandEither of
       Left err -> returnError ConversionFailed f ("Couldn't deserialize Command: " ++ err)
       Right n -> Ok n
 

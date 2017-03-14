@@ -24,6 +24,7 @@ module Kadena.Types.Log
   , toReplicateLogEntries
   , VerifiedLogEntries(..)
   , verifyLogEntry, verifySeqLogEntries
+  , preprocLogEntries, preprocLogEntry
   , NewLogEntries(..), nleTerm, nleEntries, nleReceivedAt
   , UpdateCommitIndex(..), uci
   , UpdateLogs(..)
@@ -41,6 +42,7 @@ module Kadena.Types.Log
   ) where
 
 import Control.Lens hiding (Index, (|>))
+import Control.Monad
 import Control.Parallel.Strategies
 
 import Data.Map.Strict (Map)
@@ -75,6 +77,21 @@ instance Serialize LEWire
 newtype LogEntries = LogEntries { _logEntries :: Map LogIndex LogEntry }
     deriving (Eq,Show,Ord,Generic)
 makeLenses ''LogEntries
+
+preprocLogEntry :: LogEntry -> IO (LogEntry, RunPreProc)
+preprocLogEntry le@LogEntry{..} = do
+  (newCmd, rpp) <- prepPreprocCommand _leCommand
+  return $ (le { _leCommand = newCmd }, rpp)
+{-# INLINE preprocLogEntry #-}
+
+preprocLogEntries :: LogEntries -> IO (LogEntries, Map LogIndex RunPreProc)
+preprocLogEntries LogEntries{..} = do
+  let les = Map.toAscList _logEntries
+      prep (k, le) = (,) <$> pure k <*> preprocLogEntry le
+      reinsert (k,(le,rpp)) (les', rpps') = (Map.insert k le les', Map.insert k rpp rpps')
+  (newLes, newRpps) <- foldr' reinsert (Map.empty, Map.empty) <$> forM les prep
+  return $ (LogEntries newLes, newRpps)
+{-# INLINE preprocLogEntries #-}
 
 checkLogEntries :: Map LogIndex LogEntry -> Either String LogEntries
 checkLogEntries m = if Map.null m
@@ -224,7 +241,7 @@ verifyLogEntry :: LogEntry -> (Int, Command)
 verifyLogEntry LogEntry{..} = res `seq` res
   where
     res = (fromIntegral _leLogIndex, v `seq` v)
-    v = preprocessCmd _leCommand
+    v = verifyCommand _leCommand
 {-# INLINE verifyLogEntry #-}
 
 verifySeqLogEntries :: LogEntries -> IntMap Command

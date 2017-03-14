@@ -1,5 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -110,26 +111,37 @@ applyLogEntries rs les@(LogEntries leToApply) = do
       unless (rs == ReplayFromDisk) $ liftIO $! writeComm hChan (History.Update $ HashMap.fromList results)
     else debug "Applied log entries but did not send results?"
 
-logApplyLatency :: LogEntry -> CommitService ()
-logApplyLatency LogEntry{..} = case _leReceivedAt of
+logApplyLatency :: UTCTime -> LogEntry -> CommitService ()
+logApplyLatency startTime LogEntry{..} = case _leReceivedAt of
   Nothing -> return ()
   Just (ReceivedAt n) -> do
-    now' <- now
-    logMetric $ MetricApplyLatency $ fromIntegral $ interval n now'
+    logMetric $ MetricApplyLatency $ fromIntegral $ interval n startTime
 {-# INLINE logApplyLatency #-}
+
+getPendingPreProcSCC :: UTCTime -> MVar SCCPreProcResult -> CommitService SCCPreProcResult
+getPendingPreProcSCC startTime mvResult = liftIO (tryReadMVar mvResult) >>= \case
+  Just r -> return r
+  Nothing -> do
+    debug $ "Blocked on Pending PreProc"
+    r <- liftIO $ readMVar mvResult
+    endTime <- now
+    debug $ "Unblocked on Pending PreProc, took :" ++ show (interval startTime endTime) ++ "micros"
+    return r
 
 applyCommand :: UTCTime -> LogEntry -> CommitService (RequestKey, CommandResult)
 applyCommand tEnd le@LogEntry{..} = do
   apply <- Pact._ceiApplyPPCmd <$> use commandExecInterface
-  logApplyLatency le
+  startTime <- now
+  logApplyLatency startTime le
   result <- case _leCommand of
     SmartContractCommand{..} -> do
       pproc <- case _sccPreProc of
         Unprocessed -> do
           debug $ "WARNING: non-preproccessed command found for " ++ show _leLogIndex
-          case (preprocessCmd _leCommand) of
-            SmartContractCommand{..} -> return $! _ppProcessed _sccPreProc
-        Processed v -> return $! v
+          case (verifyCommand _leCommand) of
+            SmartContractCommand{..} -> return $! result _sccPreProc
+        Pending{..} -> getPendingPreProcSCC startTime pending
+        Result{..}  -> return $! result
       liftIO $ apply (Pact.Transactional (fromIntegral _leLogIndex)) _sccCmd pproc
   lat <- return $ case _leReceivedAt of
     Nothing -> 1 -- don't want a div by zero error downstream and this is for demo purposes

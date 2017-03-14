@@ -9,7 +9,8 @@ module Kadena.Types.Command
   ( Command(..), sccCmd, sccPreProc
   , encodeCommand, decodeCommand, decodeCommandEither
   , decodeCommandIO, decodeCommandEitherIO
-  , verifyCommand, prepPreprocCommand
+  , verifyCommand, verifyCommandIfNotPending
+  , prepPreprocCommand
   , Preprocessed(..), RunPreProc(..), runPreproc
   , getCmdBodyHash
   , SCCPreProcResult
@@ -120,10 +121,20 @@ prepPreprocCommand cmd@SmartContractCommand{..} = do
       return $ (cmd { _sccPreProc = Pending mv}, RunSCCPreProc _sccCmd mv)
     err -> error $ "Invariant Error: cmd has already been preped: " ++ show err ++ "\n### for ###\n" ++ show _sccCmd
 
+verifyCommandIfNotPending :: Command -> Command
+verifyCommandIfNotPending cmd@SmartContractCommand{..} =
+  let res = case _sccPreProc of
+              Unprocessed -> verifyCommand cmd
+              Pending{} -> cmd
+              Result{} -> cmd
+  in res `seq` res
+{-# INLINE verifyCommandIfNotPending #-}
+
 verifyCommand :: Command -> Command
 verifyCommand cmd@SmartContractCommand{..} =
   let !res = Result $! Pact.verifyCommand _sccCmd
   in res `seq` cmd { _sccPreProc = res }
+{-# INLINE verifyCommand #-}
 
 getCmdBodyHash :: Command -> Hash
 getCmdBodyHash SmartContractCommand{ _sccCmd = Pact.PublicCommand{..}} = _cmdHash

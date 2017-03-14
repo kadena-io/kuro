@@ -237,11 +237,12 @@ findSplitKey atLeast' mapOfCounts =
       | otherwise = go (cnt+v) rest
 {-# SPECIALIZE INLINE findSplitKey :: Int -> Map LogIndex Int -> Maybe LogIndex #-}
 
+-- TODO: kill tiny crypto worker flow once PreProc Worker is done
 verifyLogEntry :: LogEntry -> (Int, Command)
 verifyLogEntry LogEntry{..} = res `seq` res
   where
     res = (fromIntegral _leLogIndex, v `seq` v)
-    v = verifyCommand _leCommand
+    v = verifyCommandIfNotPending _leCommand
 {-# INLINE verifyLogEntry #-}
 
 verifySeqLogEntries :: LogEntries -> IntMap Command

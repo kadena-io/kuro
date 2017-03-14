@@ -117,19 +117,19 @@ runConsensusService renv rconf spec rstate timeCache' mPubConsensus' = do
       keySet' = Turbine._keySet renv
       nodeId' = rconf ^. nodeId
       commandConfig' = CommandConfig
-        { _ccDbFile = case rconf ^. logSqliteDir of
-            -- TODO: fix this, it's terrible
-            Just dbDir' -> Just (dbDir' ++ (show $ _alias nodeId') ++ "pact.sqlite")
-            Nothing -> Nothing
-        , _ccDebugFn = return . const () -- dbgPrint'
-        , _ccEntity = rconf ^. entity.entName
-        , _ccPragmas = Pact.fastNoJournalPragmas
-        }
---        { _ccDbFile = Nothing
---        , _ccDebugFn = return . const ()
+--        { _ccDbFile = case rconf ^. logSqliteDir of
+--            -- TODO: fix this, it's terrible
+--            Just dbDir' -> Just (dbDir' ++ (show $ _alias nodeId') ++ "pact.sqlite")
+--            Nothing -> Nothing
+--        , _ccDebugFn = return . const () -- dbgPrint'
 --        , _ccEntity = rconf ^. entity.entName
 --        , _ccPragmas = Pact.fastNoJournalPragmas
 --        }
+        { _ccDbFile = Nothing
+        , _ccDebugFn = return . const ()
+        , _ccEntity = rconf ^. entity.entName
+        , _ccPragmas = Pact.fastNoJournalPragmas
+        }
 
   publishMetric' $ MetricClusterSize csize
   publishMetric' $ MetricAvailableSize csize

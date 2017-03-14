@@ -129,7 +129,7 @@ getPendingPreProcSCC startTime mvResult = liftIO (tryReadMVar mvResult) >>= \cas
     return r
 
 applyCommand :: UTCTime -> LogEntry -> CommitService (RequestKey, CommandResult)
-applyCommand tEnd le@LogEntry{..} = do
+applyCommand _tEnd le@LogEntry{..} = do
   apply <- Pact._ceiApplyPPCmd <$> use commandExecInterface
   startTime <- now
   logApplyLatency startTime le
@@ -145,9 +145,10 @@ applyCommand tEnd le@LogEntry{..} = do
           debug $ "WARNING: fully resolved command found for " ++ show _leLogIndex
           return $! result
       liftIO $ apply (Pact.Transactional (fromIntegral _leLogIndex)) _sccCmd pproc
+  tEnd' <- now
   lat <- return $ case _leReceivedAt of
     Nothing -> 1 -- don't want a div by zero error downstream and this is for demo purposes
-    Just (ReceivedAt tStart) -> interval tStart tEnd
+    Just (ReceivedAt tStart) -> interval tStart tEnd'
   case _leCommand of
     SmartContractCommand{} -> return
       ( RequestKey $ getCmdBodyHash _leCommand

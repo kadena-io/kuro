@@ -29,7 +29,6 @@ import Data.Default
 
 import Kadena.Types.Base
 
-
 data EntityInfo = EntityInfo {
       _entName :: Text
 } deriving (Eq,Show,Generic)

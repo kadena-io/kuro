@@ -49,7 +49,6 @@ newCmdDynamicTurbine ks' getCmds' debug' enqueueEvent' prChan= forever $ do
   unless (lenCmdBatch == 0) $ do
     enqueueEvent' $ NewCmd validCmds
     debug' $ turbineCmd ++ "batched " ++ show (length validCmds) ++ " CMD(s)"
-  when (lenCmdBatch > 100) $ threadDelay 500000 -- .5sec
 
 -- TODO: do this better, right now we just use the first message for making the metrics
 mkCmdLatMetric :: ReceivedAt -> IO (Maybe CmdLatencyMetrics)

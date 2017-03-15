@@ -85,7 +85,6 @@ handleBatch cmdbBatch = do
       updateLogs $ ULNew $ NewLogEntries (KD._term s) (KD.NleEntries $ updateCmdLat start' end' $ _unBPNewEntries newEntries)
       unless (null $ _unBPNewEntries newEntries) $ do
         enqueueRequest $ Sender.BroadcastAE Sender.OnlySendIfFollowersAreInSync
-        enqueueRequest $ Sender.BroadcastAER
       -- Bloom filters can give false positives but most of the time the commands will be new, so we do a second pass to double check
       unless (null $ _unBPAlreadySeen alreadySeen) $ do
         -- but we can skip it if we have no collisions... it's the whole point of using the filter
@@ -98,12 +97,12 @@ handleBatch cmdbBatch = do
         unless (HashSet.null falsePositive) $ do
           updateLogs $ ULNew $ NewLogEntries (KD._term s) (KD.NleEntries $ updateCmdLat start' end $ falsePositiveCommands)
           enqueueRequest $ Sender.BroadcastAE Sender.OnlySendIfFollowersAreInSync
-          enqueueRequest $ Sender.BroadcastAER
           debug $ "CMDB - False positives found "
                   ++ show (HashSet.size falsePositive)
                   ++ " of " ++ show (HashSet.size setOfAlreadySeen) ++ " collisions ("
                   ++ show (interval start end) ++ "mics)"
         sendHistoryNewKeys $ HashSet.union falsePositive $ HashSet.fromList $ toRequestKey . snd <$> _unBPAlreadySeen alreadySeen
+      enqueueRequest $ Sender.BroadcastAER
       -- the false positives we already collisions so no need to add them
       KD.cmdBloomFilter .= updateBloom newEntries (KD._cmdBloomFilter s)
       quorumSize' <- view KD.quorumSize

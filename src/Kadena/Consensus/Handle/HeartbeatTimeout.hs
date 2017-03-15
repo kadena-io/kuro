@@ -49,6 +49,7 @@ handle msg = do
   case out of
     IsLeader -> do
       enqueueRequest $ Sender.BroadcastAE Sender.SendAERegardless
+      enqueueRequest $ Sender.BroadcastAER
       clearLazyVoteAndInformCandidates
       resetHeartbeatTimer
       hbMicrosecs <- KD.viewConfig KD.heartbeatTimeout

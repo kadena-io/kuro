@@ -14,7 +14,7 @@ import qualified Data.Sequence as Seq
 import qualified Data.Set as Set
 import qualified Data.Map.Strict as Map
 
-import Data.Thyme.Clock (getCurrentTime)
+import Data.Thyme.Clock (getCurrentTime, UTCTime)
 
 import Kadena.Types hiding (debugPrint, nodeId)
 import Kadena.PreProc.Types (ProcessRequestChannel(..), ProcessRequest(..))
@@ -39,9 +39,9 @@ generalTurbine = do
       forM_ prunedAes $ \(ts,msg) -> case signedRPCtoRPC (Just ts) ks msg of
         Left err -> debug err
         Right (AE' ae'@AppendEntries{..}) -> do
-          newLes' <- startPreProcForLes prChan _aeEntries
-          newAE' <- return $ ae' { _aeEntries = newLes' }
           t' <- getCurrentTime
+          newLes' <- startPreProcForLes t' prChan _aeEntries
+          newAE' <- return $ ae' { _aeEntries = newLes' }
           debug $ turbineGeneral ++ "enqueued 1 of " ++ l ++ " AE(s) taking "
                 ++ show (interval (_unReceivedAt ts) t')
                 ++ "mics since it was received"
@@ -51,7 +51,6 @@ generalTurbine = do
     unless (null validNoAes) $ mapM_ (enqueueEvent . ERPC) validNoAes
     unless (null invalid) $ mapM_ debug invalid
 
-{-# INLINE pruneRedundantAEs #-}
 pruneRedundantAEs :: Seq (ReceivedAt, SignedRPC) -> [(ReceivedAt, SignedRPC)]
 pruneRedundantAEs m = go m Set.empty
   where
@@ -59,9 +58,11 @@ pruneRedundantAEs m = go m Set.empty
     go aeSeq s = case Seq.viewl aeSeq of
       Seq.EmptyL -> []
       ae Seq.:< aes -> if Set.member (getSig ae) s then go aes (Set.insert (getSig ae) s) else ae : go aes (Set.insert (getSig ae) s)
+{-# INLINE pruneRedundantAEs #-}
 
-startPreProcForLes :: ProcessRequestChannel -> LogEntries -> IO LogEntries
-startPreProcForLes prChan les = do
+startPreProcForLes :: UTCTime -> ProcessRequestChannel -> LogEntries -> IO LogEntries
+startPreProcForLes hitTurb prChan les = do
   (newLes', mapRpps) <- preprocLogEntries les
   forM_ (Map.toAscList $ mapRpps) $ writeComm prChan . CommandPreProc . snd
-  return newLes'
+  return $ lesUpdateCmdLat lmHitTurbine hitTurb newLes'
+{-# INLINE startPreProcForLes #-}

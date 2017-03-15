@@ -112,10 +112,10 @@ applyLogEntries rs les@(LogEntries leToApply) = do
     else debug "Applied log entries but did not send results?"
 
 logApplyLatency :: UTCTime -> LogEntry -> CommitService ()
-logApplyLatency startTime LogEntry{..} = case _leReceivedAt of
+logApplyLatency startTime LogEntry{..} = case _leCmdLatMetrics of
   Nothing -> return ()
-  Just (ReceivedAt n) -> do
-    logMetric $ MetricApplyLatency $ fromIntegral $ interval n startTime
+  Just n -> do
+    logMetric $ MetricApplyLatency $ fromIntegral $ interval (_lmFirstSeen n) startTime
 {-# INLINE logApplyLatency #-}
 
 getPendingPreProcSCC :: UTCTime -> MVar SCCPreProcResult -> CommitService SCCPreProcResult
@@ -133,22 +133,23 @@ applyCommand _tEnd le@LogEntry{..} = do
   apply <- Pact._ceiApplyPPCmd <$> use commandExecInterface
   startTime <- now
   logApplyLatency startTime le
-  result <- case _leCommand of
+  (result, ppLat) <- case _leCommand of
     SmartContractCommand{..} -> do
-      pproc <- case _sccPreProc of
+      (pproc, ppLat) <- case _sccPreProc of
         Unprocessed -> do
           debug $ "WARNING: non-preproccessed command found for " ++ show _leLogIndex
           case (verifyCommand _leCommand) of
-            SmartContractCommand{..} -> return $! result _sccPreProc
-        Pending{..} -> getPendingPreProcSCC startTime pending
+            SmartContractCommand{..} -> return $! (result _sccPreProc, _leCmdLatMetrics)
+        Pending{..} -> do
+          PendingResult{..} <- getPendingPreProcSCC startTime pending
+          return $ (_prResult, updateLatPreProc _prStartedPreProc _prFinishedPreProc _leCmdLatMetrics)
         Result{..}  -> do
           debug $ "WARNING: fully resolved command found for " ++ show _leLogIndex
-          return $! result
-      liftIO $ apply (Pact.Transactional (fromIntegral _leLogIndex)) _sccCmd pproc
+          return $! (result, _leCmdLatMetrics)
+      res <- liftIO $ apply (Pact.Transactional (fromIntegral _leLogIndex)) _sccCmd pproc
+      return (res, ppLat)
   tEnd' <- now
-  lat <- return $ case _leReceivedAt of
-    Nothing -> 1 -- don't want a div by zero error downstream and this is for demo purposes
-    Just (ReceivedAt tStart) -> interval tStart tEnd'
+  lat <- return $ updateCommitPreProc startTime tEnd' ppLat
   case _leCommand of
     SmartContractCommand{} -> return
       ( RequestKey $ getCmdBodyHash _leCommand
@@ -156,7 +157,7 @@ applyCommand _tEnd le@LogEntry{..} = do
         { _scrHash = getCmdBodyHash _leCommand
         , _scrResult = result
         , _cmdrLogIndex = _leLogIndex
-        , _cmdrLatency = lat
+        , _cmdrLatMetrics = mkLatResults <$> lat
         })
 
 applyLocalCommand :: (Pact.Command ByteString, MVar Value) -> CommitService ()
@@ -164,3 +165,17 @@ applyLocalCommand (cmd, mv) = do
   applyLocal <- Pact._ceiApplyCmd <$> use commandExecInterface
   cr <- liftIO $ applyLocal Pact.Local cmd
   liftIO $ putMVar mv (Pact._crResult cr)
+
+updateLatPreProc :: Maybe UTCTime -> Maybe UTCTime -> Maybe CmdLatencyMetrics -> Maybe CmdLatencyMetrics
+updateLatPreProc hitPreProc finPreProc = fmap update'
+  where
+    update' cmd = cmd {_lmHitPreProc = hitPreProc
+                      ,_lmFinPreProc = finPreProc}
+{-# INLINE updateLatPreProc #-}
+
+updateCommitPreProc :: UTCTime -> UTCTime -> Maybe CmdLatencyMetrics -> Maybe CmdLatencyMetrics
+updateCommitPreProc hitCommit finCommit = fmap update'
+  where
+    update' cmd = cmd {_lmHitCommit = Just hitCommit
+                      ,_lmFinCommit = Just finCommit}
+{-# INLINE updateCommitPreProc #-}

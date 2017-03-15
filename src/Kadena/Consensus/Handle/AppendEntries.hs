@@ -21,6 +21,7 @@ import qualified Data.HashSet as HashSet
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Maybe (fromMaybe)
+import Data.Thyme.Clock
 
 import Kadena.Types hiding (term, currentLeader, ignoreLeader, quorumSize)
 import Kadena.Sender.Service (createAppendEntriesResponse')
@@ -66,8 +67,8 @@ data AppendEntriesResult =
 -- TODO: we need a Noop version as well
 data ValidResponse =
     SendFailureResponse |
-    Commit {
-        _newRequestKeys :: HashSet RequestKey
+    Commit
+      { _newRequestKeys :: HashSet RequestKey
       , _newEntries :: ReplicateLogEntries } |
     DoNothing
 
@@ -176,6 +177,7 @@ logHashChange (Hash mLastHash) = do
 
 handle :: AppendEntries -> KD.Consensus ()
 handle ae = do
+  start' <- now
   r <- ask
   s <- get
   mv <- queryLogs $ Set.fromList [Log.GetSomeEntry (_prevLogIndex ae),Log.GetCommitIndex]
@@ -206,7 +208,8 @@ handle ae = do
 --          alreadyExist <- queryHistoryForPriorApplication rks
 --          if HashSet.null alreadyExist
 --          then do
-            updateLogs $ Log.ULReplicate rle
+            end' <- now
+            updateLogs $ Log.ULReplicate $ updateRleLats start' end' rle
             newMv <- queryLogs $ Set.singleton Log.GetLastLogHash
             newLastLogHash' <- return $! Log.hasQueryResult Log.LastLogHash newMv
             -- TODO: look into having `updateLogs Log.ULReplicate` trigger an AER
@@ -260,3 +263,16 @@ issueHflRVR leaderId' term' logIndex' rv@RequestVote{..} = do
           NewMsg -> error $ "Invariant error in issueHflRVR: could not get sig from new msg" ++ show rv
           (ReceivedMsg dig _ _) -> dig ^. KD.digSig
   enqueueRequest $ Sender.BroadcastRVR _rvCandidateId hfl False
+
+updateRleLats :: UTCTime -> UTCTime -> ReplicateLogEntries -> ReplicateLogEntries
+updateRleLats hitCon finCon r@ReplicateLogEntries{..} = r { _rleEntries = updatedLats }
+  where
+    updatedLats :: LogEntries
+    updatedLats = LogEntries $! updateLat <$> _logEntries _rleEntries
+    updateLat :: LogEntry -> LogEntry
+    updateLat le@LogEntry{..} = case _leCmdLatMetrics of
+      Nothing -> le
+      Just lat -> le { _leCmdLatMetrics = Just $ lat { _lmHitConsensus = Just hitCon
+                                                     , _lmFinConsensus = Just finCon}
+                     }
+{-# INLINE updateRleLats #-}

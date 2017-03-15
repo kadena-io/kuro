@@ -19,7 +19,6 @@ module Kadena.Types.Base
   , interval
   , hash, hashLengthAsBS, hashLengthAsBase16
   , Hash(..), initialHash
-  , LatencyMetrics(..), lmFullLatency
   ) where
 
 import Control.Lens
@@ -108,15 +107,6 @@ instance Serialize ReceivedAt
 
 interval :: UTCTime -> UTCTime -> Int64
 interval start end = view microseconds $ end .-. start
-
-data LatencyMetrics = LatencyMetrics
-  { _lmFullLatency :: Int64
-  } deriving (Show, Eq, Ord, Generic)
-makeLenses ''LatencyMetrics
-instance ToJSON LatencyMetrics where
-  toJSON = lensyToJSON 3
-instance FromJSON LatencyMetrics where
-  parseJSON = lensyParseJSON 3
 
 data Role = Follower
           | Candidate

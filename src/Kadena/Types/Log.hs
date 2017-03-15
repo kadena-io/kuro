@@ -12,10 +12,10 @@
 {-# LANGUAGE TemplateHaskell #-}
 
 module Kadena.Types.Log
-  ( LogEntry(..), leTerm, leLogIndex, leCommand, leHash, leReceivedAt
+  ( LogEntry(..), leTerm, leLogIndex, leCommand, leHash, leCmdLatMetrics
   , LogEntries(..), logEntries, lesCnt, lesMinEntry, lesMaxEntry
   , lesMinIndex, lesMaxIndex, lesEmpty, lesNull, checkLogEntries, lesGetSection
-  , lesUnion, lesUnions, lesLookupEntry
+  , lesUnion, lesUnions, lesLookupEntry, lesUpdateCmdLat
   , PersistedLogEntries(..), pLogEntries, plesCnt, plesMinEntry, plesMaxEntry
   , plesMinIndex, plesMaxIndex, plesEmpty, plesNull, plesGetSection
   , plesAddNew, plesLookupEntry, plesTakeTopEntries
@@ -25,7 +25,7 @@ module Kadena.Types.Log
   , VerifiedLogEntries(..)
   , verifyLogEntry, verifySeqLogEntries
   , preprocLogEntries, preprocLogEntry
-  , NewLogEntries(..), nleTerm, nleEntries, nleReceivedAt
+  , NewLogEntries(..), nleTerm, nleEntries
   , UpdateCommitIndex(..), uci
   , UpdateLogs(..)
   , hashLogEntry
@@ -54,6 +54,7 @@ import Data.Foldable
 import Data.Serialize hiding (get)
 
 import Data.Thyme.Time.Core ()
+import Data.Thyme.Clock
 import GHC.Generics
 
 import Kadena.Types.Base
@@ -65,7 +66,7 @@ data LogEntry = LogEntry
   , _leLogIndex :: !LogIndex
   , _leCommand  :: !Command
   , _leHash     :: !Hash
-  , _leReceivedAt :: !(Maybe ReceivedAt)
+  , _leCmdLatMetrics :: !(Maybe CmdLatencyMetrics)
   }
   deriving (Show, Eq, Ord, Generic)
 makeLenses ''LogEntry
@@ -147,6 +148,9 @@ lesUnion (LogEntries les1) (LogEntries les2) = LogEntries $! Map.union les1 les2
 lesUnions :: [LogEntries] -> LogEntries
 lesUnions les = LogEntries $! (Map.unions (_logEntries <$> les))
 {-# INLINE lesUnions #-}
+
+lesUpdateCmdLat :: CmdLatASetter a -> UTCTime -> LogEntries -> LogEntries
+lesUpdateCmdLat l t LogEntries{..} = LogEntries $! (over leCmdLatMetrics (populateCmdLat l t)) <$> _logEntries
 
 newtype PersistedLogEntries = PersistedLogEntries { _pLogEntries :: Map LogIndex LogEntries }
     deriving (Eq,Show,Ord,Generic)
@@ -254,7 +258,7 @@ newtype VerifiedLogEntries = VerifiedLogEntries
   deriving (Show, Eq)
 
 decodeLEWire' :: Maybe ReceivedAt -> LEWire -> LogEntry
-decodeLEWire' !ts (LEWire !(t,i,cmd,hsh)) = LogEntry t i (decodeCommand cmd) hsh ts
+decodeLEWire' !ts (LEWire !(t,i,cmd,hsh)) = LogEntry t i (decodeCommand cmd) hsh (initCmdLat ts)
 {-# INLINE decodeLEWire' #-}
 
 insertOrError :: LogEntry -> LogEntry -> LogEntry
@@ -321,12 +325,11 @@ toReplicateLogEntries prevLogIndex les = do
                                  , _rlePrvLogIdx = prevLogIndex
                                  , _rleEntries   = les }
 
-newtype NleEntries = NleEntries { unNleEntries :: [Command] } deriving (Eq,Show)
+newtype NleEntries = NleEntries { unNleEntries :: [(Maybe CmdLatencyMetrics, Command)] } deriving (Eq,Show)
 
 data NewLogEntries = NewLogEntries
   { _nleTerm :: !Term
   , _nleEntries :: !NleEntries
-  , _nleReceivedAt :: !(Maybe ReceivedAt)
   } deriving (Show, Eq, Generic)
 makeLenses ''NewLogEntries
 

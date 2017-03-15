@@ -24,7 +24,6 @@ import qualified Data.HashSet as HashSet
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
 import Data.Maybe
-import GHC.Int (Int64)
 
 import Database.SQLite3.Direct
 
@@ -40,9 +39,15 @@ hashToField h = SText $ Utf8 $ BSL.toStrict $ A.encode h
 crToField :: A.Value -> SType
 crToField r = SText $ Utf8 $ BSL.toStrict $ A.encode r
 
-crFromField :: Hash -> LogIndex -> Maybe TxId -> ByteString -> Int64 -> CommandResult
-crFromField hsh li tid cr lat = SmartContractResult hsh (Pact.CommandResult (Pact.RequestKey hsh) tid v) li lat
+latToField :: Maybe CmdResultLatencyMetrics -> SType
+latToField r = SText $ Utf8 $ BSL.toStrict $ A.encode r
+
+crFromField :: Hash -> LogIndex -> Maybe TxId -> ByteString -> ByteString -> CommandResult
+crFromField hsh li tid cr lat = SmartContractResult hsh (Pact.CommandResult (Pact.RequestKey hsh) tid v) li lat'
   where
+    lat' = case A.eitherDecodeStrict' lat of
+      Left err -> error $ "crFromField: unable to decode CmdResultLatMetrics from database! " ++ show err ++ "\n" ++ show cr
+      Right v' -> v'
     v = case A.eitherDecodeStrict' cr of
       Left err -> error $ "crFromField: unable to decode CommandResult from database! " ++ show err ++ "\n" ++ show cr
       Right v' -> v'
@@ -54,7 +59,7 @@ sqlDbSchema =
   \, 'logIndex' INTEGER NOT NULL\
   \, 'txid' INTEGER NOT NULL\
   \, 'result' TEXT NOT NULL\
-  \, 'latency' INTEGER NOT NULL\
+  \, 'latency' TEXT NOT NULL\
   \)"
 
 eitherToError :: Show e => String -> Either e a -> a
@@ -87,7 +92,7 @@ insertRow s SmartContractResult{..} =
             ,SInt $ fromIntegral _cmdrLogIndex
             ,SInt $ fromIntegral (fromMaybe (-1) (Pact._crTxId _scrResult))
             ,crToField (Pact._crResult _scrResult)
-            ,SInt $ fromIntegral _cmdrLatency]
+            ,latToField _cmdrLatMetrics]
 
 insertCompletedCommand :: DbEnv -> [CommandResult] -> IO ()
 insertCompletedCommand DbEnv{..} v = do
@@ -116,10 +121,10 @@ selectCompletedCommands :: DbEnv -> HashSet RequestKey -> IO (HashMap RequestKey
 selectCompletedCommands e v = foldM f HashMap.empty v
   where
     f m rk = do
-      rs' <- qrys (_qryCompletedStmt e) [hashToField $ unRequestKey rk] [RInt, RInt, RText, RInt]
+      rs' <- qrys (_qryCompletedStmt e) [hashToField $ unRequestKey rk] [RInt, RInt, RText, RText]
       if null rs'
       then return m
       else case head rs' of
-          [SInt li, SInt tid, SText (Utf8 cr),SInt lat] ->
+          [SInt li, SInt tid, SText (Utf8 cr),SText (Utf8 lat)] ->
             return $ HashMap.insert rk (crFromField (unRequestKey rk) (fromIntegral li) (if tid < 0 then Nothing else Just (fromIntegral tid)) cr lat) m
           r -> dbError $ "Invalid result from query `History.selectCompletedCommands`: " ++ show r

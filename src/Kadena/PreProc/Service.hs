@@ -47,8 +47,8 @@ debug s = do
   dbg <- view debugPrint
   liftIO $! dbg $ "[Service|PreProc] " ++ s
 
-_now :: ProcessRequestService UTCTime
-_now = view getTimestamp >>= liftIO
+now :: ProcessRequestService UTCTime
+now = view getTimestamp >>= liftIO
 
 threadPool :: ProcessRequestEnv -> IO [Async ()]
 threadPool env@ProcessRequestEnv{..} = replicateM _threadCount $
@@ -57,6 +57,8 @@ threadPool env@ProcessRequestEnv{..} = replicateM _threadCount $
 handle :: ProcessRequestChannel -> ProcessRequestService ()
 handle workChan = do
   liftIO (readComm workChan) >>= \case
-    (CommandPreProc rpp) -> liftIO $! void $! runPreproc rpp
+    (CommandPreProc rpp) -> do
+      hitPreProc <- now
+      liftIO $! void $! runPreproc hitPreProc rpp
     Heart t -> do
         liftIO (pprintBeat t) >>= debug

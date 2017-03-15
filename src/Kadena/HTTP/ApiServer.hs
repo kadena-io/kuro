@@ -136,7 +136,7 @@ pollResultToReponse m = ApiSuccess $ PollResponses $ scrToAr <$> m
 scrToAr :: CommandResult -> ApiResult
 scrToAr SmartContractResult{..} = ApiResult (toJSON (Pact._crResult _scrResult)) (Pact._crTxId _scrResult) metaData'
   where
-    metaData' = Just $ toJSON $ LatencyMetrics { _lmFullLatency = _cmdrLatency}
+    metaData' = Just $ toJSON $ _cmdrLatMetrics
 
 serverConf :: MonadSnap m => Int -> Snap.Config m a
 serverConf port =

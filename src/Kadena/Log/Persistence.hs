@@ -119,7 +119,7 @@ instance FromRow LogEntry where
       , _leLogIndex = leLogIndex'
       , _leCommand = command'
       , _leHash = leHash'
-      , _leReceivedAt = Nothing
+      , _leCmdLatMetrics = Nothing
       }
 
 sqlDbSchema :: Query

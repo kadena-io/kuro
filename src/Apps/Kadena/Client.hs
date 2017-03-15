@@ -61,6 +61,7 @@ import Pact.Types.Util
 
 
 import Kadena.Types.Base
+import Kadena.Types.Command (CmdResultLatencyMetrics(..))
 
 data KeyPair = KeyPair {
   _kpSecret :: PrivateKey,
@@ -266,8 +267,11 @@ showResult tdelay rks countm = loop (0 :: Int)
                       Nothing -> putJSON _arResult
                   Just cnt -> case fromJSON <$>_arMetaData of
                     Nothing -> flushStrLn "Success"
-                    Just (A.Success LatencyMetrics{..}) ->
-                      flushStrLn $ intervalOfNumerous cnt _lmFullLatency
+                    Just (A.Success lats@CmdResultLatencyMetrics{..}) -> do
+                      pprintLatency lats
+                      case _rlmFinCommit of
+                        Nothing -> flushStrLn "Latency Measurement Unavailable"
+                        Just n -> flushStrLn $ intervalOfNumerous cnt n
                     Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
 
 pollForResult :: RequestKey -> Repl ()
@@ -281,6 +285,20 @@ pollForResult rk = do
       case pprintResult _arResult of
         Just r' -> flushStrLn r'
         Nothing -> putJSON _arResult) $ HM.elems prs
+
+pprintLatency :: CmdResultLatencyMetrics -> Repl ()
+pprintLatency CmdResultLatencyMetrics{..} = do
+  let mFlushStr s1 v s2 = case v of
+        Nothing -> return ()
+        Just v' -> flushStrLn $ s1 ++ show v' ++ s2
+  mFlushStr "First Seen:          " (Just _rlmFirstSeen) ""
+  mFlushStr "Hit Turbine:        +" _rlmHitTurbine  "micros"
+  mFlushStr "Started Consensus:  +" _rlmHitConsensus  "micros"
+  mFlushStr "Finished Consensus: +" _rlmFinConsensus  "micros"
+  mFlushStr "Started PreProc:    +" _rlmHitPreProc  "micros"
+  mFlushStr "Finished PreProc:   +" _rlmFinPreProc  "micros"
+  mFlushStr "Started Commit:     +" _rlmHitCommit  "micros"
+  mFlushStr "Finished Commit:    +" _rlmFinCommit  "micros"
 
 pprintResult :: Value -> Maybe String
 pprintResult v = do

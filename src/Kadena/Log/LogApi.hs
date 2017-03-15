@@ -25,7 +25,7 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 
 import Kadena.Types.Base
-import Kadena.Types.Command (Command(..))
+import Kadena.Types.Command (Command(..), CmdLatencyMetrics)
 import Kadena.Log.Types
 import qualified Kadena.Log.Types as X
 import Kadena.Log.Persistence
@@ -247,7 +247,7 @@ appendLogEntry NewLogEntries{..} = do
   nli <- use lsNextLogIndex
   case lastEntry' of
     Just ple -> do
-      nle <- return $! newEntriesToLog _nleTerm (_leHash ple) nli _nleReceivedAt (unNleEntries _nleEntries)
+      nle <- return $! newEntriesToLog _nleTerm (_leHash ple) nli (unNleEntries _nleEntries)
       mLastLog' <- return $! lesMaxEntry nle
       case mLastLog' of
         Nothing -> return ()
@@ -259,7 +259,7 @@ appendLogEntry NewLogEntries{..} = do
           lsNextLogIndex .= lastIdx' + 1
           lsLastLogTerm  .= _leTerm lastLog'
     Nothing -> do
-      nle <- return $! newEntriesToLog _nleTerm initialHash nli _nleReceivedAt (unNleEntries _nleEntries)
+      nle <- return $! newEntriesToLog _nleTerm initialHash nli (unNleEntries _nleEntries)
       mLastLog' <- return $! lesMaxEntry nle
       case mLastLog' of
         Nothing -> return ()
@@ -272,15 +272,15 @@ appendLogEntry NewLogEntries{..} = do
           lsLastLogTerm  .= _leTerm lastLog'
 {-# INLINE appendLogEntry #-}
 
-newEntriesToLog :: Term -> Hash -> LogIndex -> Maybe ReceivedAt -> [Command] -> LogEntries
-newEntriesToLog ct prevHash idx mra cmds = res `seq` LogEntries res
+newEntriesToLog :: Term -> Hash -> LogIndex -> [(Maybe CmdLatencyMetrics, Command)] -> LogEntries
+newEntriesToLog ct prevHash idx cmds = res `seq` LogEntries res
   where
     res = Map.fromList $! go (Just prevHash) idx cmds
     go _ _ [] = []
-    go prevHash' i [c] = [(i,hashLogEntry prevHash' (LogEntry ct i c initialHash mra))]
-    go prevHash' i (c:cs) =
+    go prevHash' i [(mLat, c)] = [(i,hashLogEntry prevHash' (LogEntry ct i c initialHash mLat))]
+    go prevHash' i ((mLat, c):cs) =
       let
-        hashedEntry = hashLogEntry prevHash' $ LogEntry ct i c initialHash mra
+        hashedEntry = hashLogEntry prevHash' $ LogEntry ct i c initialHash mLat
       in (:) (i, hashedEntry) $! go (Just $ _leHash hashedEntry) (i + 1) cs
 {-# INLINE newEntriesToLog #-}
 

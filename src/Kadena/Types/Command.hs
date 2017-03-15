@@ -12,11 +12,20 @@ module Kadena.Types.Command
   , verifyCommand, verifyCommandIfNotPending
   , prepPreprocCommand
   , Preprocessed(..), RunPreProc(..), runPreproc
+  , PendingResult(..)
   , getCmdBodyHash
   , SCCPreProcResult
   , CMDWire(..)
   , toRequestKey
-  , CommandResult(..), scrResult, scrHash, cmdrLogIndex, cmdrLatency
+  , CommandResult(..), scrResult, scrHash, cmdrLogIndex, cmdrLatMetrics
+  , CmdLatencyMetrics(..), lmFirstSeen, lmHitTurbine, lmHitPreProc
+  , lmFinPreProc, lmHitCommit, lmFinCommit, lmHitConsensus, lmFinConsensus
+  , initCmdLat, populateCmdLat
+  , CmdLatASetter
+  , CmdResultLatencyMetrics(..)
+  , rlmFirstSeen, rlmHitTurbine, rlmHitConsensus, rlmFinConsensus
+  , rlmHitPreProc, rlmFinPreProc, rlmHitCommit, rlmFinCommit
+  , mkLatResults
   ) where
 
 import Control.Exception
@@ -28,7 +37,9 @@ import Data.Serialize (Serialize)
 import qualified Data.Serialize as S
 import Data.ByteString (ByteString)
 
+import Data.Thyme.Clock
 import Data.Thyme.Time.Core ()
+import Data.Aeson
 import GHC.Generics
 import GHC.Int (Int64)
 
@@ -37,10 +48,57 @@ import Kadena.Types.Message.Signed
 
 import qualified Pact.Types.Command as Pact
 import qualified Pact.Types.RPC as Pact
+import Pact.Types.Util
+
+data CmdLatencyMetrics = CmdLatencyMetrics
+  { _lmFirstSeen :: !UTCTime
+  , _lmHitTurbine :: !(Maybe UTCTime)
+  , _lmHitConsensus :: !(Maybe UTCTime)
+  , _lmFinConsensus :: !(Maybe UTCTime)
+  , _lmHitPreProc :: !(Maybe UTCTime)
+  , _lmFinPreProc :: !(Maybe UTCTime)
+  , _lmHitCommit :: !(Maybe UTCTime)
+  , _lmFinCommit :: !(Maybe UTCTime)
+  } deriving (Show, Eq, Ord, Generic)
+makeLenses ''CmdLatencyMetrics
+
+instance ToJSON CmdLatencyMetrics where
+  toJSON = lensyToJSON 3
+instance FromJSON CmdLatencyMetrics where
+  parseJSON = lensyParseJSON 3
+
+initCmdLat :: Maybe ReceivedAt -> Maybe CmdLatencyMetrics
+initCmdLat Nothing = Nothing
+initCmdLat (Just (ReceivedAt startTime)) = Just $ CmdLatencyMetrics
+  { _lmFirstSeen = startTime
+  , _lmHitTurbine = Nothing
+  , _lmHitConsensus = Nothing
+  , _lmFinConsensus = Nothing
+  , _lmHitPreProc = Nothing
+  , _lmFinPreProc = Nothing
+  , _lmHitCommit = Nothing
+  , _lmFinCommit = Nothing
+  }
+
+type CmdLatASetter a = ASetter CmdLatencyMetrics CmdLatencyMetrics a (Maybe UTCTime)
+
+populateCmdLat ::
+  CmdLatASetter a
+  -> UTCTime
+  -> Maybe CmdLatencyMetrics
+  -> Maybe CmdLatencyMetrics
+populateCmdLat l t = fmap (over l (\_ -> Just t))
+{-# INLINE populateCmdLat #-}
+
+data PendingResult a = PendingResult
+  { _prResult :: !a
+  , _prStartedPreProc :: !(Maybe UTCTime)
+  , _prFinishedPreProc :: !(Maybe UTCTime)
+  }
 
 data Preprocessed a =
   Unprocessed |
-  Pending {pending :: !(MVar a)} |
+  Pending {pending :: !(MVar (PendingResult a))} |
   Result {result :: a}
   deriving (Eq, Generic)
 instance (Show a) => Show (Preprocessed a) where
@@ -48,23 +106,24 @@ instance (Show a) => Show (Preprocessed a) where
   show Pending{} = "Pending {unPending = <MVar>}"
   show (Result a) = "Result {unResult = " ++ show a ++ "}"
 
-type SCCPreProcResult = Pact.ProcessedCommand Pact.PactRPC
+type SCCPreProcResult = PendingResult (Pact.ProcessedCommand Pact.PactRPC)
 
 data RunPreProc =
   RunSCCPreProc
     { _rpSccRaw :: !(Pact.Command ByteString)
     , _rpSccMVar :: !(MVar SCCPreProcResult)}
 
-runPreproc :: RunPreProc -> IO ()
-runPreproc RunSCCPreProc{..} = do
-  succPut <- tryPutMVar _rpSccMVar $! Pact.verifyCommand _rpSccRaw
+runPreproc :: UTCTime -> RunPreProc -> IO ()
+runPreproc hitPreProc RunSCCPreProc{..} = do
+  res <- return $! Pact.verifyCommand _rpSccRaw
+  finishedPreProc <- getCurrentTime
+  succPut <- tryPutMVar _rpSccMVar $! PendingResult res (Just hitPreProc) (Just finishedPreProc)
   unless succPut $ putStrLn $ "Preprocessor encountered a duplicate: " ++ show _rpSccRaw
 
 data Command = SmartContractCommand
   { _sccCmd :: !(Pact.Command ByteString)
   , _sccPreProc :: !(Preprocessed (Pact.ProcessedCommand Pact.PactRPC))
-  }
-  deriving (Show, Eq, Generic)
+  } deriving (Show, Eq, Generic)
 makeLenses ''Command
 
 instance Ord Command where
@@ -143,11 +202,40 @@ toRequestKey :: Command -> RequestKey
 toRequestKey SmartContractCommand{..} = RequestKey (Pact._cmdHash _sccCmd)
 {-# INLINE toRequestKey #-}
 
+data CmdResultLatencyMetrics = CmdResultLatencyMetrics
+  { _rlmFirstSeen :: !UTCTime
+  , _rlmHitTurbine :: !(Maybe Int64)
+  , _rlmHitConsensus :: !(Maybe Int64)
+  , _rlmFinConsensus :: !(Maybe Int64)
+  , _rlmHitPreProc :: !(Maybe Int64)
+  , _rlmFinPreProc :: !(Maybe Int64)
+  , _rlmHitCommit :: !(Maybe Int64)
+  , _rlmFinCommit :: !(Maybe Int64)
+  } deriving (Show, Eq, Ord, Generic)
+makeLenses ''CmdResultLatencyMetrics
+
+instance ToJSON CmdResultLatencyMetrics where
+  toJSON = lensyToJSON 4
+instance FromJSON CmdResultLatencyMetrics where
+  parseJSON = lensyParseJSON 4
+
+mkLatResults :: CmdLatencyMetrics -> CmdResultLatencyMetrics
+mkLatResults CmdLatencyMetrics{..} = CmdResultLatencyMetrics
+  { _rlmFirstSeen = _lmFirstSeen
+  , _rlmHitTurbine = interval _lmFirstSeen <$> _lmHitTurbine
+  , _rlmHitConsensus = interval _lmFirstSeen <$> _lmHitConsensus
+  , _rlmFinConsensus = interval _lmFirstSeen <$> _lmFinConsensus
+  , _rlmHitPreProc = interval _lmFirstSeen <$> _lmHitPreProc
+  , _rlmFinPreProc = interval _lmFirstSeen <$> _lmFinPreProc
+  , _rlmHitCommit = interval _lmFirstSeen <$> _lmHitCommit
+  , _rlmFinCommit = interval _lmFirstSeen <$> _lmFinCommit
+  }
+
 data CommandResult = SmartContractResult
   { _scrHash :: !Hash
   , _scrResult :: !Pact.CommandResult
   , _cmdrLogIndex :: !LogIndex
-  , _cmdrLatency :: !Int64
+  , _cmdrLatMetrics :: !(Maybe CmdResultLatencyMetrics)
   }
   deriving (Show, Eq, Generic)
 makeLenses ''CommandResult

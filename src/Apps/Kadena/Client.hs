@@ -245,10 +245,6 @@ load m fp = do
     Just c -> flushStrLn ("Setting batch command to: " ++ c) >> batchCmd .= c
   cmdData .= Null
 
-
-
-
-
 showResult :: Int -> [RequestKey] -> Maybe Int64 -> Repl ()
 showResult _ [] _ = return ()
 showResult tdelay rks countm = loop (0 :: Int)
@@ -320,7 +316,7 @@ pprintResult v = do
       colwidth = 12
       colify cw ss = intercalate " | " (map (fill cw) ss)
       render = BSL.unpack . encode
-  o <- return $ toListOf (key "result" . values) v
+  o <- return $ toListOf (key "data" . values) v
   ks <- valKeys o
   h1 <- return $ colify colwidth (map T.unpack ks)
   hr <- return $ replicate (length h1) '-'

@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE CPP #-}
 
@@ -22,6 +23,7 @@ import Data.Thyme.Clock
 import Database.SQLite.Simple (Connection(..))
 
 import Kadena.Types.Comms
+import Kadena.Types.Command (CmdLatencyMetrics(..))
 import Kadena.Types.Metric
 import Kadena.Log.Persistence
 import Kadena.Log.Types as X
@@ -36,9 +38,8 @@ runLogService :: Dispatch
               -> (Metric -> IO())
               -> Maybe FilePath
               -> KeySet
-              -> Int
               -> IO ()
-runLogService dispatch dbg publishMetric' dbPath keySet' batchSize' = do
+runLogService dispatch dbg publishMetric' dbPath keySet' = do
   dbConn' <- case dbPath of
     Nothing -> do
       dbg "[Service|Log] Persistence Disabled"
@@ -54,7 +55,6 @@ runLogService dispatch dbg publishMetric' dbPath keySet' batchSize' = do
     , _debugPrint = dbg
     , _keySet = keySet'
     , _persistedLogEntriesToKeepInMemory = 24000
-    , _batchSize = batchSize'
     , _dbConn = dbConn'
     , _publishMetric = publishMetric'
     }
@@ -128,8 +128,8 @@ updateEvidenceCache (UpdateLastApplied _) = return ()
 -- In these cases, we need to update the cache because we have something new
 updateEvidenceCache (ULNew _) = updateEvidenceCache'
 updateEvidenceCache (ULReplicate _) = updateEvidenceCache'
-updateEvidenceCache (ULCommitIdx (UpdateCommitIndex _ci)) = do
-  tellKadenaToApplyLogEntries
+updateEvidenceCache (ULCommitIdx (UpdateCommitIndex _ ts)) = do
+  tellKadenaToApplyLogEntries ts
 #if WITH_KILL_SWITCH
   when (_ci >= 200000) $
     error "Thank you for using Kadena, this demo is limited to 200k log entries."
@@ -168,14 +168,25 @@ syncLogsFromDisk keepInMem commitChannel' conn = do
         }
     Nothing -> return initLogState
 
-tellKadenaToApplyLogEntries :: LogThread ()
-tellKadenaToApplyLogEntries = do
+populateConsensusLatency :: UTCTime -> UTCTime -> LogEntries -> LogEntries
+populateConsensusLatency aerTime logTime LogEntries{..} =
+  let
+    popLats l = l { _lmLogConsensus = Just logTime
+                  , _lmAerConsensus = Just aerTime}
+    les' = over leCmdLatMetrics (fmap popLats) <$> _logEntries
+  in LogEntries $! les'
+{-# INLINE populateConsensusLatency #-}
+
+tellKadenaToApplyLogEntries :: UTCTime -> LogThread ()
+tellKadenaToApplyLogEntries aerTime = do
   mUnappliedEntries' <- getUnappliedEntries
   case mUnappliedEntries' of
     Just unappliedEntries' -> do
       (Just appliedIndex') <- return $ lesMaxIndex unappliedEntries'
       lsLastApplied .= appliedIndex'
-      view commitChannel >>= liftIO . (`writeComm` Commit.CommitNewEntries unappliedEntries')
+      logTime <- liftIO getCurrentTime
+      ues' <- return $ populateConsensusLatency aerTime logTime unappliedEntries'
+      view commitChannel >>= liftIO . (`writeComm` Commit.CommitNewEntries ues')
       debug $ "informing Kadena to apply up to: " ++ show appliedIndex'
       publishMetric' <- view publishMetric
       liftIO $ publishMetric' $ MetricCommitIndex appliedIndex'

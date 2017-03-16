@@ -11,19 +11,20 @@ module Kadena.Types.Command
   , decodeCommandIO, decodeCommandEitherIO
   , verifyCommand, verifyCommandIfNotPending
   , prepPreprocCommand
-  , Preprocessed(..), RunPreProc(..), runPreproc
+  , Preprocessed(..), RunPreProc(..), runPreproc, runPreprocPure
+  , FinishedPreProc(..), finishPreProc
   , PendingResult(..)
   , getCmdBodyHash
   , SCCPreProcResult
   , CMDWire(..)
   , toRequestKey
   , CommandResult(..), scrResult, scrHash, cmdrLogIndex, cmdrLatMetrics
-  , CmdLatencyMetrics(..), lmFirstSeen, lmHitTurbine, lmHitPreProc
+  , CmdLatencyMetrics(..), lmFirstSeen, lmHitTurbine, lmHitPreProc, lmAerConsensus, lmLogConsensus
   , lmFinPreProc, lmHitCommit, lmFinCommit, lmHitConsensus, lmFinConsensus
   , initCmdLat, populateCmdLat
   , CmdLatASetter
   , CmdResultLatencyMetrics(..)
-  , rlmFirstSeen, rlmHitTurbine, rlmHitConsensus, rlmFinConsensus
+  , rlmFirstSeen, rlmHitTurbine, rlmHitConsensus, rlmFinConsensus, rlmAerConsensus, rlmLogConsensus
   , rlmHitPreProc, rlmFinPreProc, rlmHitCommit, rlmFinCommit
   , mkLatResults
   ) where
@@ -55,6 +56,8 @@ data CmdLatencyMetrics = CmdLatencyMetrics
   , _lmHitTurbine :: !(Maybe UTCTime)
   , _lmHitConsensus :: !(Maybe UTCTime)
   , _lmFinConsensus :: !(Maybe UTCTime)
+  , _lmAerConsensus :: !(Maybe UTCTime)
+  , _lmLogConsensus :: !(Maybe UTCTime)
   , _lmHitPreProc :: !(Maybe UTCTime)
   , _lmFinPreProc :: !(Maybe UTCTime)
   , _lmHitCommit :: !(Maybe UTCTime)
@@ -74,6 +77,8 @@ initCmdLat (Just (ReceivedAt startTime)) = Just $ CmdLatencyMetrics
   , _lmHitTurbine = Nothing
   , _lmHitConsensus = Nothing
   , _lmFinConsensus = Nothing
+  , _lmAerConsensus = Nothing
+  , _lmLogConsensus = Nothing
   , _lmHitPreProc = Nothing
   , _lmFinPreProc = Nothing
   , _lmHitCommit = Nothing
@@ -113,12 +118,30 @@ data RunPreProc =
     { _rpSccRaw :: !(Pact.Command ByteString)
     , _rpSccMVar :: !(MVar SCCPreProcResult)}
 
+data FinishedPreProc =
+  FinishedPreProcSCC
+    { _fppSccRes :: !(Pact.ProcessedCommand Pact.PactRPC)
+    , _fppSccMVar :: !(MVar SCCPreProcResult)}
+
+runPreprocPure :: RunPreProc -> FinishedPreProc
+runPreprocPure RunSCCPreProc{..} =
+  let !res = Pact.verifyCommand _rpSccRaw
+  in res `seq` FinishedPreProcSCC res _rpSccMVar
+{-# INLINE runPreprocPure #-}
+
+finishPreProc :: UTCTime -> UTCTime -> FinishedPreProc -> IO ()
+finishPreProc startTime endTime FinishedPreProcSCC{..} = do
+  succPut <- tryPutMVar _fppSccMVar $! PendingResult _fppSccRes (Just startTime) (Just endTime)
+  unless succPut $ putStrLn $ "Preprocessor encountered a duplicate: " ++ show _fppSccRes
+{-# INLINE finishPreProc #-}
+
 runPreproc :: UTCTime -> RunPreProc -> IO ()
 runPreproc hitPreProc RunSCCPreProc{..} = do
   res <- return $! Pact.verifyCommand _rpSccRaw
   finishedPreProc <- getCurrentTime
   succPut <- tryPutMVar _rpSccMVar $! PendingResult res (Just hitPreProc) (Just finishedPreProc)
   unless succPut $ putStrLn $ "Preprocessor encountered a duplicate: " ++ show _rpSccRaw
+{-# INLINE runPreproc #-}
 
 data Command = SmartContractCommand
   { _sccCmd :: !(Pact.Command ByteString)
@@ -207,6 +230,8 @@ data CmdResultLatencyMetrics = CmdResultLatencyMetrics
   , _rlmHitTurbine :: !(Maybe Int64)
   , _rlmHitConsensus :: !(Maybe Int64)
   , _rlmFinConsensus :: !(Maybe Int64)
+  , _rlmAerConsensus :: !(Maybe Int64)
+  , _rlmLogConsensus :: !(Maybe Int64)
   , _rlmHitPreProc :: !(Maybe Int64)
   , _rlmFinPreProc :: !(Maybe Int64)
   , _rlmHitCommit :: !(Maybe Int64)
@@ -225,6 +250,8 @@ mkLatResults CmdLatencyMetrics{..} = CmdResultLatencyMetrics
   , _rlmHitTurbine = interval _lmFirstSeen <$> _lmHitTurbine
   , _rlmHitConsensus = interval _lmFirstSeen <$> _lmHitConsensus
   , _rlmFinConsensus = interval _lmFirstSeen <$> _lmFinConsensus
+  , _rlmAerConsensus = interval _lmFirstSeen <$> _lmAerConsensus
+  , _rlmLogConsensus = interval _lmFirstSeen <$> _lmLogConsensus
   , _rlmHitPreProc = interval _lmFirstSeen <$> _lmHitPreProc
   , _rlmFinPreProc = interval _lmFirstSeen <$> _lmFinPreProc
   , _rlmHitCommit = interval _lmFirstSeen <$> _lmHitCommit

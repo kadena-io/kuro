@@ -50,6 +50,14 @@ awsNodes = fmap (\h -> NodeId h 10000 ("tcp://" ++ h ++ ":10000") $ Alias (BSC.p
 awsKeyMaps :: [NodeId] -> [(PrivateKey, PublicKey)] -> (Map NodeId PrivateKey, Map NodeId PublicKey)
 awsKeyMaps nodes' ls = (M.fromList $ zip nodes' (fst <$> ls), M.fromList $ zip nodes' (snd <$> ls))
 
+getUserInput :: forall b. Read b => String -> IO b
+getUserInput prompt = do
+  putStrLn prompt
+  hFlush stdout
+  getLine >>= \x -> case readMaybe x of
+    Nothing -> error "Invalid Input"
+    Just y -> return y
+
 main :: IO ()
 main = do
   runAws <- getArgs
@@ -70,7 +78,10 @@ mainAws clustersFile clientsFile = do
   clientIds <- return $ awsNodes clients
   clientKeys <- return $ makeKeys (length clients) g'
   clientKeyMaps <- return $ awsKeyMaps clientIds clientKeys
-  clusterConfs <- return (createClusterConfig True 8000 8000 clusterKeyMaps (snd clientKeyMaps) 8000 <$> clusterIds)
+  aeSize <- getUserInput "Max AE Batch Size?"
+  ppThreads <- getUserInput "PreProcessor: Thread Count?"
+  ppUsePar <- getUserInput "PreProcessor: Use Parallel.Strategies (True/False)?"
+  clusterConfs <- return (createClusterConfig True aeSize ppThreads ppUsePar clusterKeyMaps (snd clientKeyMaps) 8000 <$> clusterIds)
   clientConfs <- return (createClientConfig clusterConfs clientKeyMaps <$> clientIds)
   mapM_ (\c' -> Y.encodeFile
           ("aws-conf" </> _host (_nodeId c') ++ "-cluster-aws.yaml")
@@ -86,37 +97,27 @@ mainAws clustersFile clientsFile = do
 
 mainLocal :: IO ()
 mainLocal = do
-  putStrLn "Number of cluster nodes?"
-  hFlush stdout
-  mn <- fmap readMaybe getLine
-  putStrLn "Number of client nodes?"
-  hFlush stdout
-  cn <- fmap readMaybe getLine
-  putStrLn "Max AE Batch Size?"
-  hFlush stdout
-  aeSize' <- fmap readMaybe getLine
-  putStrLn "Max Crypto Batch Size?"
-  hFlush stdout
-  cSize' <- fmap readMaybe getLine
-  putStrLn "Enable logging for Followers (True/False)?"
-  hFlush stdout
-  debugFollower <- fmap readMaybe getLine
-  case (mn,cn,debugFollower,aeSize', cSize') of
-    (Just n,Just c,Just df, Just aeSize, Just cSize)-> do
-      g <- newGenIO :: IO SystemRandom
-      let clusterKeyMaps = mkNodes (mkNode "127.0.0.1" 10000 "node") $ makeKeys n g
-          clientKeyMaps = mkNodes (mkNode "127.0.0.1" 11000 "client") $ makeKeys c g
-          clusterConfs = zipWith (createClusterConfig df aeSize cSize clusterKeyMaps (snd clientKeyMaps)) [8000..] (M.keys (fst clusterKeyMaps))
-      clientConfs <- return (createClientConfig clusterConfs clientKeyMaps <$> M.keys (fst clientKeyMaps))
-      mapM_ (\c' -> Y.encodeFile ("conf" </> show (_port $ _nodeId c') ++ "-cluster.yaml") c') clusterConfs
-      mapM_ (\(i :: Int,c') -> Y.encodeFile ("conf" </> "client" ++ show i ++ "-client.yaml") c') (zip [0..] clientConfs)
-    _ -> putStrLn "Failed to read either input into a number, please try again"
+  n <- getUserInput "Number of cluster nodes?"
+  c <- getUserInput "Number of client nodes?"
+  aeSize <- getUserInput "Max AE Batch Size?"
+  ppThreads <- getUserInput "PreProcessor: Thread Count?"
+  ppUsePar <- getUserInput "PreProcessor: Use Parallel.Strategies (True/False)?"
+  df <- getUserInput "Enable logging for Followers (True/False)?"
+  g <- newGenIO :: IO SystemRandom
+  let clusterKeyMaps = mkNodes (mkNode "127.0.0.1" 10000 "node") $ makeKeys n g
+      clientKeyMaps = mkNodes (mkNode "127.0.0.1" 11000 "client") $ makeKeys c g
+      clusterConfs = zipWith (createClusterConfig df aeSize ppThreads ppUsePar clusterKeyMaps (snd clientKeyMaps)) [8000..] (M.keys (fst clusterKeyMaps))
+  clientConfs <- return (createClientConfig clusterConfs clientKeyMaps <$> M.keys (fst clientKeyMaps))
+  mapM_ (\c' -> Y.encodeFile ("conf" </> show (_port $ _nodeId c') ++ "-cluster.yaml") c') clusterConfs
+  mapM_ (\(i :: Int,c') -> Y.encodeFile ("conf" </> "client" ++ show i ++ "-client.yaml") c') (zip [0..] clientConfs)
 
 toAliasMap :: Map NodeId a -> Map Alias a
 toAliasMap = M.fromList . map (first _alias) . M.toList
 
-createClusterConfig :: Bool -> Int -> Int -> (Map NodeId PrivateKey, Map NodeId PublicKey) -> Map NodeId PublicKey -> Int -> NodeId -> Config
-createClusterConfig debugFollower aeBatchSize' cryptoBatchSize' (privMap, pubMap) clientPubMap apiP nid = Config
+createClusterConfig :: Bool -> Int -> Int -> Bool
+  -> (Map NodeId PrivateKey, Map NodeId PublicKey) -> Map NodeId PublicKey
+  -> Int -> NodeId -> Config
+createClusterConfig debugFollower aeBatchSize' preProcThreadCount' preProcUsePar' (privMap, pubMap) clientPubMap apiP nid = Config
   { _otherNodes           = Set.delete nid $ M.keysSet pubMap
   , _nodeId               = nid
   , _publicKeys           = toAliasMap $ pubMap
@@ -135,7 +136,8 @@ createClusterConfig debugFollower aeBatchSize' cryptoBatchSize' (privMap, pubMap
   , _entity               = EntityInfo "me"
   , _dbFile               = Just $ "./log/" ++ BSC.unpack (unAlias $ _alias nid) ++ "-pactdb.sqlite"
   , _aeBatchSize          = aeBatchSize'
-  , _cryptoBatchSize      = cryptoBatchSize'
+  , _preProcThreadCount   = preProcThreadCount'
+  , _preProcUsePar        = preProcUsePar'
   }
 
 createClientConfig :: [Config] -> (Map NodeId PrivateKey, Map NodeId PublicKey) -> NodeId -> ClientConfig

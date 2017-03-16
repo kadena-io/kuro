@@ -6,7 +6,6 @@ module Kadena.Messaging.Turbine.NewCMD
   ( newCmdTurbine
   ) where
 
-import Control.Concurrent (threadDelay)
 import Control.Lens
 import Control.Monad
 import Control.Monad.Reader

@@ -47,6 +47,7 @@ module Kadena.Types.Comms
   , readCommBatched
   , readCommsBatched
   , writeCommBatched
+  , writeCommsBatched
   ) where
 
 import Control.Monad
@@ -150,6 +151,7 @@ class Comms f c | c -> f where
 
 class (Comms f c) => BatchedComms f c | c -> f where
   readComms :: c -> Int -> IO (Seq f)
+  writeComms :: c -> [f] -> IO ()
 
 instance Comms InboundAER InboundAERChannel where
   initComms = InboundAERChannel <$> initCommsBatched
@@ -162,6 +164,8 @@ instance Comms InboundAER InboundAERChannel where
 instance BatchedComms InboundAER InboundAERChannel where
   readComms (InboundAERChannel (_,m)) cnt = readCommsBatched m cnt
   {-# INLINE readComms #-}
+  writeComms (InboundAERChannel (_,m)) xs = writeCommsBatched m xs
+  {-# INLINE writeComms #-}
 
 instance Comms InboundCMD InboundCMDChannel where
   initComms = InboundCMDChannel <$> initCommsBatched
@@ -174,6 +178,8 @@ instance Comms InboundCMD InboundCMDChannel where
 instance BatchedComms InboundCMD InboundCMDChannel where
   readComms (InboundCMDChannel (_,m)) cnt = readCommsBatched m cnt
   {-# INLINE readComms #-}
+  writeComms (InboundCMDChannel (_,m)) xs = writeCommsBatched m xs
+  {-# INLINE writeComms #-}
 
 instance Comms InboundGeneral InboundGeneralChannel where
   initComms = InboundGeneralChannel <$> initCommsBatched
@@ -186,6 +192,8 @@ instance Comms InboundGeneral InboundGeneralChannel where
 instance BatchedComms InboundGeneral InboundGeneralChannel where
   readComms (InboundGeneralChannel (_,m)) cnt = readCommsBatched m cnt
   {-# INLINE readComms #-}
+  writeComms (InboundGeneralChannel (_,m)) xs = writeCommsBatched m xs
+  {-# INLINE writeComms #-}
 
 instance Comms InboundRVorRVR InboundRVorRVRChannel where
   initComms = InboundRVorRVRChannel <$> initCommsNormal
@@ -283,3 +291,9 @@ readCommsBatched ms cnt = atomically $ do
 {-# INLINE writeCommBatched #-}
 writeCommBatched :: Chan a -> a -> IO ()
 writeCommBatched c a = writeChan c a
+
+writeCommsBatched :: TVar (Seq a) -> [a] -> IO ()
+writeCommsBatched tv xs = do
+  asSeq <- return $! Seq.fromList xs
+  atomically $ modifyTVar' tv (\s -> s Seq.>< asSeq)
+{-# INLINE writeCommsBatched #-}

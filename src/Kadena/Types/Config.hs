@@ -8,7 +8,7 @@ module Kadena.Types.Config
   , enableDebug, publicKeys, clientPublicKeys, myPrivateKey, clientTimeoutLimit
   , myPublicKey, batchTimeDelta, dontDebugFollower, apiPort
   , logSqliteDir, enableAwsIntegration, entity, dbFile
-  , aeBatchSize, cryptoBatchSize
+  , aeBatchSize, preProcThreadCount, preProcUsePar
   , KeySet(..), ksCluster
   , EntityInfo(..),entName
   ) where
@@ -58,7 +58,8 @@ data Config = Config
   , _entity               :: EntityInfo
   , _dbFile               :: !(Maybe FilePath)
   , _aeBatchSize          :: !Int
-  , _cryptoBatchSize      :: !Int
+  , _preProcThreadCount   :: !Int
+  , _preProcUsePar        :: !Bool
   }
   deriving (Show, Generic)
 makeLenses ''Config

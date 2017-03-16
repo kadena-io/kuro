@@ -26,7 +26,7 @@ module Kadena.Types.Log
   , verifyLogEntry, verifySeqLogEntries
   , preprocLogEntries, preprocLogEntry
   , NewLogEntries(..), nleTerm, nleEntries
-  , UpdateCommitIndex(..), uci
+  , UpdateCommitIndex(..), uci, uciTimeStamp
   , UpdateLogs(..)
   , hashLogEntry
   , hash
@@ -151,6 +151,7 @@ lesUnions les = LogEntries $! (Map.unions (_logEntries <$> les))
 
 lesUpdateCmdLat :: CmdLatASetter a -> UTCTime -> LogEntries -> LogEntries
 lesUpdateCmdLat l t LogEntries{..} = LogEntries $! (over leCmdLatMetrics (populateCmdLat l t)) <$> _logEntries
+{-# INLINE lesUpdateCmdLat #-}
 
 newtype PersistedLogEntries = PersistedLogEntries { _pLogEntries :: Map LogIndex LogEntries }
     deriving (Eq,Show,Ord,Generic)
@@ -333,7 +334,9 @@ data NewLogEntries = NewLogEntries
   } deriving (Show, Eq, Generic)
 makeLenses ''NewLogEntries
 
-newtype UpdateCommitIndex = UpdateCommitIndex {_uci :: LogIndex}
+data UpdateCommitIndex = UpdateCommitIndex
+  { _uci :: !LogIndex
+  , _uciTimeStamp :: !UTCTime }
   deriving (Show, Eq, Generic)
 makeLenses ''UpdateCommitIndex
 

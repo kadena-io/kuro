@@ -19,7 +19,7 @@ module Kadena.Log.Types
   , LogEnv(..)
   , logQueryChannel, commitChannel, internalEvent, debugPrint
   , dbConn, evidence, keySet, publishMetric
-  , persistedLogEntriesToKeepInMemory, batchSize
+  , persistedLogEntriesToKeepInMemory
   , LogThread
   , LogServiceChannel(..)
   , UpdateLogs(..)
@@ -75,7 +75,6 @@ data LogEnv = LogEnv
   , _evidence :: !EvidenceChannel
   , _keySet :: !KeySet
   , _persistedLogEntriesToKeepInMemory :: !Int
-  , _batchSize :: !Int
   , _debugPrint :: !(String -> IO ())
   , _dbConn :: !(Maybe Connection)
   , _publishMetric :: !(Metric -> IO ())}

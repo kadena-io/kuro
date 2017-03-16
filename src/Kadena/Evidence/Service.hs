@@ -19,6 +19,7 @@ import qualified Data.Map.Strict as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.IORef
+import Data.Thyme.Clock
 
 import Kadena.Types.Dispatch (Dispatch)
 import Kadena.Types.Event (ResetLeaderNoFollowersTimeout(..))
@@ -96,7 +97,8 @@ runEvidenceProcessor es = do
             debug $ "evidence is still required (" ++ (show i) ++ " of " ++ show (1 + _esQuorumSize newEs) ++ ")"
             runEvidenceProcessor newEs
         NewCommitIndex ci -> do
-          updateLogs $ Log.ULCommitIdx $ Log.UpdateCommitIndex ci
+          now' <- liftIO $ getCurrentTime
+          updateLogs $ Log.ULCommitIdx $ Log.UpdateCommitIndex ci now'
           debug $ "new CommitIndex: " ++ (show ci)
           if (not $ Set.null $ newEs ^. esCacheMissAers)
           then processCacheMisses newEs >>= runEvidenceProcessor
@@ -224,7 +226,8 @@ processCacheMisses es = do
           debug $ "even after processing cache misses, evidence still required (" ++ (show i) ++ " of " ++ show (1 + _esQuorumSize newEs) ++ ")"
           return newEs
         NewCommitIndex ci -> do
-          updateLogs $ Log.ULCommitIdx $ Log.UpdateCommitIndex ci
+          now' <- liftIO $ getCurrentTime
+          updateLogs $ Log.ULCommitIdx $ Log.UpdateCommitIndex ci now'
           debug $ "after processing cache misses, new CommitIndex: " ++ (show ci)
           return newEs
 

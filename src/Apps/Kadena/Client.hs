@@ -292,13 +292,15 @@ pprintLatency CmdResultLatencyMetrics{..} = do
         Nothing -> return ()
         Just v' -> flushStrLn $ s1 ++ show v' ++ s2
   mFlushStr "First Seen:          " (Just _rlmFirstSeen) ""
-  mFlushStr "Hit Turbine:        +" _rlmHitTurbine  "micros"
-  mFlushStr "Started Consensus:  +" _rlmHitConsensus  "micros"
-  mFlushStr "Finished Consensus: +" _rlmFinConsensus  "micros"
-  mFlushStr "Started PreProc:    +" _rlmHitPreProc  "micros"
-  mFlushStr "Finished PreProc:   +" _rlmFinPreProc  "micros"
-  mFlushStr "Started Commit:     +" _rlmHitCommit  "micros"
-  mFlushStr "Finished Commit:    +" _rlmFinCommit  "micros"
+  mFlushStr "Hit Turbine:        +" _rlmHitTurbine  " micros"
+  mFlushStr "Entered Con Serv:   +" _rlmHitConsensus  " micros"
+  mFlushStr "Finished Con Serv:  +" _rlmFinConsensus  " micros"
+  mFlushStr "Came to Consensus:  +" _rlmAerConsensus  " micros"
+  mFlushStr "Sent to Commit:     +" _rlmLogConsensus  " micros"
+  mFlushStr "Started PreProc:    +" _rlmHitPreProc  " micros"
+  mFlushStr "Finished PreProc:   +" _rlmFinPreProc  " micros"
+  mFlushStr "Started Commit:     +" _rlmHitCommit  " micros"
+  mFlushStr "Finished Commit:    +" _rlmFinCommit  " micros"
 
 pprintResult :: Value -> Maybe String
 pprintResult v = do

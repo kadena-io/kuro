@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards #-}
 module Kadena.Consensus.Service
   ( runConsensusService
   ) where
@@ -55,9 +56,8 @@ launchPreProcService :: Dispatch
   -> IO UTCTime
   -> Config
   -> IO (Async ())
-launchPreProcService dispatch' dbgPrint' getTimestamp' _rconf = do
-  let threadCount = 8 -- Config.threadCount rconf
-  link =<< async (PreProc.runPreProcService (PreProc.initPreProcEnv dispatch' threadCount dbgPrint' getTimestamp'))
+launchPreProcService dispatch' dbgPrint' getTimestamp' Config{..} = do
+  link =<< async (PreProc.runPreProcService (PreProc.initPreProcEnv dispatch' _preProcThreadCount dbgPrint' getTimestamp' _preProcUsePar))
   async (foreverHeart (_processRequestChannel dispatch') 1000000 PreProc.Heart)
 
 launchEvidenceService :: Dispatch
@@ -91,7 +91,7 @@ launchLogService :: Dispatch
   -> Config
   -> IO (Async ())
 launchLogService dispatch' dbgPrint' publishMetric' keySet' rconf = do
-  link =<< async (Log.runLogService dispatch' dbgPrint' publishMetric' (rconf ^. logSqliteDir) keySet' (rconf ^. cryptoBatchSize))
+  link =<< async (Log.runLogService dispatch' dbgPrint' publishMetric' (rconf ^. logSqliteDir) keySet')
   async (foreverHeart (_logService dispatch') 1000000 Log.Heart)
 
 launchSenderService :: Dispatch

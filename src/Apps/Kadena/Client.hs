@@ -122,6 +122,7 @@ data CliCmd =
   Keys (Maybe (T.Text,T.Text)) |
   Load FilePath Mode |
   Poll String |
+  PollMetrics String |
   Send Mode String |
   Server (Maybe String) |
   Sleep Int
@@ -274,8 +275,8 @@ showResult tdelay rks countm = loop (0 :: Int)
                         Just n -> flushStrLn $ intervalOfNumerous cnt n
                     Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
 
-pollForResult :: RequestKey -> Repl ()
-pollForResult rk = do
+pollForResult :: Bool -> RequestKey -> Repl ()
+pollForResult printMetrics rk = do
   s <- getServer
   r <- liftIO $ post ("http://" ++ s ++ "/api/v1/poll") (toJSON (Pact.Poll [rk]))
   resp <- asJSON r
@@ -284,7 +285,14 @@ pollForResult rk = do
     ApiSuccess (PollResponses prs) -> mapM_ (\ApiResult{..} -> do
       case pprintResult _arResult of
         Just r' -> flushStrLn r'
-        Nothing -> putJSON _arResult) $ HM.elems prs
+        Nothing -> if printMetrics
+          then do
+            case fromJSON <$>_arMetaData of
+              Nothing -> flushStrLn "Metrics Unavailable"
+              Just (A.Success lats@CmdResultLatencyMetrics{..}) -> do
+                pprintLatency lats
+              Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
+          else putJSON _arResult) $ HM.elems prs
 
 pprintLatency :: CmdResultLatencyMetrics -> Repl ()
 pprintLatency CmdResultLatencyMetrics{..} = do
@@ -339,6 +347,8 @@ cliCmds = [
    Load <$> some anyChar <*> (fromMaybe Transactional <$> optional parseMode)),
   ("batch","TIMES","Repeat command in batch message specified times",
    Batch . fromIntegral <$> integer),
+  ("pollMetrics","REQUESTKEY", "Poll each server for the request key but print latency metrics from each.",
+   PollMetrics <$> some anyChar),
   ("poll","REQUESTKEY", "Poll server for request key",
    Poll <$> some anyChar),
   ("exec","COMMAND","Send command transactionally to server",
@@ -397,7 +407,16 @@ handleCmd cmd = case cmd of
   Batch n | n <= 50000 -> use batchCmd >>= batchTest n
           | otherwise -> void $ flushStrLn "Aborting: batch count limited to 50000"
   Load s m -> load m s
-  Poll s -> parseRK s >>= void . pollForResult . RequestKey . Hash
+  Poll s -> parseRK s >>= void . pollForResult False . RequestKey . Hash
+  PollMetrics rk -> do
+    s <- use server
+    sList <- HM.toList <$> view ccEndpoints
+    rk' <- parseRK rk
+    forM_ sList $ \(s',_) -> do
+      server .= s'
+      flushStrLn $ "##############  " ++ s' ++ "  ##############"
+      void $ pollForResult True $ RequestKey $ Hash rk'
+    server .= s
   Exit -> return ()
   Data Nothing -> use cmdData >>= flushStrLn . BSL.unpack . encode
   Data (Just s) -> either (\e -> flushStrLn $ "Bad JSON value: " ++ show e) (cmdData .=) $ eitherDecode (BSL.pack s)

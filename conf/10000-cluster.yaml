@@ -2,20 +2,22 @@ clientTimeoutLimit: 50000
 enableAwsIntegration: false
 publicKeys:
 - - node0
-  - 93af8a35b430ed705073d9c25f66cdbd4078823c08cb0bab15ca8f5b3e133c75
+  - 8ee5ea2a570b17631a0285d6ebd9be88a027c1ca39bb6e3d2f0ff317ec0dbf47
 - - node1
-  - b57bc58a9283739602b210a20a664a6472e4625a3512a79eab0ed9a779bfb164
+  - 024db746715649f25cd0d2f5af2cf296458180e9e25a22b2c8477e9b2a582a95
 - - node2
-  - 160a128b9d33630c6361065dbe35c5d707d7ed7223516925d6f5218f433389c9
-aeBatchSize: 8000
+  - aabfc6e21f34d4c8fffede5731f3a66b64f4e5a38c5bd103aec4b9b13cf87239
+- - node3
+  - 9d1858f6c2d5cfe07908327bf507143984b69c253de29bda272cd694e710cecc
+aeBatchSize: 4000
 dbFile: ./log/node0-pactdb.sqlite
 heartbeatTimeout: 1000000
 dontDebugFollower: false
 apiPort: 8000
 clientPublicKeys:
 - - client0
-  - 93af8a35b430ed705073d9c25f66cdbd4078823c08cb0bab15ca8f5b3e133c75
-preProcThreadCount: 100
+  - 8ee5ea2a570b17631a0285d6ebd9be88a027c1ca39bb6e3d2f0ff317ec0dbf47
+preProcThreadCount: 20
 electionTimeoutRange:
 - 3000000
 - 6000000
@@ -28,7 +30,11 @@ otherNodes:
   fullAddr: tcp://127.0.0.1:10002
   host: '127.0.0.1'
   port: 10002
-myPublicKey: 93af8a35b430ed705073d9c25f66cdbd4078823c08cb0bab15ca8f5b3e133c75
+- alias: node3
+  fullAddr: tcp://127.0.0.1:10003
+  host: '127.0.0.1'
+  port: 10003
+myPublicKey: 8ee5ea2a570b17631a0285d6ebd9be88a027c1ca39bb6e3d2f0ff317ec0dbf47
 logSqliteDir: ./log/node0
 nodeId:
   alias: node0
@@ -38,6 +44,6 @@ nodeId:
 enableDebug: true
 entity:
   Name: me
-myPrivateKey: 4459005d613e21ac79204756c2abcfdf7d5826655230d833920df9232c589f9c
-preProcUsePar: true
+myPrivateKey: 575a9b204fc8e6f0e07570ce33ca6d1bc647bc22459ec5ba242cfe98c43117ca
+preProcUsePar: false
 batchTimeDelta: 1 % 100

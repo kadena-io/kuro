@@ -212,8 +212,6 @@ handle ae = do
             updateLogs $ Log.ULReplicate $ updateRleLats start' end' rle
             newMv <- queryLogs $ Set.singleton Log.GetLastLogHash
             newLastLogHash' <- return $! Log.hasQueryResult Log.LastLogHash newMv
-            -- TODO: look into having `updateLogs Log.ULReplicate` trigger an AER
-            enqueueRequest Sender.BroadcastAER -- NB: this can only happen after `updateLogs` is complete, the tracer query makes sure of this
             logHashChange newLastLogHash'
             sendHistoryNewKeys rks
             KD.cmdBloomFilter %= Bloom.insertList (HashSet.toList rks)

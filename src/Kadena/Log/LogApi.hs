@@ -1,4 +1,5 @@
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Kadena.Log.LogApi
   ( commitIndex
@@ -25,10 +26,12 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 
 import Kadena.Types.Base
+import Kadena.Types.Comms
 import Kadena.Types.Command (Command(..), CmdLatencyMetrics)
 import Kadena.Log.Types
 import qualified Kadena.Log.Types as X
 import Kadena.Log.Persistence
+import Kadena.Sender.Types (ServiceRequest'(..))
 
 lastPersisted :: LogThread LogIndex
 lastPersisted = use lsLastPersisted
@@ -207,9 +210,20 @@ getEntriesFromDiskInclusiveMaybeError errName minLi maxLi = do
     Nothing -> return res
   else return res
 
+triggerAER :: LogThread ()
+triggerAER = do
+  senderChannel' <- view senderChannel
+  lastEntry >>= \case
+    Just LogEntry{..} -> do
+      liftIO $ writeComm senderChannel' $ SendAllAppendEntriesResponse _leLogIndex _leHash
+    Nothing -> do
+      maxLogIndex' <- lastLogIndex
+      lastHash' <- lastLogHash
+      liftIO $ writeComm senderChannel' $ SendAllAppendEntriesResponse maxLogIndex' lastHash'
+
 updateLogs :: UpdateLogs -> LogThread ()
-updateLogs (ULNew nle) = appendLogEntry nle
-updateLogs (ULReplicate ReplicateLogEntries{..}) = addLogEntriesAt _rlePrvLogIdx _rleEntries
+updateLogs (ULNew nle) = appendLogEntry nle >> triggerAER
+updateLogs (ULReplicate ReplicateLogEntries{..}) = addLogEntriesAt _rlePrvLogIdx _rleEntries >> triggerAER
 updateLogs (ULCommitIdx UpdateCommitIndex{..}) = lsCommitIndex .= _uci
 updateLogs (UpdateLastApplied li) = lsLastApplied .= li
 {-# INLINE updateLogs  #-}

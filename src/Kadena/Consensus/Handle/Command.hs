@@ -102,7 +102,6 @@ handleBatch cmdbBatch = do
                   ++ " of " ++ show (HashSet.size setOfAlreadySeen) ++ " collisions ("
                   ++ show (interval start end) ++ "mics)"
         sendHistoryNewKeys $ HashSet.union falsePositive $ HashSet.fromList $ toRequestKey . snd <$> _unBPAlreadySeen alreadySeen
-      enqueueRequest $ Sender.BroadcastAER
       -- the false positives we already collisions so no need to add them
       KD.cmdBloomFilter .= updateBloom newEntries (KD._cmdBloomFilter s)
       quorumSize' <- view KD.quorumSize

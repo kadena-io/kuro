@@ -35,6 +35,9 @@ data ServiceRequest' =
   , _unSR :: ServiceRequest } |
   ForwardCommandToLeader
   { _srCommands :: !NewCmdRPC} |
+  SendAllAppendEntriesResponse
+  { _srLastLogHash :: !LogIndex
+  , _srMaxIndex :: !Hash} |
   Heart Beat
   deriving (Eq, Show)
 
@@ -59,7 +62,7 @@ data ServiceRequest =
     , _srSuccess :: !Bool
     , _srConvinced :: !Bool }|
     -- TODO: we can be smarter here and fill in the details the AER needs about the logs without needing to hit that thread
-    BroadcastAER |
+    BroadcastAER | -- TODO: verify that we did ^ and this can be removed
     BroadcastRV RequestVote|
     BroadcastRVR
     { _srCandidate :: !NodeId

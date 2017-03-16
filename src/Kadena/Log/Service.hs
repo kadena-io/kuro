@@ -52,6 +52,7 @@ runLogService dispatch dbg publishMetric' dbPath keySet' = do
     , _internalEvent = dispatch ^. Dispatch.internalEvent
     , _commitChannel = dispatch ^. Dispatch.commitService
     , _evidence = dispatch ^. Dispatch.evidence
+    , _senderChannel = dispatch ^. Dispatch.senderService
     , _debugPrint = dbg
     , _keySet = keySet'
     , _persistedLogEntriesToKeepInMemory = 24000

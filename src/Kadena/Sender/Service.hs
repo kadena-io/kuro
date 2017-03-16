@@ -137,6 +137,12 @@ updateEnv StateSnapshot{..} s = s
   , _yesVotes = _newYesVotes
   }
 
+snapshotStateExternal :: SenderService (StateSnapshot)
+snapshotStateExternal = do
+  mPubCons <- view pubCons
+  conf <- view config
+  liftIO $ getStateSnapshot conf mPubCons
+
 serviceRequests :: SenderService ()
 serviceRequests = do
   rrc <- view serviceRequestChan
@@ -144,10 +150,13 @@ serviceRequests = do
   forever $ do
     sr <- liftIO $ readComm rrc
     case sr of
+      SendAllAppendEntriesResponse{..} -> do
+        newSt <- snapshotStateExternal
+        local (updateEnv newSt) $ do
+          stTime <- liftIO $ getCurrentTime
+          sendAllAppendEntriesResponse' stTime _srLastLogHash _srMaxIndex
       ForwardCommandToLeader{..} -> do
-        mPubCons <- view pubCons
-        conf <- view config
-        newSt <- liftIO $ getStateSnapshot conf mPubCons
+        newSt <- snapshotStateExternal
         local (updateEnv newSt) $ do
           ldr <- view currentLeader
           case ldr of
@@ -325,19 +334,23 @@ sendAppendEntriesResponse target success convinced = do
   sendRPC target $ createAppendEntriesResponse' success convinced ct myNodeId' maxIndex' lastLogHash'
   debug $ "sent AppendEntriesResponse: " ++ show ct
 
--- this is used for distributed evidence + updating the Leader with nodeCurrentIndex
-sendAllAppendEntriesResponse :: SenderService ()
-sendAllAppendEntriesResponse = do
-  stTime <- liftIO $ getCurrentTime
+sendAllAppendEntriesResponse' :: UTCTime -> LogIndex -> Hash -> SenderService ()
+sendAllAppendEntriesResponse' stTime maxIndex' lastLogHash' = do
   ct <- view currentTerm
   myNodeId' <- view myNodeId
-  mv <- queryLogs $ Set.fromList [Log.GetMaxIndex, Log.GetLastLogHash]
-  maxIndex' <- return $ Log.hasQueryResult Log.MaxIndex mv
-  lastLogHash' <- return $ Log.hasQueryResult Log.LastLogHash mv
   aer <- return $ createAppendEntriesResponse' True True ct myNodeId' maxIndex' lastLogHash'
   sendAerRvRvr aer
   edTime <- liftIO $ getCurrentTime
   debug $ "pub AER taking " ++ show (interval stTime edTime) ++ "mics to construct"
+
+-- this is used for distributed evidence + updating the Leader with nodeCurrentIndex
+sendAllAppendEntriesResponse :: SenderService ()
+sendAllAppendEntriesResponse = do
+  stTime <- liftIO $ getCurrentTime
+  mv <- queryLogs $ Set.fromList [Log.GetMaxIndex, Log.GetLastLogHash]
+  maxIndex' <- return $ Log.hasQueryResult Log.MaxIndex mv
+  lastLogHash' <- return $ Log.hasQueryResult Log.LastLogHash mv
+  sendAllAppendEntriesResponse' stTime maxIndex' lastLogHash'
 
 sendRequestVoteResponse :: NodeId -> Maybe HeardFromLeader -> Bool -> SenderService ()
 sendRequestVoteResponse target heardFromLeader vote = do

@@ -11,6 +11,7 @@ module Apps.Kadena.Client
   , ClientConfig(..), ccSecretKey, ccPublicKey, ccEndpoints
   ) where
 
+import qualified Control.Exception as Exception
 import Control.Monad.State
 import Control.Monad.Reader
 import Control.Lens
@@ -274,21 +275,24 @@ showResult tdelay rks countm = loop (0 :: Int)
 pollForResult :: Bool -> RequestKey -> Repl ()
 pollForResult printMetrics rk = do
   s <- getServer
-  r <- liftIO $ post ("http://" ++ s ++ "/api/v1/poll") (toJSON (Pact.Poll [rk]))
-  resp <- asJSON r
-  case resp ^. responseBody of
-    ApiFailure err -> flushStrLn $ "Error: no results received: " ++ show err
-    ApiSuccess (PollResponses prs) -> mapM_ (\ApiResult{..} -> do
-      case pprintResult _arResult of
-        Just r' -> flushStrLn r'
-        Nothing -> if printMetrics
-          then do
-            case fromJSON <$>_arMetaData of
-              Nothing -> flushStrLn "Metrics Unavailable"
-              Just (A.Success lats@CmdResultLatencyMetrics{..}) -> do
-                pprintLatency lats
-              Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
-          else putJSON _arResult) $ HM.elems prs
+  eR <- liftIO $ Exception.try $ post ("http://" ++ s ++ "/api/v1/poll") (toJSON (Pact.Poll [rk]))
+  case eR of
+    Left (SomeException err) -> flushStrLn $ show err
+    Right r -> do
+      resp <- asJSON r
+      case resp ^. responseBody of
+        ApiFailure err -> flushStrLn $ "Error: no results received: " ++ show err
+        ApiSuccess (PollResponses prs) -> mapM_ (\ApiResult{..} -> do
+          case pprintResult _arResult of
+            Just r' -> flushStrLn r'
+            Nothing -> if printMetrics
+              then do
+                case fromJSON <$>_arMetaData of
+                  Nothing -> flushStrLn "Metrics Unavailable"
+                  Just (A.Success lats@CmdResultLatencyMetrics{..}) -> do
+                    pprintLatency lats
+                  Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
+              else putJSON _arResult) $ HM.elems prs
 
 pprintLatency :: CmdResultLatencyMetrics -> Repl ()
 pprintLatency CmdResultLatencyMetrics{..} = do

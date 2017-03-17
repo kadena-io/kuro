@@ -45,21 +45,19 @@ library
                      , Kadena.Evidence.Service
                      , Kadena.Evidence.Spec
                      , Kadena.Evidence.Types
-                     , Kadena.PreProc.Service
-                     , Kadena.PreProc.Types
+                     , Kadena.HTTP.ApiServer
+                     , Kadena.HTTP.Static
                      , Kadena.History.Persistence
                      , Kadena.History.Service
                      , Kadena.History.Types
-                     , Kadena.HTTP.ApiServer
-                     , Kadena.HTTP.Static
                      , Kadena.Log.LogApi
                      , Kadena.Log.Persistence
                      , Kadena.Log.Service
                      , Kadena.Log.Types
                      , Kadena.Messaging.Turbine
                      , Kadena.Messaging.Turbine.AER
-                     , Kadena.Messaging.Turbine.NewCMD
                      , Kadena.Messaging.Turbine.General
+                     , Kadena.Messaging.Turbine.NewCMD
                      , Kadena.Messaging.Turbine.RV
                      , Kadena.Messaging.Turbine.Types
                      , Kadena.Messaging.ZMQ
@@ -67,13 +65,15 @@ library
                      , Kadena.Monitoring.EkgMonitor
                      , Kadena.Monitoring.EkgSnap
                      , Kadena.Monitoring.Server
+                     , Kadena.PreProc.Service
+                     , Kadena.PreProc.Types
                      , Kadena.Sender.Service
                      , Kadena.Sender.Types
                      , Kadena.Spec.Simple
                      , Kadena.Types
                      , Kadena.Types.Base
-                     , Kadena.Types.Comms
                      , Kadena.Types.Command
+                     , Kadena.Types.Comms
                      , Kadena.Types.Config
                      , Kadena.Types.Dispatch
                      , Kadena.Types.Event

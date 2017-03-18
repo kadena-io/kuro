@@ -12,6 +12,7 @@ module Kadena.Commit.Service
 
 import Control.Lens hiding (Index, (|>))
 import Control.Concurrent
+import Control.Concurrent.Async
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Trans.RWS.Strict
@@ -23,9 +24,20 @@ import Data.Maybe (fromJust)
 import Data.ByteString (ByteString)
 import Data.Aeson (Value)
 
+import System.Directory
+
 import qualified Pact.Types.Command as Pact
-import qualified Pact.Types.Server as Pact
-import qualified Pact.Server.PactService as Pact
+import Pact.Types.Command (CommandExecInterface(..), ExecutionMode(..))
+import Pact.Types.Runtime (EvalEnv(..))
+import Pact.Types.RPC (PactRPC)
+import Pact.Server.PactService (applyCmd)
+import Pact.Types.Server (CommandConfig(..), CommandState(..), DBVar(..))
+import Pact.PersistPactDb (initDbEnv, createSchema, pactdb)
+import Pact.Native (initEvalEnv)
+import qualified Pact.Persist.SQLite as SQLite
+import qualified Pact.Persist.Pure as Pure
+import Pact.Persist.CacheAdapter
+import qualified Pact.Persist.WriteBehind as WB
 
 import Kadena.Commit.Types as X
 import Kadena.Types.Dispatch (Dispatch)
@@ -36,12 +48,11 @@ import qualified Kadena.Log.Service as Log
 initCommitEnv
   :: Dispatch
   -> (String -> IO ())
-  -> Pact.CommandConfig
+  -> CommandConfig
   -> (Metric -> IO ())
   -> IO UTCTime
   -> CommitEnv
-initCommitEnv dispatch' debugPrint' commandConfig'
-              publishMetric' getTimestamp' = CommitEnv
+initCommitEnv dispatch' debugPrint' commandConfig' publishMetric' getTimestamp' = CommitEnv
   { _commitChannel = dispatch' ^. D.commitService
   , _historyChannel = dispatch' ^. D.historyChannel
   , _commandConfig = commandConfig'
@@ -52,9 +63,37 @@ initCommitEnv dispatch' debugPrint' commandConfig'
 
 data ReplayStatus = ReplayFromDisk | FreshCommands deriving (Show, Eq)
 
+initPactService :: CommandConfig -> IO (CommandExecInterface PactRPC)
+initPactService config@CommandConfig {..} = do
+  let klog s = _ccDebugFn ("[PactService] " ++ s)
+  mvars <- case _ccDbFile of
+    Nothing -> do
+      klog "Initializing pure pact"
+      ee <- initEvalEnv (initDbEnv _ccDebugFn Pure.persister Pure.initPureDb) pactdb
+      rv <- newMVar (CommandState $ _eeRefStore ee)
+      klog "Creating Pact Schema"
+      createSchema (_eePactDbVar ee)
+      return (PureVar $ _eePactDbVar ee,rv)
+    Just f -> do
+      dbExists <- doesFileExist f
+      when dbExists $ klog "Deleting Existing Pact DB File" >> removeFile f
+      sl <- SQLite.initSQLite [] putStrLn f
+      wb <- initPureCacheWB SQLite.persister sl putStrLn
+      link =<< async (WB.runWBService wb)
+      p <- return $ initDbEnv klog WB.persister wb
+      ee <- initEvalEnv p pactdb
+      rv <- newMVar (CommandState $ _eeRefStore ee)
+      let v = _eePactDbVar ee
+      klog "Creating Pact Schema"
+      createSchema v
+      return (PSLVar v,rv)
+  return CommandExecInterface
+    { _ceiApplyCmd = \eMode cmd -> applyCmd config mvars eMode cmd (Pact.verifyCommand cmd)
+    , _ceiApplyPPCmd = applyCmd config mvars }
+
 runCommitService :: CommitEnv -> NodeId -> KeySet -> IO ()
 runCommitService env nodeId' keySet' = do
-  cmdExecInter <- Pact.initPactService (env ^. commandConfig)
+  cmdExecInter <- initPactService (env ^. commandConfig)
   initCommitState <- return $! CommitState { _nodeId = nodeId', _keySet = keySet', _commandExecInterface = cmdExecInter}
   void $ runRWST handle env initCommitState
 
@@ -146,7 +185,7 @@ applyCommand _tEnd le@LogEntry{..} = do
         Result{..}  -> do
           debug $ "WARNING: fully resolved command found for " ++ show _leLogIndex
           return $! (result, _leCmdLatMetrics)
-      res <- liftIO $ apply (Pact.Transactional (fromIntegral _leLogIndex)) _sccCmd pproc
+      res <- liftIO $ apply (Transactional (fromIntegral _leLogIndex)) _sccCmd pproc
       return (res, ppLat)
   tEnd' <- now
   lat <- return $ updateCommitPreProc startTime tEnd' ppLat
@@ -163,7 +202,7 @@ applyCommand _tEnd le@LogEntry{..} = do
 applyLocalCommand :: (Pact.Command ByteString, MVar Value) -> CommitService ()
 applyLocalCommand (cmd, mv) = do
   applyLocal <- Pact._ceiApplyCmd <$> use commandExecInterface
-  cr <- liftIO $ applyLocal Pact.Local cmd
+  cr <- liftIO $ applyLocal Local cmd
   liftIO $ putMVar mv (Pact._crResult cr)
 
 updateLatPreProc :: Maybe UTCTime -> Maybe UTCTime -> Maybe CmdLatencyMetrics -> Maybe CmdLatencyMetrics

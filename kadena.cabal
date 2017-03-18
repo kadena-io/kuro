@@ -1,11 +1,11 @@
 name:                kadena
-version:             0.0.0.4
-synopsis:            Bynzantine Fault Tolerant Raft
-description:         An implementation of a Byzantine Fault Tolerant Raft protocol.
+version:             1.0.0.0
+synopsis:            A high performance private blockchain.
+description:         An implementation of ScalableBFT running Pact as the Smart Contract Language
 homepage:            https://github.com/buckie/kadena
-author:              Chris Copeland, Will Martino
-maintainer:          chrisnc@cs.stanford.edu, wjmartino@gmail.com
-copyright:           Copyright (C) 2014-2015 Chris Copeland, Copyright 2015-2016 (C) Will Martino
+author:              Will Martino
+maintainer:          will@kadena.io
+copyright:           Copyright (C) 2014-2015 Chris Copeland, Copyright 2015-2017 (C) Will Martino, Stuart Popejoy
 
 license:             BSD3
 license-file:        LICENSE

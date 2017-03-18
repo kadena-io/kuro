@@ -91,6 +91,7 @@ data ConfigParams = ConfigParams
   , inMemTxs :: !Int
   , logDir :: !FilePath
   , confDir :: !FilePath
+  , enableWB :: !Bool
   } deriving (Show)
 
 data ConfGenMode =
@@ -153,6 +154,7 @@ getParams cfgMode = do
     , inMemTxs = inMemTxs'
     , logDir = logDir'
     , confDir = confDir'
+    , enableWB = False
     }
 
 mainAws :: FilePath -> FilePath -> IO ()
@@ -198,6 +200,7 @@ createClusterConfig ConfigParams{..} (privMap, pubMap) apiP nid = Config
   , _heartbeatTimeout     = 1000000
   , _enableDebug          = True
   , _enablePersistence    = True
+  , _enableWriteBehind    = False
   , _apiPort              = apiP
   , _entity               = EntityInfo "me"
   , _logDir               = logDir

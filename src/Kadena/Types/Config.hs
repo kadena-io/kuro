@@ -5,7 +5,7 @@
 
 module Kadena.Types.Config
   ( Config(..), otherNodes, nodeId, electionTimeoutRange, heartbeatTimeout
-  , enableDebug, publicKeys, myPrivateKey
+  , enableDebug, publicKeys, myPrivateKey, enableWriteBehind
   , myPublicKey, apiPort
   , logDir, entity
   , aeBatchSize, preProcThreadCount, preProcUsePar
@@ -53,6 +53,7 @@ data Config = Config
   , _entity               :: EntityInfo
   , _logDir               :: !FilePath
   , _enablePersistence    :: !Bool
+  , _enableWriteBehind    :: !Bool
   , _aeBatchSize          :: !Int
   , _preProcThreadCount   :: !Int
   , _preProcUsePar        :: !Bool

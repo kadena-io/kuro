@@ -77,9 +77,10 @@ launchCommitService :: Dispatch
   -> NodeId
   -> IO UTCTime
   -> Pact.CommandConfig
+  -> Config
   -> IO (Async ())
-launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' commandConfig' = do
-  commitEnv <- return $! Commit.initCommitEnv dispatch' dbgPrint' commandConfig' publishMetric' getTimestamp'
+launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' commandConfig' rconf' = do
+  commitEnv <- return $! Commit.initCommitEnv dispatch' dbgPrint' commandConfig' publishMetric' getTimestamp' (rconf' ^. enableWriteBehind)
   link =<< async (Commit.runCommitService commitEnv nodeId' keySet')
   async $! foreverHeart (_commitService dispatch') 1000000 Commit.Heart
 
@@ -137,7 +138,7 @@ runConsensusService renv rconf spec rstate timeCache' mPubConsensus' = do
   link =<< launchHistoryService dispatch' dbgPrint' getTimestamp' rconf
   link =<< launchPreProcService dispatch' dbgPrint' getTimestamp' rconf
   link =<< launchSenderService dispatch' dbgPrint' publishMetric' mEvState mPubConsensus' rconf'
-  link =<< launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' commandConfig'
+  link =<< launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' commandConfig' rconf
   link =<< launchEvidenceService dispatch' dbgPrint' publishMetric' mEvState rconf' mLeaderNoFollowers
   link =<< launchLogService dispatch' dbgPrint' publishMetric' keySet' rconf
   link =<< launchApiService dispatch' rconf' dbgPrint' mPubConsensus' getTimestamp'

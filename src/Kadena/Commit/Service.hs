@@ -51,21 +51,23 @@ initCommitEnv
   -> CommandConfig
   -> (Metric -> IO ())
   -> IO UTCTime
+  -> Bool
   -> CommitEnv
-initCommitEnv dispatch' debugPrint' commandConfig' publishMetric' getTimestamp' = CommitEnv
+initCommitEnv dispatch' debugPrint' commandConfig' publishMetric' getTimestamp' enableWB' = CommitEnv
   { _commitChannel = dispatch' ^. D.commitService
   , _historyChannel = dispatch' ^. D.historyChannel
   , _commandConfig = commandConfig'
   , _debugPrint = debugPrint'
   , _publishMetric = publishMetric'
   , _getTimestamp = getTimestamp'
+  , _enableWB = enableWB'
   }
 
 data ReplayStatus = ReplayFromDisk | FreshCommands deriving (Show, Eq)
 
 
-initPactService :: CommandConfig -> IO (CommandExecInterface PactRPC)
-initPactService config@CommandConfig {..} = do
+initPactService :: CommitEnv -> CommandConfig -> IO (CommandExecInterface PactRPC)
+initPactService CommitEnv{..} config@CommandConfig {..} = do
   let klog s = _ccDebugFn ("[PactService] " ++ s)
       mkCEI :: MVar (DbEnv a) -> MVar CommandState -> CommandExecInterface PactRPC
       mkCEI dbVar cmdVar = CommandExecInterface
@@ -82,21 +84,30 @@ initPactService config@CommandConfig {..} = do
     Just f -> do
       dbExists <- doesFileExist f
       when dbExists $ klog "Deleting Existing Pact DB File" >> removeFile f
-      sl <- SQLite.initSQLite [] putStrLn f
-      wb <- initPureCacheWB SQLite.persister sl putStrLn
-      link =<< async (WB.runWBService wb)
-      p <- return $ initDbEnv klog WB.persister wb
-      ee <- initEvalEnv p pactdb
-      rv <- newMVar (CommandState $ _eeRefStore ee)
-      let v = _eePactDbVar ee
-      klog "Creating Pact Schema"
-      createSchema v
-      return $ mkCEI v rv
-
+      if _enableWB
+      then do
+        sl <- SQLite.initSQLite [] putStrLn f
+        wb <- initPureCacheWB SQLite.persister sl putStrLn
+        link =<< async (WB.runWBService wb)
+        p <- return $ initDbEnv klog WB.persister wb
+        ee <- initEvalEnv p pactdb
+        rv <- newMVar (CommandState $ _eeRefStore ee)
+        let v = _eePactDbVar ee
+        klog "Creating Pact Schema"
+        createSchema v
+        return $ mkCEI v rv
+      else do
+        p <- initDbEnv _ccDebugFn SQLite.persister <$> SQLite.initSQLite _ccPragmas klog f
+        ee <- initEvalEnv p pactdb
+        rv <- newMVar (CommandState $ _eeRefStore ee)
+        let v = _eePactDbVar ee
+        klog "Creating Pact Schema"
+        createSchema v
+        return $ mkCEI v rv
 
 runCommitService :: CommitEnv -> NodeId -> KeySet -> IO ()
 runCommitService env nodeId' keySet' = do
-  cmdExecInter <- initPactService (env ^. commandConfig)
+  cmdExecInter <- initPactService env (env ^. commandConfig)
   initCommitState <- return $! CommitState { _nodeId = nodeId', _keySet = keySet', _commandExecInterface = cmdExecInter}
   void $ runRWST handle env initCommitState
 

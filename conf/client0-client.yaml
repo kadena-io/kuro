@@ -1,5 +1,5 @@
-PublicKey: 2195e6807242de8d9efd083d601fbe019ca94a2d66ae4e977d35b4e40445ddbb
-SecretKey: f7aa60cc48a8cfe94a30cea6a10136f16ef4a5dcb8886bfdaa91758f403481e0
+PublicKey: 91194a2a1ad9c1cadc6dca4af37df0043d3f9822f57736492eddac772e6272a3
+SecretKey: 18b722f9c0ebe315f17d8dc7bea52dabf44b62346ef6a43bdbf6709ac975f7b0
 Endpoints:
   node0: 127.0.0.1:8000
   node1: 127.0.0.1:8001

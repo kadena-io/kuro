@@ -38,8 +38,9 @@ runLogService :: Dispatch
               -> (Metric -> IO())
               -> Maybe FilePath
               -> KeySet
+              -> Int
               -> IO ()
-runLogService dispatch dbg publishMetric' dbPath keySet' = do
+runLogService dispatch dbg publishMetric' dbPath keySet' inMemTxCache' = do
   dbConn' <- case dbPath of
     Nothing -> do
       dbg "[Service|Log] Persistence Disabled"
@@ -55,7 +56,7 @@ runLogService dispatch dbg publishMetric' dbPath keySet' = do
     , _senderChannel = dispatch ^. Dispatch.senderService
     , _debugPrint = dbg
     , _keySet = keySet'
-    , _persistedLogEntriesToKeepInMemory = 24000
+    , _persistedLogEntriesToKeepInMemory = inMemTxCache'
     , _dbConn = dbConn'
     , _publishMetric = publishMetric'
     }

@@ -72,19 +72,22 @@ main = do
     err -> putStrLn $ "Invalid args, wanted `` or `--aws path-to-cluster-ip-file path-to-client-ip-file` but got: " ++ show err
 
 data ConfigParams = ConfigParams
-  { clusterCnt :: Int
-  , clientCnt :: Int
-  , aeRepLimit :: Int
-  , ppThreadCnt :: Int
-  , ppUsePar :: Bool
-  , heartbeat :: Int
-  , electionMax :: Int
-  , electionMin :: Int
+  { clusterCnt :: !Int
+  , clientCnt :: !Int
+  , aeRepLimit :: !Int
+  , ppThreadCnt :: !Int
+  , ppUsePar :: !Bool
+  , heartbeat :: !Int
+  , electionMax :: !Int
+  , electionMin :: !Int
+  , inMemTxs :: !Int
   } deriving (Show)
 
 data ConfGenMode =
-  AWS {awsClientCnt :: Int, awsClusterCnt :: Int}
-  | LOCAL
+  AWS
+  { awsClientCnt :: !Int
+  , awsClusterCnt :: !Int } |
+  LOCAL
   deriving (Show, Eq)
 data YesNo = Yes | No deriving (Show, Eq, Read)
 data SparksThreads = Sparks | Threads deriving (Show, Eq, Read)
@@ -105,10 +108,11 @@ getParams cfgMode = do
                  <*> getUserInput "[Integer] Number of clients?" Nothing
     AWS{..} -> return (awsClusterCnt,awsClientCnt)
   aeRepLimit' <- getUserInput "[Integer] Pending transaction replication limit per heartbeat? (recommended: 12000)" $ checkGTE 1
-  ppUsePar' <- sparksThreadsToBool <$> getUserInput "[Sparks|Threads] Should the Crypto PreProcessor use spark or green thread based parallelism? (recommended: Sparks)" Nothing
+  inMemTxs' <- getUserInput ("[Integer] How many committed transactions should be cached? (recommended: " ++ show (10*aeRepLimit')++ ")" ) $ checkGTE 0
+  ppUsePar' <- sparksThreadsToBool <$> getUserInput "[Sparks|Threads] Should the Crypto PreProcessor use spark or green thread based concurrency? (recommended: Sparks)" Nothing
   ppThreadCnt' <- if ppUsePar'
-                 then getUserInput "[Integer] How many transactions should the Crypto PreProcessor work on at once? (recommended: 100)" $ checkGTE 1
-                 else getUserInput "[Integer] How many green threads should be allocated to the Crypto PreProcessor? (recommended: 5 to 100)" $ checkGTE 1
+                  then getUserInput "[Integer] How many transactions should the Crypto PreProcessor work on at once? (recommended: 100)" $ checkGTE 1
+                  else getUserInput "[Integer] How many green threads should be allocated to the Crypto PreProcessor? (recommended: 5 to 100)" $ checkGTE 1
   heartbeat' <- getUserInput "[Integer] Leader's heartbeat timeout (in seconds)? (recommended: 2)" $ checkGTE 1
   electionMin' <- getUserInput ("[Integer] Election timeout min in seconds? (recommended: " ++ show (5*heartbeat') ++ ")") $ checkGTE (2*heartbeat')
   electionMax' <- getUserInput ("[Integer] Election timeout max in seconds? (recommended: >=" ++ show ((clusterCnt'*2)+electionMin') ++ ")") $ checkGTE (1 + electionMin')
@@ -121,6 +125,7 @@ getParams cfgMode = do
     , heartbeat = heartbeat' * 1000000
     , electionMax = electionMax' * 1000000
     , electionMin = electionMin' * 1000000
+    , inMemTxs = inMemTxs'
     }
 
 mainAws :: FilePath -> FilePath -> IO ()
@@ -176,6 +181,7 @@ createClusterConfig ConfigParams{..} (privMap, pubMap) clientPubMap apiP nid = C
   , _aeBatchSize          = aeRepLimit
   , _preProcThreadCount   = ppThreadCnt
   , _preProcUsePar        = ppUsePar
+  , _inMemTxCache         = inMemTxs
   }
 
 createClientConfig :: [Config] -> (Map NodeId PrivateKey, Map NodeId PublicKey) -> NodeId -> ClientConfig

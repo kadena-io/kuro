@@ -9,6 +9,7 @@ module Kadena.Types.Config
   , myPublicKey, batchTimeDelta, apiPort
   , logSqliteDir, entity, dbFile
   , aeBatchSize, preProcThreadCount, preProcUsePar
+  , inMemTxCache
   , KeySet(..), ksCluster
   , EntityInfo(..),entName
   ) where
@@ -58,6 +59,7 @@ data Config = Config
   , _aeBatchSize          :: !Int
   , _preProcThreadCount   :: !Int
   , _preProcUsePar        :: !Bool
+  , _inMemTxCache         :: !Int -- how many committed transactions should we keep in memory (with the rest on disk)
   }
   deriving (Show, Generic)
 makeLenses ''Config

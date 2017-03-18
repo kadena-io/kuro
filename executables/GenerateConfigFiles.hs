@@ -142,6 +142,7 @@ getParams cfgMode = do
   ppThreadCnt' <- if ppUsePar'
                   then getUserInput "[Integer] How many transactions should the Crypto PreProcessor work on at once? (recommended: 100)" (Just 100) $ checkGTE 1
                   else getUserInput "[Integer] How many green threads should be allocated to the Crypto PreProcessor? (recommended: 5 to 100)" Nothing $ checkGTE 1
+  enableWB' <- yesNoToBool <$> getUserInput "[Yes|No] Use write-behind backend? (recommended: Yes)" (Just Yes) Nothing
   return $ ConfigParams
     { clusterCnt = clusterCnt'
     , clientCnt = clientCnt'
@@ -154,7 +155,7 @@ getParams cfgMode = do
     , inMemTxs = inMemTxs'
     , logDir = logDir'
     , confDir = confDir'
-    , enableWB = False
+    , enableWB = enableWB'
     }
 
 mainAws :: FilePath -> FilePath -> IO ()
@@ -200,7 +201,7 @@ createClusterConfig ConfigParams{..} (privMap, pubMap) apiP nid = Config
   , _heartbeatTimeout     = 1000000
   , _enableDebug          = True
   , _enablePersistence    = True
-  , _enableWriteBehind    = False
+  , _enableWriteBehind    = enableWB
   , _apiPort              = apiP
   , _entity               = EntityInfo "me"
   , _logDir               = logDir

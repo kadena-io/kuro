@@ -294,21 +294,36 @@ pollForResult printMetrics rk = do
                   Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
               else putJSON _arResult) $ HM.elems prs
 
+printLatTime :: (Num a, Ord a, Show a) => a -> String
+printLatTime s
+  | s >= 1000000 =
+      let s' = drop 4 $ reverse $ show s
+          s'' = reverse $ (take 2 s') ++ "." ++ (drop 2 s')
+      in s'' ++ " sec"
+  | s >= 1000 =
+      let s' = drop 1 $ reverse $ show s
+          s'' = reverse $ (take 2 s') ++ "." ++ (drop 2 s')
+      in s'' ++ " millis"
+  | otherwise =
+      let s' = drop 4 $ reverse $ show s
+          s'' = reverse $ (take 2 s') ++ "." ++ (drop 2 s')
+      in s'' ++ " micros"
+
 pprintLatency :: CmdResultLatencyMetrics -> Repl ()
 pprintLatency CmdResultLatencyMetrics{..} = do
-  let mFlushStr s1 v s2 = case v of
+  let mFlushStr s1 v = case v of
         Nothing -> return ()
-        Just v' -> flushStrLn $ s1 ++ show v' ++ s2
-  mFlushStr "First Seen:          " (Just _rlmFirstSeen) ""
-  mFlushStr "Hit Turbine:        +" _rlmHitTurbine  " micros"
-  mFlushStr "Entered Con Serv:   +" _rlmHitConsensus  " micros"
-  mFlushStr "Finished Con Serv:  +" _rlmFinConsensus  " micros"
-  mFlushStr "Came to Consensus:  +" _rlmAerConsensus  " micros"
-  mFlushStr "Sent to Commit:     +" _rlmLogConsensus  " micros"
-  mFlushStr "Started PreProc:    +" _rlmHitPreProc  " micros"
-  mFlushStr "Finished PreProc:   +" _rlmFinPreProc  " micros"
-  mFlushStr "Started Commit:     +" _rlmHitCommit  " micros"
-  mFlushStr "Finished Commit:    +" _rlmFinCommit  " micros"
+        Just v' -> flushStrLn $ s1 ++ printLatTime v'
+  flushStrLn $ "First Seen:          " ++ (show _rlmFirstSeen)
+  mFlushStr "Hit Turbine:        +" _rlmHitTurbine
+  mFlushStr "Entered Con Serv:   +" _rlmHitConsensus
+  mFlushStr "Finished Con Serv:  +" _rlmFinConsensus
+  mFlushStr "Came to Consensus:  +" _rlmAerConsensus
+  mFlushStr "Sent to Commit:     +" _rlmLogConsensus
+  mFlushStr "Started PreProc:    +" _rlmHitPreProc
+  mFlushStr "Finished PreProc:   +" _rlmFinPreProc
+  mFlushStr "Started Commit:     +" _rlmHitCommit
+  mFlushStr "Finished Commit:    +" _rlmFinCommit
 
 pprintResult :: Value -> Maybe String
 pprintResult v = do

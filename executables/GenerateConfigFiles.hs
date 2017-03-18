@@ -17,6 +17,7 @@ import System.FilePath
 import System.Environment
 import qualified Data.Yaml as Y
 import Data.Word
+import Data.Maybe (fromJust, isJust)
 
 import qualified Data.Set as Set
 import Data.Map.Strict (Map)
@@ -51,17 +52,23 @@ awsNodes = fmap (\h -> NodeId h 10000 ("tcp://" ++ h ++ ":10000") $ Alias (BSC.p
 awsKeyMaps :: [NodeId] -> [(PrivateKey, PublicKey)] -> (Map NodeId PrivateKey, Map NodeId PublicKey)
 awsKeyMaps nodes' ls = (M.fromList $ zip nodes' (fst <$> ls), M.fromList $ zip nodes' (snd <$> ls))
 
-getUserInput :: forall b. Read b => String -> Maybe (b -> Either String b) -> IO b
-getUserInput prompt safetyCheck = do
+getUserInput :: forall b. (Show b, Read b) => String -> Maybe b -> Maybe (b -> Either String b) -> IO b
+getUserInput prompt defaultVal safetyCheck = do
   putStrLn prompt
   hFlush stdout
-  getLine >>= \x -> case readMaybe x of
-    Nothing -> putStrLn "Invalid Input, try again" >> hFlush stdout >> getUserInput prompt safetyCheck
-    Just y -> case safetyCheck of
-      Nothing -> return y
-      Just f -> case f y of
-        Left err -> putStrLn err >> hFlush stdout >> getUserInput prompt safetyCheck
-        Right y' -> return y'
+  input' <- getLine
+  if input' == "" && isJust defaultVal
+  then do
+    putStrLn ("Set to recommended value: " ++ (show $ fromJust defaultVal)) >> hFlush stdout
+    return $ fromJust defaultVal
+  else
+    case readMaybe input' of
+      Nothing -> putStrLn "Invalid Input, try again" >> hFlush stdout >> getUserInput prompt defaultVal safetyCheck
+      Just y -> case safetyCheck of
+        Nothing -> return y
+        Just f -> case f y of
+          Left err -> putStrLn err >> hFlush stdout >> getUserInput prompt defaultVal safetyCheck
+          Right y' -> return y'
 
 main :: IO ()
 main = do
@@ -102,20 +109,25 @@ sparksThreadsToBool Threads = False
 
 getParams :: ConfGenMode -> IO ConfigParams
 getParams cfgMode = do
+  putStrLn "When a recommended setting is available, press Enter to use it"
   let checkGTE gt = Just $ \x -> if x >= gt then Right x else Left $ "Must be >= " ++ show gt
   (clusterCnt',clientCnt') <- case cfgMode of
-    LOCAL -> (,) <$> getUserInput "[Integer] Number of consensus servers?" (checkGTE 3)
-                 <*> getUserInput "[Integer] Number of clients?" Nothing
+    LOCAL -> (,) <$> getUserInput "[Integer] Number of consensus servers?" Nothing (checkGTE 3)
+                 <*> getUserInput "[Integer] Number of clients?" Nothing Nothing
     AWS{..} -> return (awsClusterCnt,awsClientCnt)
-  aeRepLimit' <- getUserInput "[Integer] Pending transaction replication limit per heartbeat? (recommended: 12000)" $ checkGTE 1
-  inMemTxs' <- getUserInput ("[Integer] How many committed transactions should be cached? (recommended: " ++ show (10*aeRepLimit')++ ")" ) $ checkGTE 0
-  ppUsePar' <- sparksThreadsToBool <$> getUserInput "[Sparks|Threads] Should the Crypto PreProcessor use spark or green thread based concurrency? (recommended: Sparks)" Nothing
+  heartbeat' <- getUserInput "[Integer] Leader's heartbeat timeout (in seconds)? (recommended: 2)" (Just 2) $ checkGTE 1
+  let elMinRec = (5 * heartbeat')
+  electionMin' <- getUserInput ("[Integer] Election timeout min in seconds? (recommended: " ++ show elMinRec ++ ")") (Just elMinRec) $ checkGTE (2*heartbeat')
+  let elMaxRec = (clusterCnt'*2)+electionMin'
+  electionMax' <- getUserInput ("[Integer] Election timeout max in seconds? (recommended: >=" ++ show elMaxRec ++ ")") (Just elMaxRec) $ checkGTE (1 + electionMin')
+  let aeRepRec = 10000*heartbeat'
+  aeRepLimit' <- getUserInput ("[Integer] Pending transaction replication limit per heartbeat? (recommended: " ++ show aeRepRec ++ ")") (Just aeRepRec) $ checkGTE 1
+  let inMemRec = (10*aeRepLimit')
+  inMemTxs' <- getUserInput ("[Integer] How many committed transactions should be cached? (recommended: " ++ show inMemRec ++ ")" ) (Just inMemRec) $ checkGTE 0
+  ppUsePar' <- sparksThreadsToBool <$> getUserInput "[Sparks|Threads] Should the Crypto PreProcessor use spark or green thread based concurrency? (recommended: Sparks)" (Just Sparks) Nothing
   ppThreadCnt' <- if ppUsePar'
-                  then getUserInput "[Integer] How many transactions should the Crypto PreProcessor work on at once? (recommended: 100)" $ checkGTE 1
-                  else getUserInput "[Integer] How many green threads should be allocated to the Crypto PreProcessor? (recommended: 5 to 100)" $ checkGTE 1
-  heartbeat' <- getUserInput "[Integer] Leader's heartbeat timeout (in seconds)? (recommended: 2)" $ checkGTE 1
-  electionMin' <- getUserInput ("[Integer] Election timeout min in seconds? (recommended: " ++ show (5*heartbeat') ++ ")") $ checkGTE (2*heartbeat')
-  electionMax' <- getUserInput ("[Integer] Election timeout max in seconds? (recommended: >=" ++ show ((clusterCnt'*2)+electionMin') ++ ")") $ checkGTE (1 + electionMin')
+                  then getUserInput "[Integer] How many transactions should the Crypto PreProcessor work on at once? (recommended: 100)" (Just 100) $ checkGTE 1
+                  else getUserInput "[Integer] How many green threads should be allocated to the Crypto PreProcessor? (recommended: 5 to 100)" Nothing $ checkGTE 1
   return $ ConfigParams
     { clusterCnt = clusterCnt'
     , clientCnt = clientCnt'

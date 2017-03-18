@@ -119,7 +119,7 @@ runConsensusService renv rconf spec rstate timeCache' mPubConsensus' = do
       commandConfig' = CommandConfig
         { _ccDbFile = case rconf ^. logSqliteDir of
             -- TODO: fix this, it's terrible
-            Just dbDir' -> Just (dbDir' ++ (show $ _alias nodeId') ++ "pact.sqlite")
+            Just dbDir' -> Just (dbDir' ++ "-pact.sqlite")
             Nothing -> Nothing
         , _ccDebugFn = return . const () -- dbgPrint'
         , _ccEntity = rconf ^. entity.entName

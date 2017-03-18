@@ -137,8 +137,8 @@ setLineBuffering = do
   hSetBuffering stdout LineBuffering
   hSetBuffering stderr LineBuffering
 
-resetAwsEnv :: Bool -> IO ()
-resetAwsEnv awsEnabled = do
+_resetAwsEnv :: Bool -> IO ()
+_resetAwsEnv awsEnabled = do
   awsDashVar awsEnabled "Role" "Startup"
   awsDashVar awsEnabled "Term" "Startup"
   awsDashVar awsEnabled "AppliedIndex" "Startup"
@@ -152,7 +152,7 @@ runServer = do
   utcTimeCache' <- utcTimeCache
   fs <- initSysLog utcTimeCache'
   let debugFn = if rconf ^. enableDebug then showDebug fs else noDebug
-  resetAwsEnv (rconf ^. enableAwsIntegration)
+  -- resetAwsEnv (rconf ^. enableAwsIntegration)
   me <- return $ rconf ^. nodeId
   oNodes <- return $ Set.toList $ Set.delete me (rconf ^. otherNodes)-- (Map.keysSet $ rconf ^. clientPublicKeys)
   dispatch <- initDispatch

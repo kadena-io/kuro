@@ -110,10 +110,9 @@ debug :: String -> Consensus ()
 debug s = do
   dbg <- view (rs.debugPrint)
   role' <- use nodeRole
-  dontDebugFollower' <- viewConfig dontDebugFollower
   case role' of
     Leader -> liftIO $! dbg $! "[Kadena|\ESC[0;34mLEADER\ESC[0m]: " ++ s
-    Follower -> liftIO $! unless dontDebugFollower' $! dbg $! "[Kadena|\ESC[0;32mFOLLOWER\ESC[0m]: " ++ s
+    Follower -> liftIO $! dbg $! "[Kadena|\ESC[0;32mFOLLOWER\ESC[0m]: " ++ s
     Candidate -> liftIO $! dbg $! "[Kadena|\ESC[1;33mCANDIDATE\ESC[0m]: " ++ s
 
 randomRIO :: R.Random a => (a,a) -> Consensus a

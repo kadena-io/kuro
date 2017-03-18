@@ -6,8 +6,8 @@
 module Kadena.Types.Config
   ( Config(..), otherNodes, nodeId, electionTimeoutRange, heartbeatTimeout
   , enableDebug, publicKeys, clientPublicKeys, myPrivateKey, clientTimeoutLimit
-  , myPublicKey, batchTimeDelta, dontDebugFollower, apiPort
-  , logSqliteDir, enableAwsIntegration, entity, dbFile
+  , myPublicKey, batchTimeDelta, apiPort
+  , logSqliteDir, entity, dbFile
   , aeBatchSize, preProcThreadCount, preProcUsePar
   , KeySet(..), ksCluster
   , EntityInfo(..),entName
@@ -51,10 +51,8 @@ data Config = Config
   , _batchTimeDelta       :: !NominalDiffTime
   , _enableDebug          :: !Bool
   , _clientTimeoutLimit   :: !Int
-  , _dontDebugFollower    :: !Bool
   , _apiPort              :: !Int
   , _logSqliteDir         :: !(Maybe FilePath)
-  , _enableAwsIntegration :: !Bool
   , _entity               :: EntityInfo
   , _dbFile               :: !(Maybe FilePath)
   , _aeBatchSize          :: !Int

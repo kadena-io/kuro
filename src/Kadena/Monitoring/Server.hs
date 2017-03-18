@@ -15,7 +15,7 @@ import qualified System.Metrics.Gauge as Gauge
 import qualified System.Metrics.Distribution as Dist
 
 import Kadena.Util.Util (awsDashVar)
-import Kadena.Types (Config, nodeId, Metric(..), LogIndex(..), Term(..), NodeId(..), _port, enableAwsIntegration)
+import Kadena.Types (Config, nodeId, Metric(..), LogIndex(..), Term(..), NodeId(..), _port)
 import Kadena.Monitoring.EkgMonitor (Server, forkServer, getLabel, getGauge, getDistribution)
 
 -- TODO: possibly switch to 'newStore' API. this allows us to use groups.
@@ -29,7 +29,7 @@ startMonitoring :: Config -> IO (Metric -> IO ())
 startMonitoring config = do
   ekg <- startApi config
 
-  let awsDashVar' = awsDashVar (config ^. enableAwsIntegration)
+  let awsDashVar' = awsDashVar False -- (config ^. enableAwsIntegration)
 
   -- Consensus
   termGauge <- getGauge "kadena.consensus.term" ekg

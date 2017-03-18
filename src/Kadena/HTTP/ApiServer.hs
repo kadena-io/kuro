@@ -36,6 +36,8 @@ import qualified Data.Serialize as SZ
 import Snap.Core
 import Snap.Http.Server as Snap
 import Snap.CORS
+import System.FilePath
+import System.Directory
 import Data.Thyme.Clock
 
 import qualified Pact.Types.Command as Pact
@@ -71,11 +73,22 @@ type Api a = ReaderT ApiEnv Snap a
 runApiServer :: Dispatch -> IORef Config.Config -> (String -> IO ())
              -> Int -> MVar PublishedConsensus -> IO UTCTime -> IO ()
 runApiServer dispatch conf logFn port mPubConsensus' timeCache' = do
-  putStrLn $ "[Service|API]: starting on port " ++ show port
+  logFn $ "[Service|API]: starting on port " ++ show port
   let conf' = ApiEnv logFn dispatch conf mPubConsensus' timeCache'
-  httpServe (serverConf port) $
+  serverConf' <- serverConf port logFn "./log"
+  httpServe serverConf' $
     applyCORS defaultOptions $ methods [GET, POST] $
     route $ ("api/v1", runReaderT api conf'):staticRoutes
+
+serverConf :: MonadSnap m => Int -> (String -> IO ()) -> FilePath -> IO (Snap.Config m a)
+serverConf port dbgFn logDir = do
+  let errorLog = logDir </> "error.log"
+  let accessLog = logDir </> "access.log"
+  doesFileExist errorLog >>= \x -> when x $ dbgFn ("Creating " ++ errorLog) >> writeFile errorLog ""
+  doesFileExist accessLog >>= \x -> when x $ dbgFn ("Creating " ++ accessLog) >> writeFile accessLog ""
+  return $ setErrorLog (ConfigFileLog errorLog) $
+    setAccessLog (ConfigFileLog accessLog) $
+    setPort port defaultConfig
 
 api :: Api ()
 api = route [
@@ -137,12 +150,6 @@ scrToAr :: CommandResult -> ApiResult
 scrToAr SmartContractResult{..} = ApiResult (toJSON (Pact._crResult _scrResult)) (Pact._crTxId _scrResult) metaData'
   where
     metaData' = Just $ toJSON $ _cmdrLatMetrics
-
-serverConf :: MonadSnap m => Int -> Snap.Config m a
-serverConf port =
-  setErrorLog (ConfigFileLog "log/error.log") $
-  setAccessLog (ConfigFileLog "log/access.log") $
-  setPort port defaultConfig
 
 checkHistoryForResult :: HashSet RequestKey -> Api PossiblyIncompleteResults
 checkHistoryForResult rks = do

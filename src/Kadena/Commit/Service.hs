@@ -31,8 +31,8 @@ import Pact.Types.Command (CommandExecInterface(..), ExecutionMode(..))
 import Pact.Types.Runtime (EvalEnv(..))
 import Pact.Types.RPC (PactRPC)
 import Pact.Server.PactService (applyCmd)
-import Pact.Types.Server (CommandConfig(..), CommandState(..), DBVar(..))
-import Pact.PersistPactDb (initDbEnv, createSchema, pactdb)
+import Pact.Types.Server (CommandConfig(..), CommandState(..))
+import Pact.PersistPactDb (initDbEnv, createSchema, pactdb,DbEnv(..))
 import Pact.Native (initEvalEnv)
 import qualified Pact.Persist.SQLite as SQLite
 import qualified Pact.Persist.Pure as Pure
@@ -63,17 +63,22 @@ initCommitEnv dispatch' debugPrint' commandConfig' publishMetric' getTimestamp' 
 
 data ReplayStatus = ReplayFromDisk | FreshCommands deriving (Show, Eq)
 
+
 initPactService :: CommandConfig -> IO (CommandExecInterface PactRPC)
 initPactService config@CommandConfig {..} = do
   let klog s = _ccDebugFn ("[PactService] " ++ s)
-  mvars <- case _ccDbFile of
+      mkCEI :: MVar (DbEnv a) -> MVar CommandState -> CommandExecInterface PactRPC
+      mkCEI dbVar cmdVar = CommandExecInterface
+        { _ceiApplyCmd = \eMode cmd -> applyCmd config dbVar cmdVar eMode cmd (Pact.verifyCommand cmd)
+        , _ceiApplyPPCmd = applyCmd config dbVar cmdVar }
+  case _ccDbFile of
     Nothing -> do
       klog "Initializing pure pact"
       ee <- initEvalEnv (initDbEnv _ccDebugFn Pure.persister Pure.initPureDb) pactdb
       rv <- newMVar (CommandState $ _eeRefStore ee)
       klog "Creating Pact Schema"
       createSchema (_eePactDbVar ee)
-      return (PureVar $ _eePactDbVar ee,rv)
+      return $ mkCEI (_eePactDbVar ee) rv
     Just f -> do
       dbExists <- doesFileExist f
       when dbExists $ klog "Deleting Existing Pact DB File" >> removeFile f
@@ -86,10 +91,8 @@ initPactService config@CommandConfig {..} = do
       let v = _eePactDbVar ee
       klog "Creating Pact Schema"
       createSchema v
-      return (PSLVar v,rv)
-  return CommandExecInterface
-    { _ceiApplyCmd = \eMode cmd -> applyCmd config mvars eMode cmd (Pact.verifyCommand cmd)
-    , _ceiApplyPPCmd = applyCmd config mvars }
+      return $ mkCEI v rv
+
 
 runCommitService :: CommitEnv -> NodeId -> KeySet -> IO ()
 runCommitService env nodeId' keySet' = do

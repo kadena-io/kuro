@@ -67,7 +67,7 @@ options =
   , Option ['d']
            ["disablePersistence"]
            (OptArg (\_ opts -> opts { optDisablePersistence = True }) "DISABLE_PERSISTENCE" )
-            "Disable Persistence"
+            "Disable Persistence (run entirely in memory)"
   ]
 
 getConfig :: IO Config
@@ -81,8 +81,7 @@ getConfig = do
         Left err -> putStrLn (Y.prettyPrintParseException err) >> exitFailure
         Right conf' -> return $ conf'
           { _apiPort = if optApiPort opts == -1 then conf' ^. apiPort else optApiPort opts
-          , _logSqliteDir = if optDisablePersistence opts then Nothing else conf' ^. logSqliteDir
-          , _dbFile = if optDisablePersistence opts then Nothing else _dbFile conf'
+          , _enablePersistence = optDisablePersistence opts
           }
     (_,_,errs)     -> mapM_ putStrLn errs >> exitFailure
 

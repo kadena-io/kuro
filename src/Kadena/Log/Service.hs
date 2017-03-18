@@ -18,11 +18,14 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
+import System.FilePath
 
 import Data.Thyme.Clock
 import Database.SQLite.Simple (Connection(..))
 
+import Kadena.Types.Base
 import Kadena.Types.Comms
+import Kadena.Types.Config
 import Kadena.Types.Command (CmdLatencyMetrics(..))
 import Kadena.Types.Metric
 import Kadena.Log.Persistence
@@ -36,18 +39,18 @@ import Kadena.Types (Dispatch)
 runLogService :: Dispatch
               -> (String -> IO())
               -> (Metric -> IO())
-              -> Maybe FilePath
               -> KeySet
-              -> Int
+              -> Config
               -> IO ()
-runLogService dispatch dbg publishMetric' dbPath keySet' inMemTxCache' = do
-  dbConn' <- case dbPath of
-    Nothing -> do
+runLogService dispatch dbg publishMetric' keySet' rconf = do
+  dbConn' <- if rconf ^. enablePersistence
+    then do
+      let dbDir' = (rconf ^. logDir) </> (show $ _alias $ rconf ^. (nodeId)) ++ "-log.sqlite"
+      dbg $ "[Service|Log] Database Connection Opened: " ++ dbDir'
+      Just <$> createDB dbDir'
+    else do
       dbg "[Service|Log] Persistence Disabled"
       return Nothing
-    Just dbDir' -> do
-      dbg $ "[Service|Log] Database Connection Opened: " ++ (dbDir' ++ ".sqlite")
-      Just <$> createDB (dbDir' ++ ".sqlite")
   env <- return LogEnv
     { _logQueryChannel = dispatch ^. Dispatch.logService
     , _internalEvent = dispatch ^. Dispatch.internalEvent
@@ -56,7 +59,7 @@ runLogService dispatch dbg publishMetric' dbPath keySet' inMemTxCache' = do
     , _senderChannel = dispatch ^. Dispatch.senderService
     , _debugPrint = dbg
     , _keySet = keySet'
-    , _persistedLogEntriesToKeepInMemory = inMemTxCache'
+    , _persistedLogEntriesToKeepInMemory = (rconf ^. inMemTxCache)
     , _dbConn = dbConn'
     , _publishMetric = publishMetric'
     }

@@ -47,8 +47,7 @@ launchHistoryService :: Dispatch
   -> Config
   -> IO (Async ())
 launchHistoryService dispatch' dbgPrint' getTimestamp' rconf = do
-  let dbPath' = rconf ^. logSqliteDir
-  link =<< async (History.runHistoryService (History.initHistoryEnv dispatch' dbPath' dbgPrint' getTimestamp') Nothing)
+  link =<< async (History.runHistoryService (History.initHistoryEnv dispatch' dbgPrint' getTimestamp' rconf) Nothing)
   async (foreverHeart (_historyChannel dispatch') 1000000 History.Heart)
 
 launchPreProcService :: Dispatch
@@ -91,7 +90,7 @@ launchLogService :: Dispatch
   -> Config
   -> IO (Async ())
 launchLogService dispatch' dbgPrint' publishMetric' keySet' rconf = do
-  link =<< async (Log.runLogService dispatch' dbgPrint' publishMetric' (rconf ^. logSqliteDir) keySet' (rconf ^. inMemTxCache))
+  link =<< async (Log.runLogService dispatch' dbgPrint' publishMetric' keySet' rconf)
   async (foreverHeart (_logService dispatch') 1000000 Log.Heart)
 
 launchSenderService :: Dispatch
@@ -117,10 +116,9 @@ runConsensusService renv rconf spec rstate timeCache' mPubConsensus' = do
       keySet' = Turbine._keySet renv
       nodeId' = rconf ^. nodeId
       commandConfig' = CommandConfig
-        { _ccDbFile = case rconf ^. logSqliteDir of
-            -- TODO: fix this, it's terrible
-            Just dbDir' -> Just (dbDir' ++ "-pact.sqlite")
-            Nothing -> Nothing
+        { _ccDbFile = if rconf ^. enablePersistence
+                      then Just $ (rconf ^. logDir) ++ "-pact.sqlite"
+                      else Nothing
         , _ccDebugFn = return . const () -- dbgPrint'
         , _ccEntity = rconf ^. entity.entName
         , _ccPragmas = Pact.fastNoJournalPragmas

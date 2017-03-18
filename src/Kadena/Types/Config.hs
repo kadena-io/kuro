@@ -5,11 +5,11 @@
 
 module Kadena.Types.Config
   ( Config(..), otherNodes, nodeId, electionTimeoutRange, heartbeatTimeout
-  , enableDebug, publicKeys, clientPublicKeys, myPrivateKey, clientTimeoutLimit
-  , myPublicKey, batchTimeDelta, apiPort
-  , logSqliteDir, entity, dbFile
+  , enableDebug, publicKeys, myPrivateKey
+  , myPublicKey, apiPort
+  , logDir, entity
   , aeBatchSize, preProcThreadCount, preProcUsePar
-  , inMemTxCache
+  , inMemTxCache, enablePersistence
   , KeySet(..), ksCluster
   , EntityInfo(..),entName
   ) where
@@ -44,18 +44,15 @@ data Config = Config
   { _otherNodes           :: !(Set NodeId)
   , _nodeId               :: !NodeId
   , _publicKeys           :: !(Map Alias PublicKey)
-  , _clientPublicKeys     :: !(Map Alias PublicKey)
   , _myPrivateKey         :: !PrivateKey
   , _myPublicKey          :: !PublicKey
   , _electionTimeoutRange :: !(Int,Int)
   , _heartbeatTimeout     :: !Int
-  , _batchTimeDelta       :: !NominalDiffTime
   , _enableDebug          :: !Bool
-  , _clientTimeoutLimit   :: !Int
   , _apiPort              :: !Int
-  , _logSqliteDir         :: !(Maybe FilePath)
   , _entity               :: EntityInfo
-  , _dbFile               :: !(Maybe FilePath)
+  , _logDir               :: !FilePath
+  , _enablePersistence    :: !Bool
   , _aeBatchSize          :: !Int
   , _preProcThreadCount   :: !Int
   , _preProcUsePar        :: !Bool

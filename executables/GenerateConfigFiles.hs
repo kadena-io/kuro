@@ -7,11 +7,10 @@
 module Main (main) where
 
 import Control.Arrow
+import Control.Monad
 import "crypto-api" Crypto.Random
-import Data.Ratio
 import Crypto.Ed25519.Pure
 import Text.Read
-import Data.Thyme.Clock
 import System.IO
 import System.FilePath
 import System.Environment
@@ -24,8 +23,10 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
 import qualified Data.HashMap.Strict as HM
 import qualified Data.ByteString.Char8 as BSC
+import System.Directory
+import System.Exit
 
-import Kadena.Types
+import Kadena.Types hiding (logDir)
 import Apps.Kadena.Client hiding (main)
 
 
@@ -75,7 +76,7 @@ main = do
   runAws <- getArgs
   case runAws of
     [] -> mainLocal
-    [v,clustersFile,clientsFile] | v == "--aws" -> mainAws clustersFile clientsFile
+    [v,clustersFile,clientsFile] | v == "--distributed" -> mainAws clustersFile clientsFile
     err -> putStrLn $ "Invalid args, wanted `` or `--aws path-to-cluster-ip-file path-to-client-ip-file` but got: " ++ show err
 
 data ConfigParams = ConfigParams
@@ -88,6 +89,8 @@ data ConfigParams = ConfigParams
   , electionMax :: !Int
   , electionMin :: !Int
   , inMemTxs :: !Int
+  , logDir :: !FilePath
+  , confDir :: !FilePath
   } deriving (Show)
 
 data ConfGenMode =
@@ -99,9 +102,9 @@ data ConfGenMode =
 data YesNo = Yes | No deriving (Show, Eq, Read)
 data SparksThreads = Sparks | Threads deriving (Show, Eq, Read)
 
-_yesNoToBool :: YesNo -> Bool
-_yesNoToBool Yes = True
-_yesNoToBool No = False
+yesNoToBool :: YesNo -> Bool
+yesNoToBool Yes = True
+yesNoToBool No = False
 
 sparksThreadsToBool :: SparksThreads -> Bool
 sparksThreadsToBool Sparks = True
@@ -109,7 +112,17 @@ sparksThreadsToBool Threads = False
 
 getParams :: ConfGenMode -> IO ConfigParams
 getParams cfgMode = do
-  putStrLn "When a recommended setting is available, press Enter to use it"
+  putStrLn "When a recommended setting is available, press Enter to use it" >> hFlush stdout
+  logDir' <- getUserInput "[FilePath] Which directory should hold the log files and SQLite DB's? (recommended: ./log)" (Just "./log") $ Just (\(x::FilePath)-> if null x then Left "This is required" else Right x)
+  confDir' <- getUserInput "[FilePath] Where should `genconfs` write the configuration files? (recommended: ./conf)" (Just "./conf") $ Just (\(x::FilePath)-> if null x then Left "This is required" else Right x)
+  confDirExists <- doesDirectoryExist confDir'
+  unless confDirExists $ do
+    absPath' <- makeAbsolute confDir'
+    putStrLn ("Warning: " ++ confDir' ++ " does not exist (absPath:" ++ absPath' ++" )") >> hFlush stdout
+    mkConfDir' <- yesNoToBool <$> getUserInput "[Yes|No] Should we create it? (recommended: Yes)" (Just Yes) Nothing
+    if mkConfDir'
+      then createDirectoryIfMissing True confDir'
+      else die "Configuration directory is required and must exist"
   let checkGTE gt = Just $ \x -> if x >= gt then Right x else Left $ "Must be >= " ++ show gt
   (clusterCnt',clientCnt') <- case cfgMode of
     LOCAL -> (,) <$> getUserInput "[Integer] Number of consensus servers?" Nothing (checkGTE 3)
@@ -138,6 +151,8 @@ getParams cfgMode = do
     , electionMax = electionMax' * 1000000
     , electionMin = electionMin' * 1000000
     , inMemTxs = inMemTxs'
+    , logDir = logDir'
+    , confDir = confDir'
     }
 
 mainAws :: FilePath -> FilePath -> IO ()
@@ -152,11 +167,11 @@ mainAws clustersFile clientsFile = do
   clientIds <- return $ awsNodes clients
   clientKeys <- return $ makeKeys (length clients) g'
   clientKeyMaps <- return $ awsKeyMaps clientIds clientKeys
-  cfgParams <- getParams AWS {awsClientCnt = length clientIds, awsClusterCnt = length clusterIds}
-  clusterConfs <- return (createClusterConfig cfgParams clusterKeyMaps (snd clientKeyMaps) 8000 <$> clusterIds)
+  cfgParams@ConfigParams{..} <- getParams AWS {awsClientCnt = length clientIds, awsClusterCnt = length clusterIds}
+  clusterConfs <- return (createClusterConfig cfgParams clusterKeyMaps 8000 <$> clusterIds)
   clientConfs <- return (createClientConfig clusterConfs clientKeyMaps <$> clientIds)
-  mapM_ (\c' -> Y.encodeFile ("aws-conf" </> _host (_nodeId c') ++ "-cluster-aws.yaml") c') clusterConfs
-  mapM_ (\(ci,c') -> Y.encodeFile ("aws-conf" </> show ci ++ "-client-aws.yaml") c') $ zip clientIds clientConfs
+  mapM_ (\c' -> Y.encodeFile (confDir </> _host (_nodeId c') ++ "-cluster-aws.yaml") c') clusterConfs
+  mapM_ (\(ci,c') -> Y.encodeFile (confDir </> show ci ++ "-client-aws.yaml") c') $ zip clientIds clientConfs
 
 mainLocal :: IO ()
 mainLocal = do
@@ -164,7 +179,7 @@ mainLocal = do
   g <- newGenIO :: IO SystemRandom
   let clusterKeyMaps = mkNodes (mkNode "127.0.0.1" 10000 "node") $ makeKeys clusterCnt g
       clientKeyMaps = mkNodes (mkNode "127.0.0.1" 11000 "client") $ makeKeys clientCnt g
-      clusterConfs = zipWith (createClusterConfig cfgParams clusterKeyMaps (snd clientKeyMaps)) [8000..] (M.keys (fst clusterKeyMaps))
+      clusterConfs = zipWith (createClusterConfig cfgParams clusterKeyMaps) [8000..] (M.keys (fst clusterKeyMaps))
   clientConfs <- return (createClientConfig clusterConfs clientKeyMaps <$> M.keys (fst clientKeyMaps))
   mapM_ (\c' -> Y.encodeFile ("conf" </> show (_port $ _nodeId c') ++ "-cluster.yaml") c') clusterConfs
   mapM_ (\(i :: Int,c') -> Y.encodeFile ("conf" </> "client" ++ show i ++ "-client.yaml") c') (zip [0..] clientConfs)
@@ -172,24 +187,20 @@ mainLocal = do
 toAliasMap :: Map NodeId a -> Map Alias a
 toAliasMap = M.fromList . map (first _alias) . M.toList
 
-createClusterConfig :: ConfigParams -> (Map NodeId PrivateKey, Map NodeId PublicKey) -> Map NodeId PublicKey
-  -> Int -> NodeId -> Config
-createClusterConfig ConfigParams{..} (privMap, pubMap) clientPubMap apiP nid = Config
+createClusterConfig :: ConfigParams -> (Map NodeId PrivateKey, Map NodeId PublicKey) -> Int -> NodeId -> Config
+createClusterConfig ConfigParams{..} (privMap, pubMap) apiP nid = Config
   { _otherNodes           = Set.delete nid $ M.keysSet pubMap
   , _nodeId               = nid
   , _publicKeys           = toAliasMap $ pubMap
-  , _clientPublicKeys     = toAliasMap $ clientPubMap
   , _myPrivateKey         = privMap M.! nid
   , _myPublicKey          = pubMap M.! nid
   , _electionTimeoutRange = (3000000,6000000)
   , _heartbeatTimeout     = 1000000
-  , _batchTimeDelta       = fromSeconds' (1%100) -- 10ms
   , _enableDebug          = True
-  , _clientTimeoutLimit   = 50000
+  , _enablePersistence    = True
   , _apiPort              = apiP
-  , _logSqliteDir         = Just $ "./log/" ++ BSC.unpack (unAlias $ _alias nid)
   , _entity               = EntityInfo "me"
-  , _dbFile               = Just $ "./log/" ++ BSC.unpack (unAlias $ _alias nid) ++ "-pactdb.sqlite"
+  , _logDir               = logDir
   , _aeBatchSize          = aeRepLimit
   , _preProcThreadCount   = ppThreadCnt
   , _preProcUsePar        = ppUsePar

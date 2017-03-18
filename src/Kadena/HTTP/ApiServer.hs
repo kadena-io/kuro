@@ -75,15 +75,16 @@ runApiServer :: Dispatch -> IORef Config.Config -> (String -> IO ())
 runApiServer dispatch conf logFn port mPubConsensus' timeCache' = do
   logFn $ "[Service|API]: starting on port " ++ show port
   let conf' = ApiEnv logFn dispatch conf mPubConsensus' timeCache'
-  serverConf' <- serverConf port logFn "./log"
+  logDir' <- _logDir <$> readIORef conf
+  serverConf' <- serverConf port logFn logDir'
   httpServe serverConf' $
     applyCORS defaultOptions $ methods [GET, POST] $
     route $ ("api/v1", runReaderT api conf'):staticRoutes
 
 serverConf :: MonadSnap m => Int -> (String -> IO ()) -> FilePath -> IO (Snap.Config m a)
-serverConf port dbgFn logDir = do
-  let errorLog = logDir </> "error.log"
-  let accessLog = logDir </> "access.log"
+serverConf port dbgFn logDir' = do
+  let errorLog = logDir' </> "error.log"
+  let accessLog = logDir' </> "access.log"
   doesFileExist errorLog >>= \x -> when x $ dbgFn ("Creating " ++ errorLog) >> writeFile errorLog ""
   doesFileExist accessLog >>= \x -> when x $ dbgFn ("Creating " ++ accessLog) >> writeFile accessLog ""
   return $ setErrorLog (ConfigFileLog errorLog) $

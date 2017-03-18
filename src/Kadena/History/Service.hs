@@ -26,7 +26,10 @@ import Data.Thyme.Clock
 import Data.Thyme.Clock.POSIX
 #endif
 import Data.Maybe (fromJust,isJust,isNothing)
+import System.FilePath
 
+import Kadena.Types.Base
+import Kadena.Types.Config
 import Kadena.History.Types as X
 import qualified Kadena.History.Persistence as DB
 import Kadena.Types.Dispatch (Dispatch)
@@ -34,15 +37,17 @@ import qualified Kadena.Types.Dispatch as D
 
 initHistoryEnv
   :: Dispatch
-  -> Maybe FilePath
   -> (String -> IO ())
   -> IO UTCTime
+  -> Config
   -> HistoryEnv
-initHistoryEnv dispatch' dbPath' debugPrint' getTimestamp' = HistoryEnv
+initHistoryEnv dispatch' debugPrint' getTimestamp' rconf = HistoryEnv
   { _historyChannel = dispatch' ^. D.historyChannel
   , _debugPrint = debugPrint'
   , _getTimestamp = getTimestamp'
-  , _dbPath = dbPath'
+  , _dbPath = if rconf ^. enablePersistence
+              then Just $ (rconf ^. logDir) </> (show $ _alias $ rconf ^. (nodeId)) ++ "-logResult.sqlite"
+              else Nothing
   }
 
 runHistoryService :: HistoryEnv -> Maybe HistoryState -> IO ()
@@ -72,8 +77,8 @@ setupPersistence dbg Nothing = do
   dbg $ "[Service|History] Persistence Disabled"
   return $ InMemory HashMap.empty
 setupPersistence dbg (Just dbPath') = do
-  dbg $ "[Service|History] Persistence Enabled: " ++ (dbPath' ++ "-cmdr.sqlite")
-  conn <- DB.createDB $ (dbPath' ++ "-cmdr.sqlite")
+  dbg $ "[Service|History] Persistence Enabled: " ++ dbPath'
+  conn <- DB.createDB dbPath'
   return $ OnDisk { incompleteRequestKeys = HashSet.empty
                   , dbConn = conn }
 

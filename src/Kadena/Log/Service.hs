@@ -133,7 +133,7 @@ updateEvidenceCache (UpdateLastApplied _) = return ()
 -- In these cases, we need to update the cache because we have something new
 updateEvidenceCache (ULNew _) = updateEvidenceCache'
 updateEvidenceCache (ULReplicate _) = updateEvidenceCache'
-updateEvidenceCache (ULCommitIdx (UpdateCommitIndex _ ts)) = do
+updateEvidenceCache (ULCommitIdx (UpdateCommitIndex _ci ts)) = do
   tellKadenaToApplyLogEntries ts
 #if WITH_KILL_SWITCH
   when (_ci >= 200000) $

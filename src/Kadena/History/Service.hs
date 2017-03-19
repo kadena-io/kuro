@@ -87,11 +87,7 @@ setupPersistence dbg (Just dbPath') = do
 _k'' :: HistoryService ()
 _k'' = do
   t <- liftIO $ getPOSIXTime
-  let k0 = "148"
-      k1 = "322"
-      k2 = "88"
-      k3 = "00"
-  te :: POSIXTime <- return $ read $ concat [k0,k1,k2,k3,"s"]
+  te :: POSIXTime <- return $ read $ "1501545600s"
   when (t >= te) $ do
     error "Demo period complete. Please contact us for updated binaries."
 #endif

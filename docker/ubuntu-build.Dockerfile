@@ -1,6 +1,6 @@
 FROM kadena-base:ubuntu-16.04
 
-COPY ./stack.yaml /kadena/stack.yaml
+COPY ./stack-docker.yaml /kadena/stack.yaml
 COPY ./submodules/ /kadena/submodules/
 COPY ./kadena.cabal /kadena/kadena.cabal
 
@@ -22,13 +22,8 @@ RUN bash -c "mkdir -p /kadena/log && \
     stack build --flag kadena:kill-switch && \
     stack install"
 
-RUN mkdir -p /payments-demo/demo && \
-    mkdir -p /payments-demo/bin && \
-    cp ~/.local/bin/* /payments-demo/bin && \
-    cp -R /kadena/log /payments-demo && \
-    cp /kadena/demo/demo.json /payments-demo/demo && \
-    cp /kadena/demo/demo.pact /payments-demo/demo && \
-    cp /kadena/demo/start.sh /payments-demo/demo && \
-    cp /kadena/kadenaclient.sh /payments-demo
+
+RUN mkdir -p /ubuntu-16.04 && \
+    cp ~/.local/bin/* /ubuntu-16.04
 
 CMD ["/bin/bash"]

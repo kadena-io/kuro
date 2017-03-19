@@ -46,4 +46,6 @@ RUN bash -c "cd && source ./build-exports && \
 
 RUN stack --resolver lts-6.12 setup
 
+RUN apt-get install -y build-essential wget libodbc1 unixodbc unixodbc-dev freetds-bin tdsodbc
+
 CMD ["/bin/bash"]

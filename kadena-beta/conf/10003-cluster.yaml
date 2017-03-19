@@ -1,0 +1,44 @@
+publicKeys:
+- - node0
+  - 631b3a45b17b54132979745034660e608babc24ed9e71b94ebc380b5df948ab8
+- - node1
+  - 7ef99b03c495855d4925050756ea949cc487131881f9b5ee0fa03292212e5c1c
+- - node2
+  - 2838735f225274f49a37b446fd196ab78afb1d13da2575dfd8adec5adfdd6fad
+- - node3
+  - 516ed9033aef1ec7ceb9e79762cb4dce634926ab256a128d19e51efe679d63a5
+aeBatchSize: 20000
+heartbeatTimeout: 1000000
+logDir: ./log
+apiPort: 8003
+preProcThreadCount: 100
+electionTimeoutRange:
+- 3000000
+- 6000000
+otherNodes:
+- alias: node0
+  fullAddr: tcp://127.0.0.1:10000
+  host: '127.0.0.1'
+  port: 10000
+- alias: node1
+  fullAddr: tcp://127.0.0.1:10001
+  host: '127.0.0.1'
+  port: 10001
+- alias: node2
+  fullAddr: tcp://127.0.0.1:10002
+  host: '127.0.0.1'
+  port: 10002
+inMemTxCache: 200000
+myPublicKey: 516ed9033aef1ec7ceb9e79762cb4dce634926ab256a128d19e51efe679d63a5
+nodeId:
+  alias: node3
+  fullAddr: tcp://127.0.0.1:10003
+  host: '127.0.0.1'
+  port: 10003
+enableWriteBehind: true
+enableDebug: true
+entity:
+  Name: me
+enablePersistence: true
+myPrivateKey: a17e43c191b80a4d03eb2f1efc348bdcd641505fe840475413b877706407ae22
+preProcUsePar: true

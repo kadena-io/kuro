@@ -9,7 +9,7 @@ packages:
   extra-dep: true
 - location: submodules/pact-persist
   extra-dep: true
-- location: submodules/hdbs-odbc
+- location: submodules/hdbc-odbc
   extra-dep: true
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)

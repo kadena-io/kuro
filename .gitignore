@@ -1,4 +1,5 @@
 kadena-beta/log/*
+kadena-beta/bin/*
 payments-demo*
 *.swp
 aws-conf/*

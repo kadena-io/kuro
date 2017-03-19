@@ -81,7 +81,7 @@ getConfig = do
         Left err -> putStrLn (Y.prettyPrintParseException err) >> exitFailure
         Right conf' -> return $ conf'
           { _apiPort = if optApiPort opts == -1 then conf' ^. apiPort else optApiPort opts
-          , _enablePersistence = optDisablePersistence opts
+          , _enablePersistence = not $ optDisablePersistence opts
           }
     (_,_,errs)     -> mapM_ putStrLn errs >> exitFailure
 

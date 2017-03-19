@@ -27,7 +27,23 @@ A very specific version of tmux is required because features were entirely remov
 
 ### Quick Start
 
+Quickly launch a local instance, see "Sample Usage: ..." for interactions that come with the beta.
 
+#### OSX
+
+```
+$ tmux
+$ cd kadena-beta
+$ ./bin/osx/start.sh
+```
+
+#### Ubuntu 16.04
+
+```
+$ tmux
+$ cd kadena-beta
+$ ./bin/ubuntu-16.04/start.sh
+```
 
 ### Binaries
 

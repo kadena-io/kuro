@@ -33,4 +33,7 @@ safe npm run build
 safe cd ..
 safe cp -R monitor/public/* ./kadena-beta/static/monitor/
 
+chirp "taring the result"
+safe tar cvz kadena-beta/* > kadena-beta.tgz
+
 exit 0

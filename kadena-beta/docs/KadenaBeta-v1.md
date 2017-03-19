@@ -17,7 +17,7 @@ Required:
 
 * `zeromq >= v4.1.4`
   * OSX: `brew install zeromq`
-  * Ubuntu: the `apt-get` version of zeromq v4 is incorrect, you need to build it from sounce. See the Ubuntu docker file for more information. 
+  * Ubuntu: the `apt-get` version of zeromq v4 is incorrect, you need to build it from sounce. See the Ubuntu docker file for more information.
 * `libz`: usually this comes pre-installed
 * `unixodbc == v3.*`
   * OSX: `brew install unixodbc`
@@ -52,9 +52,11 @@ $ cd kadena-beta
 $ ./bin/ubuntu-16.04/start.sh
 ```
 
-### Binaries
 
-#### `kadenaserver`
+
+# Kadena server and client binaries
+
+### `kadenaserver`
 
 Launch a consensus server node.
 On startup, `kadenaserver` will open connections on three ports as specified in the configuration file:
@@ -74,7 +76,7 @@ Options:
 
 NB: there is a `zeromq` bug that may cause `kadenaserver` to fail to launch (segfault) ~1% of the time. Once running this is not an issue. If you encounter this problem, please relaunch.
 
-#### `kadenaclient` & `kadenaclient.sh`
+### `kadenaclient` & `kadenaclient.sh`
 
 Launch a client to the consensus cluster.
 The client allows for command-line level interaction with the server's REST API in a familiar (REPL-style) format.
@@ -90,9 +92,9 @@ Sample Usage (found in kadenaclient.sh):
   rlwrap -A bin/kadenaclient -c "conf/$(ls conf | grep -m 1 client)"
 ```
 
-#### Things to be aware of
+# General Considerations
 
-##### Elections Triggered by a High Load
+### Elections Triggered by a High Load
 
 When running a `local` demo, resource contention can trigger election under a high load when certain configurations are present.
 For example, `batch 40000` when the replication per heartbeat is set to +10k will likely trigger an election event.
@@ -101,12 +103,12 @@ This should not occur in a distributed setting nor is it a problem overall as th
 
 If you would like to do large scale `batch` tests in a local setting, use `genconfs` to create new configuration files where the replication limit is ~8k.
 
-##### Replay From Disk
+### Replay From Disk
 
 On startup but before `kadenaserver` goes online, it will replay from origin each persisted transaction.
 If you would like to start fresh, you will need to delete the SQLite DB's prior to startup.
 
-##### Core Count
+### Core Count
 
 By default `kadenaserver` is configured use as many cores as are available.
 In a distributed setting, this is generally a good default; in a local setting, it is not.
@@ -115,9 +117,12 @@ Because each node needs 8 cores to function at peak performance, running multipl
 To avoid this, the `demo/start.sh` script restricts each node to 4 cores via the `+RTS -N4 -RTS` flags.
 You may use these, or any other flags found in [GHC RTS Options](https://downloads.haskell.org/~ghc/7.10.3/docs/html/users_guide/runtime-control.html#rts-opts-compile-time) to configure a given node should you wish to.
 
-##### Beta Limitations
+* To set cores to a specific amount, add `+RTS -N[core count] -RTS`.
+* To allow kadena to use all available cores, do not specify core count (remove the `+RTS -N[count] -RTS` section, or just the `-N[cores]` if using other runtime settings.)
 
-Beta License instances of Kadena are limited in the following ways:
+### Beta Limitations
+
+Beta License instances of Kadena are limited as follows:
 
 * The maximum cluster size is limited to 16
 * The maximum number of total committed transactions is limited to 200,000
@@ -126,11 +131,7 @@ Beta License instances of Kadena are limited in the following ways:
 
 For a version without any/all of these restrictions, please contact us at [info@kadena.io](mailto:info@kadena.io).
 
-##### Performance Limitations
-
-Currently the peak performance of Kadena v1 has degraded to ~4k/second for our "Payments Performance Demo" (vs Kadena v0's 8k/sec).
-While unfortunate, we are aware of the  on the cause of the slowdown and should have full performance returned by mid April.
-We apologize for the inconvenience.
+# Configuration
 
 ### Automated configuration generation: `genconfs`
 
@@ -364,14 +365,14 @@ First Seen:          2017-03-19 05:43:14.868 UTC
 
 #### Sample Usage: Viewing the Performance Monitor
 
-Each kadena node, while running, will host a performance monitor at the URL `<nodeId.host>:<nodeId.port>/monitor`. 
+Each kadena node, while running, will host a performance monitor at the URL `<nodeId.host>:<nodeId.port>/monitor`.
 
 #### Sample Usage: Running Pact TodoMVC
 
 The `kadena-beta` also bundles the [Pact TodoMVC](github.com/kadena-io/pact-todomvc). Each kadena node will host the frontend at `<nodeId.host>:<nodeId.port>/todomvc`
 
 
-# Configuration Files
+# Configuration File Documentation
 
 Generally, you won't need to personally edit the configuration files for either the client or server(s), but this information is available should you wish to.
 The executable `genconfs` will create the configuration files for you and offer recommended settings based on your choices.
@@ -461,8 +462,7 @@ This is because when the cluster has a large number of pending transactions to r
 Generally, it's best to have `maxTransactionsPerSecond` be 1.5x of the expected performance, which itself is ~8k/second.
 
 Because of the way that we measure performance, which starts from the moment that the cluster's Leader node first sees a transaction to when it fully executes the Pact smart contract (inclusive of the time required for replication, consensus, and cryptography), the logic of the Pact smart contract itself will impact performance.
-For example, the "smart contract" `(+ 1 1)` will execute at a rate of 12k/second whereas a smart contract that requires 1 second to fold a protein will execute at 1/second.
-In both cases, the performance of everything up to the point of execution will be identical.
+Thus, executing simple logic like `(+ 1 1)` will achieve 12k commits/second whereas a smart contract with numerous database writes will vary based on the backend used and the complexity of the data model.
 
 
 ## Client (repl) config file

@@ -31,6 +31,6 @@ safe rm -rf ./kadena-beta/static/monitor/*
 safe cd ./monitor
 safe npm run build
 safe cd ..
-safe cp -R monitor/public/* ./kadena-beta/static/monitor
+safe cp -R monitor/public/* ./kadena-beta/static/monitor/
 
 exit 0

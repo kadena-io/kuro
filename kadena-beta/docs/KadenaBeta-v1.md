@@ -16,6 +16,7 @@ Documentation: v1
 Required:
 
 * `zeromq >= v4.1.4`
+* `libz` -- LZMA Compression
 
 Optional:
  
@@ -24,6 +25,8 @@ Optional:
 
 
 ### QuickStart
+
+
 
 ### Binaries
 
@@ -62,6 +65,15 @@ Sample Usage (found in kadenaclient.sh):
 ```
 
 #### Things to be aware of
+
+##### Elections Triggered by a High Load
+
+When running a `local` demo, resource contention can trigger election under a high load when certain configurations are present.
+For example, `batch 40000` when the replication per heartbeat is set to +10k will likely trigger an election event.
+This is caused entirely by a lack of available CPU being present; one of the nodes will hog the CPU, causing the other nodes to trigger an election.
+This should not occur in a distributed setting nor is it a problem overall as the automated handling of availability events are one of the features central to any distributed system.
+
+If you would like to do large scale `batch` tests in a local setting, use `genconfs` to create new configuration files where the replication limit is ~8k.
 
 ##### Replay From Disk
 

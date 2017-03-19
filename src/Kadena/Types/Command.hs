@@ -48,6 +48,7 @@ import Kadena.Types.Base
 import Kadena.Types.Message.Signed
 
 import qualified Pact.Types.Command as Pact
+import qualified Pact.Server.PactService as Pact
 import qualified Pact.Types.RPC as Pact
 import Pact.Types.Util
 
@@ -111,7 +112,7 @@ instance (Show a) => Show (Preprocessed a) where
   show Pending{} = "Pending {unPending = <MVar>}"
   show (Result a) = "Result {unResult = " ++ show a ++ "}"
 
-type SCCPreProcResult = PendingResult (Pact.ProcessedCommand Pact.PactRPC)
+type SCCPreProcResult = PendingResult (Pact.ProcessedCommand (Pact.PactRPC Pact.ParsedCode))
 
 data RunPreProc =
   RunSCCPreProc
@@ -120,7 +121,7 @@ data RunPreProc =
 
 data FinishedPreProc =
   FinishedPreProcSCC
-    { _fppSccRes :: !(Pact.ProcessedCommand Pact.PactRPC)
+    { _fppSccRes :: !(Pact.ProcessedCommand (Pact.PactRPC Pact.ParsedCode))
     , _fppSccMVar :: !(MVar SCCPreProcResult)}
 
 runPreprocPure :: RunPreProc -> FinishedPreProc
@@ -145,7 +146,7 @@ runPreproc hitPreProc RunSCCPreProc{..} = do
 
 data Command = SmartContractCommand
   { _sccCmd :: !(Pact.Command ByteString)
-  , _sccPreProc :: !(Preprocessed (Pact.ProcessedCommand Pact.PactRPC))
+  , _sccPreProc :: !(Preprocessed (Pact.ProcessedCommand (Pact.PactRPC Pact.ParsedCode)))
   } deriving (Show, Eq, Generic)
 makeLenses ''Command
 

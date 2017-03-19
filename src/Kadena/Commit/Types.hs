@@ -77,7 +77,7 @@ makeLenses ''CommitEnv
 data CommitState = CommitState
   { _nodeId :: !NodeId
   , _keySet :: !KeySet
-  , _commandExecInterface :: !(Pact.CommandExecInterface Pact.PactRPC)
+  , _commandExecInterface :: !(Pact.CommandExecInterface (Pact.PactRPC Pact.ParsedCode))
   }
 makeLenses ''CommitState
 

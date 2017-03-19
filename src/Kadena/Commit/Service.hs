@@ -27,10 +27,11 @@ import Data.Aeson (Value)
 import System.Directory
 
 import qualified Pact.Types.Command as Pact
-import Pact.Types.Command (CommandExecInterface(..), ExecutionMode(..))
+import qualified Pact.Server.PactService as Pact
+import Pact.Types.Command (CommandExecInterface(..), ExecutionMode(..),ParsedCode(..))
 import Pact.Types.Runtime (EvalEnv(..))
 import Pact.Types.RPC (PactRPC)
-import Pact.Server.PactService (applyCmd)
+import Pact.Server.PactService (applyCmd,verifyCommand)
 import Pact.Types.Server (CommandConfig(..), CommandState(..))
 import Pact.PersistPactDb (initDbEnv, createSchema, pactdb,DbEnv(..))
 import Pact.Native (initEvalEnv)
@@ -66,10 +67,10 @@ initCommitEnv dispatch' debugPrint' commandConfig' publishMetric' getTimestamp' 
 data ReplayStatus = ReplayFromDisk | FreshCommands deriving (Show, Eq)
 
 
-initPactService :: CommitEnv -> CommandConfig -> IO (CommandExecInterface PactRPC)
+initPactService :: CommitEnv -> CommandConfig -> IO (CommandExecInterface (PactRPC ParsedCode))
 initPactService CommitEnv{..} config@CommandConfig {..} = do
   let klog s = _ccDebugFn ("[PactService] " ++ s)
-      mkCEI :: MVar (DbEnv a) -> MVar CommandState -> CommandExecInterface PactRPC
+      mkCEI :: MVar (DbEnv a) -> MVar CommandState -> CommandExecInterface (PactRPC ParsedCode)
       mkCEI dbVar cmdVar = CommandExecInterface
         { _ceiApplyCmd = \eMode cmd -> applyCmd config dbVar cmdVar eMode cmd (Pact.verifyCommand cmd)
         , _ceiApplyPPCmd = applyCmd config dbVar cmdVar }
@@ -191,7 +192,7 @@ applyCommand _tEnd le@LogEntry{..} = do
       (pproc, ppLat) <- case _sccPreProc of
         Unprocessed -> do
           debug $ "WARNING: non-preproccessed command found for " ++ show _leLogIndex
-          case (verifyCommand _leCommand) of
+          case (History.verifyCommand _leCommand) of
             SmartContractCommand{..} -> return $! (result _sccPreProc, _leCmdLatMetrics)
         Pending{..} -> do
           PendingResult{..} <- getPendingPreProcSCC startTime pending

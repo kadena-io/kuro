@@ -92,7 +92,7 @@ data ConfigParams = ConfigParams
   , logDir :: !FilePath
   , confDir :: !FilePath
   , enableWB :: !Bool
-  , hostStaticDir :: !Bool
+  , hostStaticDirB :: !Bool
   } deriving (Show)
 
 data ConfGenMode =
@@ -158,7 +158,7 @@ getParams cfgMode = do
     , logDir = logDir'
     , confDir = confDir'
     , enableWB = enableWB'
-    , hostStaticDir = hostStaticDir'
+    , hostStaticDirB = hostStaticDir'
     }
 
 mainAws :: FilePath -> FilePath -> IO ()
@@ -212,7 +212,7 @@ createClusterConfig ConfigParams{..} (privMap, pubMap) apiP nid = Config
   , _preProcThreadCount   = ppThreadCnt
   , _preProcUsePar        = ppUsePar
   , _inMemTxCache         = inMemTxs
-  , _hostStaticDir        = hostStaticDir
+  , _hostStaticDir        = hostStaticDirB
   }
 
 createClientConfig :: [Config] -> (Map NodeId PrivateKey, Map NodeId PublicKey) -> NodeId -> ClientConfig

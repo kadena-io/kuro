@@ -16,7 +16,14 @@ Documentation: v1
 Required:
 
 * `zeromq >= v4.1.4`
-* `libz` -- LZMA Compression Library
+  * OSX: `brew install zeromq`
+  * Ubuntu: the `apt-get` version of zeromq v4 is incorrect, you need to build it from sounce. See the Ubuntu docker file for more information. 
+* `libz`: usually this comes pre-installed
+* `unixodbc == v3.*`
+  * OSX: `brew install unixodbc`
+  * Ubuntu: refer to docker file
+* Ubuntu Only:
+  * `libsodium`: refer to docker file
 
 Optional:
 
@@ -353,6 +360,13 @@ First Seen:          2017-03-19 05:43:14.868 UTC
 ... etc ...
 ```
 
+#### Sample Usage: Viewing the Performance Monitor
+
+Each kadena node, while running, will host a performance monitor at the URL `<nodeId.host>:<nodeId.port>/monitor`. 
+
+#### Sample Usage: Running Pact TodoMVC
+
+The `kadena-beta` also bundles the [Pact TodoMVC](github.com/kadena-io/pact-todomvc). Each kadena node will host the frontend at `<nodeId.host>:<nodeId.port>/todomvc`
 
 
 # Configuration Files

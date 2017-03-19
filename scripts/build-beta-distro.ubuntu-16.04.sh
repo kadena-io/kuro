@@ -25,6 +25,7 @@ safe docker build --cpuset-cpus="0-3" --cpu-shares=1024 --memory=8g -t kadena:ub
 safe docker run -i -v ${PWD}:/work_dir kadena:ubuntu-16.04 << COMMANDS
 cp -R /ubuntu-16.04 /work_dir/kadena-beta/bin
 COMMANDS
+safe cp docker/ubuntu-base.Dockerfile kadena-beta/docker/
 
 chirp "Builing and Copying: Performance Monitor"
 safe rm -rf ./kadena-beta/static/monitor/*

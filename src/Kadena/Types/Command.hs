@@ -33,6 +33,7 @@ import Control.Exception
 import Control.Lens
 import Control.Monad
 import Control.Concurrent
+import Control.DeepSeq
 
 import Data.Serialize (Serialize)
 import qualified Data.Serialize as S
@@ -123,6 +124,9 @@ data FinishedPreProc =
   FinishedPreProcSCC
     { _fppSccRes :: !(Pact.ProcessedCommand (Pact.PactRPC Pact.ParsedCode))
     , _fppSccMVar :: !(MVar SCCPreProcResult)}
+
+instance NFData FinishedPreProc where
+  rnf FinishedPreProcSCC{..} = (rnf _fppSccRes)
 
 runPreprocPure :: RunPreProc -> FinishedPreProc
 runPreprocPure RunSCCPreProc{..} =

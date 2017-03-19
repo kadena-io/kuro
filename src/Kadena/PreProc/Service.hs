@@ -18,6 +18,7 @@ import Control.Parallel.Strategies
 import Data.Thyme.Clock
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
+import Data.Foldable
 
 import Kadena.PreProc.Types as X
 import Kadena.Types.Dispatch (Dispatch)
@@ -77,7 +78,8 @@ handle workChan = do
 
 handleCmdPar :: UTCTime -> Seq ProcessRequest -> ProcessRequestService ()
 handleCmdPar startTime s = do
-  res <- return $! (evalPreProcCmd <$> s `using` parTraversable rseq)
+  let asList = toList s
+  res <- return $! parMap rdeepseq evalPreProcCmd asList
   endTime <- now
   mapM_ (liftIO . finishPreProc startTime endTime) res
 {-# INLINE handleCmdPar #-}

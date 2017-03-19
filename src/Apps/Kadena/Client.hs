@@ -304,10 +304,7 @@ printLatTime s
       let s' = drop 1 $ reverse $ show s
           s'' = reverse $ (take 2 s') ++ "." ++ (drop 2 s')
       in s'' ++ " milli(s)"
-  | otherwise =
-      let s' = drop 4 $ reverse $ show s
-          s'' = reverse $ (take 2 s') ++ "." ++ (drop 2 s')
-      in s'' ++ " micro(s)"
+  | otherwise = show s ++ " micro(s)"
 
 pprintLatency :: CmdResultLatencyMetrics -> Repl ()
 pprintLatency CmdResultLatencyMetrics{..} = do

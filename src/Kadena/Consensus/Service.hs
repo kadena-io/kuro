@@ -12,6 +12,8 @@ import qualified Data.Set as Set
 import Data.IORef
 import Data.Thyme.Clock (UTCTime)
 
+import System.FilePath
+
 import qualified Pact.Types.SQLite as Pact
 import qualified Pact.Types.Server as Pact
 import Pact.Types.Server (CommandConfig(..))
@@ -118,7 +120,7 @@ runConsensusService renv rconf spec rstate timeCache' mPubConsensus' = do
       nodeId' = rconf ^. nodeId
       commandConfig' = CommandConfig
         { _ccDbFile = if rconf ^. enablePersistence
-                      then Just $ (rconf ^. logDir) ++ "-pact.sqlite"
+                      then Just $ (rconf ^. logDir) </> (show $ _alias $ rconf ^. nodeId) ++ "-pact.sqlite"
                       else Nothing
         , _ccDebugFn = return . const () -- dbgPrint'
         , _ccEntity = rconf ^. entity.entName

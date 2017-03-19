@@ -1,5 +1,6 @@
 kadena-beta/log/*
 kadena-beta/bin/*
+kadena-beta.tgz
 payments-demo*
 *.swp
 aws-conf/*

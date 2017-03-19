@@ -173,8 +173,8 @@ mainAws clustersFile clientsFile = do
   cfgParams@ConfigParams{..} <- getParams AWS {awsClientCnt = length clientIds, awsClusterCnt = length clusterIds}
   clusterConfs <- return (createClusterConfig cfgParams clusterKeyMaps 8000 <$> clusterIds)
   clientConfs <- return (createClientConfig clusterConfs clientKeyMaps <$> clientIds)
-  mapM_ (\c' -> Y.encodeFile (confDir </> _host (_nodeId c') ++ "-cluster-aws.yaml") c') clusterConfs
-  mapM_ (\(ci,c') -> Y.encodeFile (confDir </> show ci ++ "-client-aws.yaml") c') $ zip clientIds clientConfs
+  mapM_ (\c' -> Y.encodeFile (confDir </> _host (_nodeId c') ++ "-server.yaml") c') clusterConfs
+  mapM_ (\(ci,c') -> Y.encodeFile (confDir </> _host ci ++ "-client.yaml") c') $ zip clientIds clientConfs
 
 mainLocal :: IO ()
 mainLocal = do

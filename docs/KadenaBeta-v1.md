@@ -31,6 +31,8 @@ On startup, `kadenaserver` will open connections on three ports as specified in 
 `<apiPort>`, `<nodeId.port>`, `<nodeId.port> + 5000`. 
 Generally, these ports will default to `8000`, `10000`, and `15000` (see `genconfs` for details).
 
+For information regarding the configuration yaml generally, see the "Configuration Files" section.
+
 ```
 kadenaserver [-c|--config] [-d|--disablePersistence]
 
@@ -44,7 +46,7 @@ Options:
 
 Launch a client to the consensus cluster.
 The client allows for command-line level interaction with the server's REST API in a familiar (REPL-style) format.
-The associated script 
+The associated script incorporates rlwrap to enable Up-Arrow style history, but is not required.
 
 ```
 kadenaclient [-c|--config]
@@ -53,10 +55,17 @@ Options:
   -c,--config               [Required] path to client yaml configuration file
   
 Sample Usage (found in kadenaclient.sh):
-  rlwrap -A bin/kadenaclient -c "conf/$(ls conf | grep -m 1 client)" +RTS -N2
+  rlwrap -A bin/kadenaclient -c "conf/$(ls conf | grep -m 1 client)"
 ```
 
+#### Notes and Warnings
 
+By default `kadenaserver` is configured use as many cores as are available.
+In a distributed setting, this is ideal; in a local setting, it is not.
+Because each node needs 8 cores to function at peak performance, running multiple nodes locally when clusterSize * 8 > available cores can cause the nodes to obstruct eachother (and thereby trigger an election).
+
+To avoid this, the `demo/start.sh` script restricts each node to 4 cores via the `+RTS -N4 -RTS` flags.
+You may use these, or any other flags found in [GHC RTS Options](https://downloads.haskell.org/~ghc/7.10.3/docs/html/users_guide/runtime-control.html#rts-opts-compile-time) to configure a given node should you wish to.
 
 ### Automated configuration generation: `genconfs`
 
@@ -106,6 +115,20 @@ Set to recommended value: Sparks
 
 Set to recommended value: 100
 
+```
+
+```
+$ cat server-ips
+54.73.153.1
+54.73.153.2
+54.73.153.3
+54.73.153.4
+$ cat client-ips
+54.73.153.5
+$ ./genconfs --distributed ./server-ips ./client-ips
+When a recommended setting is available, press Enter to use it
+[FilePath] Which directory should hold the log files and SQLite DB's? (recommended: ./log)
+... etc ...
 ```
 
 For details about what each of these configuration choices do, please refer to the "Configuration Files" section.

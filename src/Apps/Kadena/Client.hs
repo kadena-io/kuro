@@ -303,8 +303,15 @@ printLatTime s
   | s >= 1000 =
       let s' = drop 1 $ reverse $ show s
           s'' = reverse $ (take 2 s') ++ "." ++ (drop 2 s')
-      in s'' ++ " milli(s)"
+          s''' = if length s'' == 5 then " " ++ s'' else s''
+      in s''' ++ " milli(s)"
+  | length (show s) == 1 = "  " ++ show s ++ " micro(s)"
+  | length (show s) == 2 = " " ++ show s ++ " micro(s)"
   | otherwise = show s ++ " micro(s)"
+
+getLatDelta :: (Num a, Ord a, Show a) => Maybe a -> Maybe a -> Maybe a
+getLatDelta (Just st) (Just ed) = Just $ ed - st
+getLatDelta _ _ = Nothing
 
 pprintLatency :: CmdResultLatencyMetrics -> Repl ()
 pprintLatency CmdResultLatencyMetrics{..} = do
@@ -319,8 +326,10 @@ pprintLatency CmdResultLatencyMetrics{..} = do
   mFlushStr "Sent to Commit:     +" _rlmLogConsensus
   mFlushStr "Started PreProc:    +" _rlmHitPreProc
   mFlushStr "Finished PreProc:   +" _rlmFinPreProc
+  mFlushStr "Crypto took:         " (getLatDelta _rlmHitPreProc _rlmFinPreProc)
   mFlushStr "Started Commit:     +" _rlmHitCommit
   mFlushStr "Finished Commit:    +" _rlmFinCommit
+  mFlushStr "Pact exec took:      " (getLatDelta _rlmHitCommit _rlmFinCommit)
 
 pprintResult :: Value -> Maybe String
 pprintResult v = do

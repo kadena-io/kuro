@@ -96,7 +96,7 @@ timeCache tz tc = mkAutoUpdate defaultUpdateSettings
 utcTimeCache :: IO (IO UTCTime)
 utcTimeCache = mkAutoUpdate defaultUpdateSettings
   { updateAction = getCurrentTime
-  , updateFreq = 1000}
+  , updateFreq = 5}
 
 initSysLog :: IO UTCTime -> IO TimedFastLogger
 initSysLog tc = do

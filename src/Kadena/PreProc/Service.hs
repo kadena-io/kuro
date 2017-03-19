@@ -80,10 +80,12 @@ handleCmdPar startTime s = do
   res <- return $! (evalPreProcCmd <$> s `using` parTraversable rseq)
   endTime <- now
   mapM_ (liftIO . finishPreProc startTime endTime) res
+{-# INLINE handleCmdPar #-}
 
 evalPreProcCmd :: ProcessRequest -> FinishedPreProc
 evalPreProcCmd (CommandPreProc rpp) = runPreprocPure rpp
 evalPreProcCmd Heart{} = error $ "Invariant Error: `evalPreProcCmd` caught a HeartBeat"
+{-# INLINE evalPreProcCmd #-}
 
 filterBatch :: Seq ProcessRequest -> (Seq ProcessRequest, Seq ProcessRequest)
 filterBatch s = Seq.partition isHB s

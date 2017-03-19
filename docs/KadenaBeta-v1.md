@@ -22,6 +22,9 @@ Optional:
 * `rlwrap`: only used in `kadenaclient.sh` to enable Up-Arrow style history. Feel free to remove it from the script if you'd like to avoid installing it.
 * `tmux == v2.0`: only used for the local demo script `demo/start.sh`. A very specific version of tmux is required because features were entirely removed in later version that preclude the script from working.
 
+
+### QuickStart
+
 ### Binaries
 
 #### `kadenaserver`
@@ -34,7 +37,7 @@ Generally, these ports will default to `8000`, `10000`, and `15000` (see `gencon
 For information regarding the configuration yaml generally, see the "Configuration Files" section.
 
 ```
-kadenaserver [-c|--config] [-d|--disablePersistence]
+kadenaserver (-c|--config) [-d|--disablePersistence]
 
 Options:
   -c,--config               [Required] path to server yaml configuration file
@@ -49,7 +52,7 @@ The client allows for command-line level interaction with the server's REST API 
 The associated script incorporates rlwrap to enable Up-Arrow style history, but is not required.
 
 ```
-kadenaclient [-c|--config]
+kadenaclient (-c|--config)
 
 Options:
   -c,--config               [Required] path to client yaml configuration file
@@ -58,14 +61,38 @@ Sample Usage (found in kadenaclient.sh):
   rlwrap -A bin/kadenaclient -c "conf/$(ls conf | grep -m 1 client)"
 ```
 
-#### Notes and Warnings
+#### Things to be aware of
+
+##### Replay From Disk
+
+On startup but before `kadenaserver` goes online, it will replay from origin each persisted transaction. 
+If you would like to start fresh, you will need to delete the sqlite DB's prior to startup.
+
+##### Core Count
 
 By default `kadenaserver` is configured use as many cores as are available.
-In a distributed setting, this is ideal; in a local setting, it is not.
+In a distributed setting, this is generally a good default; in a local setting, it is not.
 Because each node needs 8 cores to function at peak performance, running multiple nodes locally when clusterSize * 8 > available cores can cause the nodes to obstruct eachother (and thereby trigger an election).
 
 To avoid this, the `demo/start.sh` script restricts each node to 4 cores via the `+RTS -N4 -RTS` flags.
 You may use these, or any other flags found in [GHC RTS Options](https://downloads.haskell.org/~ghc/7.10.3/docs/html/users_guide/runtime-control.html#rts-opts-compile-time) to configure a given node should you wish to.
+
+##### Beta Limitations
+
+Beta License instances of Kadena are limited in the following ways:
+
+* The maximum cluster size is limited to 16
+* The maximum number of total committed transactions is limited to 200,000
+* The binaries will only run for 90 days
+* Consensus level membership & key rotation changes are not available
+
+For a version without any/all of these restrictions, please contact us at [info@kadena.io](mailto:info@kadena.io).
+
+##### Performance Limitations
+
+Currently the peak performance of Kadena v1 has degraded to ~4k/second for our "Payments Performance Demo" (vs Kadena v0's 8k/sec).
+While unfortunate, we are aware of the  on the cause of the slowdown and should have full performance returned by mid April.
+We apologize for the inconvinience.
 
 ### Automated configuration generation: `genconfs`
 
@@ -78,7 +105,7 @@ It operates in 2 modes:
 It will ask you how many cluster and client nodes you'd like.
 * `./genconfs --distributed <cluster-ips file> <client-ips file>` will create a set of config files using the IP addresses specified in the files.
 
-Once started, `genconfs` will try to recommend the right settings for your environment:
+In either mode `genconfs` will try to recommend the right settings as you specify your environment:
 
 ```
 $ ./genconfs
@@ -116,6 +143,7 @@ Set to recommended value: Sparks
 Set to recommended value: 100
 
 ```
+In distributed mode:
 
 ```
 $ cat server-ips
@@ -132,6 +160,170 @@ When a recommended setting is available, press Enter to use it
 ```
 
 For details about what each of these configuration choices do, please refer to the "Configuration Files" section.
+
+# Interacting With a Running Cluster
+
+All interaction with the cluster is done via a REST API.
+The REST API is identical to the [Pact development server](http://pact-language.readthedocs.io/en/latest/pact-reference.html#rest-api) API with the exception that every node will host it's own instance.
+You may interact with any node's API. Indeed, this is what `kadenaclient` itself does.
+
+### Via the `kadenaclient` REPL
+
+While simple to use/interact with, there are a lot of details for more advance usage.
+Please contact us on slack if there topics you'd like dive deeper into than we detail here.
+To begin, when the REPL is running there are a number of REPL specific commands are available: 
+
+```
+$ ./kadenaclient.sh
+node3> help
+Command Help:
+sleep [MILLIS]
+    Pause for 5 sec or MILLIS
+cmd [COMMAND]
+    Show/set current batch command
+data [JSON]
+    Show/set current JSON data payload
+load YAMLFILE [MODE]
+    Load and submit yaml file with optional mode (transactional|local), defaults to transactional
+batch TIMES
+    Repeat command in batch message specified times
+pollMetrics REQUESTKEY
+    Poll each server for the request key but print latency metrics from each.
+poll REQUESTKEY
+    Poll server for request key
+exec COMMAND
+    Send command transactionally to server
+local COMMAND
+    Send command locally to server
+server [SERVERID]
+    Show server info or set current server
+help
+    Show command help
+keys [PUBLIC PRIVATE]
+    Show or set signing keypair
+exit
+    Exit client
+format [FORMATTER]
+    Show/set current output formatter (yaml|raw|pretty)
+```
+
+`load` is designed to assist with initializing a new environment on a running blockchain.
+Here is an example load yaml file:
+
+```
+$ tree demo
+demo
+├── demo.pact
+├── demo.repl
+└── demo.yaml
+
+$ cat demo/demo.yaml
+data: |-
+  { "demo-admin-keyset": { "keys": ["demoadmin"], "pred": ">" } }
+codeFile: demo.pact
+keyPairs:
+  - public: 06c9c56daa8a068e1f19f5578cdf1797b047252e1ef0eb4a1809aa3c2226f61e
+    secret: 7ce4bae38fccfe33b6344b8c260bffa21df085cf033b3dc99b4781b550e1e922
+batchCmd: |-
+  (demo.transfer "Acct1" "Acct2" 1.00)
+
+```
+
+#### Sample Usage: running the payments demo
+
+Launch the client and (optionally) target the leader node (in this case `node0`). 
+The only reason to target the leader is to forgo the forwarding of new transactions to the leader.
+The cluster will handle the forwarding automatically.
+
+```
+./kadenaclient.sh
+node3> server node0
+```
+Initialize the chain (for the Payments performance demo) and read the intial balances.
+When initialized, the `cmd` is set to a single dollar transfer.
+
+```
+node0> load demo/demo.yaml
+status: success
+data: Write succeeded
+
+Setting batch command to: (demo.transfer "Acct1" "Acct2" 1.00)
+node0> exec (demo.read-all)
+account      | amount       | balance      | data
+---------------------------------------------------------
+"Acct1"      | "1000000.0"  | "1000000.0"  | "Admin account funding"
+"Acct2"      | "0.0"        | "0.0"        | "Created account"
+```
+Execute a single dollar transfer and check the balances again.
+
+```
+node0> exec (demo.transfer "Acct1" "Acct2" 1.00)
+status: success
+data: Write succeeded
+
+node0> exec (demo.read-all)
+account      | amount       | balance      | data
+---------------------------------------------------------
+"Acct1"      | "-1.00"      | "999999.00"  | {"transfer-to":"Acct2"}
+"Acct2"      | "1.00"       | "1.00"       | {"transfer-from":"Acct1"}
+```
+Verify that `cmd` is properly setup and perform a `batch` test.
+`batch N` will create N identical transactions, using the command specified in `cmd` for each, and then send them to the cluster via the server specified by `server` (in this case to `node0`).
+
+Once sent, the REPL will then `listen` for the final transaction, collect and show its timing metrics, and print out the throughput seen in the test (i.e. `"Finished Commit" / N`).
+The "First Seen" time is the moment when the targeted server first saw the **batch** of transactions and the "Finished Commit" time delta fully captures the time it took for the replication, consensus, cryptography, and execution of the final transaction (meaning that all previous transactions needed to first be fully executed.)
+
+Some of the metrics may be of interest to you:
+
+```
+node0> cmd
+(demo.transfer "Acct1" "Acct2" 1.00)
+node0> batch 4000
+Preparing 4000 messages ...
+Sent, retrieving responses
+Polling for RequestKey: "b768a85c6e1a06d4cfd9760dd981b675dcd9dc97ee8d7abc756246107f2ea03edd80e10e5168b41ee96a17b098ea3285a0f5ca9c61c4d974a7832e01f354dcf9"
+First Seen:          2017-03-19 05:43:14.571 UTC
+Hit Turbine:        +24.03 milli(s)
+Entered Con Serv:   +39.83 milli(s)
+Finished Con Serv:  +52.41 milli(s)
+Came to Consensus:  +113.00 milli(s)
+Sent to Commit:     +113.94 milli(s)
+Started PreProc:    +690.55 milli(s)
+Finished PreProc:   +690.66 milli(s)
+Crypto took:         115 micro(s)
+Started Commit:     +1.51 second(s)
+Finished Commit:    +1.51 second(s)
+Pact exec took:      179 micro(s)
+Completed in 1.517327sec (2637 per sec)
+node0> exec (demo.read-all)
+account      | amount       | balance      | data
+---------------------------------------------------------
+"Acct1"      | "-1.00"      | "995999.00"  | {"transfer-to":"Acct2"}
+"Acct2"      | "1.00"       | "4001.00"    | {"transfer-from":"Acct1"}
+```
+If you would like to view the performance metrics from each node in the cluster, this can be done via `pollMetrics <requestKey>`
+
+
+```
+node0> pollMetrics b768a85c6e1a06d4cfd9760dd981b675dcd9dc97ee8d7abc756246107f2ea03edd80e10e5168b41ee96a17b098ea3285a0f5ca9c61c4d974a7832e01f354dcf9
+##############  node3  ##############
+First Seen:          2017-03-19 05:43:14.571 UTC
+Hit Turbine:        +24.03 milli(s)
+Entered Con Serv:   +39.83 milli(s)
+Finished Con Serv:  +52.41 milli(s)
+Came to Consensus:  +113.00 milli(s)
+Sent to Commit:     +113.94 milli(s)
+Started PreProc:    +690.55 milli(s)
+Finished PreProc:   +690.66 milli(s)
+Crypto took:         115 micro(s)
+Started Commit:     +1.51 second(s)
+Finished Commit:    +1.51 second(s)
+Pact exec took:      179 micro(s)
+##############  node2  ##############
+First Seen:          2017-03-19 05:43:14.868 UTC
+... etc ...
+```
+
 
 
 # Configuration Files
@@ -226,9 +418,6 @@ Generally, it's best to have `maxTransactionsPerSecond` be 1.5x of the expected 
 Because of the way that we measure performance, which starts from the moment that the cluster's Leader node first sees a transaction to when it fully executes the Pact smart contract (inclusive of the time required for replication, consensus, and cryptography), the logic of the Pact smart contract itself will impact performance.
 For example, the "smart contract" `(+ 1 1)` will execute at a rate of 12k/second whereas a smart contract that requires 1 second to fold a protein will execute at 1/second. 
 In both cases, the performance of everything up to the point of execution will be identitical.
-
-NB: The upgrade from Pact 1 to Pact 2 (in Janruary) the performance of our "payments demo" has dropped from 8k/s to 4k/s. 
-We expect to have regained the performance by April.
  
 
 ## Client (repl) config file

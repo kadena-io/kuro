@@ -72,6 +72,8 @@ Options:
                                        (higher performance)
 ```
 
+NB: there is a `zeromq` bug that may cause `kadenaserver` to fail to launch (segfault) ~1% of the time. Once running this is not an issue. If you encounter this problem, please relaunch.
+
 #### `kadenaclient` & `kadenaclient.sh`
 
 Launch a client to the consensus cluster.

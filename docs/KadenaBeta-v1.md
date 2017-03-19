@@ -11,7 +11,52 @@ Documentation: v1
 
 # Getting Started
 
-## Some basics
+### Dependencies
+
+Required:
+
+* `zeromq >= v4.1.4`
+
+Optional:
+ 
+* `rlwrap`: only used in `kadenaclient.sh` to enable Up-Arrow style history. Feel free to remove it from the script if you'd like to avoid installing it.
+* `tmux == v2.0`: only used for the local demo script `demo/start.sh`. A very specific version of tmux is required because features were entirely removed in later version that preclude the script from working.
+
+### Binaries
+
+#### `kadenaserver`
+
+Launch a consensus server node.
+On startup, `kadenaserver` will open connections on three ports as specified in the configuration file: 
+`<apiPort>`, `<nodeId.port>`, `<nodeId.port> + 5000`. 
+Generally, these ports will default to `8000`, `10000`, and `15000` (see `genconfs` for details).
+
+```
+kadenaserver [-c|--config] [-d|--disablePersistence]
+
+Options:
+  -c,--config               [Required] path to server yaml configuration file
+  -d,--disablePersistence   [Optional] disable usage of SQLite for on-disk persistence 
+                                       (higher performance)
+```
+
+#### `kadenaclient` & `kadenaclient.sh`
+
+Launch a client to the consensus cluster.
+The client allows for command-line level interaction with the server's REST API in a familiar (REPL-style) format.
+The associated script 
+
+```
+kadenaclient [-c|--config]
+
+Options:
+  -c,--config               [Required] path to client yaml configuration file
+  
+Sample Usage (found in kadenaclient.sh):
+  rlwrap -A bin/kadenaclient -c "conf/$(ls conf | grep -m 1 client)" +RTS -N2
+```
+
+
 
 ### Automated configuration generation: `genconfs`
 

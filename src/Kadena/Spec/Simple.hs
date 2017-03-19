@@ -47,12 +47,11 @@ import qualified Kadena.Messaging.Turbine as Turbine
 
 data Options = Options
   {  optConfigFile :: FilePath
-   , optApiPort :: Int
    , optDisablePersistence :: Bool
   } deriving Show
 
 defaultOptions :: Options
-defaultOptions = Options { optConfigFile = "", optApiPort = -1, optDisablePersistence = False}
+defaultOptions = Options { optConfigFile = "", optDisablePersistence = False}
 
 options :: [OptDescr (Options -> Options)]
 options =
@@ -60,10 +59,6 @@ options =
            ["config"]
            (ReqArg (\fp opts -> opts { optConfigFile = fp }) "CONF_FILE")
            "Configuration File"
-  , Option ['p']
-           ["apiPort"]
-           (ReqArg (\p opts -> opts { optApiPort = read p }) "API_PORT")
-           "Api Port"
   , Option ['d']
            ["disablePersistence"]
            (OptArg (\_ opts -> opts { optDisablePersistence = True }) "DISABLE_PERSISTENCE" )
@@ -80,8 +75,7 @@ getConfig = do
       case conf of
         Left err -> putStrLn (Y.prettyPrintParseException err) >> exitFailure
         Right conf' -> return $ conf'
-          { _apiPort = if optApiPort opts == -1 then conf' ^. apiPort else optApiPort opts
-          , _enablePersistence = not $ optDisablePersistence opts
+          { _enablePersistence = not $ optDisablePersistence opts
           }
     (_,_,errs)     -> mapM_ putStrLn errs >> exitFailure
 
@@ -156,7 +150,7 @@ runServer = do
   oNodes <- return $ Set.toList $ Set.delete me (rconf ^. otherNodes)-- (Map.keysSet $ rconf ^. clientPublicKeys)
   dispatch <- initDispatch
 
-  -- each node has its own snap monitoring server
+  -- Each node has its own snap monitoring server
   pubMetric <- startMonitoring rconf
   link =<< runMsgServer dispatch me oNodes debugFn -- ZMQ
   let raftSpec = simpleConsensusSpec debugFn (liftIO . pubMetric)

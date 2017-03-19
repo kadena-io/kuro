@@ -168,7 +168,7 @@ library
                      , zeromq4-haskell >= 0.6.3
                      , zlib
   hs-source-dirs:      src
-  ghc-options:         -Wall -fno-warn-unused-do-bind -O2 -with-rtsopts="-N4"
+  ghc-options:         -Wall -fno-warn-unused-do-bind -O3 -rtsopts
   ghc-prof-options:    -fprof-auto -fprof-auto-calls
   default-language:    Haskell2010
   if flag(pact-persistence)
@@ -199,7 +199,7 @@ executable kadenaserver
   build-depends:       base < 5
                      , kadena
   hs-source-dirs:      executables
-  ghc-options:         -Wall -threaded -rtsopts
+  ghc-options:         -Wall -threaded -O3 -rtsopts -with-rtsopts=-N -with-rtsopts=-T
   ghc-prof-options:    -fprof-auto -fprof-auto-calls
   default-language:    Haskell2010
 
@@ -209,7 +209,7 @@ executable kadenaclient
                      , kadena
                      , base16-bytestring
   hs-source-dirs:      executables
-  ghc-options:         -Wall -threaded -rtsopts
+  ghc-options:         -Wall -threaded -O3 -rtsopts -with-rtsopts=-N4
   ghc-prof-options:    -fprof-auto -fprof-auto-calls
   default-language:    Haskell2010
 

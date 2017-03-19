@@ -34,7 +34,7 @@ A very specific version of tmux is required because features were entirely remov
 
 ### Quick Start
 
-Quickly launch a local instance, see "Sample Usage: ..." for interactions that come with the beta.
+Quickly launch a local instance, see "Sample Usage: `[payments|monitor|todomvc]`" for interactions that come with the beta.
 
 #### OSX
 
@@ -51,7 +51,6 @@ $ tmux
 $ cd kadena-beta
 $ ./bin/ubuntu-16.04/start.sh
 ```
-
 
 
 # Kadena server and client binaries
@@ -102,6 +101,16 @@ This is caused entirely by a lack of available CPU being present; one of the nod
 This should not occur in a distributed setting nor is it a problem overall as the automated handling of availability events are one of the features central to any distributed system.
 
 If you would like to do large scale `batch` tests in a local setting, use `genconfs` to create new configuration files where the replication limit is ~8k.
+
+### Load Testing with Many Clients
+
+If you'll be testing with many (100s to +10k) simultaneous clients please be sure to provision extra CPU's.
+In a production setting, we'd expect:
+
+* To use a seperate server to collect inbound transactions from the multitude of clients and lump them into a single batch/pipe them over a websocket to the cluster itself so as to avoid needless CPU utilization.
+* For clients to connect to different nodes (e.g. all Firm A clients connect to Firm A's nodes, B's to B's, etc.), allowing the nodes themselves to batch/foward commands.
+
+The ability to do either of these is a feature of Kadena -- because commands must have a unique hash and are either (a) signed or (b) fully encrypted, they can be redirected without degrading the security model.
 
 ### Replay From Disk
 
@@ -250,13 +259,13 @@ format [FORMATTER]
 Here is an example load yaml file:
 
 ```
-$ tree demo
-demo
+$ tree kadena-beta/payments
+payments
 ├── demo.pact
 ├── demo.repl
 └── demo.yaml
 
-$ cat demo/demo.yaml
+$ cat kadena-beta/payments/demo.yaml
 data: |-
   { "demo-admin-keyset": { "keys": ["demoadmin"], "pred": ">" } }
 codeFile: demo.pact
@@ -275,14 +284,15 @@ The only reason to target the leader is to forgo the forwarding of new transacti
 The cluster will handle the forwarding automatically.
 
 ```
-./kadenaclient.sh
+cd kadena-beta
+./bin/osx/kadenaclient.sh
 node3> server node0
 ```
 Initialize the chain (for the Payments performance demo) and read the intial balances.
 When initialized, the `cmd` is set to a single dollar transfer.
 
 ```
-node0> load demo/demo.yaml
+node0> load payments/demo.yaml
 status: success
 data: Write succeeded
 

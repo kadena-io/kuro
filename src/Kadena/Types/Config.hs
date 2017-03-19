@@ -6,7 +6,7 @@
 module Kadena.Types.Config
   ( Config(..), otherNodes, nodeId, electionTimeoutRange, heartbeatTimeout
   , enableDebug, publicKeys, myPrivateKey, enableWriteBehind
-  , myPublicKey, apiPort
+  , myPublicKey, apiPort, hostStaticDir
   , logDir, entity
   , aeBatchSize, preProcThreadCount, preProcUsePar
   , inMemTxCache, enablePersistence
@@ -58,6 +58,7 @@ data Config = Config
   , _preProcThreadCount   :: !Int
   , _preProcUsePar        :: !Bool
   , _inMemTxCache         :: !Int -- how many committed transactions should we keep in memory (with the rest on disk)
+  , _hostStaticDir        :: !Bool
   }
   deriving (Show, Generic)
 makeLenses ''Config

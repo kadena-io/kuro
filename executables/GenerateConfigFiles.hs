@@ -92,6 +92,7 @@ data ConfigParams = ConfigParams
   , logDir :: !FilePath
   , confDir :: !FilePath
   , enableWB :: !Bool
+  , hostStaticDir :: !Bool
   } deriving (Show)
 
 data ConfGenMode =
@@ -143,6 +144,7 @@ getParams cfgMode = do
                   then getUserInput "[Integer] How many transactions should the Crypto PreProcessor work on at once? (recommended: 100)" (Just 100) $ checkGTE 1
                   else getUserInput "[Integer] How many green threads should be allocated to the Crypto PreProcessor? (recommended: 5 to 100)" Nothing $ checkGTE 1
   enableWB' <- yesNoToBool <$> getUserInput "[Yes|No] Use write-behind backend? (recommended: Yes)" (Just Yes) Nothing
+  hostStaticDir' <- yesNoToBool <$> getUserInput "[Yes|No] Should each node host the contents of './static' as '<host>:<port>/'? (recommended: Yes)" (Just Yes) Nothing
   return $ ConfigParams
     { clusterCnt = clusterCnt'
     , clientCnt = clientCnt'
@@ -156,6 +158,7 @@ getParams cfgMode = do
     , logDir = logDir'
     , confDir = confDir'
     , enableWB = enableWB'
+    , hostStaticDir = hostStaticDir'
     }
 
 mainAws :: FilePath -> FilePath -> IO ()
@@ -209,6 +212,7 @@ createClusterConfig ConfigParams{..} (privMap, pubMap) apiP nid = Config
   , _preProcThreadCount   = ppThreadCnt
   , _preProcUsePar        = ppUsePar
   , _inMemTxCache         = inMemTxs
+  , _hostStaticDir        = hostStaticDir
   }
 
 createClientConfig :: [Config] -> (Map NodeId PrivateKey, Map NodeId PublicKey) -> NodeId -> ClientConfig

@@ -27,10 +27,10 @@ cp -R /ubuntu-16.04 /work_dir/kadena-beta/bin
 COMMANDS
 
 chirp "Builing and Copying: Performance Monitor"
-safe rm -rf ./kadena-beta/public/*
+safe rm -rf ./kadena-beta/static/monitor/*
 safe cd ./monitor
 safe npm run build
 safe cd ..
-safe cp -R monitor/public kadena-beta
+safe cp -R monitor/public/* ./kadena-beta/static/monitor
 
 exit 0

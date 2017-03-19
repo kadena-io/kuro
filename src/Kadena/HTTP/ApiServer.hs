@@ -75,11 +75,13 @@ runApiServer :: Dispatch -> IORef Config.Config -> (String -> IO ())
 runApiServer dispatch conf logFn port mPubConsensus' timeCache' = do
   logFn $ "[Service|API]: starting on port " ++ show port
   let conf' = ApiEnv logFn dispatch conf mPubConsensus' timeCache'
-  logDir' <- _logDir <$> readIORef conf
+  rconf <- readIORef conf
+  let logDir' = _logDir rconf
+      hostStaticDir' = _hostStaticDir rconf
   serverConf' <- serverConf port logFn logDir'
   httpServe serverConf' $
     applyCORS defaultOptions $ methods [GET, POST] $
-    route $ ("api/v1", runReaderT api conf'):staticRoutes
+    route $ ("api/v1", runReaderT api conf'):(staticRoutes hostStaticDir')
 
 serverConf :: MonadSnap m => Int -> (String -> IO ()) -> FilePath -> IO (Snap.Config m a)
 serverConf port dbgFn logDir' = do

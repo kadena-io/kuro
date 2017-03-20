@@ -126,7 +126,9 @@ data FinishedPreProc =
     , _fppSccMVar :: !(MVar SCCPreProcResult)}
 
 instance NFData FinishedPreProc where
-  rnf FinishedPreProcSCC{..} = (rnf _fppSccRes)
+  rnf FinishedPreProcSCC{..} = case _fppSccRes of
+    Pact.ProcSucc s -> rnf s
+    Pact.ProcFail e -> rnf e
 
 runPreprocPure :: RunPreProc -> FinishedPreProc
 runPreprocPure RunSCCPreProc{..} =

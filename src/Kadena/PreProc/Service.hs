@@ -10,6 +10,7 @@ module Kadena.PreProc.Service
 
 import Control.Lens hiding (Index, (|>))
 import Control.Monad
+import Control.DeepSeq
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Reader
 import Control.Concurrent.Async
@@ -79,7 +80,7 @@ handle workChan = do
 handleCmdPar :: UTCTime -> Seq ProcessRequest -> ProcessRequestService ()
 handleCmdPar startTime s = do
   let asList = toList s
-  res <- return $! parMap rdeepseq evalPreProcCmd asList
+  res <- return $! parMap rseq (evalPreProcCmd) asList
   endTime <- now
   mapM_ (liftIO . finishPreProc startTime endTime) res
 {-# INLINE handleCmdPar #-}

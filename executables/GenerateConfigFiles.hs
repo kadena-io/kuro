@@ -141,7 +141,7 @@ getParams cfgMode = do
   inMemTxs' <- getUserInput ("[Integer] How many committed transactions should be cached? (recommended: " ++ show inMemRec ++ ")" ) (Just inMemRec) $ checkGTE 0
   ppUsePar' <- sparksThreadsToBool <$> getUserInput "[Sparks|Threads] Should the Crypto PreProcessor use spark or green thread based concurrency? (recommended: Sparks)" (Just Sparks) Nothing
   ppThreadCnt' <- if ppUsePar'
-                  then getUserInput "[Integer] How many transactions should the Crypto PreProcessor work on at once? (recommended: 100)" (Just 100) $ checkGTE 1
+                  then getUserInput "[Integer] How many transactions should the Crypto PreProcessor work on at once? (recommended: 10)" (Just 10) $ checkGTE 1
                   else getUserInput "[Integer] How many green threads should be allocated to the Crypto PreProcessor? (recommended: 5 to 100)" Nothing $ checkGTE 1
   enableWB' <- yesNoToBool <$> getUserInput "[Yes|No] Use write-behind backend? (recommended: Yes)" (Just Yes) Nothing
   hostStaticDir' <- yesNoToBool <$> getUserInput "[Yes|No] Should each node host the contents of './static' as '<host>:<port>/'? (recommended: Yes)" (Just Yes) Nothing

@@ -11,6 +11,9 @@ chirp "Copying: Conf"
 safe rm -rf ./kadena-beta/conf/*
 safe cp ./conf/* ./kadena-beta/conf
 
+chirp "Clearing out the log"
+safe rm ./kadena-beta/log/*
+
 chirp "Builing and Copying: OSX"
 safe rm ./kadena-beta/bin/osx/{genconfs,kadenaserver,kadenaclient}
 safe stack install

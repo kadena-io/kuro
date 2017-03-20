@@ -373,14 +373,29 @@ First Seen:          2017-03-19 05:43:14.868 UTC
 ... etc ...
 ```
 
+NB: the `Crypto took` metric is only accurate when the concurrency system is set to `Threads`. 
+All other metrics are always accurate.
+
 #### Sample Usage: Viewing the Performance Monitor
 
 Each kadena node, while running, will host a performance monitor at the URL `<nodeId.host>:<nodeId.port>/monitor`.
 
 #### Sample Usage: Running Pact TodoMVC
 
-The `kadena-beta` also bundles the [Pact TodoMVC](github.com/kadena-io/pact-todomvc). Each kadena node will host the frontend at `<nodeId.host>:<nodeId.port>/todomvc`
+The `kadena-beta` also bundles the [Pact TodoMVC](github.com/kadena-io/pact-todomvc). Each kadena node will host the frontend at `<nodeId.host>:<nodeId.port>/todomvc`. To initialized the `todomvc`:
 
+```
+$ cd kadena-beta
+
+# launch the cluster
+ 
+$ ./bin/osx/kadenaclient.sh
+node3> load todomvc/demo.yaml
+
+# go to host:port/todomvc
+```
+
+NB: this demo can be run at the same time as the `payments` demo.
 
 # Configuration File Documentation
 

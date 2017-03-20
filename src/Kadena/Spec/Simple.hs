@@ -144,7 +144,7 @@ runServer = do
   T.putStrLn $! "Kadena LLC (c) (2016-2017)"
   rconf <- getConfig
 #if WITH_KILL_SWITCH
-  when (Map.size (_otherNodes rconf) >= 16) $
+  when (Set.size (_otherNodes rconf) >= 16) $
     error $ "Beta versions of Kadena are limited to 16 consensus nodes."
 #endif
   utcTimeCache' <- utcTimeCache

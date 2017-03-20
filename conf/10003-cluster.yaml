@@ -1,13 +1,13 @@
 publicKeys:
 - - node0
-  - ae4fed861f96b2fbf74d458ef73cdb2ca8cc79c1e6574cdf56063102f649f93e
+  - 0c99d911059580819c6f39ca5c203364a20dbf0a02b0b415f8ce7b48ba3a5bad
 - - node1
-  - 9a9e683e526faa41a1c78a4f3632aaec87ee15d72f13ee7a11387b14672925df
+  - 1659cc3052cbf5e31c59b48ade01b29aedf103e9707291bd5e62a76630932409
 - - node2
-  - 1f7ff94e5c57f2a6148ad1a848c3afff9de614b5cd98eaec003c9cb7492fc0cd
+  - 333438709082e6c69e78f5ad9a3a64c19943cdd5956299954052247b19d2ed99
 - - node3
-  - 79359a6dc46f5a556162ac3f8fb4b3ec23ef5e83a3b6678d13f94c6fbea10934
-aeBatchSize: 8000
+  - 4cb7c9e8b9abf6cc78658bc34062ebdc0bba594fcd2ebfbe48fab893aae705bf
+aeBatchSize: 12000
 heartbeatTimeout: 1000000
 logDir: ./log
 apiPort: 8003
@@ -29,8 +29,8 @@ otherNodes:
   fullAddr: tcp://127.0.0.1:10002
   host: '127.0.0.1'
   port: 10002
-inMemTxCache: 80000
-myPublicKey: 79359a6dc46f5a556162ac3f8fb4b3ec23ef5e83a3b6678d13f94c6fbea10934
+inMemTxCache: 120000
+myPublicKey: 4cb7c9e8b9abf6cc78658bc34062ebdc0bba594fcd2ebfbe48fab893aae705bf
 nodeId:
   alias: node3
   fullAddr: tcp://127.0.0.1:10003
@@ -41,5 +41,5 @@ enableDebug: true
 entity:
   Name: me
 enablePersistence: true
-myPrivateKey: 7d795c0a3c019ca7632c889ae30b285db6214756417ce7af4c88fd3aa2cf2a7a
+myPrivateKey: f9dfe24923420ef5643e4d99f28e9659c7f2382d75bbbf85a2cf69486192ac76
 preProcUsePar: true

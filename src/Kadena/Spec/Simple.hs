@@ -3,6 +3,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE CPP #-}
 
 module Kadena.Spec.Simple
   ( runServer
@@ -142,6 +143,10 @@ runServer = do
   setLineBuffering
   T.putStrLn $! "Kadena LLC (c) (2016-2017)"
   rconf <- getConfig
+#if WITH_KILL_SWITCH
+  when (Map.size (_otherNodes rconf) >= 16) $
+    error $ "Beta versions of Kadena are limited to 16 consensus nodes."
+#endif
   utcTimeCache' <- utcTimeCache
   fs <- initSysLog utcTimeCache'
   let debugFn = if rconf ^. enableDebug then showDebug fs else noDebug

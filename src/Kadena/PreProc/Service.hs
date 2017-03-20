@@ -16,6 +16,8 @@ import Control.Monad.Trans.Reader
 import Control.Concurrent.Async
 import Control.Parallel.Strategies
 
+import Data.Ratio
+import Data.AffineSpace
 import Data.Thyme.Clock
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
@@ -77,13 +79,24 @@ handle workChan = do
     Heart t -> ppBeat t
 {-# INLINE handle #-}
 
+betterParallelProc :: NFData a => [a] -> [a]
+betterParallelProc xs = runEval $ do
+  pared <- mapM (rparWith rdeepseq) xs
+  mapM (rseq) pared
+
 handleCmdPar :: UTCTime -> Seq ProcessRequest -> ProcessRequestService ()
 handleCmdPar startTime s = do
   let asList = toList s
-  res <- return $! parMap rseq (evalPreProcCmd) asList
-  endTime <- now
+  res <- return $! betterParallelProc $ evalPreProcCmd <$> asList
+  endTime <- now >>= return . mkProperTime (Seq.length s) startTime
   mapM_ (liftIO . finishPreProc startTime endTime) res
-{-# INLINE handleCmdPar #-}
+
+mkProperTime :: Int -> UTCTime -> UTCTime -> UTCTime
+mkProperTime cnt startTime endTime = properTime
+  where
+    delta = (endTime .-. startTime) ^. microseconds
+    properTime = startTime .+^ (view (from microseconds) (round $ delta % (fromIntegral cnt)))
+{-# INLINE mkProperTime #-}
 
 evalPreProcCmd :: ProcessRequest -> FinishedPreProc
 evalPreProcCmd (CommandPreProc rpp) = runPreprocPure rpp

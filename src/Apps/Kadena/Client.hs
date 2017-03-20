@@ -27,6 +27,8 @@ import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Lazy.Char8 as BSL
 import qualified Data.HashMap.Strict as HM
+import qualified Data.Vector as V
+import Data.Function
 
 import qualified Data.Aeson as A
 import Data.Aeson hiding ((.=), Result(..), Value(..))
@@ -35,7 +37,7 @@ import Data.Aeson.Types hiding ((.=),parse, Result(..))
 import Data.Aeson.Encode.Pretty
 import qualified Data.Yaml as Y
 
-import Text.Trifecta as TF hiding (err,render)
+import Text.Trifecta as TF hiding (err,render,rendered)
 
 import Data.Default
 import Data.Foldable
@@ -111,7 +113,7 @@ instance FromJSON ClientConfig where
 data Mode = Transactional|Local
   deriving (Eq,Show,Ord,Enum)
 
-data Formatter = YAML|Raw|PrettyJSON deriving (Eq,Show)
+data Formatter = YAML|Raw|PrettyJSON|Table deriving (Eq,Show)
 
 data CliCmd =
   Batch Int |
@@ -202,7 +204,10 @@ putJSON :: ToJSON a => a -> Repl ()
 putJSON a = use fmt >>= \f -> flushStrLn $ case f of
   Raw -> BSL.unpack $ encode a
   PrettyJSON -> BSL.unpack $ encodePretty a
-  YAML -> BS8.unpack $ Y.encode a
+  YAML -> doYaml
+  Table -> fromMaybe doYaml $ pprintTable (toJSON a)
+  where doYaml = BS8.unpack $ Y.encode a
+
 
 batchTest :: Int -> String -> Repl ()
 batchTest n cmd = do
@@ -258,11 +263,7 @@ showResult tdelay rks countm = loop (0 :: Int)
         ApiFailure err -> flushStrLn $ "Error: no results received: " ++ show err
         ApiSuccess ApiResult{..} ->
                 case countm of
-                  Nothing -> do
-                    prettyRes <- return $ pprintResult _arResult
-                    case prettyRes of
-                      Just r' -> flushStrLn r'
-                      Nothing -> putJSON _arResult
+                  Nothing -> putJSON _arResult
                   Just cnt -> case fromJSON <$>_arMetaData of
                     Nothing -> flushStrLn "Success"
                     Just (A.Success lats@CmdResultLatencyMetrics{..}) -> do
@@ -282,17 +283,15 @@ pollForResult printMetrics rk = do
       resp <- asJSON r
       case resp ^. responseBody of
         ApiFailure err -> flushStrLn $ "Error: no results received: " ++ show err
-        ApiSuccess (PollResponses prs) -> mapM_ (\ApiResult{..} -> do
-          case pprintResult _arResult of
-            Just r' -> flushStrLn r'
-            Nothing -> if printMetrics
-              then do
+        ApiSuccess (PollResponses prs) -> forM_ (HM.elems prs) $ \ApiResult{..} -> do
+          putJSON _arResult
+          when printMetrics $ do
                 case fromJSON <$>_arMetaData of
                   Nothing -> flushStrLn "Metrics Unavailable"
                   Just (A.Success lats@CmdResultLatencyMetrics{..}) -> do
                     pprintLatency lats
                   Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
-              else putJSON _arResult) $ HM.elems prs
+
 
 printLatTime :: (Num a, Ord a, Show a) => a -> String
 printLatTime s
@@ -331,23 +330,20 @@ pprintLatency CmdResultLatencyMetrics{..} = do
   mFlushStr "Finished Commit:    +" _rlmFinCommit
   mFlushStr "Pact exec took:      " (getLatDelta _rlmHitCommit _rlmFinCommit)
 
-pprintResult :: Value -> Maybe String
-pprintResult v = do
-  let valKeys rs = either (const Nothing) id $ foldl' checkKeys (Right Nothing) rs
-      checkKeys (Right Nothing) (Object o) = Right $ Just $ sort $ HM.keys o
-      checkKeys r@(Right (Just ks)) (Object o) | sort (HM.keys o) == ks = r
-      checkKeys _ _ = Left ()
-      fill l s = s ++ replicate (l - length s) ' '
-      colwidth = 12
-      colify cw ss = intercalate " | " (map (fill cw) ss)
-      render = BSL.unpack . encode
-  o <- return $ toListOf (key "data" . values) v
-  ks <- valKeys o
-  h1 <- return $ colify colwidth (map T.unpack ks)
-  hr <- return $ replicate (length h1) '-'
-  rows <- return $ (`map` o) $ \(Object r) ->
-          intercalate " | " (map (fill colwidth . render . (r HM.!)) ks)
-  return (intercalate "\n" (h1:hr:rows))
+pprintTable :: Value -> Maybe String
+pprintTable val = do
+  os <- firstOf (key "data" . _Array) val >>= sequence . fmap (firstOf _Object)
+  let rendered = fmap (fmap (BSL.unpack . encode)) os
+      lengths = foldl' (\r m -> HM.unionWith max (HM.mapWithKey (\k v -> max (T.length k) (length v)) m) r) HM.empty rendered
+      fill n s = s ++ replicate (n - length s) ' '
+      keyLengths = sortBy (compare `on` fst) $ HM.toList lengths
+      colify m = intercalate " | " $ (`map` keyLengths) $ \(k,l) -> fill l $ fromMaybe "" $ HM.lookup k m
+      h1 = colify (HM.mapWithKey (\k _ -> T.unpack k) lengths)
+  return $ h1 ++ "\n" ++ replicate (length h1) '-' ++ "\n" ++ intercalate "\n" (V.toList $ fmap colify rendered)
+
+
+
+
 
 parseMode :: TF.Parser Mode
 parseMode =
@@ -382,10 +378,11 @@ cliCmds = [
   ("keys","[PUBLIC PRIVATE]","Show or set signing keypair",
    Keys <$> optional ((,) <$> (T.pack <$> some alphaNum) <*> (spaces >> (T.pack <$> some alphaNum)))),
   ("exit","","Exit client", pure Exit),
-  ("format","[FORMATTER]","Show/set current output formatter (yaml|raw|pretty)",
+  ("format","[FORMATTER]","Show/set current output formatter (yaml|raw|pretty|table)",
    Format <$> optional ((symbol "yaml" >> pure YAML) <|>
                         (symbol "raw" >> pure Raw) <|>
-                        (symbol "pretty" >> pure PrettyJSON)))
+                        (symbol "pretty" >> pure PrettyJSON) <|>
+                        (symbol "table" >> pure Table)))
   ]
 
 parseCliCmd :: TF.Parser CliCmd
@@ -502,5 +499,5 @@ main = do
              _requestId = i,
              _cmdData = Null,
              _keys = [KeyPair (_ccSecretKey conf) (_ccPublicKey conf)],
-             _fmt = YAML
+             _fmt = Table
            }

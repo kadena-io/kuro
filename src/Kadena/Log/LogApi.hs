@@ -24,6 +24,7 @@ import Control.Monad.IO.Class
 
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import Data.Thyme.Clock
 
 import Kadena.Types.Base
 import Kadena.Types.Comms
@@ -213,13 +214,14 @@ getEntriesFromDiskInclusiveMaybeError errName minLi maxLi = do
 triggerAER :: LogThread ()
 triggerAER = do
   senderChannel' <- view senderChannel
+  now' <- liftIO $ getCurrentTime
   lastEntry >>= \case
     Just LogEntry{..} -> do
-      liftIO $ writeComm senderChannel' $ SendAllAppendEntriesResponse _leLogIndex _leHash
+      liftIO $ writeComm senderChannel' $ SendAllAppendEntriesResponse _leLogIndex _leHash now'
     Nothing -> do
       maxLogIndex' <- lastLogIndex
       lastHash' <- lastLogHash
-      liftIO $ writeComm senderChannel' $ SendAllAppendEntriesResponse maxLogIndex' lastHash'
+      liftIO $ writeComm senderChannel' $ SendAllAppendEntriesResponse maxLogIndex' lastHash' now'
 
 updateLogs :: UpdateLogs -> LogThread ()
 updateLogs (ULNew nle) = appendLogEntry nle >> triggerAER

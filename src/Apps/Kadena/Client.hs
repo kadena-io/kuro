@@ -63,7 +63,7 @@ import qualified Pact.Types.Crypto as Pact
 import Pact.Types.Util
 
 
-import Kadena.Types.Base
+import Kadena.Types.Base hiding (printLatTime)
 import Kadena.Types.Command (CmdResultLatencyMetrics(..))
 
 data KeyPair = KeyPair {

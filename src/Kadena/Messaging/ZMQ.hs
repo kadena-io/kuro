@@ -54,7 +54,7 @@ runMsgServer dispatch me addrList debug = Async.async $ forever $ do
       liftIO $ putMVar semephory ()
       forever $ do
         !msgs <- liftIO (_unOutboundGeneral <$> readComm outboxRead) >>= return . fmap sealEnvelope
-        --liftIO $ debug $ "[ZMQ_GENERAL_PUB] publishing msg to: " ++ show (NonEmpty.head msg)
+        liftIO $ debug $ zmqGenPub ++ " publishing msg"
         mapM_ (sendMulti pubSock) msgs
 
     liftIO $ void $ takeMVar semephory
@@ -120,7 +120,7 @@ runMsgServer dispatch me addrList debug = Async.async $ forever $ do
       liftIO $ putMVar semephory ()
       forever $ do
         !msgs <- liftIO (_unOutboundAerRvRvr <$> readComm aerRvRvrRead) >>= return . fmap sealEnvelope
-        --liftIO $ debug $ zmqAerPub ++ "publishing msg to: " ++ show (NonEmpty.head msg)
+        liftIO $ debug $ zmqAerPub ++ "publishing msg"
         mapM_ (sendMulti pubSock) msgs
 
     liftIO $ void $ takeMVar semephory

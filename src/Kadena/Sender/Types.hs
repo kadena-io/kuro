@@ -24,6 +24,7 @@ import Control.Lens
 import Control.Concurrent.Chan (Chan)
 
 import Data.Set (Set)
+import Data.Thyme.Clock
 
 import Kadena.Types.Base
 import Kadena.Types.Message
@@ -37,7 +38,8 @@ data ServiceRequest' =
   { _srCommands :: !NewCmdRPC} |
   SendAllAppendEntriesResponse
   { _srLastLogHash :: !LogIndex
-  , _srMaxIndex :: !Hash} |
+  , _srMaxIndex :: !Hash
+  , _srIssuedTime :: !UTCTime} |
   Heart Beat
   deriving (Eq, Show)
 

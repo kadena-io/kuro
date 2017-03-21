@@ -31,7 +31,7 @@ import qualified Pact.Server.PactService as Pact
 import Pact.Types.Command (CommandExecInterface(..), ExecutionMode(..),ParsedCode(..))
 import Pact.Types.Runtime (EvalEnv(..))
 import Pact.Types.RPC (PactRPC)
-import Pact.Server.PactService (applyCmd,verifyCommand)
+import Pact.Server.PactService (applyCmd)
 import Pact.Types.Server (CommandConfig(..), CommandState(..))
 import Pact.PersistPactDb (initDbEnv, createSchema, pactdb,DbEnv(..))
 import Pact.Native (initEvalEnv)
@@ -179,7 +179,7 @@ getPendingPreProcSCC startTime mvResult = liftIO (tryReadMVar mvResult) >>= \cas
     debug $ "Blocked on Pending PreProc"
     r <- liftIO $ readMVar mvResult
     endTime <- now
-    debug $ "Unblocked on Pending PreProc, took :" ++ show (interval startTime endTime) ++ "micros"
+    debug $ "Unblocked on Pending PreProc, took: " ++ printInterval startTime endTime
     return r
 
 applyCommand :: UTCTime -> LogEntry -> CommitService (RequestKey, CommandResult)

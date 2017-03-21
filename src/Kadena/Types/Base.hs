@@ -16,7 +16,7 @@ module Kadena.Types.Base
   , Role(..)
   , EncryptionKey(..)
   , Alias(..)
-  , interval
+  , interval, printLatTime, printInterval
   , hash, hashLengthAsBS, hashLengthAsBase16
   , Hash(..), initialHash
   ) where
@@ -107,6 +107,24 @@ instance Serialize ReceivedAt
 
 interval :: UTCTime -> UTCTime -> Int64
 interval start end = view microseconds $ end .-. start
+{-# INLINE interval #-}
+
+printLatTime :: (Num a, Ord a, Show a) => a -> String
+printLatTime s
+  | s >= 1000000 =
+      let s' = drop 4 $ reverse $ show s
+          s'' = reverse $ (take 2 s') ++ "." ++ (drop 2 s')
+      in s'' ++ " sec"
+  | s >= 1000 =
+      let s' = drop 1 $ reverse $ show s
+          s'' = reverse $ (take 2 s') ++ "." ++ (drop 2 s')
+      in s'' ++ " mil"
+  | otherwise = show s ++ " mic"
+{-# INLINE printLatTime #-}
+
+printInterval :: UTCTime -> UTCTime -> String
+printInterval st ed = printLatTime $! interval st ed
+{-# INLINE printInterval #-}
 
 data Role = Follower
           | Candidate

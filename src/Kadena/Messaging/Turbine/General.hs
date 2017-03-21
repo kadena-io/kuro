@@ -31,20 +31,24 @@ generalTurbine = do
   ks <- view keySet
   forever $ liftIO $ do
     msgs <- gm 10
+    readTime' <- getCurrentTime
     (aes, noAes) <- return $ Seq.partition (\(_,SignedRPC{..}) -> (_digType _sigDigest == AE)) (_unInboundGeneral <$> msgs)
     prunedAes <- return $ pruneRedundantAEs aes
+    prunedTime' <- getCurrentTime
     when (length aes - length prunedAes /= 0) $ debug $ turbineGeneral ++ "pruned " ++ show (length aes - length prunedAes) ++ " redundant AE(s)"
     unless (null aes) $ do
       l <- return $ show (length aes)
       forM_ prunedAes $ \(ts,msg) -> case signedRPCtoRPC (Just ts) ks msg of
         Left err -> debug err
         Right (AE' ae'@AppendEntries{..}) -> do
-          t' <- getCurrentTime
-          newLes' <- startPreProcForLes t' prChan _aeEntries
+          endTime' <- getCurrentTime
+          newLes' <- startPreProcForLes (_unReceivedAt ts) prChan _aeEntries
           newAE' <- return $ ae' { _aeEntries = newLes' }
           debug $ turbineGeneral ++ "enqueued 1 of " ++ l ++ " AE(s) taking "
-                ++ show (interval (_unReceivedAt ts) t')
-                ++ "mics since it was received"
+                ++ printInterval (_unReceivedAt ts) endTime'
+                ++ " since it was received"
+                ++ " (read=" ++ printInterval (_unReceivedAt ts) readTime' ++ ")"
+                ++ " (prunded=" ++ printInterval (_unReceivedAt ts) prunedTime' ++ ")"
           enqueueEvent (ERPC $ AE' newAE')
         Right err -> error $ "unreachable error in GeneralTurbine's 2nd AE match: " ++ show err
     (invalid, validNoAes) <- return $ partitionEithers $ parallelVerify id ks noAes

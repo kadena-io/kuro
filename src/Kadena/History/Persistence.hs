@@ -70,7 +70,9 @@ createDB :: FilePath -> IO DbEnv
 createDB f = do
   conn' <- eitherToError "OpenDB" <$> open (Utf8 $ encodeUtf8 $ T.pack f)
   eitherToError "CreateTable" <$> exec conn' sqlDbSchema
---  eitherToError "pragmas" <$> exec conn "PRAGMA locking_mode = EXCLUSIVE"
+  eitherToError "pragmas" <$> exec conn' "PRAGMA locking_mode = EXCLUSIVE"
+  eitherToError "pragmas" <$> exec conn' "PRAGMA journal_mode = WAL"
+  eitherToError "pragmas" <$> exec conn' "PRAGMA temp_store = MEMORY"
   DbEnv <$> pure conn'
         <*> prepStmt conn' sqlInsertHistoryRow
         <*> prepStmt conn' sqlQueryForExisting

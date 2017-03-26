@@ -99,8 +99,8 @@ handleBatch cmdbBatch = do
           enqueueRequest $ Sender.BroadcastAE Sender.OnlySendIfFollowersAreInSync
           debug $ "CMDB - False positives found "
                   ++ show (HashSet.size falsePositive)
-                  ++ " of " ++ show (HashSet.size setOfAlreadySeen) ++ " collisions ("
-                  ++ show (interval start end) ++ "mics)"
+                  ++ " of " ++ show (HashSet.size setOfAlreadySeen) ++ " collisions "
+                  ++ "(" ++ printInterval start end ++ ")"
         sendHistoryNewKeys $ HashSet.union falsePositive $ HashSet.fromList $ toRequestKey . snd <$> _unBPAlreadySeen alreadySeen
       -- the false positives we already collisions so no need to add them
       KD.cmdBloomFilter .= updateBloom newEntries (KD._cmdBloomFilter s)
@@ -121,8 +121,8 @@ handleBatch cmdbBatch = do
           enqueueRequest' $ Sender.ForwardCommandToLeader $ NewCmdRPC (encodeCommand . snd <$> falsePositiveCommands) NewMsg
           debug $ "CMDB - False positives found "
                   ++ show (HashSet.size falsePositive)
-                  ++ " of " ++ show (HashSet.size setOfAlreadySeen) ++ " collisions ("
-                  ++ show (interval start end) ++ "mics)"
+                  ++ " of " ++ show (HashSet.size setOfAlreadySeen) ++ " collisions "
+                  ++ "(" ++ printInterval start end ++ ")"
     IAmCandidate -> return () -- TODO: we should probably respond with something like "availability event"
 
 updateBloom :: BPNewEntries -> Bloom RequestKey -> Bloom RequestKey

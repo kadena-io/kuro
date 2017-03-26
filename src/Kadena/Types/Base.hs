@@ -114,12 +114,12 @@ printLatTime s
   | s >= 1000000 =
       let s' = drop 4 $ reverse $ show s
           s'' = reverse $ (take 2 s') ++ "." ++ (drop 2 s')
-      in s'' ++ " sec"
+      in s'' ++ "sec"
   | s >= 1000 =
       let s' = drop 1 $ reverse $ show s
           s'' = reverse $ (take 2 s') ++ "." ++ (drop 2 s')
-      in s'' ++ " mil"
-  | otherwise = show s ++ " mic"
+      in s'' ++ "msec"
+  | otherwise = show s ++ "usec"
 {-# INLINE printLatTime #-}
 
 printInterval :: UTCTime -> UTCTime -> String

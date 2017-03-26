@@ -124,7 +124,7 @@ addNewKeys srks = do
       persistence .= OnDisk { incompleteRequestKeys = HashSet.union incompleteRequestKeys srks
                             , dbConn = dbConn }
   end <- now
-  debug $ "Added " ++ show (HashSet.size srks) ++ " new keys taking " ++ show (interval start end) ++ "mics"
+  debug $ "Added " ++ show (HashSet.size srks) ++ " new keys (" ++ printInterval start end ++ ")"
 
 updateExistingKeys :: HashMap RequestKey CommandResult -> HistoryService ()
 updateExistingKeys updates = do
@@ -140,7 +140,7 @@ updateExistingKeys updates = do
       persistence .= OnDisk { incompleteRequestKeys = HashSet.filter (\k -> not $ HashMap.member k updates) incompleteRequestKeys
                             , dbConn = dbConn }
   end <- now
-  debug $ "Updated " ++ show (HashMap.size updates) ++ " keys (" ++ show (interval start end) ++ "mics)"
+  debug $ "Updated " ++ show (HashMap.size updates) ++ " keys (" ++ printInterval start end ++ ")"
 
 updateInMemKey :: (RequestKey, CommandResult) -> HashMap RequestKey (Maybe CommandResult) -> HashMap RequestKey (Maybe CommandResult)
 updateInMemKey (k,v) m = HashMap.insert k (Just v) m
@@ -155,7 +155,7 @@ alertListeners m = do
     registeredListeners %= HashMap.filterWithKey (\k _ -> not $ HashMap.member k triggered)
     -- use registeredListeners >>= debug . ("Active Listeners: " ++) . show . HashMap.keysSet
     end <- now
-    debug $ "Serviced " ++ show (sum res) ++ " alerts taking " ++ show (interval start end) ++ "mics"
+    debug $ "Serviced " ++ show (sum res) ++ " alerts (" ++ printInterval start end ++ ")"
 
 alertListener :: HashMap RequestKey CommandResult -> (RequestKey, [MVar ListenerResult]) -> HistoryService Int
 alertListener res (k,mvs) = do

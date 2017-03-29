@@ -5,6 +5,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Kadena.Types.Config
   ( Config(..), otherNodes, nodeId, electionTimeoutRange, heartbeatTimeout
@@ -20,8 +21,12 @@ module Kadena.Types.Config
   , ProcessedConfigUpdate(..), processConfigUpdate
   , ConfigUpdateResult(..)
   , KeyPair(..), getNewKeyPair, execConfigUpdateCmd
+  , GlobalConfig
+  , GlobalConfig'(..), gcVersion, gcConfig
+  , mutateConfig
   ) where
 
+import Control.Concurrent.MVar
 import Control.Lens hiding (Index, (|>))
 import Control.Monad
 
@@ -223,3 +228,23 @@ execConfigUpdateCmd conf@Config{..} cuc = do
           return $ Left $ "Unable to find admin alias: " ++ show _cucAlias
     RotateLeader{..} ->
       return $ Left $ "Admin triggered leader rotation is not currently supported"
+
+data GlobalConfig' = GlobalConfig'
+  { _gcVersion :: !Int
+  , _gcConfig :: !Config
+  } deriving (Show, Generic)
+makeLenses ''GlobalConfig'
+
+type GlobalConfig = MVar GlobalConfig'
+
+mutateConfig :: GlobalConfig -> ConfigUpdateCommand -> IO String
+mutateConfig gc cuc = do
+  GlobalConfig'{..} <- tryTakeMVar gc >>= \case
+    Nothing -> error $ "Unable to take config MVar"
+    Just v -> return v
+  res <- execConfigUpdateCmd _gcConfig cuc
+  case res of
+    Left err -> return $! "Failure: " ++ err
+    Right conf' -> do
+      putMVar gc (GlobalConfig' { _gcVersion = _gcVersion + 1, _gcConfig = conf'})
+      return "Success"

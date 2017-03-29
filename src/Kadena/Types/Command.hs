@@ -6,7 +6,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 
 module Kadena.Types.Command
-  ( Command(..), sccCmd, sccPreProc
+  ( Command(..), sccCmd, sccPreProc, cccCmd, cccPreProc
   , encodeCommand, decodeCommand, decodeCommandEither
   , decodeCommandIO, decodeCommandEitherIO
   , verifyCommand, verifyCommandIfNotPending
@@ -18,7 +18,7 @@ module Kadena.Types.Command
   , SCCPreProcResult
   , CMDWire(..)
   , toRequestKey
-  , CommandResult(..), scrResult, scrHash, cmdrLogIndex, cmdrLatMetrics
+  , CommandResult(..), scrResult, scrHash, cmdrLogIndex, cmdrLatMetrics, ccrHash, ccrResult
   , CmdLatencyMetrics(..), lmFirstSeen, lmHitTurbine, lmHitPreProc, lmAerConsensus, lmLogConsensus
   , lmFinPreProc, lmHitCommit, lmFinCommit, lmHitConsensus, lmFinConsensus
   , initCmdLat, populateCmdLat
@@ -46,6 +46,7 @@ import GHC.Generics
 import GHC.Int (Int64)
 
 import Kadena.Types.Base
+import Kadena.Types.Config
 import Kadena.Types.Message.Signed
 
 import qualified Pact.Types.Command as Pact
@@ -114,32 +115,48 @@ instance (Show a) => Show (Preprocessed a) where
   show (Result a) = "Result {unResult = " ++ show a ++ "}"
 
 type SCCPreProcResult = PendingResult (Pact.ProcessedCommand (Pact.PactRPC Pact.ParsedCode))
+type CCCPreProcResult = PendingResult ProcessedConfigUpdate
 
 data RunPreProc =
   RunSCCPreProc
     { _rpSccRaw :: !(Pact.Command ByteString)
-    , _rpSccMVar :: !(MVar SCCPreProcResult)}
+    , _rpSccMVar :: !(MVar SCCPreProcResult) } |
+  RunCCCPreProc
+    { _rpCccRaw :: !(ConfigUpdate ByteString)
+    , _rpCccMVar :: !(MVar CCCPreProcResult) }
 
 data FinishedPreProc =
   FinishedPreProcSCC
     { _fppSccRes :: !(Pact.ProcessedCommand (Pact.PactRPC Pact.ParsedCode))
-    , _fppSccMVar :: !(MVar SCCPreProcResult)}
+    , _fppSccMVar :: !(MVar SCCPreProcResult)} |
+  FinishedPreProcCCC
+    { _fppCccRes :: !ProcessedConfigUpdate
+    , _fppCccMVar :: !(MVar CCCPreProcResult)}
 
 instance NFData FinishedPreProc where
   rnf FinishedPreProcSCC{..} = case _fppSccRes of
     Pact.ProcSucc s -> rnf s
     Pact.ProcFail e -> rnf e
+  rnf FinishedPreProcCCC{..} = case _fppCccRes of
+    ProcessedConfigSuccess s -> s `seq` ()
+    ProcessedConfigFailure e -> rnf e
 
 runPreprocPure :: RunPreProc -> FinishedPreProc
 runPreprocPure RunSCCPreProc{..} =
   let !res = Pact.verifyCommand _rpSccRaw
   in res `seq` FinishedPreProcSCC res _rpSccMVar
+runPreprocPure RunCCCPreProc{..} =
+  let !res = processConfigUpdate _rpCccRaw
+  in res `seq` FinishedPreProcCCC res _rpCccMVar
 {-# INLINE runPreprocPure #-}
 
 finishPreProc :: UTCTime -> UTCTime -> FinishedPreProc -> IO ()
 finishPreProc startTime endTime FinishedPreProcSCC{..} = do
   succPut <- tryPutMVar _fppSccMVar $! PendingResult _fppSccRes (Just startTime) (Just endTime)
   unless succPut $ putStrLn $ "Preprocessor encountered a duplicate: " ++ show _fppSccRes
+finishPreProc startTime endTime FinishedPreProcCCC{..} = do
+  succPut <- tryPutMVar _fppCccMVar $! PendingResult _fppCccRes (Just startTime) (Just endTime)
+  unless succPut $ putStrLn $ "Preprocessor encountered a duplicate: " ++ show _fppCccRes
 {-# INLINE finishPreProc #-}
 
 runPreproc :: UTCTime -> RunPreProc -> IO ()
@@ -148,22 +165,35 @@ runPreproc hitPreProc RunSCCPreProc{..} = do
   finishedPreProc <- getCurrentTime
   succPut <- tryPutMVar _rpSccMVar $! PendingResult res (Just hitPreProc) (Just finishedPreProc)
   unless succPut $ putStrLn $ "Preprocessor encountered a duplicate: " ++ show _rpSccRaw
+runPreproc hitPreProc RunCCCPreProc{..} = do
+  res <- return $! processConfigUpdate _rpCccRaw
+  finishedPreProc <- getCurrentTime
+  succPut <- tryPutMVar _rpCccMVar $! PendingResult res (Just hitPreProc) (Just finishedPreProc)
+  unless succPut $ putStrLn $ "Preprocessor encountered a duplicate: " ++ show _rpCccRaw
 {-# INLINE runPreproc #-}
 
-data Command = SmartContractCommand
+data Command =
+  SmartContractCommand
   { _sccCmd :: !(Pact.Command ByteString)
-  , _sccPreProc :: !(Preprocessed (Pact.ProcessedCommand (Pact.PactRPC Pact.ParsedCode)))
-  } deriving (Show, Eq, Generic)
+  , _sccPreProc :: !(Preprocessed (Pact.ProcessedCommand (Pact.PactRPC Pact.ParsedCode))) } |
+  ConsensusConfigCommand
+  { _cccCmd :: !(ConfigUpdate ByteString)
+  , _cccPreProc :: !(Preprocessed ProcessedConfigUpdate)}
+  deriving (Show, Eq, Generic)
 makeLenses ''Command
 
 instance Ord Command where
-  compare a b = compare (_sccCmd a) (_sccCmd b)
+  compare a b = compare (getCmdBodyHash a) (getCmdBodyHash b)
 
-data CMDWire = SCCWire !ByteString deriving (Show, Eq, Generic)
+data CMDWire =
+  SCCWire !ByteString |
+  CCCWire !ByteString
+  deriving (Show, Eq, Generic)
 instance Serialize CMDWire
 
 encodeCommand :: Command -> CMDWire
 encodeCommand SmartContractCommand{..} = SCCWire $! S.encode _sccCmd
+encodeCommand ConsensusConfigCommand{..} = CCCWire $! S.encode _cccCmd
 {-# INLINE encodeCommand #-}
 
 -- | Decode that throws `DeserializationError`
@@ -175,32 +205,47 @@ decodeCommand (SCCWire !b) =
       Right v -> v
     !res = SmartContractCommand cmd Unprocessed
   in res `seq` res
+decodeCommand (CCCWire !b) =
+  let
+    !cmd = case S.decode b of
+      Left err -> throw $ DeserializationError $ err ++ "\n### for ###\n" ++ show b
+      Right v -> v
+    !res = ConsensusConfigCommand cmd Unprocessed
+  in res `seq` res
 {-# INLINE decodeCommand #-}
 
 decodeCommandEither :: CMDWire -> Either String Command
 decodeCommandEither (SCCWire !b) = case S.decode b of
   Left !err -> Left $! err ++ "\n### for ###\n" ++ show b
   Right !cmd -> Right $! (SmartContractCommand cmd Unprocessed)
+decodeCommandEither (CCCWire !b) = case S.decode b of
+  Left !err -> Left $! err ++ "\n### for ###\n" ++ show b
+  Right !cmd -> Right $! (ConsensusConfigCommand cmd Unprocessed)
 {-# INLINE decodeCommandEither #-}
 
 decodeCommandIO :: CMDWire -> IO (Command, RunPreProc)
-decodeCommandIO cmd = do
-  mv <- newEmptyMVar
-  return $ case decodeCommand cmd of
-    r@SmartContractCommand{..} ->
-      let rpp = RunSCCPreProc _sccCmd mv
-      in (r { _sccPreProc = Pending mv }, rpp)
+decodeCommandIO cmd = case decodeCommand cmd of
+  r@SmartContractCommand{..} -> do
+    mv <- newEmptyMVar
+    let rpp = RunSCCPreProc _sccCmd mv
+    return $! (r { _sccPreProc = Pending mv }, rpp)
+  r@ConsensusConfigCommand{..} -> do
+    mv <- newEmptyMVar
+    let rpp = RunCCCPreProc _cccCmd mv
+    return $! (r { _cccPreProc = Pending mv }, rpp)
 
 decodeCommandEitherIO :: CMDWire -> IO (Either String (Command, RunPreProc))
-decodeCommandEitherIO cmd = do
-  case decodeCommandEither cmd of
-    Left err -> return $ Left $ err ++ "\n### for ###\n" ++ show cmd
-    Right v -> do
+decodeCommandEitherIO cmd = case decodeCommandEither cmd of
+  Left err -> return $ Left $ err ++ "\n### for ###\n" ++ show cmd
+  Right v -> case v of
+    r@SmartContractCommand{..} -> do
       mv <- newEmptyMVar
-      case v of
-        r@SmartContractCommand{..} ->
-          let rpp = RunSCCPreProc _sccCmd mv
-          in return $ Right (r { _sccPreProc = Pending mv }, rpp)
+      let rpp = RunSCCPreProc _sccCmd mv
+      return $ Right $! (r { _sccPreProc = Pending mv }, rpp)
+    r@ConsensusConfigCommand{..} -> do
+      mv <- newEmptyMVar
+      let rpp = RunCCCPreProc _cccCmd mv
+      return $! Right $! (r { _cccPreProc = Pending mv }, rpp)
 
 prepPreprocCommand :: Command -> IO (Command, RunPreProc)
 prepPreprocCommand cmd@SmartContractCommand{..} = do
@@ -209,10 +254,22 @@ prepPreprocCommand cmd@SmartContractCommand{..} = do
       mv <- newEmptyMVar
       return $ (cmd { _sccPreProc = Pending mv}, RunSCCPreProc _sccCmd mv)
     err -> error $ "Invariant Error: cmd has already been preped: " ++ show err ++ "\n### for ###\n" ++ show _sccCmd
+prepPreprocCommand cmd@ConsensusConfigCommand{..} = do
+  case _cccPreProc of
+    Unprocessed -> do
+      mv <- newEmptyMVar
+      return $ (cmd { _cccPreProc = Pending mv}, RunCCCPreProc _cccCmd mv)
+    err -> error $ "Invariant Error: cmd has already been preped: " ++ show err ++ "\n### for ###\n" ++ show _cccCmd
 
 verifyCommandIfNotPending :: Command -> Command
 verifyCommandIfNotPending cmd@SmartContractCommand{..} =
   let res = case _sccPreProc of
+              Unprocessed -> verifyCommand cmd
+              Pending{} -> cmd
+              Result{} -> cmd
+  in res `seq` res
+verifyCommandIfNotPending cmd@ConsensusConfigCommand{..} =
+  let res = case _cccPreProc of
               Unprocessed -> verifyCommand cmd
               Pending{} -> cmd
               Result{} -> cmd
@@ -223,13 +280,17 @@ verifyCommand :: Command -> Command
 verifyCommand cmd@SmartContractCommand{..} =
   let !res = Result $! Pact.verifyCommand _sccCmd
   in res `seq` cmd { _sccPreProc = res }
+verifyCommand cmd@ConsensusConfigCommand{..} =
+  let !res = Result $! processConfigUpdate _cccCmd
+  in res `seq` cmd { _cccPreProc = res }
 {-# INLINE verifyCommand #-}
 
 getCmdBodyHash :: Command -> Hash
 getCmdBodyHash SmartContractCommand{ _sccCmd = Pact.PublicCommand{..}} = _cmdHash
+getCmdBodyHash ConsensusConfigCommand{ _cccCmd = ConfigUpdate{..}} = _cuHash
 
 toRequestKey :: Command -> RequestKey
-toRequestKey SmartContractCommand{..} = RequestKey (Pact._cmdHash _sccCmd)
+toRequestKey = RequestKey . getCmdBodyHash
 {-# INLINE toRequestKey #-}
 
 data CmdResultLatencyMetrics = CmdResultLatencyMetrics
@@ -265,11 +326,16 @@ mkLatResults CmdLatencyMetrics{..} = CmdResultLatencyMetrics
   , _rlmFinCommit = interval _lmFirstSeen <$> _lmFinCommit
   }
 
-data CommandResult = SmartContractResult
-  { _scrHash :: !Hash
-  , _scrResult :: !Pact.CommandResult
-  , _cmdrLogIndex :: !LogIndex
-  , _cmdrLatMetrics :: !(Maybe CmdResultLatencyMetrics)
-  }
+data CommandResult =
+  SmartContractResult
+    { _scrHash :: !Hash
+    , _scrResult :: !Pact.CommandResult
+    , _cmdrLogIndex :: !LogIndex
+    , _cmdrLatMetrics :: !(Maybe CmdResultLatencyMetrics) } |
+  ConsensusConfigResult
+    { _ccrHash :: !Hash
+    , _ccrResult :: !ConfigUpdateResult
+    , _cmdrLogIndex :: !LogIndex
+    , _cmdrLatMetrics :: !(Maybe CmdResultLatencyMetrics) }
   deriving (Show, Eq, Generic)
 makeLenses ''CommandResult

@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -19,6 +20,7 @@ module Kadena.Types.Base
   , interval, printLatTime, printInterval
   , hash, hashLengthAsBS, hashLengthAsBase16
   , Hash(..), initialHash
+  , NodeClass(..)
   ) where
 
 import Control.Lens
@@ -73,13 +75,13 @@ instance FromJSON NodeId where
   parseJSON = genericParseJSON defaultOptions { fieldLabelModifier = drop 1 }
 
 newtype Term = Term Int
-  deriving (Show, Read, Eq, Enum, Num, Ord, Generic, Serialize)
+  deriving (Show, Read, Eq, Enum, Num, Ord, Generic, Serialize, ToJSON, FromJSON)
 
 startTerm :: Term
 startTerm = Term (-1)
 
 newtype LogIndex = LogIndex Int
-  deriving (Show, Read, Eq, Ord, Enum, Num, Real, Integral, Generic, Serialize)
+  deriving (Show, Read, Eq, Ord, Enum, Num, Real, Integral, Generic, Serialize, ToJSON, FromJSON)
 
 startIndex :: LogIndex
 startIndex = LogIndex (-1)
@@ -130,3 +132,17 @@ data Role = Follower
           | Candidate
           | Leader
   deriving (Show, Generic, Eq)
+
+data NodeClass = Active | Passive
+  deriving (Show, Eq, Ord, Generic)
+
+instance Serialize NodeClass
+instance ToJSON NodeClass where
+  toJSON Active = String "active"
+  toJSON Passive = String "passive"
+instance FromJSON NodeClass where
+  parseJSON (String s)
+    | s == "active" = return $ Active
+    | s == "passive" = return $ Passive
+    | otherwise = mzero
+  parseJSON _ = mzero

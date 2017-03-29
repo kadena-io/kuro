@@ -44,7 +44,7 @@ data EvidenceEnv = EvidenceEnv
   { _logService :: !LogServiceChannel
   , _evidence :: !EvidenceChannel
   , _mResetLeaderNoFollowers :: !(MVar ResetLeaderNoFollowersTimeout)
-  , _mConfig :: !(IORef Config)
+  , _mConfig :: !(GlobalConfig)
   , _mPubStateTo :: !(MVar PublishedEvidenceState)
   , _debugFn :: !(String -> IO ())
   , _publishMetric :: !(Metric -> IO ())

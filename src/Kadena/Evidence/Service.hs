@@ -31,7 +31,7 @@ import qualified Kadena.Log.Types as Log
 
 initEvidenceEnv :: Dispatch
                 -> (String -> IO ())
-                -> IORef Config
+                -> GlobalConfig
                 -> MVar PublishedEvidenceState
                 -> MVar ResetLeaderNoFollowersTimeout
                 -> (Metric -> IO ())

@@ -19,6 +19,7 @@ module Kadena.Types.Config
   , ConfigUpdate(..), cuCmd, cuHash, cuSigs
   , ProcessedConfigUpdate(..), processConfigUpdate
   , ConfigUpdateResult(..)
+  , KeyPair(..), getNewKeyPair, execConfigUpdateCmd
   ) where
 
 import Control.Lens hiding (Index, (|>))
@@ -30,6 +31,7 @@ import qualified Data.Text as Text
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Set (Set)
+import qualified Data.Set as Set
 import Text.Read (readMaybe)
 
 import Data.Aeson
@@ -39,6 +41,7 @@ import Data.Thyme.Time.Core ()
 import GHC.Generics hiding (from)
 import Data.Serialize
 import Data.Default
+import qualified Data.Yaml as Y
 
 import Pact.Types.Util
 
@@ -49,16 +52,15 @@ data EntityInfo = EntityInfo {
 } deriving (Eq,Show,Generic)
 $(makeLenses ''EntityInfo)
 instance ToJSON EntityInfo where
-  toJSON = genericToJSON defaultOptions { fieldLabelModifier = drop 4 }
+  toJSON = lensyToJSON 4
 instance FromJSON EntityInfo where
-  parseJSON = genericParseJSON defaultOptions { fieldLabelModifier = drop 4 }
-
+  parseJSON = lensyParseJSON 4
 
 data Config = Config
   { _otherNodes           :: !(Set NodeId)
   , _nodeId               :: !NodeId
   , _publicKeys           :: !(Map Alias PublicKey)
-  , _adminKeys            :: !(Set PublicKey)
+  , _adminKeys            :: !(Map Alias PublicKey)
   , _myPrivateKey         :: !PrivateKey
   , _myPublicKey          :: !PublicKey
   , _electionTimeoutRange :: !(Int,Int)
@@ -110,18 +112,25 @@ data ConfigUpdateCommand =
   NodeToActive
     { _cucNodeId :: !NodeId } |
   UpdateNodeKey
-    { _cucNodeId :: !NodeId
-    , _cucPublicKey :: !PublicKey } |
+    { _cucAlias :: !Alias
+    , _cucPublicKey :: !PublicKey
+    , _cucKeyPairPath :: !FilePath} |
   UpdateAdminKey
-    { _cucNodeId :: !NodeId
+    { _cucAlias :: !Alias
     , _cucPublicKey :: !PublicKey } |
   RotateLeader
     { _cucTerm :: !Term }
   deriving (Show, Eq, Ord, Generic, Serialize)
+
+confUpdateJsonOptions :: Int -> Options
+confUpdateJsonOptions n = defaultOptions
+  { fieldLabelModifier = lensyConstructorToNiceJson n
+  , sumEncoding = ObjectWithSingleField }
+
 instance ToJSON ConfigUpdateCommand where
-  toJSON = lensyToJSON 4
+  toJSON = genericToJSON (confUpdateJsonOptions 4)
 instance FromJSON ConfigUpdateCommand where
-  parseJSON = lensyParseJSON 4
+  parseJSON = genericParseJSON (confUpdateJsonOptions 4)
 
 data ConfigUpdate a = ConfigUpdate
   { _cuHash :: !Hash
@@ -160,3 +169,57 @@ data ConfigUpdateResult =
   ConfigUpdateFailure !String
   | ConfigUpdateSuccess
   deriving (Show, Eq, Ord, Generic, ToJSON, FromJSON, Serialize)
+
+data KeyPair = KeyPair
+  { _kpPublicKey :: PublicKey
+  , _kpPrivateKey :: PrivateKey
+  } deriving (Show, Eq, Generic)
+instance ToJSON KeyPair where
+  toJSON = genericToJSON (confUpdateJsonOptions 3)
+instance FromJSON KeyPair where
+  parseJSON = genericParseJSON (confUpdateJsonOptions 3)
+
+getNewKeyPair :: FilePath -> IO KeyPair
+getNewKeyPair fp = do
+  kp <- Y.decodeFileEither fp
+  case kp of
+    Left err -> error $ "Unable to find and decode new keypair at location: " ++ fp ++ "\n## Error ##\n" ++ show err
+    Right kp' -> return kp'
+
+execConfigUpdateCmd :: Config -> ConfigUpdateCommand -> IO (Either String Config)
+execConfigUpdateCmd conf@Config{..} cuc = do
+  case cuc of
+    AddNode{..}
+      | _nodeId == _cucNodeId || Set.member _cucNodeId _otherNodes ->
+          return $ Left $ "Unable to add node, already present"
+      | _cucNodeClass == Passive ->
+          return $ Left $ "Passive mode is not currently supported"
+      | otherwise ->
+          return $ Right $! conf
+          { _otherNodes = Set.insert _cucNodeId _otherNodes
+          , _publicKeys = Map.insert (_alias _cucNodeId) _cucPublicKey _publicKeys }
+    RemoveNode{..}
+      | _nodeId == _cucNodeId || Set.member _cucNodeId _otherNodes ->
+          return $ Right $! conf
+            { _otherNodes = Set.delete _cucNodeId _otherNodes
+            , _publicKeys = Map.delete (_alias _cucNodeId) _publicKeys }
+      | otherwise ->
+          return $ Left $ "Unable to delete node, not found"
+    NodeToPassive{..} -> return $ Left $ "Passive mode is not currently supported"
+    NodeToActive{..} -> return $ Left $ "Active mode is the only mode currently supported"
+    UpdateNodeKey{..}
+      | _alias _nodeId == _cucAlias -> do
+          KeyPair{..} <- getNewKeyPair _cucKeyPairPath
+          return $ Right $! conf
+            { _myPublicKey = _kpPublicKey
+            , _myPrivateKey = _kpPrivateKey }
+      | Map.member _cucAlias _publicKeys -> return $ Right $! conf
+          { _publicKeys = Map.insert _cucAlias _cucPublicKey _publicKeys }
+      | otherwise -> return $ Left $ "Unable to delete node, not found"
+    UpdateAdminKey{..}
+      | Map.member _cucAlias _adminKeys -> return $ Right $! conf
+          { _adminKeys = Map.insert _cucAlias _cucPublicKey _adminKeys }
+      | otherwise ->
+          return $ Left $ "Unable to find admin alias: " ++ show _cucAlias
+    RotateLeader{..} ->
+      return $ Left $ "Admin triggered leader rotation is not currently supported"

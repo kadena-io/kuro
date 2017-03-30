@@ -32,7 +32,6 @@ import Control.Monad.RWS.Strict (RWST)
 import Data.BloomFilter (Bloom)
 import qualified Data.BloomFilter as Bloom
 import qualified Data.BloomFilter.Hash as BHash
-import Data.IORef
 import Data.Map (Map)
 import Data.Set (Set)
 import qualified Data.Set as Set
@@ -202,9 +201,9 @@ sendMsg outboxWrite og = do
   yield
 
 readConfig :: Consensus Config
-readConfig = view cfg >>= liftIO . readIORef
+readConfig = view cfg >>= fmap _gcConfig . liftIO . readMVar
 
 viewConfig :: Getting r Config r -> Consensus r
 viewConfig l = do
-  (c :: Config) <- view cfg >>= liftIO . readIORef
+  (c :: Config) <- view cfg >>= fmap _gcConfig . liftIO . readMVar
   return $ view l c

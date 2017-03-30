@@ -16,7 +16,6 @@ module Kadena.HTTP.ApiServer
 import Prelude hiding (log)
 import Control.Lens hiding ((.=))
 import Control.Concurrent
-import Data.IORef
 import Control.Monad.Reader
 
 import Data.Aeson hiding (defaultOptions, Result(..))
@@ -40,6 +39,7 @@ import System.FilePath
 import System.Directory
 import Data.Thyme.Clock
 
+import qualified Pact.Types.Runtime as Pact
 import qualified Pact.Types.Command as Pact
 import Pact.Types.API
 
@@ -62,7 +62,7 @@ import Kadena.HTTP.Static
 data ApiEnv = ApiEnv
   { _aiLog :: String -> IO ()
   , _aiDispatch :: Dispatch
-  , _aiConfig :: GlobalConfigMVar.Config
+  , _aiConfig :: Config.GlobalConfigMVar
   , _aiPubConsensus :: MVar PublishedConsensus
   , _aiGetTimestamp :: IO UTCTime
   }
@@ -70,12 +70,12 @@ makeLenses ''ApiEnv
 
 type Api a = ReaderT ApiEnv Snap a
 
-runApiServer :: Dispatch -> GlobalConfigMVar.Config -> (String -> IO ())
+runApiServer :: Dispatch -> Config.GlobalConfigMVar -> (String -> IO ())
              -> Int -> MVar PublishedConsensus -> IO UTCTime -> IO ()
 runApiServer dispatch conf logFn port mPubConsensus' timeCache' = do
   logFn $ "[Service|API]: starting on port " ++ show port
   let conf' = ApiEnv logFn dispatch conf mPubConsensus' timeCache'
-  rconf <- readIORef conf
+  rconf <- Config._gcConfig <$> readMVar conf
   let logDir' = _logDir rconf
       hostStaticDir' = _hostStaticDir rconf
   serverConf' <- serverConf port logFn logDir'
@@ -115,7 +115,7 @@ sendPublicBatch = do
   SubmitBatch cmds <- readJSON
   when (null cmds) $ die "Empty Batch"
   PublishedConsensus{..} <- view aiPubConsensus >>= liftIO . tryReadMVar >>= fromMaybeM (die "Invariant error: consensus unavailable")
-  conf <- view aiConfig >>= liftIO . readIORef
+  conf <- view aiConfig >>= fmap Config._gcConfig . liftIO . readMVar
   ldr <- fromMaybeM (die "System unavaiable, please try again later") _pcLeader
   rAt <- ReceivedAt <$> now
   log $ "received batch of " ++ show (length cmds)
@@ -150,9 +150,13 @@ pollResultToReponse :: HashMap RequestKey CommandResult -> ApiResponse PollRespo
 pollResultToReponse m = ApiSuccess $ PollResponses $ scrToAr <$> m
 
 scrToAr :: CommandResult -> ApiResult
-scrToAr SmartContractResult{..} = ApiResult (toJSON (Pact._crResult _scrResult)) (Pact._crTxId _scrResult) metaData'
-  where
-    metaData' = Just $ toJSON $ _cmdrLatMetrics
+scrToAr SmartContractResult{..} =
+  let metaData' = Just $ toJSON $ _cmdrLatMetrics
+  in ApiResult (toJSON (Pact._crResult _scrResult)) (Pact._crTxId _scrResult) metaData'
+scrToAr ConsensusConfigResult{..} =
+  let metaData' = Just $ toJSON $ _cmdrLatMetrics
+  -- TODO: fix ApiResult to handle more than just TxId
+  in ApiResult (toJSON _ccrResult) (Just $ Pact.TxId $ fromIntegral _cmdrLogIndex) metaData'
 
 checkHistoryForResult :: HashSet RequestKey -> Api PossiblyIncompleteResults
 checkHistoryForResult rks = do

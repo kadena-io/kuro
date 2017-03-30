@@ -98,9 +98,9 @@ createDB f = do
   eitherToError "pragmas" <$> exec conn' "PRAGMA journal_mode = WAL"
   eitherToError "pragmas" <$> exec conn' "PRAGMA temp_store = MEMORY"
   DbEnv <$> pure conn'
-        <*> prepStmt conn' sqlInsertHistoryRow
-        <*> prepStmt conn' sqlQueryForExisting
-        <*> prepStmt conn' sqlSelectCompletedCommands
+        <*> prepStmt "createDB" conn' sqlInsertHistoryRow
+        <*> prepStmt "createDB" conn' sqlQueryForExisting
+        <*> prepStmt "createDB" conn' sqlSelectCompletedCommands
 
 sqlInsertHistoryRow :: Utf8
 sqlInsertHistoryRow =
@@ -115,14 +115,14 @@ sqlInsertHistoryRow =
 
 insertRow :: Statement -> CommandResult -> IO ()
 insertRow s SmartContractResult{..} =
-    execs s [hashToField _scrHash
+    execs "insertRow" s [hashToField _scrHash
             ,SInt $ fromIntegral _cmdrLogIndex
             ,SInt $ fromIntegral (fromMaybe (-1) (Pact._crTxId _scrResult))
             ,htToField SCC
             ,crToField (Pact._crResult _scrResult)
             ,latToField _cmdrLatMetrics]
 insertRow s ConsensusConfigResult{..} =
-    execs s [hashToField _ccrHash
+    execs "insertRow" s [hashToField _ccrHash
             ,SInt $ fromIntegral _cmdrLogIndex
             ,SInt $ -1
             ,htToField CCC
@@ -143,7 +143,7 @@ queryForExisting :: DbEnv -> HashSet RequestKey -> IO (HashSet RequestKey)
 queryForExisting e v = foldM f v v
   where
     f s rk = do
-      r <- qrys (_qryExistingStmt e) [hashToField $ unRequestKey rk] [RInt]
+      r <- qrys "queryForExisting" (_qryExistingStmt e) [hashToField $ unRequestKey rk] [RInt]
       case r of
         [[SInt 1]] -> return s
         _ -> return $ HashSet.delete rk s
@@ -156,12 +156,12 @@ selectCompletedCommands :: DbEnv -> HashSet RequestKey -> IO (HashMap RequestKey
 selectCompletedCommands e v = foldM f HashMap.empty v
   where
     f m rk = do
-      rs' <- qrys (_qryCompletedStmt e) [hashToField $ unRequestKey rk] [RInt, RInt, RText, RText, RText]
+      rs' <- qrys "selectCompletedCommands.1" (_qryCompletedStmt e) [hashToField $ unRequestKey rk] [RInt, RInt, RText, RText, RText]
       if null rs'
       then return m
       else case head rs' of
           [SInt li, SInt tid, type'@SText{}, SText (Utf8 cr),SText (Utf8 lat)] -> case htFromField type' of
-              Left err -> dbError err
+              Left err -> dbError "selectCompletedCommands.2" $ "unmatched 'type': " ++ err ++ "\n## ROW ##\n" ++ show (head rs')
               Right SCC -> return $ HashMap.insert rk (crFromField (unRequestKey rk) (fromIntegral li) (if tid < 0 then Nothing else Just (fromIntegral tid)) cr lat) m
               Right CCC -> return $ HashMap.insert rk (ccFromField (unRequestKey rk) (fromIntegral li) cr lat) m
-          r -> dbError $ "Invalid result from query `History.selectCompletedCommands`: " ++ show r
+          r -> dbError "selectCompletedCommands.3" $ "Invalid result from query `History.selectCompletedCommands`: " ++ show r

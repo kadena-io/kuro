@@ -237,18 +237,19 @@ makeLenses ''GlobalConfig
 
 type GlobalConfigMVar = MVar GlobalConfig
 
-mutateConfig :: GlobalConfigMVar -> ConfigUpdateCommand -> IO String
-mutateConfig gc cuc = do
+mutateConfig :: GlobalConfigMVar -> ProcessedConfigUpdate -> IO ConfigUpdateResult
+mutateConfig _ (ProcessedConfigFailure err) = return $ ConfigUpdateFailure err
+mutateConfig gc (ProcessedConfigSuccess cuc) = do
   GlobalConfig{..} <- tryTakeMVar gc >>= \case
     Nothing -> error $ "Unable to take config MVar"
     Just v -> return v
   res <- execConfigUpdateCmd _gcConfig cuc
   case res of
-    Left err -> return $! "Failure: " ++ err
+    Left err -> return $! ConfigUpdateFailure $ "Failure: " ++ err
     Right conf' -> do
       putMVar gc $ GlobalConfig { _gcVersion = ConfigVersion $ configVersion _gcVersion + 1
                                 , _gcConfig = conf'}
-      return "Success"
+      return ConfigUpdateSuccess
 
 configIsNew :: ConfigVersion -> GlobalConfigMVar -> IO Bool
 configIsNew cv gcm = do

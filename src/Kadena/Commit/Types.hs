@@ -7,7 +7,7 @@ module Kadena.Commit.Types
   , Commit(..)
   , CommitEnv(..)
   , commitChannel, commandConfig, debugPrint, publishMetric
-  , getTimestamp, historyChannel, enableWB
+  , getTimestamp, historyChannel, enableWB, mConfig
   , CommitState(..)
   , nodeId, keySet, commandExecInterface
   , CommitChannel(..)
@@ -71,6 +71,7 @@ data CommitEnv = CommitEnv
   , _publishMetric :: !(Metric -> IO ())
   , _getTimestamp :: !(IO UTCTime)
   , _enableWB :: !Bool
+  , _mConfig :: GlobalConfigMVar
   }
 makeLenses ''CommitEnv
 

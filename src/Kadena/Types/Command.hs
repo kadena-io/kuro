@@ -15,7 +15,7 @@ module Kadena.Types.Command
   , FinishedPreProc(..), finishPreProc
   , PendingResult(..)
   , getCmdBodyHash
-  , SCCPreProcResult
+  , SCCPreProcResult, CCCPreProcResult
   , CMDWire(..)
   , toRequestKey
   , CommandResult(..), scrResult, scrHash, cmdrLogIndex, cmdrLatMetrics, ccrHash, ccrResult

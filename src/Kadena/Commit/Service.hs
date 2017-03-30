@@ -40,6 +40,7 @@ import qualified Pact.Persist.Pure as Pure
 import Pact.Persist.CacheAdapter
 import qualified Pact.Persist.WriteBehind as WB
 
+import qualified Kadena.Types.Config as Config
 import Kadena.Commit.Types as X
 import Kadena.Types.Dispatch (Dispatch)
 import qualified Kadena.Types.Dispatch as D
@@ -53,8 +54,9 @@ initCommitEnv
   -> (Metric -> IO ())
   -> IO UTCTime
   -> Bool
+  -> Config.GlobalConfigMVar
   -> CommitEnv
-initCommitEnv dispatch' debugPrint' commandConfig' publishMetric' getTimestamp' enableWB' = CommitEnv
+initCommitEnv dispatch' debugPrint' commandConfig' publishMetric' getTimestamp' enableWB' gcm' = CommitEnv
   { _commitChannel = dispatch' ^. D.commitService
   , _historyChannel = dispatch' ^. D.historyChannel
   , _commandConfig = commandConfig'
@@ -62,6 +64,7 @@ initCommitEnv dispatch' debugPrint' commandConfig' publishMetric' getTimestamp' 
   , _publishMetric = publishMetric'
   , _getTimestamp = getTimestamp'
   , _enableWB = enableWB'
+  , _mConfig = gcm'
   }
 
 data ReplayStatus = ReplayFromDisk | FreshCommands deriving (Show, Eq)
@@ -176,10 +179,18 @@ getPendingPreProcSCC :: UTCTime -> MVar SCCPreProcResult -> CommitService SCCPre
 getPendingPreProcSCC startTime mvResult = liftIO (tryReadMVar mvResult) >>= \case
   Just r -> return r
   Nothing -> do
-    debug $ "Blocked on Pending PreProc"
     r <- liftIO $ readMVar mvResult
     endTime <- now
-    debug $ "Unblocked on Pending PreProc, took: " ++ printInterval startTime endTime
+    debug $ "Blocked on Pending Pact PreProc for " ++ printInterval startTime endTime
+    return r
+
+getPendingPreProcCCC :: UTCTime -> MVar CCCPreProcResult -> CommitService CCCPreProcResult
+getPendingPreProcCCC startTime mvResult = liftIO (tryReadMVar mvResult) >>= \case
+  Just r -> return r
+  Nothing -> do
+    r <- liftIO $ readMVar mvResult
+    endTime <- now
+    debug $ "Blocked on Consensus PreProc for " ++ printInterval startTime endTime
     return r
 
 applyCommand :: UTCTime -> LogEntry -> CommitService (RequestKey, CommandResult)
@@ -187,32 +198,54 @@ applyCommand _tEnd le@LogEntry{..} = do
   apply <- Pact._ceiApplyPPCmd <$> use commandExecInterface
   startTime <- now
   logApplyLatency startTime le
-  (result, ppLat) <- case _leCommand of
+  case _leCommand of
     SmartContractCommand{..} -> do
       (pproc, ppLat) <- case _sccPreProc of
         Unprocessed -> do
           debug $ "WARNING: non-preproccessed command found for " ++ show _leLogIndex
           case (History.verifyCommand _leCommand) of
             SmartContractCommand{..} -> return $! (result _sccPreProc, _leCmdLatMetrics)
+            _ -> error "[applyCommand.1] unreachable exception... and yet reached"
         Pending{..} -> do
           PendingResult{..} <- getPendingPreProcSCC startTime pending
           return $ (_prResult, updateLatPreProc _prStartedPreProc _prFinishedPreProc _leCmdLatMetrics)
         Result{..}  -> do
-          debug $ "WARNING: fully resolved command found for " ++ show _leLogIndex
+          debug $ "WARNING: fully resolved pact command found for " ++ show _leLogIndex
           return $! (result, _leCmdLatMetrics)
-      res <- liftIO $ apply (Transactional (fromIntegral _leLogIndex)) _sccCmd pproc
-      return (res, ppLat)
-  tEnd' <- now
-  lat <- return $ updateCommitPreProc startTime tEnd' ppLat
-  case _leCommand of
-    SmartContractCommand{} -> return
-      ( RequestKey $ getCmdBodyHash _leCommand
-      , SmartContractResult
-        { _scrHash = getCmdBodyHash _leCommand
-        , _scrResult = result
-        , _cmdrLogIndex = _leLogIndex
-        , _cmdrLatMetrics = mkLatResults <$> lat
-        })
+      result <- liftIO $ apply (Transactional (fromIntegral _leLogIndex)) _sccCmd pproc
+      tEnd' <- now
+      lat <- return $ updateCommitPreProc startTime tEnd' ppLat
+      return ( RequestKey $ getCmdBodyHash _leCommand
+             , SmartContractResult
+               { _scrHash = getCmdBodyHash _leCommand
+               , _scrResult = result
+               , _cmdrLogIndex = _leLogIndex
+               , _cmdrLatMetrics = mkLatResults <$> lat
+               })
+    ConsensusConfigCommand{..} -> do
+      (pproc, ppLat) <- case _cccPreProc of
+        Unprocessed -> do
+          debug $ "WARNING: non-preproccessed command found for " ++ show _leLogIndex
+          case (History.verifyCommand _leCommand) of
+            ConsensusConfigCommand{..} -> return $! (result _cccPreProc, _leCmdLatMetrics)
+            _ -> error "[applyCommand.2] unreachable exception... and yet reached"
+        Pending{..} -> do
+          PendingResult{..} <- getPendingPreProcCCC startTime pending
+          return $ (_prResult, updateLatPreProc _prStartedPreProc _prFinishedPreProc _leCmdLatMetrics)
+        Result{..}  -> do
+          debug $ "WARNING: fully resolved consensus command found for " ++ show _leLogIndex
+          return $! (result, _leCmdLatMetrics)
+      gcm <- view mConfig
+      result <- liftIO $ mutateConfig gcm pproc
+      tEnd' <- now
+      lat <- return $ updateCommitPreProc startTime tEnd' ppLat
+      return ( RequestKey $ getCmdBodyHash _leCommand
+             , ConsensusConfigResult
+               { _ccrHash = getCmdBodyHash _leCommand
+               , _ccrResult = result
+               , _cmdrLogIndex = _leLogIndex
+               , _cmdrLatMetrics = mkLatResults <$> lat
+               })
 
 applyLocalCommand :: (Pact.Command ByteString, MVar Value) -> CommitService ()
 applyLocalCommand (cmd, mv) = do

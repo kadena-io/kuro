@@ -23,7 +23,7 @@ module Kadena.Types.Config
   , KeyPair(..), getNewKeyPair, execConfigUpdateCmd
   , GlobalConfigMVar
   , GlobalConfig(..), gcVersion, gcConfig
-  , mutateConfig, configIsNew, getConfigIfNew
+  , initGlobalConfigMVar, mutateConfig, configIsNew, getConfigIfNew
   ) where
 
 import Control.Concurrent.MVar
@@ -236,6 +236,9 @@ data GlobalConfig = GlobalConfig
 makeLenses ''GlobalConfig
 
 type GlobalConfigMVar = MVar GlobalConfig
+
+initGlobalConfigMVar :: Config -> IO GlobalConfigMVar
+initGlobalConfigMVar c = newMVar $ GlobalConfig initialConfigVersion c
 
 mutateConfig :: GlobalConfigMVar -> ProcessedConfigUpdate -> IO ConfigUpdateResult
 mutateConfig _ (ProcessedConfigFailure err) = return $ ConfigUpdateFailure err

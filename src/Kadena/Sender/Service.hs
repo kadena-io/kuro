@@ -25,7 +25,6 @@ import Control.Monad.Trans.Reader
 import Control.Monad
 import Control.Monad.IO.Class
 
-import Data.IORef
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Set (Set)
@@ -69,16 +68,16 @@ data ServiceEnv = ServiceEnv
   -- Evidence Thread's Published State
   , _getEvidenceState :: !(IO PublishedEvidenceState)
   , _publishMetric :: !(Metric -> IO ())
-  , _config :: !(IORef KD.Config)
+  , _config :: !GlobalConfigMVar
   , _pubCons :: !(MVar Spec.PublishedConsensus)
   }
 makeLenses ''ServiceEnv
 
 type SenderService = ReaderT ServiceEnv IO
 
-getStateSnapshot :: IORef KD.Config -> MVar PublishedConsensus -> IO StateSnapshot
+getStateSnapshot :: GlobalConfigMVar -> MVar PublishedConsensus -> IO StateSnapshot
 getStateSnapshot conf' pcons' = do
-  conf <- readIORef conf'
+  conf <- _gcConfig <$> readMVar conf'
   st <- readMVar pcons'
   return $! StateSnapshot
     { _newNodeId = conf ^. KD.nodeId
@@ -93,14 +92,14 @@ getStateSnapshot conf' pcons' = do
 
 runSenderService
   :: Dispatch
-  -> IORef KD.Config
+  -> GlobalConfigMVar
   -> (String -> IO ())
   -> (Metric -> IO ())
   -> MVar Ev.PublishedEvidenceState
   -> MVar Spec.PublishedConsensus
   -> IO ()
 runSenderService dispatch iorConf debugFn publishMetric' mPubEvState mPubCons = do
-  conf <- readIORef iorConf
+  conf <- _gcConfig <$> readMVar iorConf
   s <- return $ ServiceEnv
     { _myNodeId = conf ^. KD.nodeId
     , _nodeRole = Follower

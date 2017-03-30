@@ -9,7 +9,6 @@ import Control.Lens
 import Control.Monad
 
 import qualified Data.Set as Set
-import Data.IORef
 import Data.Thyme.Clock (UTCTime)
 
 import System.FilePath
@@ -40,7 +39,7 @@ launchApiService
   -> IO UTCTime
   -> IO (Async ())
 launchApiService dispatch' rconf' debugFn' mPubConsensus' getCurrentTime' = do
-  apiPort' <- _apiPort <$> readIORef rconf'
+  apiPort' <- _apiPort . _gcConfig <$> readMVar rconf'
   async (ApiServer.runApiServer dispatch' rconf' debugFn' apiPort' mPubConsensus' getCurrentTime')
 
 launchHistoryService :: Dispatch
@@ -79,10 +78,11 @@ launchCommitService :: Dispatch
   -> NodeId
   -> IO UTCTime
   -> Pact.CommandConfig
-  -> Config
+  -> GlobalConfigMVar
   -> IO (Async ())
-launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' commandConfig' rconf' = do
-  commitEnv <- return $! Commit.initCommitEnv dispatch' dbgPrint' commandConfig' publishMetric' getTimestamp' (rconf' ^. enableWriteBehind)
+launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' commandConfig' gcm' = do
+  rconf' <- _gcConfig <$> readMVar gcm'
+  commitEnv <- return $! Commit.initCommitEnv dispatch' dbgPrint' commandConfig' publishMetric' getTimestamp' (rconf' ^. enableWriteBehind) gcm'
   link =<< async (Commit.runCommitService commitEnv nodeId' keySet')
   async $! foreverHeart (_commitService dispatch') 1000000 Commit.Heart
 
@@ -131,7 +131,7 @@ runConsensusService renv rconf spec rstate timeCache' mPubConsensus' = do
   publishMetric' $ MetricAvailableSize csize
   publishMetric' $ MetricQuorumSize qsize
   void $ runMessageReceiver renv
-  rconf' <- newIORef rconf
+  rconf' <- initGlobalConfigMVar rconf
   timerTarget' <- return $ (rstate ^. timerTarget)
   -- EvidenceService Environment
   mEvState <- newEmptyMVar
@@ -140,7 +140,7 @@ runConsensusService renv rconf spec rstate timeCache' mPubConsensus' = do
   link =<< launchHistoryService dispatch' dbgPrint' getTimestamp' rconf
   link =<< launchPreProcService dispatch' dbgPrint' getTimestamp' rconf
   link =<< launchSenderService dispatch' dbgPrint' publishMetric' mEvState mPubConsensus' rconf'
-  link =<< launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' commandConfig' rconf
+  link =<< launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' commandConfig' rconf'
   link =<< launchEvidenceService dispatch' dbgPrint' publishMetric' mEvState rconf' mLeaderNoFollowers
   link =<< launchLogService dispatch' dbgPrint' publishMetric' keySet' rconf
   link =<< launchApiService dispatch' rconf' dbgPrint' mPubConsensus' getTimestamp'

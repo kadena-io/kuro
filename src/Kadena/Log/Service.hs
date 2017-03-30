@@ -23,6 +23,7 @@ import System.FilePath
 import Data.Thyme.Clock
 import Database.SQLite.Simple (Connection(..))
 
+import Kadena.Util.Util (catchAndRethrow)
 import Kadena.Types.Base
 import Kadena.Types.Comms
 import Kadena.Types.Config
@@ -42,7 +43,7 @@ runLogService :: Dispatch
               -> KeySet
               -> Config
               -> IO ()
-runLogService dispatch dbg publishMetric' keySet' rconf = do
+runLogService dispatch dbg publishMetric' keySet' rconf = catchAndRethrow "LogService" $ do
   dbConn' <- if rconf ^. enablePersistence
     then do
       let dbDir' = (rconf ^. logDir) </> (show $ _alias $ rconf ^. (nodeId)) ++ "-log.sqlite"

@@ -72,7 +72,7 @@ type Api a = ReaderT ApiEnv Snap a
 
 runApiServer :: Dispatch -> Config.GlobalConfigMVar -> (String -> IO ())
              -> Int -> MVar PublishedConsensus -> IO UTCTime -> IO ()
-runApiServer dispatch conf logFn port mPubConsensus' timeCache' = do
+runApiServer dispatch conf logFn port mPubConsensus' timeCache' = catchAndRethrow "ApiServer" $ do
   logFn $ "[Service|API]: starting on port " ++ show port
   let conf' = ApiEnv logFn dispatch conf mPubConsensus' timeCache'
   rconf <- Config._gcConfig <$> readMVar conf

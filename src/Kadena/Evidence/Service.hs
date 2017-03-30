@@ -21,6 +21,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Thyme.Clock
 
+import Kadena.Util.Util (catchAndRethrow)
 import Kadena.Types.Dispatch (Dispatch)
 import Kadena.Types.Event (ResetLeaderNoFollowersTimeout(..))
 import Kadena.Evidence.Spec as X
@@ -69,7 +70,7 @@ publishEvidence :: EvidenceState -> EvidenceProcEnv ()
 publishEvidence es = do
   esPub <- view mPubStateTo
   liftIO $ void $ swapMVar esPub $ PublishedEvidenceState (es ^. esConvincedNodes) (es ^. esNodeStates)
-  debug $ "Published Evidence" ++ show (es ^. esNodeStates)
+  --debug $ "Published Evidence" ++ show (es ^. esNodeStates)
 
 -- TODO: refactor this to just use RWST
 runEvidenceProcessor :: EvidenceState -> EvidenceProcEnv EvidenceState
@@ -125,7 +126,7 @@ runEvidenceProcessor es = do
         }
 
 runEvidenceService :: EvidenceEnv -> IO ()
-runEvidenceService ev = do
+runEvidenceService ev = catchAndRethrow "EvidenceService" $ do
   startingEs <- runReaderT (rebuildState Nothing) ev
   putMVar (ev ^. mPubStateTo) $! PublishedEvidenceState (startingEs ^. esConvincedNodes) (startingEs ^. esNodeStates)
   runReaderT (foreverRunProcessor startingEs) ev

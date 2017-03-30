@@ -28,6 +28,7 @@ import Data.Thyme.Clock.POSIX
 import Data.Maybe (fromJust,isJust,isNothing)
 import System.FilePath
 
+import Kadena.Util.Util
 import Kadena.Types.Base
 import Kadena.Types.Config
 import Kadena.History.Types as X
@@ -51,7 +52,7 @@ initHistoryEnv dispatch' debugPrint' getTimestamp' rconf = HistoryEnv
   }
 
 runHistoryService :: HistoryEnv -> Maybe HistoryState -> IO ()
-runHistoryService env mState = do
+runHistoryService env mState = catchAndRethrow "historyService" $ do
   let dbg = env ^. debugPrint
   let oChan = env ^. historyChannel
   initHistoryState <- case mState of

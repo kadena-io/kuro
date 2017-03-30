@@ -81,7 +81,7 @@ sqlDbSchema =
   \( 'hash' TEXT PRIMARY KEY NOT NULL UNIQUE\
   \, 'logIndex' INTEGER NOT NULL\
   \, 'txid' INTEGER NOT NULL\
-  \, 'type' TEXT NOT NULL\
+  \, 'cmdType' TEXT NOT NULL\
   \, 'result' TEXT NOT NULL\
   \, 'latency' TEXT NOT NULL\
   \)"
@@ -98,9 +98,9 @@ createDB f = do
   eitherToError "pragmas" <$> exec conn' "PRAGMA journal_mode = WAL"
   eitherToError "pragmas" <$> exec conn' "PRAGMA temp_store = MEMORY"
   DbEnv <$> pure conn'
-        <*> prepStmt "createDB" conn' sqlInsertHistoryRow
-        <*> prepStmt "createDB" conn' sqlQueryForExisting
-        <*> prepStmt "createDB" conn' sqlSelectCompletedCommands
+        <*> prepStmt "prepInsertHistRow" conn' sqlInsertHistoryRow
+        <*> prepStmt "prepQueryForExisting" conn' sqlQueryForExisting
+        <*> prepStmt "prepSelectCompletedCommands" conn' sqlSelectCompletedCommands
 
 sqlInsertHistoryRow :: Utf8
 sqlInsertHistoryRow =
@@ -108,10 +108,10 @@ sqlInsertHistoryRow =
     \( 'hash'\
     \, 'logIndex' \
     \, 'txid' \
-    \, 'type' \
+    \, 'cmdType' \
     \, 'result'\
     \, 'latency'\
-    \) VALUES (?,?,?,?,?)"
+    \) VALUES (?,?,?,?,?,?)"
 
 insertRow :: Statement -> CommandResult -> IO ()
 insertRow s SmartContractResult{..} =
@@ -150,7 +150,7 @@ queryForExisting e v = foldM f v v
 
 sqlSelectCompletedCommands :: Utf8
 sqlSelectCompletedCommands =
-  "SELECT logIndex,txid,type,result,latency FROM 'main'.'pactCommands' WHERE hash=:hash LIMIT 1"
+  "SELECT logIndex,txid,cmdType,result,latency FROM 'main'.'pactCommands' WHERE hash=:hash LIMIT 1"
 
 selectCompletedCommands :: DbEnv -> HashSet RequestKey -> IO (HashMap RequestKey CommandResult)
 selectCompletedCommands e v = foldM f HashMap.empty v

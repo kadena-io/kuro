@@ -23,6 +23,7 @@ import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import Data.Foldable
 
+import Kadena.Util.Util (catchAndRethrow)
 import Kadena.PreProc.Types as X
 import Kadena.Types.Dispatch (Dispatch)
 import qualified Kadena.Types.Dispatch as D
@@ -43,7 +44,7 @@ initPreProcEnv dispatch' threadCount' debugPrint' getTimestamp' usePar' = Proces
   }
 
 runPreProcService :: ProcessRequestEnv -> IO ()
-runPreProcService env = do
+runPreProcService env = catchAndRethrow "PreProc" $ do
   let dbg = env ^. debugPrint
   dbg "[Service|PreProc] Launch!"
   if env ^. usePar

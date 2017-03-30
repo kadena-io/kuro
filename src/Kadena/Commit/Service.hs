@@ -40,6 +40,7 @@ import qualified Pact.Persist.Pure as Pure
 import Pact.Persist.CacheAdapter
 import qualified Pact.Persist.WriteBehind as WB
 
+import Kadena.Util.Util (catchAndRethrow)
 import qualified Kadena.Types.Config as Config
 import Kadena.Commit.Types as X
 import Kadena.Types.Dispatch (Dispatch)
@@ -71,7 +72,7 @@ data ReplayStatus = ReplayFromDisk | FreshCommands deriving (Show, Eq)
 
 
 initPactService :: CommitEnv -> CommandConfig -> IO (CommandExecInterface (PactRPC ParsedCode))
-initPactService CommitEnv{..} config@CommandConfig {..} = do
+initPactService CommitEnv{..} config@CommandConfig {..} = catchAndRethrow "PactService" $ do
   let klog s = _ccDebugFn ("[PactService] " ++ s)
       mkCEI :: MVar (DbEnv a) -> MVar CommandState -> CommandExecInterface (PactRPC ParsedCode)
       mkCEI dbVar cmdVar = CommandExecInterface
@@ -92,7 +93,7 @@ initPactService CommitEnv{..} config@CommandConfig {..} = do
       then do
         sl <- SQLite.initSQLite [] putStrLn f
         wb <- initPureCacheWB SQLite.persister sl putStrLn
-        link =<< async (WB.runWBService wb)
+        link =<< (catchAndRethrow "WriteBehind" $ async (WB.runWBService wb))
         p <- return $ initDbEnv klog WB.persister wb
         ee <- initEvalEnv p pactdb
         rv <- newMVar (CommandState $ _eeRefStore ee)

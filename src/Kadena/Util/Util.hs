@@ -9,12 +9,16 @@ module Kadena.Util.Util
   , awsDashVar
   , fromMaybeM
   , foreverRetry
+  , KadenaError(..)
+  , catchAndRethrow
   ) where
 
 import Control.Monad
 import Control.Concurrent (forkFinally, putMVar, takeMVar, newEmptyMVar, forkIO)
+import Control.Monad.Catch
 import System.Process (system)
 
+import Data.Typeable
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 
@@ -51,3 +55,14 @@ getQuorumSize n = 1 + floor (fromIntegral n / 2 :: Float)
 
 fromMaybeM :: Monad m => m b -> Maybe b -> m b
 fromMaybeM errM = maybe errM (return $!)
+
+data KadenaError = KadenaError
+  { kadenaTrace :: [String]
+  , originalError :: String
+  } deriving (Show, Eq, Ord, Typeable)
+
+instance Exception KadenaError
+
+catchAndRethrow :: String -> IO a -> IO a
+catchAndRethrow loc fn = fn `catches` [Handler (\e@KadenaError{..} -> throwM $ e {kadenaTrace = [loc] ++ kadenaTrace})
+                                      ,Handler (\(e :: SomeException)  -> throwM $ KadenaError [loc] $ show e)]

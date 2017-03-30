@@ -1,5 +1,5 @@
 #!/bin/sh
-rm ./log/*.sqlite ./log/*.sqlite-journal ./log/10000.log ./log/10001.log ./log/10002.log ./log/10003.log ./log/access.log ./log/error.log
+rm ./log/*.sqlite* ./log/10000.log ./log/10001.log ./log/10002.log ./log/10003.log ./log/access.log ./log/error.log ./log/client.log
 touch ./log/access.log ./log/error.log
 tmux new-window
 tmux split-window -h

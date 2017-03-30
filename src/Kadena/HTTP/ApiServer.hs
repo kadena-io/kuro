@@ -62,7 +62,7 @@ import Kadena.HTTP.Static
 data ApiEnv = ApiEnv
   { _aiLog :: String -> IO ()
   , _aiDispatch :: Dispatch
-  , _aiConfig :: GlobalConfig.Config
+  , _aiConfig :: GlobalConfigMVar.Config
   , _aiPubConsensus :: MVar PublishedConsensus
   , _aiGetTimestamp :: IO UTCTime
   }
@@ -70,7 +70,7 @@ makeLenses ''ApiEnv
 
 type Api a = ReaderT ApiEnv Snap a
 
-runApiServer :: Dispatch -> GlobalConfig.Config -> (String -> IO ())
+runApiServer :: Dispatch -> GlobalConfigMVar.Config -> (String -> IO ())
              -> Int -> MVar PublishedConsensus -> IO UTCTime -> IO ()
 runApiServer dispatch conf logFn port mPubConsensus' timeCache' = do
   logFn $ "[Service|API]: starting on port " ++ show port

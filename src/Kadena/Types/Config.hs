@@ -21,9 +21,9 @@ module Kadena.Types.Config
   , ProcessedConfigUpdate(..), processConfigUpdate
   , ConfigUpdateResult(..)
   , KeyPair(..), getNewKeyPair, execConfigUpdateCmd
-  , GlobalConfig
-  , GlobalConfig'(..), gcVersion, gcConfig
-  , mutateConfig
+  , GlobalConfigMVar
+  , GlobalConfig(..), gcVersion, gcConfig
+  , mutateConfig, configIsNew, getConfigIfNew
   ) where
 
 import Control.Concurrent.MVar
@@ -229,22 +229,33 @@ execConfigUpdateCmd conf@Config{..} cuc = do
     RotateLeader{..} ->
       return $ Left $ "Admin triggered leader rotation is not currently supported"
 
-data GlobalConfig' = GlobalConfig'
-  { _gcVersion :: !Int
+data GlobalConfig = GlobalConfig
+  { _gcVersion :: !ConfigVersion
   , _gcConfig :: !Config
   } deriving (Show, Generic)
-makeLenses ''GlobalConfig'
+makeLenses ''GlobalConfig
 
-type GlobalConfig = MVar GlobalConfig'
+type GlobalConfigMVar = MVar GlobalConfig
 
-mutateConfig :: GlobalConfig -> ConfigUpdateCommand -> IO String
+mutateConfig :: GlobalConfigMVar -> ConfigUpdateCommand -> IO String
 mutateConfig gc cuc = do
-  GlobalConfig'{..} <- tryTakeMVar gc >>= \case
+  GlobalConfig{..} <- tryTakeMVar gc >>= \case
     Nothing -> error $ "Unable to take config MVar"
     Just v -> return v
   res <- execConfigUpdateCmd _gcConfig cuc
   case res of
     Left err -> return $! "Failure: " ++ err
     Right conf' -> do
-      putMVar gc (GlobalConfig' { _gcVersion = _gcVersion + 1, _gcConfig = conf'})
+      putMVar gc $ GlobalConfig { _gcVersion = ConfigVersion $ configVersion _gcVersion + 1
+                                , _gcConfig = conf'}
       return "Success"
+
+configIsNew :: ConfigVersion -> GlobalConfigMVar -> IO Bool
+configIsNew cv gcm = do
+  GlobalConfig{..} <- readMVar gcm
+  return $ _gcVersion > cv
+
+getConfigIfNew :: ConfigVersion -> GlobalConfigMVar -> IO (Maybe Config)
+getConfigIfNew cv gcm = do
+  GlobalConfig{..} <- readMVar gcm
+  return $ if _gcVersion > cv then Just _gcConfig else Nothing

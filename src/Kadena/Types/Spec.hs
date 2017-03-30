@@ -126,7 +126,7 @@ initialConsensusState timerTarget' = ConsensusState
 type Consensus = RWST ConsensusEnv () ConsensusState IO
 
 data ConsensusEnv = ConsensusEnv
-  { _cfg              :: !(GlobalConfig)
+  { _cfg              :: !(GlobalConfigMVar)
   , _enqueueLogQuery  :: !(QueryApi -> IO ())
   , _enqueueHistoryQuery :: !(History -> IO ())
   , _clusterSize      :: !Int
@@ -148,7 +148,7 @@ data ConsensusEnv = ConsensusEnv
 makeLenses ''ConsensusEnv
 
 mkConsensusEnv
-  :: GlobalConfig
+  :: GlobalConfigMVar
   -> Int
   -> Int
   -> ConsensusSpec

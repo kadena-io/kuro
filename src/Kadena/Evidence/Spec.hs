@@ -13,6 +13,7 @@ module Kadena.Evidence.Spec
   , esQuorumSize, esNodeStates, esConvincedNodes, esPartialEvidence
   , esCommitIndex, esCacheMissAers, esMismatchNodes, esResetLeaderNoFollowers
   , esHashAtCommitIndex, esEvidenceCache, esMaxCachedIndex, esMaxElectionTimeout
+  , esConfigVersion
   , EvidenceProcessor
   , debugFn
   , publishMetric
@@ -23,7 +24,6 @@ import Control.Lens hiding (Index)
 import Control.Monad.Trans.State.Strict
 import Control.Monad.Trans.Reader
 import Control.Concurrent (MVar)
-import Data.IORef (IORef)
 
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -44,7 +44,7 @@ data EvidenceEnv = EvidenceEnv
   { _logService :: !LogServiceChannel
   , _evidence :: !EvidenceChannel
   , _mResetLeaderNoFollowers :: !(MVar ResetLeaderNoFollowersTimeout)
-  , _mConfig :: !(GlobalConfig)
+  , _mConfig :: !(GlobalConfigMVar)
   , _mPubStateTo :: !(MVar PublishedEvidenceState)
   , _debugFn :: !(String -> IO ())
   , _publishMetric :: !(Metric -> IO ())
@@ -66,6 +66,7 @@ data EvidenceState = EvidenceState
   , _esHashAtCommitIndex :: !Hash
   , _esEvidenceCache :: !(Map LogIndex Hash)
   , _esMaxElectionTimeout :: !Int
+  , _esConfigVersion :: !ConfigVersion
   } deriving (Show, Eq)
 makeLenses ''EvidenceState
 
@@ -76,8 +77,8 @@ makeLenses ''EvidenceState
 getEvidenceQuorumSize :: Int -> Int
 getEvidenceQuorumSize n = 1 + floor (fromIntegral n / 2 :: Float)
 
-initEvidenceState :: Set NodeId -> LogIndex -> Int -> EvidenceState
-initEvidenceState otherNodes' commidIndex' maxElectionTimeout' = EvidenceState
+initEvidenceState :: Set NodeId -> LogIndex -> Int -> ConfigVersion -> EvidenceState
+initEvidenceState otherNodes' commidIndex' maxElectionTimeout' confVersion' = EvidenceState
   { _esQuorumSize = getEvidenceQuorumSize $ Set.size otherNodes'
   , _esNodeStates = Map.fromSet (\_ -> (commidIndex',minBound)) otherNodes'
   , _esConvincedNodes = Set.empty
@@ -90,6 +91,7 @@ initEvidenceState otherNodes' commidIndex' maxElectionTimeout' = EvidenceState
   , _esHashAtCommitIndex = initialHash
   , _esEvidenceCache = Map.singleton startIndex initialHash
   , _esMaxElectionTimeout = maxElectionTimeout'
+  , _esConfigVersion = confVersion'
   }
 
 type EvidenceProcessor = State EvidenceState

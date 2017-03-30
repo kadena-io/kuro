@@ -32,9 +32,6 @@ data Evidence =
   -- the set of convinced nodes. SenderService.BroadcastAE needs this info for attaching votes
   -- to the message
   ClearConvincedNodes |
-  -- * A bit of future tech/trying out a design. When we have participant changes, we can sync
-  -- Evidence thread with this.
-  Bounce |
   -- * The LogService has a pretty good idea of what hashes we'll need to check and can pre-cache
   -- them with us here. Log entries come in batches and AER's are only issued pertaining to the last.
   -- So, whenever LogService sees a new batch come it, it hands us the info for the last one.

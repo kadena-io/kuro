@@ -21,6 +21,7 @@ module Kadena.Types.Base
   , hash, hashLengthAsBS, hashLengthAsBase16
   , Hash(..), initialHash
   , NodeClass(..)
+  , ConfigVersion(..), initialConfigVersion
   ) where
 
 import Control.Lens
@@ -146,3 +147,9 @@ instance FromJSON NodeClass where
     | s == "passive" = return $ Passive
     | otherwise = mzero
   parseJSON _ = mzero
+
+newtype ConfigVersion = ConfigVersion {configVersion :: Int}
+  deriving (Show, Eq, Ord)
+
+initialConfigVersion :: ConfigVersion
+initialConfigVersion = ConfigVersion 0

@@ -1,5 +1,6 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Kadena.Evidence.Service
   ( runEvidenceService
@@ -7,7 +8,7 @@ module Kadena.Evidence.Service
   , module X
   ) where
 
-import Control.Concurrent (MVar, newEmptyMVar, takeMVar, swapMVar, tryPutMVar, putMVar)
+import Control.Concurrent (MVar, newEmptyMVar, takeMVar, swapMVar, tryPutMVar, putMVar, readMVar)
 import Control.Lens hiding (Index)
 import Control.Monad
 import Control.Monad.IO.Class
@@ -18,7 +19,6 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Data.IORef
 import Data.Thyme.Clock
 
 import Kadena.Types.Dispatch (Dispatch)
@@ -31,7 +31,7 @@ import qualified Kadena.Log.Types as Log
 
 initEvidenceEnv :: Dispatch
                 -> (String -> IO ())
-                -> GlobalConfig
+                -> GlobalConfigMVar
                 -> MVar PublishedEvidenceState
                 -> MVar ResetLeaderNoFollowersTimeout
                 -> (Metric -> IO ())
@@ -48,17 +48,18 @@ initEvidenceEnv dispatch debugFn' mConfig' mPubStateTo' mResetLeaderNoFollowers'
 
 rebuildState :: Maybe EvidenceState -> EvidenceProcEnv (EvidenceState)
 rebuildState es = do
-  conf' <- view mConfig >>= liftIO . readIORef
-  otherNodes' <- return $ _otherNodes conf'
-  maxElectionTimeout' <- return $ snd $ _electionTimeoutRange conf'
+  GlobalConfig{..} <- view mConfig >>= liftIO . readMVar
+  otherNodes' <- return $ _otherNodes _gcConfig
+  maxElectionTimeout' <- return $ snd $ _electionTimeoutRange _gcConfig
   mv <- queryLogs $ Set.singleton Log.GetCommitIndex
   commitIndex' <- return $ Log.hasQueryResult Log.CommitIndex mv
-  newEs <- return $! initEvidenceState otherNodes' commitIndex' maxElectionTimeout'
+  newEs <- return $! initEvidenceState otherNodes' commitIndex' maxElectionTimeout' _gcVersion
   case es of
     Just es' -> do
       res <- return $ es'
         { _esQuorumSize = _esQuorumSize newEs
         , _esMaxElectionTimeout = maxElectionTimeout'
+        , _esConfigVersion = _gcVersion
         }
       return res
     Nothing -> do
@@ -68,15 +69,17 @@ publishEvidence :: EvidenceState -> EvidenceProcEnv ()
 publishEvidence es = do
   esPub <- view mPubStateTo
   liftIO $ void $ swapMVar esPub $ PublishedEvidenceState (es ^. esConvincedNodes) (es ^. esNodeStates)
---  debug $ "Published Evidence" ++ show (es ^. esNodeStates)
+  debug $ "Published Evidence" ++ show (es ^. esNodeStates)
 
+-- TODO: refactor this to just use RWST
 runEvidenceProcessor :: EvidenceState -> EvidenceProcEnv EvidenceState
 runEvidenceProcessor es = do
   newEv <- view evidence >>= liftIO . readComm
-  -- every time we process evidence, we want to tick the 'alert consensus that they aren't talking to a wall' variable' to False
-  es' <- return $! es {_esResetLeaderNoFollowers = False}
   case newEv of
     VerifiedAER aers -> do
+      -- every time we process evidence, we want to tick the 'alert consensus that they aren't talking to a wall'...
+      es' <- return $! es {_esResetLeaderNoFollowers = False}
+      -- ... variable to False
       (res, newEs) <- return $! if Set.null $ _esCacheMissAers es'
                                 then runState (processEvidence aers) es'
                                 else let es'' = es' { _esCacheMissAers = Set.empty }
@@ -105,10 +108,11 @@ runEvidenceProcessor es = do
           else runEvidenceProcessor newEs
     Heart tock -> do
       liftIO (pprintBeat tock) >>= debug
-      runEvidenceProcessor $ garbageCollectCache es
-    Bounce -> do
-      debug "restart command received!"
-      return es
+      gcm <- view mConfig
+      configUpdated <- liftIO $ configIsNew (_esConfigVersion es) gcm
+      if configUpdated
+      then return $ garbageCollectCache es
+      else runEvidenceProcessor $ garbageCollectCache es
     ClearConvincedNodes -> do
       -- Consensus has signaled that an election has or is taking place
       debug "clearing convinced nodes"

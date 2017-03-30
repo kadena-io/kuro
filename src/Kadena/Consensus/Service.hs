@@ -34,7 +34,7 @@ import qualified Kadena.HTTP.ApiServer as ApiServer
 
 launchApiService
   :: Dispatch
-  -> GlobalConfig
+  -> GlobalConfigMVar
   -> (String -> IO ())
   -> MVar PublishedConsensus
   -> IO UTCTime
@@ -65,7 +65,7 @@ launchEvidenceService :: Dispatch
   -> (String -> IO ())
   -> (Metric -> IO ())
   -> MVar Ev.PublishedEvidenceState
-  -> GlobalConfig
+  -> GlobalConfigMVar
   -> MVar ResetLeaderNoFollowersTimeout
   -> IO (Async ())
 launchEvidenceService dispatch' dbgPrint' publishMetric' mEvState rconf' mLeaderNoFollowers = do
@@ -101,7 +101,7 @@ launchSenderService :: Dispatch
   -> (Metric -> IO ())
   -> MVar Ev.PublishedEvidenceState
   -> MVar PublishedConsensus
-  -> GlobalConfig
+  -> GlobalConfigMVar
   -> IO (Async ())
 launchSenderService dispatch' dbgPrint' publishMetric' mEvState mPubCons rconf = do
   link =<< async (Sender.runSenderService dispatch' rconf dbgPrint' publishMetric' mEvState mPubCons)

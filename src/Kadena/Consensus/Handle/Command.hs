@@ -49,7 +49,7 @@ data CommandBatchOut =
 filterBatch :: Bloom RequestKey -> [(Maybe CmdLatencyMetrics, Command)] -> BatchProcessing
 filterBatch bfilter cs = BatchProcessing (BPNewEntries brandNew) (BPAlreadySeen likelySeen)
   where
-    probablyAlreadySaw (mLat, cmd@SmartContractCommand{..}) =
+    probablyAlreadySaw (mLat, cmd) =
       -- forcing the inside of an either is notoriously hard. in' is trying to at least force the majority of the work
       let in' = Bloom.elem (toRequestKey cmd) bfilter
           res = if in'

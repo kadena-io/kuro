@@ -33,6 +33,19 @@ import Kadena.Types
 import Kadena.Types.Sqlite
 import Kadena.History.Types
 
+data HistType = SCC | CCC deriving (Show, Eq)
+
+htToField :: HistType -> SType
+htToField SCC = SText $ Utf8 "smart_contract"
+htToField CCC = SText $ Utf8 "config"
+
+htFromField :: SType -> Either String HistType
+htFromField s@(SText (Utf8 v))
+  | v == "smart_contract" = Right SCC
+  | v == "config" = Right CCC
+  | otherwise = Left $ "unrecognized 'type' field in history db: " ++ show s
+htFromField s = Left $ "unrecognized 'type' field in history db: " ++ show s
+
 hashToField :: Hash -> SType
 hashToField h = SText $ Utf8 $ BSL.toStrict $ A.encode h
 
@@ -52,12 +65,23 @@ crFromField hsh li tid cr lat = SmartContractResult hsh (Pact.CommandResult (Pac
       Left err -> error $ "crFromField: unable to decode CommandResult from database! " ++ show err ++ "\n" ++ show cr
       Right v' -> v'
 
+ccFromField :: Hash -> LogIndex -> ByteString -> ByteString -> CommandResult
+ccFromField hsh li ccr lat = ConsensusConfigResult hsh v li lat'
+  where
+    lat' = case A.eitherDecodeStrict' lat of
+      Left err -> error $ "ccFromField: unable to decode CmdResultLatMetrics from database! " ++ show err ++ "\n" ++ show ccr
+      Right v' -> v'
+    v = case A.eitherDecodeStrict' ccr of
+      Left err -> error $ "ccFromField: unable to decode CommandResult from database! " ++ show err ++ "\n" ++ show ccr
+      Right v' -> v'
+
 sqlDbSchema :: Utf8
 sqlDbSchema =
   "CREATE TABLE IF NOT EXISTS 'main'.'pactCommands' \
   \( 'hash' TEXT PRIMARY KEY NOT NULL UNIQUE\
   \, 'logIndex' INTEGER NOT NULL\
   \, 'txid' INTEGER NOT NULL\
+  \, 'type' TEXT NOT NULL\
   \, 'result' TEXT NOT NULL\
   \, 'latency' TEXT NOT NULL\
   \)"
@@ -84,6 +108,7 @@ sqlInsertHistoryRow =
     \( 'hash'\
     \, 'logIndex' \
     \, 'txid' \
+    \, 'type' \
     \, 'result'\
     \, 'latency'\
     \) VALUES (?,?,?,?,?)"
@@ -93,7 +118,15 @@ insertRow s SmartContractResult{..} =
     execs s [hashToField _scrHash
             ,SInt $ fromIntegral _cmdrLogIndex
             ,SInt $ fromIntegral (fromMaybe (-1) (Pact._crTxId _scrResult))
+            ,htToField SCC
             ,crToField (Pact._crResult _scrResult)
+            ,latToField _cmdrLatMetrics]
+insertRow s ConsensusConfigResult{..} =
+    execs s [hashToField _ccrHash
+            ,SInt $ fromIntegral _cmdrLogIndex
+            ,SInt $ -1
+            ,htToField CCC
+            ,crToField $ A.toJSON _ccrResult
             ,latToField _cmdrLatMetrics]
 
 insertCompletedCommand :: DbEnv -> [CommandResult] -> IO ()
@@ -117,16 +150,18 @@ queryForExisting e v = foldM f v v
 
 sqlSelectCompletedCommands :: Utf8
 sqlSelectCompletedCommands =
-  "SELECT logIndex,txid,result,latency FROM 'main'.'pactCommands' WHERE hash=:hash LIMIT 1"
+  "SELECT logIndex,txid,type,result,latency FROM 'main'.'pactCommands' WHERE hash=:hash LIMIT 1"
 
 selectCompletedCommands :: DbEnv -> HashSet RequestKey -> IO (HashMap RequestKey CommandResult)
 selectCompletedCommands e v = foldM f HashMap.empty v
   where
     f m rk = do
-      rs' <- qrys (_qryCompletedStmt e) [hashToField $ unRequestKey rk] [RInt, RInt, RText, RText]
+      rs' <- qrys (_qryCompletedStmt e) [hashToField $ unRequestKey rk] [RInt, RInt, RText, RText, RText]
       if null rs'
       then return m
       else case head rs' of
-          [SInt li, SInt tid, SText (Utf8 cr),SText (Utf8 lat)] ->
-            return $ HashMap.insert rk (crFromField (unRequestKey rk) (fromIntegral li) (if tid < 0 then Nothing else Just (fromIntegral tid)) cr lat) m
+          [SInt li, SInt tid, type'@SText{}, SText (Utf8 cr),SText (Utf8 lat)] -> case htFromField type' of
+              Left err -> dbError err
+              Right SCC -> return $ HashMap.insert rk (crFromField (unRequestKey rk) (fromIntegral li) (if tid < 0 then Nothing else Just (fromIntegral tid)) cr lat) m
+              Right CCC -> return $ HashMap.insert rk (ccFromField (unRequestKey rk) (fromIntegral li) cr lat) m
           r -> dbError $ "Invalid result from query `History.selectCompletedCommands`: " ++ show r

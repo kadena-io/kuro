@@ -93,6 +93,7 @@ data ConfigParams = ConfigParams
   , confDir :: !FilePath
   , enableWB :: !Bool
   , hostStaticDirB :: !Bool
+  , adminKeyCnt :: !Int
   } deriving (Show)
 
 data ConfGenMode =
@@ -145,6 +146,7 @@ getParams cfgMode = do
                   else getUserInput "[Integer] How many green threads should be allocated to the Crypto PreProcessor? (recommended: 5 to 100)" Nothing $ checkGTE 1
   enableWB' <- yesNoToBool <$> getUserInput "[Yes|No] Use write-behind backend? (recommended: Yes)" (Just Yes) Nothing
   hostStaticDir' <- yesNoToBool <$> getUserInput "[Yes|No] Should each node host the contents of './static' as '<host>:<port>/'? (recommended: Yes)" (Just Yes) Nothing
+  adminKeyCnt' <- getUserInput ("[Integer] How many admin key pair(s) should be made? (recommended: 1)" ) (Just 1) $ checkGTE 1
   return $ ConfigParams
     { clusterCnt = clusterCnt'
     , clientCnt = clientCnt'
@@ -159,45 +161,56 @@ getParams cfgMode = do
     , confDir = confDir'
     , enableWB = enableWB'
     , hostStaticDirB = hostStaticDir'
+    , adminKeyCnt = adminKeyCnt'
     }
+
+makeAdminKeys :: Int -> IO (Map Alias KeyPair)
+makeAdminKeys cnt = do
+  adminKeys' <- fmap (\(sk,pk) -> KeyPair pk sk) . makeKeys cnt <$> (newGenIO :: IO SystemRandom)
+  let adminAliases = (\i -> Alias $ BSC.pack $ "admin" ++ show i) <$> [0..cnt-1]
+  return $ M.fromList $ zip adminAliases adminKeys'
 
 mainAws :: FilePath -> FilePath -> IO ()
 mainAws clustersFile clientsFile = do
   !clusters <- lines <$> readFile clustersFile
   !clients <- lines <$> readFile clientsFile
-  g <- newGenIO :: IO SystemRandom
   clusterIds <- return $ awsNodes clusters
-  clusterKeys <- return $ makeKeys (length clusters) g
+  clusterKeys <- makeKeys (length clusters) <$> (newGenIO :: IO SystemRandom)
   clusterKeyMaps <- return $ awsKeyMaps clusterIds clusterKeys
-  g' <- newGenIO :: IO SystemRandom
   clientIds <- return $ awsNodes clients
-  clientKeys <- return $ makeKeys (length clients) g'
+  clientKeys <- makeKeys (length clients) <$> (newGenIO :: IO SystemRandom)
   clientKeyMaps <- return $ awsKeyMaps clientIds clientKeys
   cfgParams@ConfigParams{..} <- getParams AWS {awsClientCnt = length clientIds, awsClusterCnt = length clusterIds}
-  clusterConfs <- return (createClusterConfig cfgParams clusterKeyMaps 8000 <$> clusterIds)
+  adminKeyPairs <- makeAdminKeys adminKeyCnt
+  adminKeys' <- return $ fmap _kpPublicKey adminKeyPairs
+  clusterConfs <- return (createClusterConfig cfgParams adminKeys' clusterKeyMaps 8000 <$> clusterIds)
   clientConfs <- return (createClientConfig clusterConfs clientKeyMaps <$> clientIds)
   mapM_ (\c' -> Y.encodeFile (confDir </> _host (_nodeId c') ++ "-server.yaml") c') clusterConfs
   mapM_ (\(ci,c') -> Y.encodeFile (confDir </> _host ci ++ "-client.yaml") c') $ zip clientIds clientConfs
+  mapM_ (\(a,kp) -> Y.encodeFile (confDir </> (BSC.unpack $ unAlias a) ++ "-keypair.yaml") kp) $ M.toList adminKeyPairs
 
 mainLocal :: IO ()
 mainLocal = do
   cfgParams@ConfigParams{..} <- getParams LOCAL
-  g <- newGenIO :: IO SystemRandom
-  let clusterKeyMaps = mkNodes (mkNode "127.0.0.1" 10000 "node") $ makeKeys clusterCnt g
-      clientKeyMaps = mkNodes (mkNode "127.0.0.1" 11000 "client") $ makeKeys clientCnt g
-      clusterConfs = zipWith (createClusterConfig cfgParams clusterKeyMaps) [8000..] (M.keys (fst clusterKeyMaps))
+  adminKeyPairs <- makeAdminKeys adminKeyCnt
+  adminKeys' <- return $ fmap _kpPublicKey adminKeyPairs
+  clusterKeyMaps <- mkNodes (mkNode "127.0.0.1" 10000 "node") . makeKeys clusterCnt <$> (newGenIO :: IO SystemRandom)
+  clientKeyMaps <- mkNodes (mkNode "127.0.0.1" 11000 "client") . makeKeys clientCnt <$> (newGenIO :: IO SystemRandom)
+  clusterConfs <- return $ zipWith (createClusterConfig cfgParams adminKeys' clusterKeyMaps) [8000..] (M.keys (fst clusterKeyMaps))
   clientConfs <- return (createClientConfig clusterConfs clientKeyMaps <$> M.keys (fst clientKeyMaps))
   mapM_ (\c' -> Y.encodeFile ("conf" </> show (_port $ _nodeId c') ++ "-cluster.yaml") c') clusterConfs
   mapM_ (\(i :: Int,c') -> Y.encodeFile ("conf" </> "client" ++ show i ++ "-client.yaml") c') (zip [0..] clientConfs)
+  mapM_ (\(a,kp) -> Y.encodeFile (confDir </> (BSC.unpack $ unAlias a) ++ "-keypair.yaml") kp) $ M.toList adminKeyPairs
 
 toAliasMap :: Map NodeId a -> Map Alias a
 toAliasMap = M.fromList . map (first _alias) . M.toList
 
-createClusterConfig :: ConfigParams -> (Map NodeId PrivateKey, Map NodeId PublicKey) -> Int -> NodeId -> Config
-createClusterConfig ConfigParams{..} (privMap, pubMap) apiP nid = Config
+createClusterConfig :: ConfigParams -> (Map Alias PublicKey) -> (Map NodeId PrivateKey, Map NodeId PublicKey) -> Int -> NodeId -> Config
+createClusterConfig ConfigParams{..} adminKeys' (privMap, pubMap) apiP nid = Config
   { _otherNodes           = Set.delete nid $ M.keysSet pubMap
   , _nodeId               = nid
   , _publicKeys           = toAliasMap $ pubMap
+  , _adminKeys            = adminKeys'
   , _myPrivateKey         = privMap M.! nid
   , _myPublicKey          = pubMap M.! nid
   , _electionTimeoutRange = (3000000,6000000)
@@ -213,6 +226,7 @@ createClusterConfig ConfigParams{..} (privMap, pubMap) apiP nid = Config
   , _preProcUsePar        = ppUsePar
   , _inMemTxCache         = inMemTxs
   , _hostStaticDir        = hostStaticDirB
+  , _nodeClass            = Active
   }
 
 createClientConfig :: [Config] -> (Map NodeId PrivateKey, Map NodeId PublicKey) -> NodeId -> ClientConfig

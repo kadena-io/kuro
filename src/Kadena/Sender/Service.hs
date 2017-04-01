@@ -33,7 +33,6 @@ import Data.Serialize
 
 import Data.Thyme.Clock (UTCTime, getCurrentTime)
 
-import Kadena.Util.Util (catchAndRethrow)
 import Kadena.Types hiding (debugPrint, ConsensusState(..), Config(..)
   , Consensus, ConsensusSpec(..), nodeId, sendMessage, outboundGeneral, outboundAerRvRvr
   , myPublicKey, myPrivateKey, otherNodes, nodeRole, term, Event(..), logService, publishMetric
@@ -99,7 +98,7 @@ runSenderService
   -> MVar Ev.PublishedEvidenceState
   -> MVar Spec.PublishedConsensus
   -> IO ()
-runSenderService dispatch iorConf debugFn publishMetric' mPubEvState mPubCons = catchAndRethrow "SenderService" $ do
+runSenderService dispatch iorConf debugFn publishMetric' mPubEvState mPubCons = do
   conf <- _gcConfig <$> readMVar iorConf
   s <- return $ ServiceEnv
     { _myNodeId = conf ^. KD.nodeId

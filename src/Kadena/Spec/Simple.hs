@@ -11,7 +11,6 @@ module Kadena.Spec.Simple
   ) where
 
 import Control.AutoUpdate (mkAutoUpdate, defaultUpdateSettings,updateAction,updateFreq)
-import Control.Concurrent.Async
 import Control.Concurrent
 import Control.Lens
 import Control.Monad
@@ -41,7 +40,7 @@ import Kadena.Types.Config
 import Kadena.Types.Spec hiding (timeCache)
 import Kadena.Types.Metric
 import Kadena.Types.Dispatch
-import Kadena.Util.Util (awsDashVar)
+import Kadena.Util.Util (awsDashVar, linkAsyncTrack)
 import Kadena.Messaging.ZMQ
 import Kadena.Monitoring.Server (startMonitoring)
 import qualified Kadena.Messaging.Turbine as Turbine
@@ -157,7 +156,7 @@ runServer = do
 
   -- Each node has its own snap monitoring server
   pubMetric <- startMonitoring rconf
-  link =<< runMsgServer dispatch me oNodes debugFn -- ZMQ
+  linkAsyncTrack "ZmqServerThread" $ runMsgServer dispatch me oNodes debugFn
   let raftSpec = simpleConsensusSpec debugFn (liftIO . pubMetric)
 
   restartTurbo <- newEmptyMVar

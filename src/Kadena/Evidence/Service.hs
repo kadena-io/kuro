@@ -21,7 +21,6 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Thyme.Clock
 
-import Kadena.Util.Util (catchAndRethrow)
 import Kadena.Types.Dispatch (Dispatch)
 import Kadena.Types.Event (ResetLeaderNoFollowersTimeout(..))
 import Kadena.Evidence.Spec as X
@@ -126,7 +125,7 @@ runEvidenceProcessor es = do
         }
 
 runEvidenceService :: EvidenceEnv -> IO ()
-runEvidenceService ev = catchAndRethrow "EvidenceService" $ do
+runEvidenceService ev = do
   startingEs <- runReaderT (rebuildState Nothing) ev
   putMVar (ev ^. mPubStateTo) $! PublishedEvidenceState (startingEs ^. esConvincedNodes) (startingEs ^. esNodeStates)
   runReaderT (foreverRunProcessor startingEs) ev

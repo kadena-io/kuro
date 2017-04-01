@@ -9,15 +9,18 @@ module Kadena.Util.Util
   , awsDashVar
   , fromMaybeM
   , foreverRetry
-  , KadenaError(..)
+  , TrackedError(..)
   , catchAndRethrow
+  , linkAsyncTrack
   ) where
 
 import Control.Monad
 import Control.Concurrent (forkFinally, putMVar, takeMVar, newEmptyMVar, forkIO)
+import Control.Concurrent.Async
 import Control.Monad.Catch
 import System.Process (system)
 
+import Data.List (intersperse)
 import Data.Typeable
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
@@ -56,13 +59,21 @@ getQuorumSize n = 1 + floor (fromIntegral n / 2 :: Float)
 fromMaybeM :: Monad m => m b -> Maybe b -> m b
 fromMaybeM errM = maybe errM (return $!)
 
-data KadenaError = KadenaError
-  { kadenaTrace :: [String]
-  , originalError :: String
-  } deriving (Show, Eq, Ord, Typeable)
+data TrackedError e = TrackedError
+  { teTrace :: [String]
+  , teError :: e
+  } deriving (Eq, Ord, Typeable)
 
-instance Exception KadenaError
+instance Show e => Show (TrackedError e) where
+  show TrackedError{..} = "[" ++ concat (intersperse "." teTrace) ++ "] Uncaught Exception: " ++ show teError
+
+instance (Exception e) => Exception (TrackedError e)
 
 catchAndRethrow :: String -> IO a -> IO a
-catchAndRethrow loc fn = fn `catches` [Handler (\e@KadenaError{..} -> throwM $ e {kadenaTrace = [loc] ++ kadenaTrace})
-                                      ,Handler (\(e :: SomeException)  -> throwM $ KadenaError [loc] $ show e)]
+catchAndRethrow loc fn = fn `catches` [Handler (\(e@TrackedError{..} :: TrackedError SomeException) -> throwM $ e {teTrace = [loc] ++ teTrace})
+                                      ,Handler (\(e :: SomeException)  -> throwM $ TrackedError [loc] e)]
+
+-- | Run an action asynchronously on a new thread. If an uncaught exception is encountered in the thread, capture it, track its location, and re-throw it to the parent thread.
+-- This is useful for when you're not expecting an exception in a child thread and want to know where to look after it's thrown.
+linkAsyncTrack :: String -> IO a -> IO ()
+linkAsyncTrack loc fn = link =<< (async $ catchAndRethrow loc fn)

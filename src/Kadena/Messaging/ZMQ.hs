@@ -55,8 +55,10 @@ runMsgServer dispatch me addrList debug = forever $ do
       liftIO $ putMVar semephory ()
       forever $ do
         !msgs <- liftIO (_unOutboundGeneral <$> readComm outboxRead) >>= return . fmap sealEnvelope
-        liftIO $ debug $ zmqPub ++ " publishing msg"
+        startTime <- liftIO getCurrentTime
         mapM_ (sendMulti pubSock) msgs
+        endTime <- liftIO getCurrentTime
+        liftIO $ debug $ zmqPub ++ "publishing msg " ++ (printInterval startTime endTime)
 
     liftIO $ void $ takeMVar semephory
 
@@ -85,14 +87,18 @@ runMsgServer dispatch me addrList debug = forever $ do
               liftIO yield
             Right s@(SignedRPC dig _)
               | _digType dig == RV || _digType dig == RVR -> do
-                liftIO $ debug $ zmqSub ++ " Received RVR from: " ++ (show $ _digNodeId dig)
+                endTime <- liftIO getCurrentTime
                 liftIO $ writeComm rvAndRvrWrite (InboundRVorRVR (ReceivedAt ts, s)) >> yield
+                liftIO $ debug $ zmqSub ++ " Received RVR from: " ++ (show $ _digNodeId dig) ++ " " ++ printInterval ts endTime
               | _digType dig == NEW -> do
-                liftIO $ debug $ zmqSub ++ " Received NEW from: " ++ (show $ _digNodeId dig)
+                endTime <- liftIO getCurrentTime
                 liftIO $ writeComm cmdInboxWrite (InboundCMD (ReceivedAt ts, s)) >> yield
+                liftIO $ debug $ zmqSub ++ " Received NEW from: " ++ (show $ _digNodeId dig) ++ " " ++ printInterval ts endTime
               | _digType dig == AER -> do
-                liftIO $ debug $ zmqSub ++ " Received AER from: " ++ (show $ _digNodeId dig)
+                endTime <- liftIO getCurrentTime
                 liftIO $ writeComm aerInboxWrite (InboundAER (ReceivedAt ts, s)) >> yield
+                liftIO $ debug $ zmqSub ++ " Received AER from: " ++ (show $ _digNodeId dig) ++ " " ++ printInterval ts endTime
               | otherwise           -> do
-                liftIO $ debug $ zmqSub ++ " Received " ++ (show $ _digType dig) ++ " from " ++ (show $ _digNodeId dig)
+                endTime <- liftIO getCurrentTime
                 liftIO $ writeComm inboxWrite (InboundGeneral (ReceivedAt ts, s)) >> yield
+                liftIO $ debug $ zmqSub ++ " Received " ++ (show $ _digType dig) ++ " from " ++ (show $ _digNodeId dig) ++ " " ++ printInterval ts endTime

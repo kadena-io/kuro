@@ -69,7 +69,7 @@ instance Show e => Show (TrackedError e) where
 
 instance (Exception e) => Exception (TrackedError e)
 
-catchAndRethrow :: String -> IO a -> IO a
+catchAndRethrow :: MonadCatch m => String -> m a -> m a
 catchAndRethrow loc fn = fn `catches` [Handler (\(e@TrackedError{..} :: TrackedError SomeException) -> throwM $ e {teTrace = [loc] ++ teTrace})
                                       ,Handler (\(e :: SomeException)  -> throwM $ TrackedError [loc] e)]
 

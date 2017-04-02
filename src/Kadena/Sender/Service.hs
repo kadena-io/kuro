@@ -9,7 +9,7 @@
 module Kadena.Sender.Service
   ( SenderService
   , ServiceEnv(..), myNodeId, currentLeader, currentTerm, myPublicKey
-  , myPrivateKey, yesVotes, debugPrint, serviceRequestChan, outboundGeneral, outboundAerRvRvr
+  , myPrivateKey, yesVotes, debugPrint, serviceRequestChan, outboundGeneral
   , logService, otherNodes, nodeRole, getEvidenceState, publishMetric, aeReplicationLogLimit
   , runSenderService
   , createAppendEntriesResponse' -- we need this for AER Evidence
@@ -34,9 +34,9 @@ import Data.Serialize
 import Data.Thyme.Clock (UTCTime, getCurrentTime)
 
 import Kadena.Types hiding (debugPrint, ConsensusState(..), Config(..)
-  , Consensus, ConsensusSpec(..), nodeId, sendMessage, outboundGeneral, outboundAerRvRvr
-  , myPublicKey, myPrivateKey, otherNodes, nodeRole, term, Event(..), logService, publishMetric
-  , currentLeader)
+  , Consensus, ConsensusSpec(..), nodeId, sendMessage, outboundGeneral
+  , myPublicKey, myPrivateKey, otherNodes, nodeRole, term, Event(..)
+  , logService, publishMetric, currentLeader)
 import qualified Kadena.Types as KD
 
 import qualified Kadena.Types.Spec as Spec
@@ -62,7 +62,6 @@ data ServiceEnv = ServiceEnv
   -- Comm Channels
   , _serviceRequestChan :: !SenderServiceChannel
   , _outboundGeneral :: !OutboundGeneralChannel
-  , _outboundAerRvRvr :: !OutboundAerRvRvrChannel
   -- Log Storage
   , _logService :: !LogServiceChannel
   -- Evidence Thread's Published State
@@ -114,7 +113,6 @@ runSenderService dispatch iorConf debugFn publishMetric' mPubEvState mPubCons = 
     -- Comm Channels
     , _serviceRequestChan = dispatch ^. senderService
     , _outboundGeneral = dispatch ^. KD.outboundGeneral
-    , _outboundAerRvRvr = dispatch ^. KD.outboundAerRvRvr
     -- Log Storage
     , _logService = dispatch ^. KD.logService
     , _getEvidenceState = readMVar mPubEvState
@@ -340,7 +338,7 @@ sendAllAppendEntriesResponse' issueTime stTime maxIndex' lastLogHash' = do
   ct <- view currentTerm
   myNodeId' <- view myNodeId
   aer <- return $ createAppendEntriesResponse' True True ct myNodeId' maxIndex' lastLogHash'
-  sendAerRvRvr aer
+  pubRPC aer
   edTime <- liftIO $ getCurrentTime
   case issueTime of
     Nothing -> debug $ "pub AER taking " ++ show (interval stTime edTime) ++ "mics to construct"
@@ -360,7 +358,7 @@ sendRequestVoteResponse :: NodeId -> Maybe HeardFromLeader -> Bool -> SenderServ
 sendRequestVoteResponse target heardFromLeader vote = do
   term' <- view currentTerm
   myNodeId' <- view myNodeId
-  sendAerRvRvr $! RVR' $! RequestVoteResponse term' heardFromLeader myNodeId' vote target NewMsg
+  pubRPC $! RVR' $! RequestVoteResponse term' heardFromLeader myNodeId' vote target NewMsg
 
 pubRPC :: RPC -> SenderService ()
 pubRPC rpc = do
@@ -369,7 +367,13 @@ pubRPC rpc = do
   privKey <- view myPrivateKey
   pubKey <- view myPublicKey
   sRpc <- return $ rpcToSignedRPC myNodeId' pubKey privKey rpc
-  debug $ "issuing broadcast msg: " ++ show (_digType $ _sigDigest sRpc)
+  debug $ "broadcast msg sent: "
+        ++ show (_digType $ _sigDigest sRpc)
+        ++ (case rpc of
+              AER' v -> " for " ++ show (_aerIndex v, _aerTerm v)
+              RV' v -> " for " ++ show (_rvTerm v, _rvLastLogIndex v)
+              RVR' v -> " for " ++ show (_rvrTerm v, _voteGranted v)
+              _ -> "")
   liftIO $ writeComm oChan $ broadcastMsg [encode $ sRpc]
 
 sendRPC :: NodeId -> RPC -> SenderService ()
@@ -400,19 +404,3 @@ sendRPCs rpcs = do
   pubKey <- view myPublicKey
   msgs <- return (((\(n,msg) -> (n, encode $ rpcToSignedRPC myNodeId' pubKey privKey msg)) <$> rpcs) `using` parList rseq)
   liftIO $ writeComm oChan $! directMsg msgs
-
-sendAerRvRvr :: RPC -> SenderService ()
-sendAerRvRvr rpc = do
-  oChan <- view outboundAerRvRvr
-  myNodeId' <- view myNodeId
-  privKey <- view myPrivateKey
-  pubKey <- view myPublicKey
-  sRpc <- return $ rpcToSignedRPC myNodeId' pubKey privKey rpc
-  debug $ "broadcast only msg sent: "
-        ++ show (_digType $ _sigDigest sRpc)
-        ++ (case rpc of
-              AER' v -> " for " ++ show (_aerIndex v, _aerTerm v)
-              RV' v -> " for " ++ show (_rvTerm v, _rvLastLogIndex v)
-              RVR' v -> " for " ++ show (_rvrTerm v, _voteGranted v)
-              _ -> "")
-  liftIO $! writeComm oChan $! aerRvRvrMsg [encode sRpc]

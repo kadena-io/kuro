@@ -7,7 +7,6 @@ module Kadena.Types.Dispatch
   , inboundRVorRVR
   , inboundGeneral
   , outboundGeneral
-  , outboundAerRvRvr
   , internalEvent
   , senderService
   , logService
@@ -35,7 +34,6 @@ data Dispatch = Dispatch
   , _inboundRVorRVR  :: InboundRVorRVRChannel
   , _inboundGeneral  :: InboundGeneralChannel
   , _outboundGeneral :: OutboundGeneralChannel
-  , _outboundAerRvRvr :: OutboundAerRvRvrChannel
   , _internalEvent   :: InternalEventChannel
   , _senderService   :: SenderServiceChannel
   , _logService   :: LogServiceChannel
@@ -48,7 +46,6 @@ data Dispatch = Dispatch
 initDispatch :: IO Dispatch
 initDispatch = Dispatch
   <$> initComms
-  <*> initComms
   <*> initComms
   <*> initComms
   <*> initComms

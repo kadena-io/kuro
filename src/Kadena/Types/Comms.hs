@@ -31,9 +31,6 @@ module Kadena.Types.Comms
   , OutboundGeneral(..)
   , OutboundGeneralChannel(..)
   , broadcastMsg, directMsg
-  , OutboundAerRvRvr(..)
-  , OutboundAerRvRvrChannel(..)
-  , aerRvRvrMsg
   , InternalEvent(..)
   , InternalEventChannel(..)
   -- for construction of chans elsewhere
@@ -121,17 +118,11 @@ newtype InboundRVorRVR = InboundRVorRVR { _unInboundRVorRVR :: (ReceivedAt, Sign
 newtype OutboundGeneral = OutboundGeneral { _unOutboundGeneral :: [Envelope]}
   deriving (Show, Eq, Typeable)
 
-newtype OutboundAerRvRvr = OutboundAerRvRvr { _unOutboundAerRvRvr :: [Envelope]}
-  deriving (Show, Eq, Typeable)
-
 directMsg :: [(NodeId, ByteString)] -> OutboundGeneral
 directMsg msgs = OutboundGeneral $! Envelope . (\(n,b) -> (Topic $ unAlias $ _alias n, b)) <$> msgs
 
 broadcastMsg :: [ByteString] -> OutboundGeneral
 broadcastMsg msgs = OutboundGeneral $! Envelope . (\b -> (Topic $ "all", b)) <$> msgs
-
-aerRvRvrMsg :: [ByteString] -> OutboundAerRvRvr
-aerRvRvrMsg msgs = OutboundAerRvRvr $! Envelope . (\b -> (Topic $ "all", b)) <$> msgs
 
 newtype InternalEvent = InternalEvent { _unInternalEvent :: Event}
   deriving (Show, Typeable)
@@ -141,7 +132,6 @@ newtype InboundCMDChannel = InboundCMDChannel (Chan InboundCMD, TVar (Seq Inboun
 newtype InboundRVorRVRChannel = InboundRVorRVRChannel (Chan InboundRVorRVR)
 newtype InboundGeneralChannel = InboundGeneralChannel (Chan InboundGeneral, TVar (Seq InboundGeneral))
 newtype OutboundGeneralChannel = OutboundGeneralChannel (Chan OutboundGeneral)
-newtype OutboundAerRvRvrChannel = OutboundAerRvRvrChannel (Chan OutboundAerRvRvr)
 newtype InternalEventChannel = InternalEventChannel (BoundedChan InternalEvent)
 
 class Comms f c | c -> f where
@@ -207,14 +197,6 @@ instance Comms OutboundGeneral OutboundGeneralChannel where
   initComms = OutboundGeneralChannel <$> initCommsNormal
   readComm (OutboundGeneralChannel c) = readCommNormal c
   writeComm (OutboundGeneralChannel c) = writeCommNormal c
-  {-# INLINE initComms #-}
-  {-# INLINE readComm #-}
-  {-# INLINE writeComm #-}
-
-instance Comms OutboundAerRvRvr OutboundAerRvRvrChannel where
-  initComms = OutboundAerRvRvrChannel <$> initCommsNormal
-  readComm (OutboundAerRvRvrChannel c) = readCommNormal c
-  writeComm (OutboundAerRvRvrChannel c) = writeCommNormal c
   {-# INLINE initComms #-}
   {-# INLINE readComm #-}
   {-# INLINE writeComm #-}

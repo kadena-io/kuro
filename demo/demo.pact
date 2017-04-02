@@ -41,7 +41,7 @@
             , "data": "Admin account funding" }))
 
  (defun read-all ()
-   (map (read-account) (keys accounts)))
+   (map (read-account) ["Acct1" "Acct2"]))
 
 )
 

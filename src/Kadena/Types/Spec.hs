@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -24,6 +25,7 @@ module Kadena.Types.Spec
   ) where
 
 import Control.Concurrent (MVar, ThreadId, killThread, yield, forkIO, threadDelay, tryPutMVar, tryTakeMVar, readMVar)
+import Control.Concurrent.STM
 import Control.Lens hiding (Index, (|>))
 import Control.Monad
 import Control.Monad.IO.Class
@@ -46,6 +48,7 @@ import Kadena.Types.Message
 import Kadena.Types.Metric
 import Kadena.Types.Comms
 import Kadena.Types.Dispatch
+import Kadena.Util.Util
 import Kadena.Sender.Types (SenderServiceChannel, ServiceRequest')
 import Kadena.Log.Types (QueryApi(..))
 import Kadena.History.Types (History(..))
@@ -87,6 +90,8 @@ makeLenses ''LazyVote
 
 data ConsensusState = ConsensusState
   { _nodeRole         :: !Role
+  , _clusterSize      :: !Int
+  , _quorumSize       :: !Int
   , _term             :: !Term
   , _votedFor         :: !(Maybe NodeId)
   , _lazyVote         :: !(Maybe LazyVote)
@@ -105,9 +110,11 @@ data ConsensusState = ConsensusState
   }
 makeLenses ''ConsensusState
 
-initialConsensusState :: MVar Event -> ConsensusState
-initialConsensusState timerTarget' = ConsensusState
+initialConsensusState :: MVar Event -> Config -> ConsensusState
+initialConsensusState timerTarget' Config{..} = ConsensusState
 {-role-}                Follower
+{-clusterSize-}         (1 + Set.size _otherNodes)
+{-quorumSize-}          (getQuorumSize $ Set.size _otherNodes)
 {-term-}                startTerm
 {-votedFor-}            Nothing
 {-lazyVote-}            Nothing
@@ -125,11 +132,9 @@ initialConsensusState timerTarget' = ConsensusState
 type Consensus = RWST ConsensusEnv () ConsensusState IO
 
 data ConsensusEnv = ConsensusEnv
-  { _cfg              :: !(GlobalConfigMVar)
+  { _cfg              :: !(GlobalConfigTMVar)
   , _enqueueLogQuery  :: !(QueryApi -> IO ())
   , _enqueueHistoryQuery :: !(History -> IO ())
-  , _clusterSize      :: !Int
-  , _quorumSize       :: !Int
   , _rs               :: !ConsensusSpec
   , _sendMessage      :: !(ServiceRequest' -> IO ())
   , _enqueue          :: !(Event -> IO ())
@@ -147,9 +152,7 @@ data ConsensusEnv = ConsensusEnv
 makeLenses ''ConsensusEnv
 
 mkConsensusEnv
-  :: GlobalConfigMVar
-  -> Int
-  -> Int
+  :: GlobalConfigTMVar
   -> ConsensusSpec
   -> Dispatch
   -> MVar Event
@@ -158,12 +161,10 @@ mkConsensusEnv
   -> MVar ResetLeaderNoFollowersTimeout
   -> MVar PublishedConsensus
   -> ConsensusEnv
-mkConsensusEnv conf' cSize qSize rSpec dispatch timerTarget' timeCache' mEs mResetLeaderNoFollowers' mPubConsensus' = ConsensusEnv
+mkConsensusEnv conf' rSpec dispatch timerTarget' timeCache' mEs mResetLeaderNoFollowers' mPubConsensus' = ConsensusEnv
     { _cfg = conf'
     , _enqueueLogQuery = writeComm ls'
     , _enqueueHistoryQuery = writeComm hs'
-    , _clusterSize = cSize
-    , _quorumSize = qSize
     , _rs = rSpec
     , _sendMessage = sendMsg g'
     , _enqueue = writeComm ie' . InternalEvent
@@ -201,9 +202,9 @@ sendMsg outboxWrite og = do
   yield
 
 readConfig :: Consensus Config
-readConfig = view cfg >>= fmap _gcConfig . liftIO . readMVar
+readConfig = view cfg >>= fmap _gcConfig . liftIO . atomically . readTMVar
 
 viewConfig :: Getting r Config r -> Consensus r
 viewConfig l = do
-  (c :: Config) <- view cfg >>= fmap _gcConfig . liftIO . readMVar
+  (c :: Config) <- view cfg >>= fmap _gcConfig . liftIO . atomically . readTMVar
   return $ view l c

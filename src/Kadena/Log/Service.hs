@@ -39,10 +39,9 @@ import Kadena.Types (Dispatch)
 runLogService :: Dispatch
               -> (String -> IO())
               -> (Metric -> IO())
-              -> KeySet
               -> Config
               -> IO ()
-runLogService dispatch dbg publishMetric' keySet' rconf = do
+runLogService dispatch dbg publishMetric' rconf = do
   dbConn' <- if rconf ^. enablePersistence
     then do
       let dbDir' = (rconf ^. logDir) </> (show $ _alias $ rconf ^. (nodeId)) ++ "-log.sqlite"
@@ -58,7 +57,6 @@ runLogService dispatch dbg publishMetric' keySet' rconf = do
     , _evidence = dispatch ^. Dispatch.evidence
     , _senderChannel = dispatch ^. Dispatch.senderService
     , _debugPrint = dbg
-    , _keySet = keySet'
     , _persistedLogEntriesToKeepInMemory = (rconf ^. inMemTxCache)
     , _dbConn = dbConn'
     , _publishMetric = publishMetric'

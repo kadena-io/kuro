@@ -54,7 +54,7 @@ initCommitEnv
   -> (Metric -> IO ())
   -> IO UTCTime
   -> Bool
-  -> Config.GlobalConfigMVar
+  -> Config.GlobalConfigTMVar
   -> CommitEnv
 initCommitEnv dispatch' debugPrint' commandConfig' publishMetric' getTimestamp' enableWB' gcm' = CommitEnv
   { _commitChannel = dispatch' ^. D.commitService
@@ -69,6 +69,10 @@ initCommitEnv dispatch' debugPrint' commandConfig' publishMetric' getTimestamp' 
 
 data ReplayStatus = ReplayFromDisk | FreshCommands deriving (Show, Eq)
 
+onUpdateConf :: CommitChannel -> Config.Config -> IO ()
+onUpdateConf oChan conf@Config.Config{ _nodeId = nodeId' } = do
+  writeComm oChan $ ChangeNodeId nodeId'
+  writeComm oChan $ UpdateKeySet $ Config.confToKeySet conf
 
 initPactService :: CommitEnv -> CommandConfig -> IO (CommandExecInterface (PactRPC ParsedCode))
 initPactService CommitEnv{..} config@CommandConfig {..} = do
@@ -113,6 +117,8 @@ runCommitService :: CommitEnv -> NodeId -> KeySet -> IO ()
 runCommitService env nodeId' keySet' = do
   cmdExecInter <- initPactService env (env ^. commandConfig)
   initCommitState <- return $! CommitState { _nodeId = nodeId', _keySet = keySet', _commandExecInterface = cmdExecInter}
+  let cu = Config.ConfigUpdater (env ^. debugPrint) "Service|Commit" (onUpdateConf (env ^. commitChannel))
+  linkAsyncTrack "CommitConfUpdater" $ runConfigUpdater cu (env ^. mConfig)
   void $ runRWST handle env initCommitState
 
 debug :: String -> CommitService ()
@@ -138,11 +144,14 @@ handle = do
       Heart t -> liftIO (pprintBeat t) >>= debug
       ChangeNodeId{..} -> do
         prevNodeId <- use nodeId
-        nodeId .= newNodeId
-        debug $ "Changed NodeId: " ++ show prevNodeId ++ " -> " ++ show newNodeId
+        unless (prevNodeId == newNodeId) $ do
+          nodeId .= newNodeId
+          debug $ "Changed NodeId: " ++ show prevNodeId ++ " -> " ++ show newNodeId
       UpdateKeySet{..} -> do
-        keySet %= updateKeySet
-        debug "Updated KeySet"
+        prevKeySet <- use keySet
+        unless (prevKeySet == newKeySet) $ do
+          keySet .= newKeySet
+          debug $ "Updated keyset"
       CommitNewEntries{..} -> do
         debug $ (show . Log.lesCnt $ logEntriesToApply)
               ++ " new log entries to apply, up to "
@@ -225,10 +234,10 @@ applyCommand _tEnd le@LogEntry{..} = do
     ConsensusConfigCommand{..} -> do
       (pproc, ppLat) <- case _cccPreProc of
         Unprocessed -> do
-          debug $ "WARNING: non-preproccessed command found for " ++ show _leLogIndex
+          debug $ "WARNING: non-preproccessed config command found for " ++ show _leLogIndex
           case (History.verifyCommand _leCommand) of
             ConsensusConfigCommand{..} -> return $! (result _cccPreProc, _leCmdLatMetrics)
-            _ -> error "[applyCommand.2] unreachable exception... and yet reached"
+            _ -> error "[applyCommand.conf.2] unreachable exception... and yet reached"
         Pending{..} -> do
           PendingResult{..} <- getPendingPreProcCCC startTime pending
           return $ (_prResult, updateLatPreProc _prStartedPreProc _prFinishedPreProc _leCmdLatMetrics)

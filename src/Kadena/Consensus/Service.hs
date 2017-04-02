@@ -32,7 +32,7 @@ import qualified Kadena.HTTP.ApiServer as ApiServer
 
 launchApiService
   :: Dispatch
-  -> GlobalConfigMVar
+  -> GlobalConfigTMVar
   -> (String -> IO ())
   -> MVar PublishedConsensus
   -> IO UTCTime
@@ -63,7 +63,7 @@ launchEvidenceService :: Dispatch
   -> (String -> IO ())
   -> (Metric -> IO ())
   -> MVar Ev.PublishedEvidenceState
-  -> GlobalConfigMVar
+  -> GlobalConfigTMVar
   -> MVar ResetLeaderNoFollowersTimeout
   -> IO ()
 launchEvidenceService dispatch' dbgPrint' publishMetric' mEvState rconf' mLeaderNoFollowers = do
@@ -77,7 +77,7 @@ launchCommitService :: Dispatch
   -> NodeId
   -> IO UTCTime
   -> Pact.CommandConfig
-  -> GlobalConfigMVar
+  -> GlobalConfigTMVar
   -> IO ()
 launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' commandConfig' gcm' = do
   rconf' <- _gcConfig <$> readMVar gcm'
@@ -100,7 +100,7 @@ launchSenderService :: Dispatch
   -> (Metric -> IO ())
   -> MVar Ev.PublishedEvidenceState
   -> MVar PublishedConsensus
-  -> GlobalConfigMVar
+  -> GlobalConfigTMVar
   -> IO ()
 launchSenderService dispatch' dbgPrint' publishMetric' mEvState mPubCons rconf = do
   linkAsyncTrack "SenderThread" (Sender.runSenderService dispatch' rconf dbgPrint' publishMetric' mEvState mPubCons)
@@ -131,7 +131,7 @@ runConsensusService renv rconf spec rstate timeCache' mPubConsensus' = do
   publishMetric' $ MetricQuorumSize qsize
   linkAsyncTrack "ReceiverThread" $ runMessageReceiver renv
 
-  rconf' <- initGlobalConfigMVar rconf
+  rconf' <- initGlobalConfigTMVar rconf
   timerTarget' <- return $ (rstate ^. timerTarget)
   -- EvidenceService Environment
   mEvState <- newEmptyMVar

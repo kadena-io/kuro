@@ -8,7 +8,7 @@ module Kadena.Evidence.Service
   , module X
   ) where
 
-import Control.Concurrent (MVar, newEmptyMVar, takeMVar, swapMVar, tryPutMVar, putMVar, readMVar)
+import Control.Concurrent (MVar, newEmptyMVar, takeMVar, swapMVar, tryPutMVar, putMVar)
 import Control.Lens hiding (Index)
 import Control.Monad
 import Control.Monad.IO.Class
@@ -31,7 +31,7 @@ import qualified Kadena.Log.Types as Log
 
 initEvidenceEnv :: Dispatch
                 -> (String -> IO ())
-                -> GlobalConfigMVar
+                -> GlobalConfigTMVar
                 -> MVar PublishedEvidenceState
                 -> MVar ResetLeaderNoFollowersTimeout
                 -> (Metric -> IO ())
@@ -46,24 +46,44 @@ initEvidenceEnv dispatch debugFn' mConfig' mPubStateTo' mResetLeaderNoFollowers'
   , _publishMetric = publishMetric'
   }
 
-rebuildState :: Maybe EvidenceState -> EvidenceProcEnv (EvidenceState)
-rebuildState es = do
-  GlobalConfig{..} <- view mConfig >>= liftIO . readMVar
-  otherNodes' <- return $ _otherNodes _gcConfig
-  maxElectionTimeout' <- return $ snd $ _electionTimeoutRange _gcConfig
+-- | This handles initialization and config updates
+initializeState :: EvidenceProcEnv (EvidenceState)
+initializeState = do
+  Config{..} <- view mConfig >>= liftIO . readCurrentConfig
+  maxElectionTimeout' <- return $ snd $ _electionTimeoutRange
   mv <- queryLogs $ Set.singleton Log.GetCommitIndex
   commitIndex' <- return $ Log.hasQueryResult Log.CommitIndex mv
-  newEs <- return $! initEvidenceState otherNodes' commitIndex' maxElectionTimeout' _gcVersion
-  case es of
-    Just es' -> do
-      res <- return $ es'
-        { _esQuorumSize = _esQuorumSize newEs
-        , _esMaxElectionTimeout = maxElectionTimeout'
-        , _esConfigVersion = _gcVersion
-        }
-      return res
-    Nothing -> do
-      return $! newEs
+  return $! initEvidenceState _otherNodes commitIndex' maxElectionTimeout'
+
+-- | This handles initialization and config updates
+handleConfUpdate :: EvidenceState -> EvidenceProcEnv (EvidenceState)
+handleConfUpdate es@EvidenceState{..} = do
+  Config{..} <- view mConfig >>= liftIO . readCurrentConfig
+  if _esOtherNodes == _otherNodes && (snd _electionTimeoutRange) == esMaxElectionTimeout
+  then return es
+  else do
+    maxElectionTimeout' <- return $ snd $ _electionTimeoutRange
+    mv <- queryLogs $ Set.singleton Log.GetCommitIndex
+    commitIndex' <- return $ Log.hasQueryResult Log.CommitIndex mv
+    toRemove <- return $ Set.difference _esOtherNodes _otherNodes
+    toAdd <- return $ Set.difference _otherNodes _esOtherNodes
+    return $ es
+      { _esOtherNodes = _otherNodes
+      , _esQuorumSize = getEvidenceQuorumSize $ Set.size _otherNodes
+      , _esNodeStates =
+           let removedNodes = Map.filterWithKey (\(k,v) -> not $ Set.member k toRemove) _esNodeStates
+           in Map.union removedNodes $ Map.fromSet (\_ -> (startIndex,minBound)) toAdd
+      , _esConvincedNodes = Set.difference _esConvincedNodes toRemove
+      , _esPartialEvidence = Map.empty
+      , _esCommitIndex = commidIndex'
+      , _esMaxCachedIndex = commidIndex'
+      , _esCacheMissAers = Set.empty
+      , _esMismatchNodes = Set.empty
+      , _esResetLeaderNoFollowers = False
+      , _esHashAtCommitIndex = initialHash
+      , _esEvidenceCache = Map.singleton startIndex initialHash
+      , _esMaxElectionTimeout = maxElectionTimeout'
+      }
 
 publishEvidence :: EvidenceState -> EvidenceProcEnv ()
 publishEvidence es = do
@@ -108,11 +128,8 @@ runEvidenceProcessor es = do
           else runEvidenceProcessor newEs
     Heart tock -> do
       liftIO (pprintBeat tock) >>= debug
-      gcm <- view mConfig
-      configUpdated <- liftIO $ configIsNew (_esConfigVersion es) gcm
-      if configUpdated
-      then return $ garbageCollectCache es
-      else runEvidenceProcessor $ garbageCollectCache es
+      runEvidenceProcessor $ garbageCollectCache es
+    Bounce -> return $ garbageCollectCache es
     ClearConvincedNodes -> do
       -- Consensus has signaled that an election has or is taking place
       debug "clearing convinced nodes"
@@ -128,11 +145,10 @@ runEvidenceService :: EvidenceEnv -> IO ()
 runEvidenceService ev = do
   startingEs <- runReaderT (rebuildState Nothing) ev
   putMVar (ev ^. mPubStateTo) $! PublishedEvidenceState (startingEs ^. esConvincedNodes) (startingEs ^. esNodeStates)
-  runReaderT (foreverRunProcessor startingEs) ev
+  runReaderT (debug "Launch!" >> foreverRunProcessor startingEs) ev
 
 foreverRunProcessor :: EvidenceState -> EvidenceProcEnv ()
 foreverRunProcessor es = do
-  debug "launching!"
   runEvidenceProcessor es >>= rebuildState . Just >>= foreverRunProcessor
 
 queryLogs :: Set Log.AtomicQuery -> EvidenceProcEnv (Map Log.AtomicQuery Log.QueryResult)

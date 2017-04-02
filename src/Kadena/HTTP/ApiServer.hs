@@ -62,7 +62,7 @@ import Kadena.HTTP.Static
 data ApiEnv = ApiEnv
   { _aiLog :: String -> IO ()
   , _aiDispatch :: Dispatch
-  , _aiConfig :: Config.GlobalConfigMVar
+  , _aiConfig :: GlobalConfigTMVar
   , _aiPubConsensus :: MVar PublishedConsensus
   , _aiGetTimestamp :: IO UTCTime
   }
@@ -70,12 +70,12 @@ makeLenses ''ApiEnv
 
 type Api a = ReaderT ApiEnv Snap a
 
-runApiServer :: Dispatch -> Config.GlobalConfigMVar -> (String -> IO ())
+runApiServer :: Dispatch -> Config.GlobalConfigTMVar -> (String -> IO ())
              -> Int -> MVar PublishedConsensus -> IO UTCTime -> IO ()
-runApiServer dispatch conf logFn port mPubConsensus' timeCache' = do
+runApiServer dispatch gcm logFn port mPubConsensus' timeCache' = do
   logFn $ "[Service|API]: starting on port " ++ show port
-  let conf' = ApiEnv logFn dispatch conf mPubConsensus' timeCache'
-  rconf <- Config._gcConfig <$> readMVar conf
+  let conf' = ApiEnv logFn dispatch gcm mPubConsensus' timeCache'
+  rconf <- readCurrentConfig gcm
   let logDir' = _logDir rconf
       hostStaticDir' = _hostStaticDir rconf
   serverConf' <- serverConf port logFn logDir'
@@ -115,7 +115,7 @@ sendPublicBatch = do
   SubmitBatch cmds <- readJSON
   when (null cmds) $ die "Empty Batch"
   PublishedConsensus{..} <- view aiPubConsensus >>= liftIO . tryReadMVar >>= fromMaybeM (die "Invariant error: consensus unavailable")
-  conf <- view aiConfig >>= fmap Config._gcConfig . liftIO . readMVar
+  conf <- view aiConfig >>= liftIO . readCurrentConfig
   ldr <- fromMaybeM (die "System unavaiable, please try again later") _pcLeader
   rAt <- ReceivedAt <$> now
   log $ "received batch of " ++ show (length cmds)

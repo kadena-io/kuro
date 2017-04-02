@@ -138,7 +138,7 @@ instance NFData FinishedPreProc where
     Pact.ProcSucc s -> rnf s
     Pact.ProcFail e -> rnf e
   rnf FinishedPreProcCCC{..} = case _fppCccRes of
-    ProcessedConfigSuccess s -> s `seq` ()
+    ProcessedConfigSuccess s _ -> s `seq` ()
     ProcessedConfigFailure e -> rnf e
 
 runPreprocPure :: RunPreProc -> FinishedPreProc

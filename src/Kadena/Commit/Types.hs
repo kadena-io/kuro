@@ -49,7 +49,7 @@ data Commit =
   ChangeNodeId
     { newNodeId :: !NodeId } |
   UpdateKeySet
-    { updateKeySet :: !(KeySet -> KeySet) } |
+    { newKeySet :: !(KeySet) } |
   Heart Beat |
   ExecLocal
     { localCmd :: !(Pact.Command ByteString),
@@ -71,7 +71,7 @@ data CommitEnv = CommitEnv
   , _publishMetric :: !(Metric -> IO ())
   , _getTimestamp :: !(IO UTCTime)
   , _enableWB :: !Bool
-  , _mConfig :: GlobalConfigMVar
+  , _mConfig :: GlobalConfigTMVar
   }
 makeLenses ''CommitEnv
 

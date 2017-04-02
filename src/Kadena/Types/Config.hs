@@ -14,19 +14,21 @@ module Kadena.Types.Config
   , logDir, entity, nodeClass, adminKeys
   , aeBatchSize, preProcThreadCount, preProcUsePar
   , inMemTxCache, enablePersistence
-  , KeySet(..), ksCluster
+  , KeySet(..), ksCluster, confToKeySet
   , EntityInfo(..),entName
   , ConfigUpdateCommand(..)
   , ConfigUpdate(..), cuCmd, cuHash, cuSigs
   , ProcessedConfigUpdate(..), processConfigUpdate
   , ConfigUpdateResult(..)
   , KeyPair(..), getNewKeyPair, execConfigUpdateCmd
-  , GlobalConfigMVar
+  , GlobalConfigTMVar
   , GlobalConfig(..), gcVersion, gcConfig
-  , initGlobalConfigMVar, mutateConfig, configIsNew, getConfigIfNew
+  , initGlobalConfigTMVar, mutateConfig, getConfigWhenNew
+  , ConfigUpdater(..), runConfigUpdater
+  , readCurrentConfig
   ) where
 
-import Control.Concurrent.MVar
+import Control.Concurrent.STM
 import Control.Lens hiding (Index, (|>))
 import Control.Monad
 
@@ -100,10 +102,14 @@ instance FromJSON Config where
 
 data KeySet = KeySet
   { _ksCluster :: !(Map Alias PublicKey)
-  } deriving (Show)
+  } deriving (Show, Eq, Ord)
 makeLenses ''KeySet
 instance Default KeySet where
   def = KeySet Map.empty
+
+confToKeySet :: Config -> KeySet
+confToKeySet Config{..} = KeySet
+  { _ksCluster = _publicKeys}
 
 data ConfigUpdateCommand =
   AddNode
@@ -120,9 +126,14 @@ data ConfigUpdateCommand =
     { _cucAlias :: !Alias
     , _cucPublicKey :: !PublicKey
     , _cucKeyPairPath :: !FilePath} |
+  AddAdminKey
+    { _cucAlias :: !Alias
+    , _cucPublicKey :: !PublicKey } |
   UpdateAdminKey
     { _cucAlias :: !Alias
     , _cucPublicKey :: !PublicKey } |
+  RemoveAdminKey
+    { _cucAlias :: !Alias } |
   RotateLeader
     { _cucTerm :: !Term }
   deriving (Show, Eq, Ord, Generic, Serialize)
@@ -161,13 +172,14 @@ processConfigUpdate ConfigUpdate{..} =
      else if sigsValid
           then case eitherDecodeStrict' _cuCmd of
                  Left !err -> ProcessedConfigFailure err
-                 Right !v -> ProcessedConfigSuccess v
+                 Right !v -> ProcessedConfigSuccess v (Map.keysSet _cuSigs)
           else ProcessedConfigFailure $! "Sig(s) Invalid: " ++ show invalidSigs
 {-# INLINE processConfigUpdate #-}
 
 data ProcessedConfigUpdate =
   ProcessedConfigFailure !String |
-  ProcessedConfigSuccess { _pcsRes :: !ConfigUpdateCommand }
+  ProcessedConfigSuccess { _pcsRes :: !ConfigUpdateCommand
+                         , _pcsKeysUsed :: !(Set PublicKey)}
   deriving (Show, Eq, Ord, Generic)
 
 data ConfigUpdateResult =
@@ -221,9 +233,19 @@ execConfigUpdateCmd conf@Config{..} cuc = do
       | Map.member _cucAlias _publicKeys -> return $ Right $! conf
           { _publicKeys = Map.insert _cucAlias _cucPublicKey _publicKeys }
       | otherwise -> return $ Left $ "Unable to delete node, not found"
+    AddAdminKey{..}
+      | Map.member _cucAlias _adminKeys ->
+          return $ Left $ "admin alias already present: " ++ show _cucAlias
+      | otherwise -> return $ Right $! conf
+          { _adminKeys = Map.insert _cucAlias _cucPublicKey _adminKeys }
     UpdateAdminKey{..}
       | Map.member _cucAlias _adminKeys -> return $ Right $! conf
           { _adminKeys = Map.insert _cucAlias _cucPublicKey _adminKeys }
+      | otherwise ->
+          return $ Left $ "Unable to find admin alias: " ++ show _cucAlias
+    RemoveAdminKey{..}
+      | Map.member _cucAlias _adminKeys -> return $ Right $! conf
+          { _adminKeys = Map.delete _cucAlias _adminKeys }
       | otherwise ->
           return $ Left $ "Unable to find admin alias: " ++ show _cucAlias
     RotateLeader{..} ->
@@ -235,31 +257,53 @@ data GlobalConfig = GlobalConfig
   } deriving (Show, Generic)
 makeLenses ''GlobalConfig
 
-type GlobalConfigMVar = MVar GlobalConfig
+type GlobalConfigTMVar = TMVar GlobalConfig
 
-initGlobalConfigMVar :: Config -> IO GlobalConfigMVar
-initGlobalConfigMVar c = newMVar $ GlobalConfig initialConfigVersion c
+initGlobalConfigTMVar :: Config -> IO GlobalConfigTMVar
+initGlobalConfigTMVar c = newTMVarIO $ GlobalConfig initialConfigVersion c
 
-mutateConfig :: GlobalConfigMVar -> ProcessedConfigUpdate -> IO ConfigUpdateResult
+mutateConfig :: GlobalConfigTMVar -> ProcessedConfigUpdate -> IO ConfigUpdateResult
 mutateConfig _ (ProcessedConfigFailure err) = return $ ConfigUpdateFailure err
-mutateConfig gc (ProcessedConfigSuccess cuc) = do
-  GlobalConfig{..} <- tryTakeMVar gc >>= \case
-    Nothing -> error $ "Unable to take config MVar"
-    Just v -> return v
-  res <- execConfigUpdateCmd _gcConfig cuc
-  case res of
-    Left err -> return $! ConfigUpdateFailure $ "Failure: " ++ err
-    Right conf' -> do
-      putMVar gc $ GlobalConfig { _gcVersion = ConfigVersion $ configVersion _gcVersion + 1
-                                , _gcConfig = conf'}
-      return ConfigUpdateSuccess
+mutateConfig gc (ProcessedConfigSuccess cuc keysUsed) = do
+  origGc@GlobalConfig{..} <- atomically $ takeTMVar gc
+  missingKeys <- return $ getMissingKeys _gcConfig keysUsed
+  if null missingKeys
+  then do
+    res <- execConfigUpdateCmd _gcConfig cuc
+    case res of
+      Left err -> return $! ConfigUpdateFailure $ "Failure: " ++ err
+      Right conf' -> atomically $ do
+        putTMVar gc $ GlobalConfig { _gcVersion = ConfigVersion $ configVersion _gcVersion + 1
+                                  , _gcConfig = conf' }
+        return ConfigUpdateSuccess
 
-configIsNew :: ConfigVersion -> GlobalConfigMVar -> IO Bool
-configIsNew cv gcm = do
-  GlobalConfig{..} <- readMVar gcm
-  return $ _gcVersion > cv
+  else do
+    atomically $ putTMVar gc origGc
+    return $ ConfigUpdateFailure $ "Admin signatures missing from: " ++ show missingKeys
 
-getConfigIfNew :: ConfigVersion -> GlobalConfigMVar -> IO (Maybe Config)
-getConfigIfNew cv gcm = do
-  GlobalConfig{..} <- readMVar gcm
-  return $ if _gcVersion > cv then Just _gcConfig else Nothing
+getMissingKeys :: Config -> Set PublicKey -> [Alias]
+getMissingKeys Config{..} keysUsed = fst <$> (filter (\(_,k) -> not $ Set.member k keysUsed) $ Map.toList _adminKeys)
+
+getConfigWhenNew :: ConfigVersion -> GlobalConfigTMVar -> STM GlobalConfig
+getConfigWhenNew cv gcm = do
+  gc@GlobalConfig{..} <- readTMVar gcm
+  if _gcVersion > cv
+  then return gc
+  else retry
+
+data ConfigUpdater = ConfigUpdater
+  { _cuPrintFn :: !(String -> IO ())
+  , _cuThreadName :: !String
+  , _cuAction :: (Config -> IO())}
+
+runConfigUpdater :: ConfigUpdater -> GlobalConfigTMVar -> IO ()
+runConfigUpdater ConfigUpdater{..} gcm = go initialConfigVersion
+  where
+    go cv = do
+      GlobalConfig{..} <- atomically $ getConfigWhenNew cv gcm
+      _cuAction _gcConfig
+      _cuPrintFn $ "[" ++ _cuThreadName ++ "] config update fired for version: " ++ show _gcVersion
+      go _gcVersion
+
+readCurrentConfig :: GlobalConfigTMVar -> IO Config
+readCurrentConfig gcm = _gcConfig <$> (atomically $ readTMVar gcm)

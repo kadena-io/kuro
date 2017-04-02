@@ -13,10 +13,11 @@ module Kadena.Evidence.Spec
   , esQuorumSize, esNodeStates, esConvincedNodes, esPartialEvidence
   , esCommitIndex, esCacheMissAers, esMismatchNodes, esResetLeaderNoFollowers
   , esHashAtCommitIndex, esEvidenceCache, esMaxCachedIndex, esMaxElectionTimeout
-  , esConfigVersion
+  , esOtherNodes
   , EvidenceProcessor
   , debugFn
   , publishMetric
+  , getEvidenceQuorumSize
   , module X
   ) where
 
@@ -44,7 +45,7 @@ data EvidenceEnv = EvidenceEnv
   { _logService :: !LogServiceChannel
   , _evidence :: !EvidenceChannel
   , _mResetLeaderNoFollowers :: !(MVar ResetLeaderNoFollowersTimeout)
-  , _mConfig :: !(GlobalConfigMVar)
+  , _mConfig :: !(GlobalConfigTMVar)
   , _mPubStateTo :: !(MVar PublishedEvidenceState)
   , _debugFn :: !(String -> IO ())
   , _publishMetric :: !(Metric -> IO ())
@@ -54,7 +55,8 @@ makeLenses ''EvidenceEnv
 type EvidenceProcEnv = ReaderT EvidenceEnv IO
 
 data EvidenceState = EvidenceState
-  { _esQuorumSize :: !Int
+  { _esOtherNodes :: !(Set NodeId)
+  , _esQuorumSize :: !Int
   , _esNodeStates :: !(Map NodeId (LogIndex, UTCTime))
   , _esConvincedNodes :: !(Set NodeId)
   , _esPartialEvidence :: !(Map LogIndex Int)
@@ -66,7 +68,6 @@ data EvidenceState = EvidenceState
   , _esHashAtCommitIndex :: !Hash
   , _esEvidenceCache :: !(Map LogIndex Hash)
   , _esMaxElectionTimeout :: !Int
-  , _esConfigVersion :: !ConfigVersion
   } deriving (Show, Eq)
 makeLenses ''EvidenceState
 
@@ -77,9 +78,10 @@ makeLenses ''EvidenceState
 getEvidenceQuorumSize :: Int -> Int
 getEvidenceQuorumSize n = 1 + floor (fromIntegral n / 2 :: Float)
 
-initEvidenceState :: Set NodeId -> LogIndex -> Int -> ConfigVersion -> EvidenceState
-initEvidenceState otherNodes' commidIndex' maxElectionTimeout' confVersion' = EvidenceState
-  { _esQuorumSize = getEvidenceQuorumSize $ Set.size otherNodes'
+initEvidenceState :: Set NodeId -> LogIndex -> Int -> EvidenceState
+initEvidenceState otherNodes' commidIndex' maxElectionTimeout' = EvidenceState
+  { _esOtherNodes = otherNodes'
+  , _esQuorumSize = getEvidenceQuorumSize $ Set.size otherNodes'
   , _esNodeStates = Map.fromSet (\_ -> (commidIndex',minBound)) otherNodes'
   , _esConvincedNodes = Set.empty
   , _esPartialEvidence = Map.empty
@@ -91,7 +93,6 @@ initEvidenceState otherNodes' commidIndex' maxElectionTimeout' confVersion' = Ev
   , _esHashAtCommitIndex = initialHash
   , _esEvidenceCache = Map.singleton startIndex initialHash
   , _esMaxElectionTimeout = maxElectionTimeout'
-  , _esConfigVersion = confVersion'
   }
 
 type EvidenceProcessor = State EvidenceState

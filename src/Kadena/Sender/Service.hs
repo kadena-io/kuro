@@ -67,14 +67,14 @@ data ServiceEnv = ServiceEnv
   -- Evidence Thread's Published State
   , _getEvidenceState :: !(IO PublishedEvidenceState)
   , _publishMetric :: !(Metric -> IO ())
-  , _config :: !GlobalConfigMVar
+  , _config :: !GlobalConfigTMVar
   , _pubCons :: !(MVar Spec.PublishedConsensus)
   }
 makeLenses ''ServiceEnv
 
 type SenderService = ReaderT ServiceEnv IO
 
-getStateSnapshot :: GlobalConfigMVar -> MVar PublishedConsensus -> IO StateSnapshot
+getStateSnapshot :: GlobalConfigTMVar -> MVar PublishedConsensus -> IO StateSnapshot
 getStateSnapshot conf' pcons' = do
   conf <- _gcConfig <$> readMVar conf'
   st <- readMVar pcons'
@@ -91,7 +91,7 @@ getStateSnapshot conf' pcons' = do
 
 runSenderService
   :: Dispatch
-  -> GlobalConfigMVar
+  -> GlobalConfigTMVar
   -> (String -> IO ())
   -> (Metric -> IO ())
   -> MVar Ev.PublishedEvidenceState

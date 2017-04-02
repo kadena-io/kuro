@@ -18,7 +18,7 @@ module Kadena.Log.Types
   , initLogState
   , LogEnv(..)
   , logQueryChannel, commitChannel, internalEvent, senderChannel, debugPrint
-  , dbConn, evidence, keySet, publishMetric
+  , dbConn, evidence, publishMetric
   , persistedLogEntriesToKeepInMemory
   , LogThread
   , LogServiceChannel(..)
@@ -75,7 +75,6 @@ data LogEnv = LogEnv
   , _commitChannel :: !CommitChannel
   , _evidence :: !EvidenceChannel
   , _senderChannel :: !SenderServiceChannel
-  , _keySet :: !KeySet
   , _persistedLogEntriesToKeepInMemory :: !Int
   , _debugPrint :: !(String -> IO ())
   , _dbConn :: !(Maybe Connection)

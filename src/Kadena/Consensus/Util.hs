@@ -159,8 +159,8 @@ logMetric metric = view (rs.publishMetric) >>= \f -> liftIO $! f metric
 logStaticMetrics :: Consensus ()
 logStaticMetrics = do
   logMetric . MetricNodeId =<< viewConfig nodeId
-  logMetric . MetricClusterSize =<< view clusterSize
-  logMetric . MetricQuorumSize =<< view quorumSize
+  logMetric . MetricClusterSize =<< use clusterSize
+  logMetric . MetricQuorumSize =<< use quorumSize
 
 -- NB: Yes, the strictness here is probably overkill, but this used to leak the bloom filter
 publishConsensus :: Consensus ()

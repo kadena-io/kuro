@@ -74,9 +74,11 @@ makeLenses ''ServiceEnv
 
 type SenderService = ReaderT ServiceEnv IO
 
+-- TODO: refactor sender run in RWST and use configUpdater to populate an MVar local to it
+-- vs hitting the TVar every time we need to send something (or have SenderService do this internally)
 getStateSnapshot :: GlobalConfigTMVar -> MVar PublishedConsensus -> IO StateSnapshot
 getStateSnapshot conf' pcons' = do
-  conf <- _gcConfig <$> readMVar conf'
+  conf <- readCurrentConfig conf'
   st <- readMVar pcons'
   return $! StateSnapshot
     { _newNodeId = conf ^. KD.nodeId
@@ -97,8 +99,8 @@ runSenderService
   -> MVar Ev.PublishedEvidenceState
   -> MVar Spec.PublishedConsensus
   -> IO ()
-runSenderService dispatch iorConf debugFn publishMetric' mPubEvState mPubCons = do
-  conf <- _gcConfig <$> readMVar iorConf
+runSenderService dispatch gcm debugFn publishMetric' mPubEvState mPubCons = do
+  conf <- readCurrentConfig gcm
   s <- return $ ServiceEnv
     { _myNodeId = conf ^. KD.nodeId
     , _nodeRole = Follower
@@ -117,7 +119,7 @@ runSenderService dispatch iorConf debugFn publishMetric' mPubEvState mPubCons = 
     , _logService = dispatch ^. KD.logService
     , _getEvidenceState = readMVar mPubEvState
     , _publishMetric = publishMetric'
-    , _config = iorConf
+    , _config = gcm
     , _pubCons = mPubCons
     }
   void $ liftIO $ runReaderT serviceRequests s

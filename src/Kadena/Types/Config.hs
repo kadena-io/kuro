@@ -26,6 +26,8 @@ module Kadena.Types.Config
   , initGlobalConfigTMVar, mutateConfig, getConfigWhenNew
   , ConfigUpdater(..), runConfigUpdater
   , readCurrentConfig
+  , NodesToDiff(..), DiffNodes(..), diffNodes
+  , updateNodeMap, updateNodeSet
   ) where
 
 import Control.Concurrent.STM
@@ -307,3 +309,29 @@ runConfigUpdater ConfigUpdater{..} gcm = go initialConfigVersion
 
 readCurrentConfig :: GlobalConfigTMVar -> IO Config
 readCurrentConfig gcm = _gcConfig <$> (atomically $ readTMVar gcm)
+
+data NodesToDiff = NodesToDiff
+  { prevNodes :: !(Set NodeId)
+  , currentNodes :: !(Set NodeId)
+  } deriving (Show,Eq,Ord,Generic)
+
+data DiffNodes = DiffNodes
+  { nodesToAdd :: !(Set NodeId)
+  , nodesToRemove :: !(Set NodeId)
+  } deriving (Show,Eq,Ord,Generic)
+
+diffNodes :: NodesToDiff -> DiffNodes
+diffNodes NodesToDiff{..} = DiffNodes
+  { nodesToAdd = Set.difference currentNodes prevNodes
+  , nodesToRemove = Set.difference prevNodes currentNodes }
+
+updateNodeMap :: DiffNodes -> Map NodeId a -> (NodeId -> a) -> Map NodeId a
+updateNodeMap DiffNodes{..} m defaultVal =
+  let
+    removedNodes = Map.filterWithKey (\k _ -> Set.notMember k nodesToRemove) m
+  in Map.union removedNodes $ Map.fromSet defaultVal nodesToAdd
+
+updateNodeSet :: DiffNodes -> Set NodeId -> Set NodeId
+updateNodeSet DiffNodes{..} s =
+  let removedNodes = Set.filter (`Set.notMember` nodesToRemove) s
+  in Set.union removedNodes nodesToAdd

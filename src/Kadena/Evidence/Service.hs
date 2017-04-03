@@ -21,6 +21,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Thyme.Clock
 
+import Kadena.Util.Util (linkAsyncTrack)
 import Kadena.Types.Dispatch (Dispatch)
 import Kadena.Types.Event (ResetLeaderNoFollowersTimeout(..))
 import Kadena.Evidence.Spec as X
@@ -59,31 +60,24 @@ initializeState = do
 handleConfUpdate :: EvidenceState -> EvidenceProcEnv (EvidenceState)
 handleConfUpdate es@EvidenceState{..} = do
   Config{..} <- view mConfig >>= liftIO . readCurrentConfig
-  if _esOtherNodes == _otherNodes && (snd _electionTimeoutRange) == esMaxElectionTimeout
-  then return es
+  if _esOtherNodes == _otherNodes && (snd _electionTimeoutRange) == _esMaxElectionTimeout
+  then do
+    debug "Config update received but no action required"
+    return es
   else do
     maxElectionTimeout' <- return $ snd $ _electionTimeoutRange
-    mv <- queryLogs $ Set.singleton Log.GetCommitIndex
-    commitIndex' <- return $ Log.hasQueryResult Log.CommitIndex mv
-    toRemove <- return $ Set.difference _esOtherNodes _otherNodes
-    toAdd <- return $ Set.difference _otherNodes _esOtherNodes
-    return $ es
+    df@DiffNodes{..} <- return $ diffNodes NodesToDiff {prevNodes = _esOtherNodes, currentNodes = _otherNodes}
+    newEs <- return $ es
       { _esOtherNodes = _otherNodes
       , _esQuorumSize = getEvidenceQuorumSize $ Set.size _otherNodes
-      , _esNodeStates =
-           let removedNodes = Map.filterWithKey (\(k,v) -> not $ Set.member k toRemove) _esNodeStates
-           in Map.union removedNodes $ Map.fromSet (\_ -> (startIndex,minBound)) toAdd
-      , _esConvincedNodes = Set.difference _esConvincedNodes toRemove
-      , _esPartialEvidence = Map.empty
-      , _esCommitIndex = commidIndex'
-      , _esMaxCachedIndex = commidIndex'
-      , _esCacheMissAers = Set.empty
-      , _esMismatchNodes = Set.empty
-      , _esResetLeaderNoFollowers = False
-      , _esHashAtCommitIndex = initialHash
-      , _esEvidenceCache = Map.singleton startIndex initialHash
+      , _esNodeStates = updateNodeMap df _esNodeStates (const (startIndex, minBound))
+      , _esConvincedNodes = Set.difference _esConvincedNodes nodesToRemove
+      , _esMismatchNodes = Set.difference _esMismatchNodes nodesToRemove
       , _esMaxElectionTimeout = maxElectionTimeout'
       }
+    publishEvidence es
+    debug "Config update received, update implemented"
+    return newEs
 
 publishEvidence :: EvidenceState -> EvidenceProcEnv ()
 publishEvidence es = do
@@ -143,13 +137,15 @@ runEvidenceProcessor es = do
 
 runEvidenceService :: EvidenceEnv -> IO ()
 runEvidenceService ev = do
-  startingEs <- runReaderT (rebuildState Nothing) ev
+  startingEs <- runReaderT initializeState ev
   putMVar (ev ^. mPubStateTo) $! PublishedEvidenceState (startingEs ^. esConvincedNodes) (startingEs ^. esNodeStates)
+  let cu = ConfigUpdater (ev ^. debugFn) "Service|Evidence|Config" (const $ writeComm (ev ^. evidence) $ Bounce)
+  linkAsyncTrack "EvidenceConfUpdater" $ runConfigUpdater cu (ev ^. mConfig)
   runReaderT (debug "Launch!" >> foreverRunProcessor startingEs) ev
 
 foreverRunProcessor :: EvidenceState -> EvidenceProcEnv ()
 foreverRunProcessor es = do
-  runEvidenceProcessor es >>= rebuildState . Just >>= foreverRunProcessor
+  runEvidenceProcessor es >>= handleConfUpdate >>= foreverRunProcessor
 
 queryLogs :: Set Log.AtomicQuery -> EvidenceProcEnv (Map Log.AtomicQuery Log.QueryResult)
 queryLogs aq = do

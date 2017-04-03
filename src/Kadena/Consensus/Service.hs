@@ -38,7 +38,7 @@ launchApiService
   -> IO UTCTime
   -> IO ()
 launchApiService dispatch' rconf' debugFn' mPubConsensus' getCurrentTime' = do
-  apiPort' <- _apiPort . _gcConfig <$> readMVar rconf'
+  apiPort' <- _apiPort <$> readCurrentConfig rconf'
   linkAsyncTrack "ApiThread" (ApiServer.runApiServer dispatch' rconf' debugFn' apiPort' mPubConsensus' getCurrentTime')
 
 launchHistoryService :: Dispatch
@@ -80,7 +80,7 @@ launchCommitService :: Dispatch
   -> GlobalConfigTMVar
   -> IO ()
 launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' commandConfig' gcm' = do
-  rconf' <- _gcConfig <$> readMVar gcm'
+  rconf' <- readCurrentConfig gcm'
   commitEnv <- return $! Commit.initCommitEnv dispatch' dbgPrint' commandConfig' publishMetric' getTimestamp' (rconf' ^. enableWriteBehind) gcm'
   linkAsyncTrack "CommitThread" (Commit.runCommitService commitEnv nodeId' keySet')
   linkAsyncTrack "CommitHB" $ foreverHeart (_commitService dispatch') 1000000 Commit.Heart
@@ -88,11 +88,10 @@ launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimest
 launchLogService :: Dispatch
   -> (String -> IO ())
   -> (Metric -> IO ())
-  -> KeySet
   -> Config
   -> IO ()
-launchLogService dispatch' dbgPrint' publishMetric' keySet' rconf = do
-  linkAsyncTrack "LogThread" (Log.runLogService dispatch' dbgPrint' publishMetric' keySet' rconf)
+launchLogService dispatch' dbgPrint' publishMetric' rconf = do
+  linkAsyncTrack "LogThread" (Log.runLogService dispatch' dbgPrint' publishMetric' rconf)
   linkAsyncTrack "LogHB" $ (foreverHeart (_logService dispatch') 1000000 Log.Heart)
 
 launchSenderService :: Dispatch
@@ -106,9 +105,10 @@ launchSenderService dispatch' dbgPrint' publishMetric' mEvState mPubCons rconf =
   linkAsyncTrack "SenderThread" (Sender.runSenderService dispatch' rconf dbgPrint' publishMetric' mEvState mPubCons)
   linkAsyncTrack "SenderHB" $ foreverHeart (_senderService dispatch') 1000000 Sender.Heart
 
-runConsensusService :: ReceiverEnv -> Config -> ConsensusSpec -> ConsensusState ->
+runConsensusService :: ReceiverEnv -> GlobalConfigTMVar -> ConsensusSpec -> ConsensusState ->
                             IO UTCTime -> MVar PublishedConsensus -> IO ()
-runConsensusService renv rconf spec rstate timeCache' mPubConsensus' = do
+runConsensusService renv gcm spec rstate timeCache' mPubConsensus' = do
+  rconf <- readCurrentConfig gcm
   let csize = 1 + Set.size (rconf ^. otherNodes)
       qsize = getQuorumSize csize
       publishMetric' = (spec ^. publishMetric)
@@ -131,7 +131,6 @@ runConsensusService renv rconf spec rstate timeCache' mPubConsensus' = do
   publishMetric' $ MetricQuorumSize qsize
   linkAsyncTrack "ReceiverThread" $ runMessageReceiver renv
 
-  rconf' <- initGlobalConfigTMVar rconf
   timerTarget' <- return $ (rstate ^. timerTarget)
   -- EvidenceService Environment
   mEvState <- newEmptyMVar
@@ -139,15 +138,15 @@ runConsensusService renv rconf spec rstate timeCache' mPubConsensus' = do
 
   launchHistoryService dispatch' dbgPrint' getTimestamp' rconf
   launchPreProcService dispatch' dbgPrint' getTimestamp' rconf
-  launchSenderService dispatch' dbgPrint' publishMetric' mEvState mPubConsensus' rconf'
-  launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' commandConfig' rconf'
-  launchEvidenceService dispatch' dbgPrint' publishMetric' mEvState rconf' mLeaderNoFollowers
-  launchLogService dispatch' dbgPrint' publishMetric' keySet' rconf
-  launchApiService dispatch' rconf' dbgPrint' mPubConsensus' getTimestamp'
+  launchSenderService dispatch' dbgPrint' publishMetric' mEvState mPubConsensus' gcm
+  launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' commandConfig' gcm
+  launchEvidenceService dispatch' dbgPrint' publishMetric' mEvState gcm mLeaderNoFollowers
+  launchLogService dispatch' dbgPrint' publishMetric' rconf
+  launchApiService dispatch' gcm dbgPrint' mPubConsensus' getTimestamp'
   linkAsyncTrack "ConsensusHB" (foreverHeart (_internalEvent dispatch') 1000000 (InternalEvent . Heart))
   catchAndRethrow "ConsensusThread" $ runRWS_
     kadena
-    (mkConsensusEnv rconf' csize qsize spec dispatch'
+    (mkConsensusEnv gcm spec dispatch'
                     timerTarget' timeCache' mEvState mLeaderNoFollowers mPubConsensus')
     rstate
 

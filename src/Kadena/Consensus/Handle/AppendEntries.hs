@@ -23,7 +23,7 @@ import qualified Data.Set as Set
 import Data.Maybe (fromMaybe)
 import Data.Thyme.Clock
 
-import Kadena.Types hiding (term, currentLeader, ignoreLeader, quorumSize)
+import Kadena.Types hiding (term, currentLeader, ignoreLeader)
 import Kadena.Sender.Service (createAppendEntriesResponse')
 import Kadena.Consensus.Util
 import qualified Kadena.Types as KD
@@ -178,8 +178,8 @@ logHashChange (Hash mLastHash) = do
 handle :: AppendEntries -> KD.Consensus ()
 handle ae = do
   start' <- now
-  r <- ask
   s <- get
+  quorumSize' <- (getQuorumSize . Set.size) <$> viewConfig KD.otherNodes
   mv <- queryLogs $ Set.fromList [Log.GetSomeEntry (_prevLogIndex ae),Log.GetCommitIndex]
   logAtAEsLastLogIdx <- return $ Log.hasQueryResult (Log.SomeEntry $ _prevLogIndex ae) mv
   let ape = AppendEntriesEnv
@@ -187,7 +187,7 @@ handle ae = do
               (KD._currentLeader s)
               (KD._ignoreLeader s)
               logAtAEsLastLogIdx
-              (KD._quorumSize r)
+              quorumSize'
   (AppendEntriesOut{..}, l) <- runReaderT (runWriterT (handleAppendEntries ae)) ape
   mapM_ debug l
   applyNewLeader _newLeaderAction

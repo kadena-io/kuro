@@ -142,6 +142,7 @@ runServer = do
   setLineBuffering
   T.putStrLn $! "Kadena LLC (c) (2016-2017)"
   rconf <- getConfig
+  gcm <- initGlobalConfigTMVar rconf
 #if WITH_KILL_SWITCH
   when (Set.size (_otherNodes rconf) >= 16) $
     error $ "Beta versions of Kadena are limited to 16 consensus nodes."
@@ -156,12 +157,12 @@ runServer = do
 
   -- Each node has its own snap monitoring server
   pubMetric <- startMonitoring rconf
-  linkAsyncTrack "ZmqServerThread" $ runMsgServer dispatch me oNodes debugFn
+  linkAsyncTrack "ZmqServerThread" $ runMsgServer dispatch me oNodes debugFn gcm
   let raftSpec = simpleConsensusSpec debugFn (liftIO . pubMetric)
 
   restartTurbo <- newEmptyMVar
   receiverEnv <- return $ simpleReceiverEnv dispatch rconf debugFn restartTurbo
   timerTarget' <- newEmptyMVar
   rstate <- return $ initialConsensusState timerTarget'
-  mPubConsensus' <- newMVar $! PublishedConsensus (rstate ^. currentLeader) (rstate ^. nodeRole) (rstate ^. term) (rstate ^. cYesVotes)
-  runConsensusService receiverEnv rconf raftSpec rstate getCurrentTime mPubConsensus'
+  mPubConsensus' <- newMVar $! PublishedConsensus Nothing Follower startTerm Set.empty
+  runConsensusService receiverEnv gcm raftSpec rstate getCurrentTime mPubConsensus'

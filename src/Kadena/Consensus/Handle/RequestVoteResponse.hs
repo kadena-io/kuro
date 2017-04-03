@@ -16,7 +16,7 @@ import qualified Kadena.Sender.Service as Sender
 import qualified Kadena.Log.Service as Log
 import qualified Kadena.Types as KD
 
-import Kadena.Types hiding (nodeRole, term, cYesVotes, quorumSize)
+import Kadena.Types hiding (nodeRole, term, cYesVotes)
 import Kadena.Consensus.Util
 
 data RequestVoteResponseEnv = RequestVoteResponseEnv {
@@ -96,16 +96,15 @@ checkInvalids rvr@RequestVoteResponse{..} = do
 
 handle :: RequestVoteResponse -> KD.Consensus ()
 handle m = do
-  r <- ask
   s <- get
-  myNodeId' <- KD.viewConfig KD.nodeId
+  conf <- readConfig
   (o,l) <- runReaderT (runWriterT (handleRequestVoteResponse m))
            (RequestVoteResponseEnv
-             myNodeId'
+            (KD._nodeId conf)
             (KD._nodeRole s)
             (KD._term s)
             (KD._cYesVotes s)
-            (KD._quorumSize r)
+            (getQuorumSize $ Set.size $ KD._otherNodes conf)
             (KD._invalidCandidateResults s))
   mapM_ debug l
   case o of

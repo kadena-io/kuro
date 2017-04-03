@@ -9,7 +9,7 @@ module Kadena.Types.Spec
   , ConsensusSpec(..)
   , debugPrint, publishMetric, getTimestamp, random
   , viewConfig, readConfig, timerTarget, evidenceState, timeCache
-  , ConsensusEnv(..), cfg, enqueueLogQuery, clusterSize, quorumSize, rs
+  , ConsensusEnv(..), cfg, enqueueLogQuery, rs
   , enqueue, enqueueMultiple, dequeue, enqueueLater, killEnqueued
   , sendMessage, clientSendMsg, mResetLeaderNoFollowers, mPubConsensus
   , informEvidenceServiceOfElection, enqueueHistoryQuery
@@ -48,7 +48,6 @@ import Kadena.Types.Message
 import Kadena.Types.Metric
 import Kadena.Types.Comms
 import Kadena.Types.Dispatch
-import Kadena.Util.Util
 import Kadena.Sender.Types (SenderServiceChannel, ServiceRequest')
 import Kadena.Log.Types (QueryApi(..))
 import Kadena.History.Types (History(..))
@@ -90,8 +89,6 @@ makeLenses ''LazyVote
 
 data ConsensusState = ConsensusState
   { _nodeRole         :: !Role
-  , _clusterSize      :: !Int
-  , _quorumSize       :: !Int
   , _term             :: !Term
   , _votedFor         :: !(Maybe NodeId)
   , _lazyVote         :: !(Maybe LazyVote)
@@ -110,11 +107,9 @@ data ConsensusState = ConsensusState
   }
 makeLenses ''ConsensusState
 
-initialConsensusState :: MVar Event -> Config -> ConsensusState
-initialConsensusState timerTarget' Config{..} = ConsensusState
+initialConsensusState :: MVar Event -> ConsensusState
+initialConsensusState timerTarget' = ConsensusState
 {-role-}                Follower
-{-clusterSize-}         (1 + Set.size _otherNodes)
-{-quorumSize-}          (getQuorumSize $ Set.size _otherNodes)
 {-term-}                startTerm
 {-votedFor-}            Nothing
 {-lazyVote-}            Nothing

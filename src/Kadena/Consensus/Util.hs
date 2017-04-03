@@ -38,6 +38,7 @@ import qualified Control.Concurrent.Lifted as CL
 
 import Data.HashSet (HashSet)
 import Data.Set (Set)
+import qualified Data.Set as Set
 import Data.Map.Strict (Map)
 
 import Data.Thyme.Clock
@@ -158,9 +159,10 @@ logMetric metric = view (rs.publishMetric) >>= \f -> liftIO $! f metric
 
 logStaticMetrics :: Consensus ()
 logStaticMetrics = do
+  Config{..} <- readConfig
   logMetric . MetricNodeId =<< viewConfig nodeId
-  logMetric . MetricClusterSize =<< use clusterSize
-  logMetric . MetricQuorumSize =<< use quorumSize
+  logMetric $ MetricClusterSize (1 + Set.size _otherNodes)
+  logMetric . MetricQuorumSize $ getQuorumSize (Set.size _otherNodes)
 
 -- NB: Yes, the strictness here is probably overkill, but this used to leak the bloom filter
 publishConsensus :: Consensus ()

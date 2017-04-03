@@ -14,6 +14,7 @@ import Control.Parallel.Strategies
 
 import qualified Data.HashSet as HashSet
 
+import qualified Data.Set as Set
 import Data.BloomFilter (Bloom)
 import qualified Data.BloomFilter as Bloom
 import Data.Maybe (isJust)
@@ -104,7 +105,7 @@ handleBatch cmdbBatch = do
         sendHistoryNewKeys $ HashSet.union falsePositive $ HashSet.fromList $ toRequestKey . snd <$> _unBPAlreadySeen alreadySeen
       -- the false positives we already collisions so no need to add them
       KD.cmdBloomFilter .= updateBloom newEntries (KD._cmdBloomFilter s)
-      quorumSize' <- view KD.quorumSize
+      quorumSize' <- (getQuorumSize . Set.size) <$> viewConfig KD.otherNodes
       es <- view KD.evidenceState >>= liftIO
       when (Sender.willBroadcastAE quorumSize' (es ^. Ev.pesNodeStates) (es ^. Ev.pesConvincedNodes)) resetHeartbeatTimer
     IAmFollower BatchProcessing{..} -> do

@@ -90,7 +90,8 @@ library
                      , Kadena.Types.Sqlite
                      , Kadena.Util.Util
 
-  build-depends:       aeson
+  build-depends:       BoundedChan
+                     , aeson
                      , aeson-pretty
                      , ansi-wl-pprint
                      , array
@@ -100,11 +101,10 @@ library
                      , base < 5
                      , base16-bytestring
                      , base64-bytestring >= 1.0.0.1 && < 1.1
+                     , binary
                      , blake2
                      , bloomfilter
                      , bound
-                     , binary
-                     , BoundedChan
                      , bytestring
                      , cacophony
                      , cereal >= 0.4.1.1
@@ -114,8 +114,8 @@ library
                      , cryptonite
                      , data-default
                      , deepseq >= 1.4.1.1
-                     , directory
                      , direct-sqlite
+                     , directory
                      , ed25519-donna
                      , ekg >= 0.4 && < 0.5
                      , ekg-core >= 0.1.1.0 && < 0.2
@@ -125,13 +125,14 @@ library
                      , fast-logger
                      , filepath
                      , ghc-prim
-                     , hspec
                      , hashable
+                     , hspec
                      , lens >= 4.13
                      , lens-aeson
                      , lifted-base
                      , lz4
                      , megaparsec >= 4.2.0 && < 4.3
+                     , memory >= 0.13
                      , monad-control
                      , monad-loops
                      , monad-par

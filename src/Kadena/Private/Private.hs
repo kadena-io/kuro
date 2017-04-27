@@ -34,10 +34,11 @@ import Crypto.Noise.HandshakePatterns
        (HandshakePattern, noiseKK, noiseK)
 import Crypto.Noise.Hash.SHA256 (SHA256)
 import Data.ByteArray.Extend (convert,ScrubbedBytes)
+import Data.ByteArray (ByteArray,ByteArrayAccess)
 import Data.ByteString.Char8 (ByteString,pack)
 import qualified Data.HashMap.Strict as HM
 import Data.Hashable (Hashable)
-import Data.Monoid ((<>))
+import Data.Monoid ((<>),Monoid(..))
 import Data.Serialize (Serialize, encode, decode)
 import qualified Data.Set as S
 import Data.String (IsString)
@@ -53,6 +54,9 @@ import Pact.Types.Util (AsString(..))
 
 newtype EntityName = EntityName Text
   deriving (IsString,AsString,Eq,Show,Ord,Hashable,Serialize,NFData)
+
+newtype Label = Label ByteString
+  deriving (IsString,Eq,Show,Ord,Hashable,Serialize,NFData,Monoid,ByteArray,ByteArrayAccess)
 
 type Noise = NoiseState AESGCM Curve25519 SHA256
 
@@ -74,28 +78,33 @@ data EntityRemote = EntityRemote {
   , _erStatic :: PublicKey Curve25519
   }
 
-data InteractiveSession = InteractiveSession {
-    _isName :: Text
-  , _isNoise :: Noise
-  , _isRole :: HandshakeRole
-  , _isLabeler :: Labeler
+data RemoteSession = RemoteSession {
+    _rsName :: Text
+  , _rsNoise :: Noise
+  , _rsRole :: HandshakeRole
+  , _rsSendLabeler :: Labeler
+  , _rsRecvLabeler :: Labeler
+  , _rsLabel :: Label
   }
-makeLenses ''InteractiveSession
-instance Show InteractiveSession where show InteractiveSession{..} = show _isName
+makeLenses ''RemoteSession
+instance Show RemoteSession where show RemoteSession{..} = show _rsName
 
 data EntitySession = EntitySession {
     _esInitNoise :: Noise
   , _esRespNoise :: Noise
   , _esLabeler :: Labeler
+  , _esLabel :: Label
   }
 makeLenses ''EntitySession
 
 
 data Sessions = Sessions {
     _sEntity :: EntitySession
-  , _sRemotes :: HM.HashMap EntityName InteractiveSession
+  , _sRemotes :: HM.HashMap EntityName RemoteSession
+  , _sLabels :: HM.HashMap Label RemoteSession
   }
 makeLenses ''Sessions
+
 
 data PrivateMessage = PrivateMessage {
     _pmFrom :: EntityName
@@ -110,7 +119,7 @@ newtype PrivateException = PrivateException String
 instance Exception PrivateException
 
 data Labeled = Labeled {
-    _lLabel :: ByteString
+    _lLabel :: Label
   , _lPayload :: ByteString
   } deriving (Generic)
 instance Serialize Labeled
@@ -129,7 +138,7 @@ data PrivateEnv = PrivateEnv {
 makeLenses ''PrivateEnv
 
 data PrivateState = PrivateState {
-    _sessions :: Sessions
+      _sessions :: Sessions
   }
 makeLenses ''PrivateState
 
@@ -158,84 +167,87 @@ initEntitySession :: EntityLocal -> EntitySession
 initEntitySession el@EntityLocal{..} = EntitySession
   (noise noiseK InitiatorRole el (kpPublic _elStatic))
   (noise noiseK ResponderRole el (kpPublic _elStatic))
-  (initLabeler (convert $ pack $ unpack $ asString _elName)
-   (kpSecret _elStatic) (kpPublic _elStatic))
+  lblr lbl
+  where (lbl,lblr) = initLabeler (convert $ pack $ unpack $ asString _elName)
+                     (kpSecret _elStatic) (kpPublic _elStatic)
 
-initLabeler :: AssocData -> SecretKey Curve25519 -> PublicKey Curve25519 -> Labeler
-initLabeler ad sk pk = Labeler (cipherBytesToSym $ dhPerform sk pk) cipherZeroNonce ad
+initLabeler :: AssocData -> SecretKey Curve25519 -> PublicKey Curve25519 -> (Label,Labeler)
+initLabeler ad sk pk = (makeLabel lblr,lblr) where
+  lblr = Labeler (cipherBytesToSym $ dhPerform sk pk) cipherZeroNonce ad
 
-initInteractive :: MonadThrow m => EntityLocal -> EntityRemote -> m InteractiveSession
-initInteractive el@EntityLocal{..} EntityRemote{..} = do
+initRemote :: MonadThrow m => EntityLocal -> EntityRemote -> m RemoteSession
+initRemote el@EntityLocal{..} EntityRemote{..} = do
   (rol,name) <- case _elName `compare` _erName of
     LT -> return (InitiatorRole, asString _elName <> ":" <> asString _erName)
     GT -> return (ResponderRole, asString _erName <> ":" <> asString _elName)
-    EQ -> throwM (userError $ "initInteractive: local and remote names match: " ++ show (_elName,_erName))
-  return $ InteractiveSession name
-    (noise noiseKK rol el _erStatic) rol
-    (initLabeler (convert $ pack $ unpack name) (kpSecret _elStatic) _erStatic)
+    EQ -> throwM (userError $ "initRemote: local and remote names match: " ++ show (_elName,_erName))
+  let (lbl,lblr) = initLabeler (convert $ pack $ unpack name) (kpSecret _elStatic) _erStatic
+  return $ RemoteSession name
+    (noise noiseKK rol el _erStatic) rol lblr lblr lbl
+
 
 
 initSessions :: MonadThrow m => EntityLocal -> [EntityRemote] -> m Sessions
 initSessions el ers = do
-  ss <- fmap HM.fromList $ forM ers $ \er -> (_erName er,) <$> initInteractive el er
-  return $ Sessions (initEntitySession el) ss
+  ss <- fmap HM.fromList $ forM ers $ \er -> (_erName er,) <$> initRemote el er
+  let ls = HM.fromList $ map (\is -> (_rsLabel is,is)) $ HM.elems ss
+  return $ Sessions (initEntitySession el) ss ls
+
 
 labelPT :: Plaintext
 labelPT = convert $ pack $ replicate 12 (toEnum 0)
 
-makeLabel :: Labeler -> (ByteString,Labeler)
-makeLabel l@Labeler{..} =
-  (convert $ cipherTextToBytes $
-   cipherEncrypt _lSymKey _lNonce _lAssocData labelPT,
-   over lNonce cipherIncNonce l)
+makeLabel :: Labeler -> Label
+makeLabel Labeler{..} = convert $ cipherTextToBytes $
+                        cipherEncrypt _lSymKey _lNonce _lAssocData labelPT
+
+updateLabeler :: Labeler -> Labeler
+updateLabeler = over lNonce cipherIncNonce
 
 withStateRollback :: (MonadState s m,MonadCatch m) => (s -> m a) -> m a
 withStateRollback act = get >>= \s -> handle (\(e :: SomeException) -> put s >> throwM e) (act s)
 
+-- | Send updates entity labeler, entity init noise, remote send labeler, remote noise.
 sendPrivate :: (MonadState PrivateState m, MonadCatch m) => PrivateMessage -> m PrivateEnvelope
 sendPrivate pm@PrivateMessage{..} = withStateRollback $ \(PrivateState Sessions {..}) -> do
   let pt = convert $ encode pm
   remotePayloads <- forM (S.toList _pmTo) $ \to -> case HM.lookup to _sRemotes of
     Nothing -> die $ "sendPrivate: invalid entity: " ++ show to
-    Just InteractiveSession{..} -> do
-      (ct,n') <- liftEither ("sendPrivate:" ++ show to) $ writeMessage _isNoise pt
-      let (label,l') = makeLabel _isLabeler
-      sessions . sRemotes . ix to %= (set isNoise n' . set isLabeler l')
-      return $ Labeled label (convert ct)
+    Just RemoteSession{..} -> do
+      (ct,n') <- liftEither ("sendPrivate:" ++ show to) $ writeMessage _rsNoise pt
+      sessions . sRemotes . ix to %= (set rsNoise n' . over rsSendLabeler updateLabeler)
+      return $ Labeled (makeLabel _rsSendLabeler) (convert ct)
   entityPayload <- do
     (ct,n') <- liftEither "sendPrivate:entity" $ writeMessage (_esInitNoise _sEntity) pt
-    let (label,l') = makeLabel (_esLabeler _sEntity)
-    sessions . sEntity %= (set esInitNoise n' . set esLabeler l')
-    return $ Labeled label (convert ct)
+    sessions . sEntity %= (set esInitNoise n' . over esLabeler updateLabeler)
+    return $ Labeled (makeLabel (_esLabeler _sEntity)) (convert ct)
   return $ PrivateEnvelope entityPayload remotePayloads
 
-    {-
+-- | Switch on message labels to handle as same-entity or remote-inbound message.
 handlePrivate :: (MonadState PrivateState m, MonadReader PrivateEnv m, MonadThrow m) =>
                  PrivateEnvelope -> m (Maybe PrivateMessage)
-handlePrivate PrivateEnvelope{..} = do
-  Sessions {..} <- use sessions
-  case readMessage (_esRespNoise _sEntity) undefined of
-    Right (pt,n') -> undefined -- Just <$> handleEntityPrivate pt n'
+handlePrivate pe@PrivateEnvelope{..} = do
+  Sessions{..} <- use sessions
+  if _lLabel _peEntity == _esLabel _sEntity
+    then Just <$> handleEntityPrivate pe
+    else let testRemote _ done@Just {} = done
+             testRemote ll@Labeled{..} Nothing =
+               (ll,) <$> HM.lookup _lLabel _sLabels
+         in mapM handleRemotePrivate $ foldr testRemote Nothing _peRemotes
 
-    Left _ -> tryRemotePrivate
-    Right (pt,n') -> do
-      sessions . sEntity . esRespNoise .= n' -- TODO, this should happen after all errors
-      case decode (convert pt) of
-        Left err -> die $ "handlePrivate: decode failure: " ++ err
-        Right pm@PrivateMessage{..} -> do
-          me <- view nodeId
-          unless (me == _pmSender) $ do
-            (_,in') <- liftEither "handlePrivate:ratchetEntityInit" $
-                       writeMessage (_esInitNoise _sEntity) pt
-            sessions . sEntity . esInitNoise .= in'
-          let tos = S.toList _pmTo
-          unless (length tos == length remotePayloads) $ die $
-            "Mismatched payloads with header: " ++ show tos ++ ", " ++ show (length remotePayloads)
-          return (Just pm)
- -}
+-- | inbound entity updates entity label, entity resp noise. If not sender,
+-- also retro-update entity labeler, entity init noise, remote send labeler, remote noise.
+handleEntityPrivate :: (MonadState PrivateState m, MonadReader PrivateEnv m, MonadThrow m) =>
+                 PrivateEnvelope -> m PrivateMessage
+handleEntityPrivate = undefined
 
-
-
+-- | inbound remote updates remote label, recv labeler, remote noise.
+handleRemotePrivate :: (MonadState PrivateState m, MonadThrow m) =>
+                 (Labeled,RemoteSession) -> m PrivateMessage
+handleRemotePrivate (Labeled{..},rs@RemoteSession{..}) = do
+  let lblr' = undefined -- over _rsRecvLabeler
+  sessions . sLabels %= HM.delete _lLabel
+  undefined
 -- ========================= TOY CODE BELOW ==========================
 
 
@@ -350,8 +362,8 @@ checkDH = do
       pt = cipherDecrypt sym21 cipherZeroNonce ad ct
   print (fmap convert pt :: Maybe ByteString)
 
-mkInteractives :: IO (InteractiveSession,InteractiveSession)
-mkInteractives = do
+mkRemotes :: IO (RemoteSession,RemoteSession)
+mkRemotes = do
   (kpAS,kpAE,kpBS,kpBE) <- (,,,) <$> dhGenKey <*> dhGenKey <*> dhGenKey <*> dhGenKey
-  (,) <$> initInteractive (EntityLocal "A" kpAS kpAE) (EntityRemote "B" $ kpPublic kpBS)
-      <*> initInteractive (EntityLocal "B" kpBS kpBE) (EntityRemote "A" $ kpPublic kpAS)
+  (,) <$> initRemote (EntityLocal "A" kpAS kpAE) (EntityRemote "B" $ kpPublic kpBS)
+      <*> initRemote (EntityLocal "B" kpBS kpBE) (EntityRemote "A" $ kpPublic kpAS)

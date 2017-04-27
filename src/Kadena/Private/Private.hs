@@ -14,42 +14,44 @@ module Kadena.Private
 import Control.Concurrent (forkIO)
 import Control.Concurrent.Chan (Chan, newChan, readChan, writeChan)
 import Control.DeepSeq (NFData)
-import Control.Exception (Exception,SomeException)
-import Control.Lens ((&), (.~), (.=), (%=), use, makeLenses, ix, view, over, set)
-import Control.Monad (unless, void, forM, zipWithM_)
+import Control.Exception (Exception, SomeException)
+import Control.Lens
+       ((&), (.~), (.=), (%=), use, makeLenses, ix, view, over, set, _2)
+import Control.Monad (unless, void, forM, forM_)
 import Control.Monad.Catch (MonadThrow, MonadCatch, throwM, handle)
-import Control.Monad.IO.Class (MonadIO, liftIO)
+import Control.Monad.Reader
+       (MonadReader(..), ReaderT(..), runReaderT)
 import Control.Monad.State.Strict
-       (MonadState(..), StateT(..), runStateT, get, modify)
-import Control.Monad.Reader (MonadReader(..),ReaderT(..),runReaderT,ask)
+       (MonadState(..), StateT(..), runStateT, get)
 import Crypto.Noise
        (HandshakeOpts, defaultHandshakeOpts, HandshakeRole(..),
         hoLocalStatic, hoRemoteStatic, hoLocalEphemeral, NoiseState,
         noiseState, writeMessage, readMessage)
-import Crypto.Noise.Cipher (Cipher (..), Plaintext, AssocData)
+import Crypto.Noise.Cipher (Cipher(..), Plaintext, AssocData)
 import Crypto.Noise.Cipher.AESGCM (AESGCM)
 import Crypto.Noise.DH (KeyPair, DH(..))
 import Crypto.Noise.DH.Curve25519 (Curve25519)
 import Crypto.Noise.HandshakePatterns
        (HandshakePattern, noiseKK, noiseK)
 import Crypto.Noise.Hash.SHA256 (SHA256)
-import Data.ByteArray.Extend (convert,ScrubbedBytes)
-import Data.ByteArray (ByteArray,ByteArrayAccess)
-import Data.ByteString.Char8 (ByteString,pack)
+import Data.ByteArray (ByteArray, ByteArrayAccess)
+import Data.ByteArray.Extend (convert)
+import Data.ByteString.Char8 (ByteString, pack)
 import qualified Data.HashMap.Strict as HM
 import Data.Hashable (Hashable)
-import Data.Monoid ((<>),Monoid(..))
+import Data.Monoid ((<>))
 import Data.Serialize (Serialize, encode, decode)
 import qualified Data.Set as S
 import Data.String (IsString)
-import Data.Text (Text,unpack)
-import Data.Word (Word64)
+import Data.Text (Text, unpack)
 import GHC.Generics (Generic)
 
-import Kadena.Types.Base (NodeId(..))
+import Kadena.Types.Base (Alias(..))
 
 import Pact.Types.Orphans ()
 import Pact.Types.Util (AsString(..))
+
+-- import Debug.Trace
 
 
 newtype EntityName = EntityName Text
@@ -80,6 +82,7 @@ data EntityRemote = EntityRemote {
 
 data RemoteSession = RemoteSession {
     _rsName :: Text
+  , _rsEntity :: EntityName
   , _rsNoise :: Noise
   , _rsRole :: HandshakeRole
   , _rsSendLabeler :: Labeler
@@ -108,7 +111,7 @@ makeLenses ''Sessions
 
 data PrivateMessage = PrivateMessage {
     _pmFrom :: EntityName
-  , _pmSender :: NodeId
+  , _pmSender :: Alias
   , _pmTo :: S.Set EntityName
   , _pmMessage :: ByteString
   } deriving (Eq,Show,Generic)
@@ -121,19 +124,19 @@ instance Exception PrivateException
 data Labeled = Labeled {
     _lLabel :: Label
   , _lPayload :: ByteString
-  } deriving (Generic)
+  } deriving (Generic,Show)
 instance Serialize Labeled
 
 data PrivateEnvelope = PrivateEnvelope {
     _peEntity :: Labeled
   , _peRemotes :: [Labeled]
-  } deriving (Generic)
+  } deriving (Generic,Show)
 instance Serialize PrivateEnvelope
 
 data PrivateEnv = PrivateEnv {
     _entityLocal :: EntityLocal
   , _entityRemotes :: [EntityRemote]
-  , _nodeId :: NodeId
+  , _nodeId :: Alias
   }
 makeLenses ''PrivateEnv
 
@@ -182,7 +185,7 @@ initRemote el@EntityLocal{..} EntityRemote{..} = do
     GT -> return (ResponderRole, asString _erName <> ":" <> asString _elName)
     EQ -> throwM (userError $ "initRemote: local and remote names match: " ++ show (_elName,_erName))
   let (lbl,lblr) = initLabeler (convert $ pack $ unpack name) (kpSecret _elStatic) _erStatic
-  return $ RemoteSession name
+  return $ RemoteSession name _erName
     (noise noiseKK rol el _erStatic) rol lblr lblr lbl
 
 
@@ -207,16 +210,19 @@ updateLabeler = over lNonce cipherIncNonce
 withStateRollback :: (MonadState s m,MonadCatch m) => (s -> m a) -> m a
 withStateRollback act = get >>= \s -> handle (\(e :: SomeException) -> put s >> throwM e) (act s)
 
+lookupRemote :: MonadThrow m => EntityName -> HM.HashMap EntityName RemoteSession -> m RemoteSession
+lookupRemote to = maybe (die $ "lookupRemote: invalid entity: " ++ show to) return .
+                  HM.lookup to
+
 -- | Send updates entity labeler, entity init noise, remote send labeler, remote noise.
 sendPrivate :: (MonadState PrivateState m, MonadCatch m) => PrivateMessage -> m PrivateEnvelope
 sendPrivate pm@PrivateMessage{..} = withStateRollback $ \(PrivateState Sessions {..}) -> do
   let pt = convert $ encode pm
-  remotePayloads <- forM (S.toList _pmTo) $ \to -> case HM.lookup to _sRemotes of
-    Nothing -> die $ "sendPrivate: invalid entity: " ++ show to
-    Just RemoteSession{..} -> do
-      (ct,n') <- liftEither ("sendPrivate:" ++ show to) $ writeMessage _rsNoise pt
-      sessions . sRemotes . ix to %= (set rsNoise n' . over rsSendLabeler updateLabeler)
-      return $ Labeled (makeLabel _rsSendLabeler) (convert ct)
+  remotePayloads <- forM (S.toList _pmTo) $ \to -> do
+    RemoteSession {..} <- lookupRemote to _sRemotes
+    (ct,n') <- liftEither ("sendPrivate:" ++ show to) $ writeMessage _rsNoise pt
+    sessions . sRemotes . ix to %= (set rsNoise n' . over rsSendLabeler updateLabeler)
+    return $ Labeled (makeLabel _rsSendLabeler) (convert ct)
   entityPayload <- do
     (ct,n') <- liftEither "sendPrivate:entity" $ writeMessage (_esInitNoise _sEntity) pt
     sessions . sEntity %= (set esInitNoise n' . over esLabeler updateLabeler)
@@ -229,40 +235,118 @@ handlePrivate :: (MonadState PrivateState m, MonadReader PrivateEnv m, MonadThro
 handlePrivate pe@PrivateEnvelope{..} = do
   Sessions{..} <- use sessions
   if _lLabel _peEntity == _esLabel _sEntity
-    then Just <$> handleEntityPrivate pe
+    then Just <$> readEntity pe
     else let testRemote _ done@Just {} = done
              testRemote ll@Labeled{..} Nothing =
                (ll,) <$> HM.lookup _lLabel _sLabels
-         in mapM handleRemotePrivate $ foldr testRemote Nothing _peRemotes
+         in mapM readRemote $ foldr testRemote Nothing _peRemotes
 
 -- | inbound entity updates entity label, entity resp noise. If not sender,
 -- also retro-update entity labeler, entity init noise, remote send labeler, remote noise.
-handleEntityPrivate :: (MonadState PrivateState m, MonadReader PrivateEnv m, MonadThrow m) =>
+readEntity :: (MonadState PrivateState m, MonadReader PrivateEnv m, MonadThrow m) =>
                  PrivateEnvelope -> m PrivateMessage
-handleEntityPrivate = undefined
+readEntity PrivateEnvelope{..} = do
+  Sessions{..} <- use sessions
+  (pt,n') <- liftEither "readEntity:decrypt" $ readMessage (_esRespNoise _sEntity) (_lPayload _peEntity)
+  pm@PrivateMessage{..} <- liftEither "readEntity:deser" $ decode (convert pt)
+  me <- view nodeId
+  if _pmSender == me
+    then do
+    sessions . sEntity %= set esRespNoise n' . set esLabel (makeLabel (_esLabeler _sEntity))
+    else do
+    let l' = updateLabeler (_esLabeler _sEntity)
+        tos = S.toList _pmTo
+    (_,in') <- liftEither "readEntity:updateEntInit" $ writeMessage (_esInitNoise _sEntity) pt
+    sessions . sEntity %= set esRespNoise n' . set esInitNoise in' .
+                          set esLabel (makeLabel l') . set esLabeler l'
+    forM_ tos $ \to -> do
+      RemoteSession{..} <- lookupRemote to _sRemotes
+      (_,rn') <- liftEither ("readEntity:updateRemote:" ++ show _rsName) $
+                 writeMessage _rsNoise pt
+      sessions . sRemotes . ix to %= set rsNoise rn' . over rsSendLabeler updateLabeler
+  return pm
 
 -- | inbound remote updates remote label, recv labeler, remote noise.
-handleRemotePrivate :: (MonadState PrivateState m, MonadThrow m) =>
+readRemote :: (MonadState PrivateState m, MonadThrow m) =>
                  (Labeled,RemoteSession) -> m PrivateMessage
-handleRemotePrivate (Labeled{..},rs@RemoteSession{..}) = do
-  let lblr' = undefined -- over _rsRecvLabeler
-  sessions . sLabels %= HM.delete _lLabel
-  undefined
+readRemote (Labeled{..},rs@RemoteSession{..}) = do
+  (pt,n') <- liftEither "readRemote:decrypt" $ readMessage _rsNoise _lPayload
+  let l' = updateLabeler _rsRecvLabeler
+      lbl = makeLabel l'
+      rs' = set rsNoise n' . set rsRecvLabeler l' . set rsLabel lbl $ rs
+  sessions . sLabels %= HM.insert lbl rs' . HM.delete _lLabel
+  sessions . sRemotes . ix _rsEntity .= rs'
+  liftEither "readRemote:deser" $ decode (convert pt)
+
+runPrivate :: PrivateEnv -> PrivateState ->
+              StateT PrivateState (ReaderT PrivateEnv IO) a -> IO (a,PrivateState)
+runPrivate e s a = runReaderT (runStateT a s) e
+
 -- ========================= TOY CODE BELOW ==========================
+
+
+simulate :: IO ()
+simulate = do
+  aStatic <- dhGenKey
+  aEph <- dhGenKey
+  bStatic <- dhGenKey
+  bEph <- dhGenKey
+  cStatic <- dhGenKey
+  cEph <- dhGenKey
+  let aRemote = EntityRemote "A" (kpPublic $ aStatic)
+      bRemote = EntityRemote "B" (kpPublic $ bStatic)
+      cRemote = EntityRemote "C" (kpPublic $ cStatic)
+      aEntity = EntityLocal "A" aStatic aEph
+      bEntity = EntityLocal "B" bStatic bEph
+      cEntity = EntityLocal "C" cStatic cEph
+      initNode ent rems alias = do
+        ss <- initSessions ent rems
+        return (PrivateEnv ent rems alias,PrivateState ss)
+      run (e,s) a = over _2 (e,) <$> runPrivate e s a
+  a1_0 <- initNode aEntity [bRemote,cRemote] "A1"
+  a2_0 <- initNode aEntity [bRemote,cRemote] "A2"
+  b1_0 <- initNode bEntity [aRemote,cRemote] "B1"
+  b2_0 <- initNode bEntity [aRemote,cRemote] "B2"
+  c1_0 <- initNode cEntity [aRemote,bRemote] "C1"
+  c2_0 <- initNode cEntity [aRemote,bRemote] "C2"
+
+  (pe1,a1_1) <- run a1_0 $ sendPrivate $ PrivateMessage "A" "A1" (S.fromList ["B"]) "Hello B!"
+  (pm1a1,a1_2) <- run a1_1 $ handlePrivate pe1
+  print pm1a1
+  (pm1a2,a2_1) <- run a2_0 $ handlePrivate pe1
+  print pm1a2
+  (pm1b1,b1_1) <- run b1_0 $ handlePrivate pe1
+  print pm1b1
+  (pm1b2,b2_1) <- run b2_0 $ handlePrivate pe1
+  print pm1b2
+  (pm1c1,c1_1) <- run c1_0 $ handlePrivate pe1
+  print pm1c1
+  (pm1c2,c2_1) <- run c2_0 $ handlePrivate pe1
+  print pm1c2
+
+  (pe2,b1_2) <- run b1_1 $ sendPrivate $ PrivateMessage "B" "B1" (S.fromList ["A","C"]) "Hello A,C!"
+  (pm2b1,b1_3) <- run b1_2 $ handlePrivate pe2
+  print pm2b1
+  (pm2b2,b2_2) <- run b2_1 $ handlePrivate pe2
+  print pm2b2
+  (pm2c2,c2_2) <- run c2_1 $ handlePrivate pe2
+  print pm2c2
+  (pm2a2,a2_2) <- run a2_1 $ handlePrivate pe2
+  print pm2a2
 
 
 runInitiator :: KeyPair Curve25519 -> KeyPair Curve25519 ->
                 PublicKey Curve25519 -> (Chan ByteString,Chan ByteString) -> [ByteString] -> IO ()
 runInitiator localKeyPair locEphKey responderPublicKey (outChan,inChan) msgs =
-  loop state (msgs ++ ["DONE"])
+  loop state' (msgs ++ ["DONE"])
   where
     handshakeOpts :: HandshakeOpts Curve25519
     handshakeOpts = defaultHandshakeOpts noiseKK InitiatorRole &
       hoLocalStatic .~ Just localKeyPair &
       hoRemoteStatic .~ Just responderPublicKey &
       hoLocalEphemeral .~ Just locEphKey
-    state :: NoiseState AESGCM Curve25519 SHA256
-    state = noiseState handshakeOpts
+    state' :: NoiseState AESGCM Curve25519 SHA256
+    state' = noiseState handshakeOpts
     loop _ [] = return ()
     loop s (msg:ms) = do
       putStrLn $ "INITIATOR: send: " ++ show msg
@@ -278,17 +362,17 @@ runInitiator localKeyPair locEphKey responderPublicKey (outChan,inChan) msgs =
 runRespondent :: KeyPair Curve25519 -> KeyPair Curve25519 ->
                  PublicKey Curve25519 -> (Chan ByteString,Chan ByteString) -> IO ()
 runRespondent localKeyPair locEphKey initiatorPublicKey (outChan,inChan) =
-  loop state state True
+  loop state' state' True
   where
     handshakeOpts :: HandshakeOpts Curve25519
     handshakeOpts = defaultHandshakeOpts noiseKK ResponderRole &
       hoLocalStatic .~ Just localKeyPair &
       hoRemoteStatic .~ Just initiatorPublicKey &
       hoLocalEphemeral .~ Just locEphKey
-    state :: NoiseState AESGCM Curve25519 SHA256
-    state = noiseState handshakeOpts
-    loop sL sR flip = do
-      let (s1,s2) = if flip then (sL,sR) else (sR,sL)
+    state' :: NoiseState AESGCM Curve25519 SHA256
+    state' = noiseState handshakeOpts
+    loop sL sR flip' = do
+      let (s1,s2) = if flip' then (sL,sR) else (sR,sL)
       inMsg <- readChan inChan
       (pt,s1') <- liftEither "RESPONDENT" (readMessage s1 inMsg)
       (_,s2') <- liftEither "RESPONDENT" (readMessage s2 inMsg)
@@ -298,7 +382,7 @@ runRespondent localKeyPair locEphKey initiatorPublicKey (outChan,inChan) =
       (ct,s1'') <- liftEither "RESPONDENT" $ writeMessage s1' (convert $ "ACK: " <> msg)
       (_,s2'') <- liftEither "RESPONDENT" $ writeMessage s2' (convert $ "ACK: " <> msg)
       writeChan outChan ct
-      unless done $ loop s1'' s2'' (not flip)
+      unless done $ loop s1'' s2'' (not flip')
 
 runOneWay :: IO ()
 runOneWay = do

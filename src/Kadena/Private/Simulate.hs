@@ -16,6 +16,7 @@ import qualified Data.Set as S
 import Control.Monad.State.Strict
 import Control.Monad.Catch
 import Data.ByteString (ByteString)
+import qualified Data.HashMap.Strict as HM
 
 import Pact.Types.Orphans ()
 
@@ -78,13 +79,21 @@ simulate = do
     runReceiveAll =<< runSend a1 ["B","C"] "6 B,C from A1"
 
     -- interleaving
-    {- BROKEN, committing working version
     mc1 <- runSend c2 ["A"] "7 A from C2"
     mc2 <- runSend c2 ["A","B"] "8 A,B from C2"
     runReceiveAll mc1
     runReceiveAll mc2
-    -}
 
+
+printNode :: Lens' ABC SimNode -> StateT ABC IO ()
+printNode node = do
+  (PrivateEnv{..},PrivateState Sessions{..}) <- use node
+  putStrLn' "========================="
+  print' (_entityLocal,_nodeAlias)
+  print' _sEntity
+  mapM_ print' (HM.elems _sRemotes)
+  mapM_ print' (HM.toList _sLabels)
+  putStrLn' "========================="
 
 runSend :: Lens' ABC SimNode -> [EntityName] -> ByteString ->
            StateT ABC IO (PrivateMessage,PrivateEnvelope)
@@ -107,7 +116,7 @@ runReceive (pm@PrivateMessage{..}, pe) anode = do
   entName <- use (cloneLens anode . _1 . entityLocal . elName)
   alias <- use (cloneLens anode . _1 . nodeAlias)
   pm' <- catch (run anode $ handlePrivate pe)
-    (\(e :: SomeException) -> throwM (userError ("runReceive:" ++ show alias ++ ":" ++ show e)))
+    (\(e :: SomeException) -> throwM (userError ("runReceive[" ++ show alias ++ "]: " ++ show e ++ ", env=" ++ show pe)))
   if _pmFrom == entName || entName `S.member` _pmTo then
     assertEq (show entName ++ ": receipt") (Just pm) pm'
     else

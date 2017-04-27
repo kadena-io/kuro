@@ -3,15 +3,21 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module Kadena.Private
-
+module Kadena.Private.Private
+  (kpPublic,kpSecret,
+   initEntitySession,
+   initLabeler,
+   initRemote,
+   initSessions,
+   sendPrivate,
+   handlePrivate)
   where
 
 
 import Control.Arrow ((&&&))
 import Control.Exception (SomeException)
 import Control.Lens
-       ((&), (.~), (.=), (%=), use, ix, view, over, set, _2)
+       ((&), (.~), (.=), (%=), use, ix, view, over, set)
 import Control.Monad (forM, forM_)
 import Control.Monad.Catch (MonadThrow, MonadCatch, throwM, handle)
 import Control.Monad.State.Strict
@@ -165,83 +171,3 @@ readRemote (Labeled{..},remoteEntName) = do
   sessions . sLabels %= HM.insert lbl _rsEntity . HM.delete _lLabel
   sessions . sRemotes . ix _rsEntity .= rs'
   liftEither "readRemote:deser" $ decode (convert pt)
-
-
--- ========================= SIMULATOR ==========================
-
-
-simulate :: IO ()
-simulate = do
-
-  aStatic <- dhGenKey
-  aEph <- dhGenKey
-  bStatic <- dhGenKey
-  bEph <- dhGenKey
-  cStatic <- dhGenKey
-  cEph <- dhGenKey
-
-  let aRemote = EntityRemote "A" (kpPublic $ aStatic)
-      bRemote = EntityRemote "B" (kpPublic $ bStatic)
-      cRemote = EntityRemote "C" (kpPublic $ cStatic)
-
-      aEntity = EntityLocal "A" aStatic aEph
-      bEntity = EntityLocal "B" bStatic bEph
-      cEntity = EntityLocal "C" cStatic cEph
-
-      initNode ent rems alias = do
-        ss <- initSessions ent rems
-        return (PrivateEnv ent rems alias,PrivateState ss)
-      run (e,s) a = over _2 (e,) <$> runPrivate e s a
-      assertEq msg e a
-        | e == a = return ()
-        | otherwise =
-            die $ "assertEq: " ++ msg ++ ", expected=" ++ show e ++
-            ",actual=" ++ show a
-
-  a1_0 <- initNode aEntity [bRemote,cRemote] "A1"
-  a2_0 <- initNode aEntity [bRemote,cRemote] "A2"
-  b1_0 <- initNode bEntity [aRemote,cRemote] "B1"
-  b2_0 <- initNode bEntity [aRemote,cRemote] "B2"
-  c1_0 <- initNode cEntity [aRemote,bRemote] "C1"
-  c2_0 <- initNode cEntity [aRemote,bRemote] "C2"
-
-  pm1 <- return $ PrivateMessage "A" "A1" (S.fromList ["B"]) "Hello B!"
-  print pm1
-  (pe1,a1_1) <- run a1_0 $ sendPrivate pm1
-  print pe1
-
-  (pm1a1,a1_2) <- run a1_1 $ handlePrivate pe1
-  assertEq "A1 received pm1" (Just pm1) pm1a1
-  (pm1a2,a2_1) <- run a2_0 $ handlePrivate pe1
-  assertEq "A2 received pm1" (Just pm1) pm1a2
-
-  (pm1b1,b1_1) <- run b1_0 $ handlePrivate pe1
-  assertEq "B1 received pm1" (Just pm1) pm1b1
-  (pm1b2,b2_1) <- run b2_0 $ handlePrivate pe1
-  assertEq "B2 received pm1" (Just pm1) pm1b2
-
-  (pm1c1,c1_1) <- run c1_0 $ handlePrivate pe1
-  assertEq "C1 no receipt" Nothing pm1c1
-  (pm1c2,c2_1) <- run c2_0 $ handlePrivate pe1
-  assertEq "C2 no receipt" Nothing pm1c2
-
-
-  pm2 <- return $ PrivateMessage "B" "B1" (S.fromList ["A","C"]) "Hello A,C!"
-  print pm2
-  (pe2,b1_2) <- run b1_1 $ sendPrivate pm2
-  print pe2
-
-  (pm2b1,_b1_3) <- run b1_2 $ handlePrivate pe2
-  assertEq "B1 received pm2" (Just pm2) pm2b1
-  (pm2b2,_b2_2) <- run b2_1 $ handlePrivate pe2
-  assertEq "B2 received pm2" (Just pm2) pm2b2
-
-  (pm2a1,_a1_3) <- run a1_2 $ handlePrivate pe2
-  assertEq "A1 received pm2" (Just pm2) pm2a1
-  (pm2a2,_a2_2) <- run a2_1 $ handlePrivate pe2
-  assertEq "A2 received pm2" (Just pm2) pm2a2
-
-  (pm2c1,_c1_2) <- run c1_1 $ handlePrivate pe2
-  assertEq "C1 received pm2" (Just pm2) pm2c1
-  (pm2c2,_c2_2) <- run c2_1 $ handlePrivate pe2
-  assertEq "C2 received pm2" (Just pm2) pm2c2

@@ -14,7 +14,9 @@ module Kadena.Private.Types
   ,Noise
   ,lSymKey,lNonce,lAssocData
   ,EntityLocal(..)
+  ,elName,elStatic,elEphemeral
   ,EntityRemote(..)
+  ,erName,erStatic
   ,RemoteSession(..)
   ,rsName,rsEntity,rsNoise,rsRole,rsSendLabeler,rsRecvLabeler,rsLabel,rsVersion
   ,EntitySession(..)
@@ -91,6 +93,7 @@ data EntityLocal = EntityLocal {
   , _elStatic :: KeyPair Curve25519
   , _elEphemeral :: KeyPair Curve25519
   }
+makeLenses ''EntityLocal
 instance Show EntityLocal where
   show EntityLocal{..} = show ("EntityLocal:" <> asString _elName)
 
@@ -98,6 +101,7 @@ data EntityRemote = EntityRemote {
     _erName :: EntityName
   , _erStatic :: PublicKey Curve25519
   }
+makeLenses ''EntityRemote
 instance Show EntityRemote where
   show EntityRemote{..} = show ("EntityRemote:" <> asString _erName)
 

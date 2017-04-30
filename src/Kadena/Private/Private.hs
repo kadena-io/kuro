@@ -18,7 +18,7 @@ import Control.Arrow ((&&&))
 import Control.Exception (SomeException)
 import Control.Lens
        ((&), (.~), (.=), (%=), use, ix, view, over, set)
-import Control.Monad (forM, forM_)
+import Control.Monad (forM, forM_, when)
 import Control.Monad.Catch (MonadThrow, MonadCatch, throwM, handle)
 import Control.Monad.State.Strict
        (MonadState, get, put)
@@ -117,7 +117,9 @@ lookupRemote to = maybe (die $ "lookupRemote: invalid entity: " ++ show to) retu
 sendPrivate :: PrivateMessage -> Private PrivateEnvelope
 sendPrivate pm@PrivateMessage{..} = withStateRollback $ \(PrivateState Sessions {..}) -> do
   let pt = convert $ encode pm
+  entName <- view $ entityLocal . elName
   remotePayloads <- forM (S.toList _pmTo) $ \to -> do
+    when (to == entName) $ die "sendPrivate: sending to same entity!"
     RemoteSession {..} <- lookupRemote to _sRemotes
     (ct,n') <- liftEither ("sendPrivate:" ++ show to) $ writeMessage _rsNoise pt
     sessions . sRemotes . ix to %= (set rsNoise n' . over rsSendLabeler updateLabeler . over rsVersion succ)

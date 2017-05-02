@@ -96,14 +96,14 @@ simulate1 = do
     runReceiveAll mc1
     runReceiveAll mc2
 
-simulate2 :: IO ()
-simulate2 = do
+simulate2 :: Int -> IO ()
+simulate2 numMsgs = do
   let msgs :: [Message EntityName]
       msgs = [Message 0 "A" ["B","C"]
               ,Message 1 "B" ["C","A"]
               ,Message 2 "C" ["A","B"]
               ]
-      paths = getPaths $ mkTree msgs ["A","B","C"]
+      paths = getPaths $ mkTree (take numMsgs msgs) ["A","B","C"]
       getNode :: EntityName -> (ALens' ABC SimNode,ALens' ABC SimNode)
       getNode "A" = (a1,a2)
       getNode "B" = (b1,b2)

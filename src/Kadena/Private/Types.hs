@@ -18,9 +18,9 @@ module Kadena.Private.Types
   ,EntityRemote(..)
   ,erName,erStatic
   ,RemoteSession(..)
-  ,rsName,rsEntity,rsNoiseOut,rsNoiseIn,rsRole,rsSendLabeler,rsRecvLabeler,rsLabel,rsVersion
+  ,rsName,rsEntity,rsSendNoise,rsRecvNoise,rsSendLabeler,rsRecvLabeler,rsLabel,rsVersion
   ,EntitySession(..)
-  ,esInitNoise,esRespNoise,esOutLabeler,esInLabeler,esLabel,esVersion
+  ,esSendNoise,esRecvNoise,esSendLabeler,esRecvLabeler,esLabel,esVersion
   ,Sessions(..)
   ,sEntity,sRemotes,sLabels
   ,PrivateMessage(..)
@@ -44,7 +44,7 @@ import Control.Monad.Reader
        (MonadReader(..), ReaderT(..), runReaderT)
 import Control.Monad.State.Strict
        (MonadState(..), StateT(..), runStateT)
-import Crypto.Noise (HandshakeRole(..), NoiseState)
+import Crypto.Noise (NoiseState)
 import Crypto.Noise.Cipher (Cipher(..), AssocData)
 import Crypto.Noise.Cipher.AESGCM (AESGCM)
 import Crypto.Noise.DH (KeyPair, DH(..))
@@ -108,9 +108,8 @@ instance Show EntityRemote where
 data RemoteSession = RemoteSession {
     _rsName :: Text
   , _rsEntity :: EntityName
-  , _rsNoiseOut :: Noise
-  , _rsNoiseIn :: Noise
-  , _rsRole :: HandshakeRole
+  , _rsSendNoise :: Noise
+  , _rsRecvNoise :: Noise
   , _rsSendLabeler :: Labeler
   , _rsRecvLabeler :: Labeler
   , _rsLabel :: Label
@@ -124,10 +123,10 @@ instance Show RemoteSession where
     show _rsVersion
 
 data EntitySession = EntitySession {
-    _esInitNoise :: Noise
-  , _esRespNoise :: Noise
-  , _esOutLabeler :: Labeler
-  , _esInLabeler :: Labeler
+    _esSendNoise :: Noise
+  , _esRecvNoise :: Noise
+  , _esSendLabeler :: Labeler
+  , _esRecvLabeler :: Labeler
   , _esLabel :: Label
   , _esVersion :: Word64
   }

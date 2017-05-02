@@ -1,1 +1,5 @@
-../.stack-work/dist/x86_64-osx/Cabal-1.22.5.0/build/kadenaserver/kadenaserver
+#!/bin/sh
+
+kadenaserver=$(find ./.stack-work/install -iname kadenaserver)
+
+$kadenaserver $*

@@ -1,1 +1,5 @@
-../.stack-work/dist/x86_64-osx/Cabal-1.22.5.0/build/kadenaclient/kadenaclient
+#!/bin/sh
+
+kadenaclient=$(find ./.stack-work/install -iname kadenaclient)
+
+$kadenaclient $*

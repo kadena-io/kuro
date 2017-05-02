@@ -68,6 +68,7 @@ initNodes = do
         <*> pure HM.empty
 
 
+
 simulate1 :: IO ()
 simulate1 = do
 
@@ -98,9 +99,10 @@ simulate1 = do
 simulate2 :: IO ()
 simulate2 = do
   let msgs :: [Message EntityName]
-      msgs = [Message 0 "A" ["B","C"],
-              Message 1 "B" ["C","A"],
-              Message 2 "C" ["A","B"]]
+      msgs = [Message 0 "A" ["B","C"]
+              ,Message 1 "B" ["C","A"]
+              ,Message 2 "C" ["A","B"]
+              ]
       paths = getPaths $ mkTree msgs ["A","B","C"]
       getNode :: EntityName -> (ALens' ABC SimNode,ALens' ABC SimNode)
       getNode "A" = (a1,a2)
@@ -118,10 +120,6 @@ simulate2 = do
           sender <- use (cloneLens s1)
           return (s1,i,PrivateMessage f
                    (_nodeAlias (fst sender)) (S.fromList tos) (B8.pack (show m)))
-
-    runReceiveAll =<< runSend a1 ["B","C"] "Init A -> B,C"
-    runReceiveAll =<< runSend b1 ["C","A"] "Init B -> C,A"
-    runReceiveAll =<< runSend c1 ["A","B"] "Init C -> A,B"
 
     forM_ path $ \ev -> do
       --print' ev

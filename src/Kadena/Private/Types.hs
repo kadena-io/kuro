@@ -18,7 +18,7 @@ module Kadena.Private.Types
   ,EntityRemote(..)
   ,erName,erStatic
   ,RemoteSession(..)
-  ,rsName,rsEntity,rsNoise,rsRole,rsSendLabeler,rsRecvLabeler,rsLabel,rsVersion
+  ,rsName,rsEntity,rsNoiseOut,rsNoiseIn,rsRole,rsSendLabeler,rsRecvLabeler,rsLabel,rsVersion
   ,EntitySession(..)
   ,esInitNoise,esRespNoise,esOutLabeler,esInLabeler,esLabel,esVersion
   ,Sessions(..)
@@ -108,7 +108,8 @@ instance Show EntityRemote where
 data RemoteSession = RemoteSession {
     _rsName :: Text
   , _rsEntity :: EntityName
-  , _rsNoise :: Noise
+  , _rsNoiseOut :: Noise
+  , _rsNoiseIn :: Noise
   , _rsRole :: HandshakeRole
   , _rsSendLabeler :: Labeler
   , _rsRecvLabeler :: Labeler

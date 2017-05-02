@@ -29,8 +29,7 @@ import Crypto.Noise
 import Crypto.Noise.Cipher (Cipher(..), Plaintext)
 import Crypto.Noise.DH (KeyPair, DH(..))
 import Crypto.Noise.DH.Curve25519 (Curve25519)
-import Crypto.Noise.HandshakePatterns
-       (HandshakePattern, noiseKK, noiseK)
+import Crypto.Noise.HandshakePatterns (HandshakePattern, noiseK)
 import Data.ByteArray.Extend (convert)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as B8
@@ -85,7 +84,9 @@ initRemote el@EntityLocal{..} EntityRemote{..} = do
   let sendL = initLabeler (encodeUtf8 outName) (kpSecret _elStatic) _erStatic
       recvL = initLabeler (encodeUtf8 inName) (kpSecret _elStatic) _erStatic
   return $ RemoteSession name _erName
-    (noise noiseKK rol el _erStatic) rol sendL recvL (makeLabel recvL) 0
+    (noise noiseK InitiatorRole el _erStatic)
+    (noise noiseK ResponderRole el _erStatic)
+    rol sendL recvL (makeLabel recvL) 0
 
 
 
@@ -121,8 +122,8 @@ sendPrivate pm@PrivateMessage{..} = withStateRollback $ \(PrivateState Sessions 
   remotePayloads <- forM (S.toList _pmTo) $ \to -> do
     when (to == entName) $ die "sendPrivate: sending to same entity!"
     RemoteSession {..} <- lookupRemote to _sRemotes
-    (ct,n') <- liftEither ("sendPrivate:" ++ show to) $ writeMessage _rsNoise pt
-    sessions . sRemotes . ix to %= (set rsNoise n' . over rsSendLabeler updateLabeler . over rsVersion succ)
+    (ct,n') <- liftEither ("sendPrivate:" ++ show to) $ writeMessage _rsNoiseOut pt
+    sessions . sRemotes . ix to %= (set rsNoiseOut n' . over rsSendLabeler updateLabeler . over rsVersion succ)
     return $ Labeled (makeLabel _rsSendLabeler) (convert ct)
   entityPayload <- do
     (ct,n') <- liftEither "sendPrivate:entity" $ writeMessage (_esInitNoise _sEntity) pt
@@ -160,8 +161,8 @@ readEntity PrivateEnvelope{..} = do
     forM_ (S.toList _pmTo) $ \to -> do
       RemoteSession{..} <- lookupRemote to _sRemotes
       (_,rn') <- liftEither ("readEntity:updateRemote:" ++ show _rsName) $
-                 writeMessage _rsNoise pt
-      sessions . sRemotes . ix to %= set rsNoise rn' . over rsSendLabeler updateLabeler . over rsVersion succ
+                 writeMessage _rsNoiseOut pt
+      sessions . sRemotes . ix to %= set rsNoiseOut rn' . over rsSendLabeler updateLabeler . over rsVersion succ
 
   return pm
 
@@ -169,10 +170,10 @@ readEntity PrivateEnvelope{..} = do
 readRemote :: (Labeled,EntityName) -> Private PrivateMessage
 readRemote (Labeled{..},remoteEntName) = do
   rs@RemoteSession{..} <- lookupRemote remoteEntName =<< use (sessions . sRemotes)
-  (pt,n') <- liftEither ("readRemote:decrypt:" ++ show rs) $ readMessage _rsNoise _lPayload
+  (pt,n') <- liftEither ("readRemote:decrypt:" ++ show rs) $ readMessage _rsNoiseIn _lPayload
   let l' = updateLabeler _rsRecvLabeler
       lbl = makeLabel l'
-      rs' = set rsNoise n' . set rsRecvLabeler l' . set rsLabel lbl . over rsVersion succ $ rs
+      rs' = set rsNoiseIn n' . set rsRecvLabeler l' . set rsLabel lbl . over rsVersion succ $ rs
   sessions . sLabels %= HM.insert lbl _rsEntity . HM.delete _lLabel
   sessions . sRemotes . ix _rsEntity .= rs'
   liftEither "readRemote:deser" $ decode (convert pt)

@@ -17,6 +17,7 @@ import System.Environment
 import qualified Data.Yaml as Y
 import Data.Word
 import Data.Maybe (fromJust, isJust)
+import Data.Default (def)
 
 import qualified Data.Set as Set
 import Data.Map.Strict (Map)
@@ -28,6 +29,8 @@ import System.Exit
 
 import Kadena.Types hiding (logDir)
 import Apps.Kadena.Client hiding (main)
+
+import Pact.Types.SQLite
 
 
 mkNodes :: (Word64 -> NodeId) -> [(PrivateKey,PublicKey)] -> (Map NodeId PrivateKey, Map NodeId PublicKey)
@@ -206,7 +209,7 @@ toAliasMap :: Map NodeId a -> Map Alias a
 toAliasMap = M.fromList . map (first _alias) . M.toList
 
 createClusterConfig :: ConfigParams -> (Map Alias PublicKey) -> (Map NodeId PrivateKey, Map NodeId PublicKey) -> Int -> NodeId -> Config
-createClusterConfig ConfigParams{..} adminKeys' (privMap, pubMap) apiP nid = Config
+createClusterConfig cp@ConfigParams{..} adminKeys' (privMap, pubMap) apiP nid = Config
   { _otherNodes           = Set.delete nid $ M.keysSet pubMap
   , _nodeId               = nid
   , _publicKeys           = toAliasMap $ pubMap
@@ -217,9 +220,10 @@ createClusterConfig ConfigParams{..} adminKeys' (privMap, pubMap) apiP nid = Con
   , _heartbeatTimeout     = 1000000
   , _enableDebug          = True
   , _enablePersistence    = True
-  , _enableWriteBehind    = enableWB
+  , _pactPersist          = mkPactPersistConfig cp True nid
+  , _logRules             = def
   , _apiPort              = apiP
-  , _entity               = EntityInfo "me"
+  , _entity               = "me"
   , _logDir               = logDir
   , _aeBatchSize          = aeRepLimit
   , _preProcThreadCount   = ppThreadCnt
@@ -227,6 +231,17 @@ createClusterConfig ConfigParams{..} adminKeys' (privMap, pubMap) apiP nid = Con
   , _inMemTxCache         = inMemTxs
   , _hostStaticDir        = hostStaticDirB
   , _nodeClass            = Active
+  }
+
+mkPactPersistConfig :: ConfigParams -> Bool -> NodeId -> PactPersistConfig
+mkPactPersistConfig ConfigParams{..} enablePersist NodeId{..} = PactPersistConfig {
+    _ppcWriteBehind = enableWB
+  , _ppcBackend = if enablePersist
+                  then PPBSQLite
+                       { _ppbSqliteConfig = SQLiteConfig {
+                             dbFile = logDir </> (show $ _alias) ++ "-pact.sqlite"
+                           , pragmas = fastNoJournalPragmas } }
+                  else PPBInMemory
   }
 
 createClientConfig :: [Config] -> (Map NodeId PrivateKey, Map NodeId PublicKey) -> NodeId -> ClientConfig

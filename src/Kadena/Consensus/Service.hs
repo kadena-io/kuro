@@ -76,12 +76,12 @@ launchCommitService :: Dispatch
   -> KeySet
   -> NodeId
   -> IO UTCTime
-  -> Pact.CommandConfig
   -> GlobalConfigTMVar
   -> IO ()
-launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' commandConfig' gcm' = do
+launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' gcm' = do
   rconf' <- readCurrentConfig gcm'
-  commitEnv <- return $! Commit.initCommitEnv dispatch' dbgPrint' commandConfig' publishMetric' getTimestamp' (rconf' ^. enableWriteBehind) gcm'
+  commitEnv <- return $! Commit.initCommitEnv
+    dispatch' dbgPrint' (_pactPersist rconf') (_logRules rconf') publishMetric' getTimestamp' gcm'
   linkAsyncTrack "CommitThread" (Commit.runCommitService commitEnv nodeId' keySet')
   linkAsyncTrack "CommitHB" $ foreverHeart (_commitService dispatch') 1000000 Commit.Heart
 
@@ -117,14 +117,6 @@ runConsensusService renv gcm spec rstate timeCache' mPubConsensus' = do
       getTimestamp' = spec ^. getTimestamp
       keySet' = Turbine._keySet renv
       nodeId' = rconf ^. nodeId
-      commandConfig' = CommandConfig
-        { _ccDbFile = if rconf ^. enablePersistence
-                      then Just $ (rconf ^. logDir) </> (show $ _alias $ rconf ^. nodeId) ++ "-pact.sqlite"
-                      else Nothing
-        , _ccDebugFn = return . const () -- dbgPrint'
-        , _ccEntity = rconf ^. entity.entName
-        , _ccPragmas = Pact.fastNoJournalPragmas
-        }
 
   publishMetric' $ MetricClusterSize csize
   publishMetric' $ MetricAvailableSize csize
@@ -139,7 +131,7 @@ runConsensusService renv gcm spec rstate timeCache' mPubConsensus' = do
   launchHistoryService dispatch' dbgPrint' getTimestamp' rconf
   launchPreProcService dispatch' dbgPrint' getTimestamp' rconf
   launchSenderService dispatch' dbgPrint' publishMetric' mEvState mPubConsensus' gcm
-  launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' commandConfig' gcm
+  launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' gcm
   launchEvidenceService dispatch' dbgPrint' publishMetric' mEvState gcm mLeaderNoFollowers
   launchLogService dispatch' dbgPrint' publishMetric' rconf
   launchApiService dispatch' gcm dbgPrint' mPubConsensus' getTimestamp'

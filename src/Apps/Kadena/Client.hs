@@ -176,6 +176,7 @@ mkExec code mdata = do
   return $ decodeUtf8 <$>
     Pact.mkCommand
     (map (\KeyPair {..} -> (Pact.ED25519,_kpSecret,_kpPublic)) kps)
+    Nothing
     (T.pack $ show rid)
     (Exec (ExecMsg (T.pack code) mdata))
 

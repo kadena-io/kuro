@@ -136,7 +136,7 @@ pactTextToCMDWire :: Pact.Command T.Text -> CMDWire
 pactTextToCMDWire cmd = SCCWire $ SZ.encode (encodeUtf8 <$> cmd)
 
 buildCmdRpc :: Pact.Command T.Text -> (RequestKey,CMDWire)
-buildCmdRpc c@Pact.PublicCommand{..} = (RequestKey _cmdHash, pactTextToCMDWire c)
+buildCmdRpc c@Pact.Command{..} = (RequestKey _cmdHash, pactTextToCMDWire c)
 
 poll :: Api ()
 poll = do

@@ -37,7 +37,7 @@ data ABC = ABC {
   , _b2 :: SimNode
   , _c1 :: SimNode
   , _c2 :: SimNode
-  , _sent :: HM.HashMap Int (PrivateMessage,PrivateEnvelope)
+  , _sent :: HM.HashMap Int (PrivatePlaintext,PrivateCiphertext)
   }
 makeLenses ''ABC
 
@@ -81,7 +81,6 @@ simulate1 = do
 
     runReceiveAll =<< runSend b1 ["A","C"] "2 Hello A,C!"
 
-    -- TODO needs to happen before C can send, need initialization protocol
     runReceiveAll =<< runSend a2 ["C"] "3 C from A2"
 
     runReceiveAll =<< runSend c1 ["A","B"] "4 Hello A,B!"
@@ -114,11 +113,11 @@ simulate2 numMsgs = do
     -- putStrLn' "====================================="
     -- print' path
 
-    let mkMessage :: Message EntityName -> StateT ABC IO (ALens' ABC SimNode,Int,PrivateMessage)
+    let mkMessage :: Message EntityName -> StateT ABC IO (ALens' ABC SimNode,Int,PrivatePlaintext)
         mkMessage m@(Message i f tos) = do
           let (s1,_) = getNode f
           sender <- use (cloneLens s1)
-          return (s1,i,PrivateMessage f
+          return (s1,i,PrivatePlaintext f
                    (_nodeAlias (fst sender)) (S.fromList tos) (B8.pack (show m)))
 
     forM_ path $ \ev -> do
@@ -193,28 +192,28 @@ printNode node = do
   putStrLn' "========================="
 
 runSend :: Lens' ABC SimNode -> [EntityName] -> ByteString ->
-           StateT ABC IO (PrivateMessage,PrivateEnvelope)
+           StateT ABC IO (PrivatePlaintext,PrivateCiphertext)
 runSend node to' msg = do
   entName <- use (node . _1 . entityLocal . elName)
   alias <- use (node . _1 . nodeAlias)
-  pm1 <- return $ PrivateMessage entName alias (S.fromList to') msg
+  pm1 <- return $ PrivatePlaintext entName alias (S.fromList to') msg
   -- putStrLn' $ "SEND: " ++ show pm1
   pe1 <- run node $ sendPrivate pm1
   return (pm1,pe1)
 
-runReceiveAll :: (PrivateMessage,PrivateEnvelope) -> StateT ABC IO ()
+runReceiveAll :: (PrivatePlaintext,PrivateCiphertext) -> StateT ABC IO ()
 runReceiveAll m = do
   -- putStrLn' $ "RECEIVE ALL: " ++ show (_pmMessage (fst m))
   forM_ [a1,a2,b1,b2,c1,c2] $ \n -> runReceive m n
 
 
-runReceive :: (PrivateMessage, PrivateEnvelope) -> ALens' ABC SimNode -> StateT ABC IO ()
-runReceive (pm@PrivateMessage{..}, pe) anode = do
+runReceive :: (PrivatePlaintext, PrivateCiphertext) -> ALens' ABC SimNode -> StateT ABC IO ()
+runReceive (pm@PrivatePlaintext{..}, pe) anode = do
   entName <- use (cloneLens anode . _1 . entityLocal . elName)
   alias <- use (cloneLens anode . _1 . nodeAlias)
   pm' <- catch (run anode $ handlePrivate pe)
     (\(e :: SomeException) -> throwM (userError ("runReceive[" ++ show alias ++ "]: " ++ show e ++ ", env=" ++ show pe)))
-  if _pmFrom == entName || entName `S.member` _pmTo then
+  if _ppFrom == entName || entName `S.member` _ppTo then
     assertEq (show entName ++ ": receipt") (Just pm) pm'
     else
     assertEq (show entName ++ ": no receipt") Nothing pm'

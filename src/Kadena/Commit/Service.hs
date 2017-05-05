@@ -34,6 +34,7 @@ import Pact.Server.PactService (applyCmd)
 import Pact.Types.Server (CommandConfig(..), CommandState(..))
 import Pact.PersistPactDb (initDbEnv, createSchema, pactdb,DbEnv(..))
 import Pact.Native (initEvalEnv)
+import Pact.Types.Logger (LogRules(..),initLoggers,doLog)
 import qualified Pact.Persist.SQLite as SQLite
 import qualified Pact.Persist.Pure as Pure
 import Pact.Persist.CacheAdapter
@@ -50,20 +51,20 @@ import qualified Kadena.Log.Service as Log
 initCommitEnv
   :: Dispatch
   -> (String -> IO ())
-  -> CommandConfig
+  -> PactPersistConfig
+  -> LogRules
   -> (Metric -> IO ())
   -> IO UTCTime
-  -> Bool
   -> Config.GlobalConfigTMVar
   -> CommitEnv
-initCommitEnv dispatch' debugPrint' commandConfig' publishMetric' getTimestamp' enableWB' gcm' = CommitEnv
+initCommitEnv dispatch' debugPrint' persistConfig logRules' publishMetric' getTimestamp' gcm' = CommitEnv
   { _commitChannel = dispatch' ^. D.commitService
   , _historyChannel = dispatch' ^. D.historyChannel
-  , _commandConfig = commandConfig'
+  , _pactPersistConfig = persistConfig
   , _debugPrint = debugPrint'
+  , _commitLoggers = initLoggers debugPrint' doLog logRules'
   , _publishMetric = publishMetric'
   , _getTimestamp = getTimestamp'
-  , _enableWB = enableWB'
   , _mConfig = gcm'
   }
 
@@ -74,8 +75,8 @@ onUpdateConf oChan conf@Config.Config{ _nodeId = nodeId' } = do
   writeComm oChan $ ChangeNodeId nodeId'
   writeComm oChan $ UpdateKeySet $ Config.confToKeySet conf
 
-initPactService :: CommitEnv -> CommandConfig -> IO (CommandExecInterface (PactRPC ParsedCode))
-initPactService CommitEnv{..} config@CommandConfig {..} = do
+initPactService :: CommitEnv -> PactPersistConfig -> IO (CommandExecInterface (PactRPC ParsedCode))
+initPactService CommitEnv{..} config@PactPersistConfig {..} = undefined {- do
   let klog s = _ccDebugFn ("[PactService] " ++ s)
       mkCEI :: MVar (DbEnv a) -> MVar CommandState -> CommandExecInterface (PactRPC ParsedCode)
       mkCEI dbVar cmdVar = CommandExecInterface
@@ -112,10 +113,10 @@ initPactService CommitEnv{..} config@CommandConfig {..} = do
         klog "Creating Pact Schema"
         createSchema v
         return $ mkCEI v rv
-
+-}
 runCommitService :: CommitEnv -> NodeId -> KeySet -> IO ()
 runCommitService env nodeId' keySet' = do
-  cmdExecInter <- initPactService env (env ^. commandConfig)
+  cmdExecInter <- initPactService env (env ^. pactPersistConfig)
   initCommitState <- return $! CommitState { _nodeId = nodeId', _keySet = keySet', _commandExecInterface = cmdExecInter}
   let cu = Config.ConfigUpdater (env ^. debugPrint) "Service|Commit" (onUpdateConf (env ^. commitChannel))
   linkAsyncTrack "CommitConfUpdater" $ runConfigUpdater cu (env ^. mConfig)

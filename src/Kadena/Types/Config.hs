@@ -1,3 +1,5 @@
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE BangPatterns #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 {-# LANGUAGE DeriveGeneric #-}
@@ -9,13 +11,12 @@
 
 module Kadena.Types.Config
   ( Config(..), otherNodes, nodeId, electionTimeoutRange, heartbeatTimeout
-  , enableDebug, publicKeys, myPrivateKey, enableWriteBehind
+  , enableDebug, publicKeys, myPrivateKey, pactPersist
   , myPublicKey, apiPort, hostStaticDir
   , logDir, entity, nodeClass, adminKeys
   , aeBatchSize, preProcThreadCount, preProcUsePar
-  , inMemTxCache, enablePersistence
+  , inMemTxCache, enablePersistence, logRules
   , KeySet(..), ksCluster, confToKeySet
-  , EntityInfo(..),entName
   , ConfigUpdateCommand(..)
   , ConfigUpdate(..), cuCmd, cuHash, cuSigs
   , ProcessedConfigUpdate(..), processConfigUpdate
@@ -28,14 +29,14 @@ module Kadena.Types.Config
   , readCurrentConfig
   , NodesToDiff(..), DiffNodes(..), diffNodes
   , updateNodeMap, updateNodeSet
+  , PactPersistConfig(..),PactPersistBackend(..),PPBType(..)
   ) where
 
 import Control.Concurrent.STM
-import Control.Lens hiding (Index, (|>))
+import Control.Lens (makeLenses)
 import Control.Monad
 
 import Data.ByteString (ByteString)
-import Data.Text (Text)
 import qualified Data.Text as Text
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -53,17 +54,14 @@ import Data.Default
 import qualified Data.Yaml as Y
 
 import Pact.Types.Util
+import Pact.Types.Logger (LogRules)
+import Pact.Types.Runtime (EntityName)
+import Pact.Types.SQLite (SQLiteConfig)
+import Pact.Persist.MSSQL (MSSQLConfig(..))
 
 import Kadena.Types.Base
 
-data EntityInfo = EntityInfo {
-      _entName :: Text
-} deriving (Eq,Show,Generic)
-$(makeLenses ''EntityInfo)
-instance ToJSON EntityInfo where
-  toJSON = lensyToJSON 4
-instance FromJSON EntityInfo where
-  parseJSON = lensyParseJSON 4
+
 
 data Config = Config
   { _otherNodes           :: !(Set NodeId)
@@ -76,19 +74,54 @@ data Config = Config
   , _heartbeatTimeout     :: !Int
   , _enableDebug          :: !Bool
   , _apiPort              :: !Int
-  , _entity               :: !EntityInfo
+  , _entity               :: !EntityName
   , _logDir               :: !FilePath
   , _enablePersistence    :: !Bool
-  , _enableWriteBehind    :: !Bool
+  , _pactPersist          :: !PactPersistConfig
   , _aeBatchSize          :: !Int
   , _preProcThreadCount   :: !Int
   , _preProcUsePar        :: !Bool
   , _inMemTxCache         :: !Int -- how many committed transactions should we keep in memory (with the rest on disk)
   , _hostStaticDir        :: !Bool
   , _nodeClass            :: !NodeClass
+  , _logRules             :: !LogRules
   }
   deriving (Show, Generic)
+
+
+data PactPersistBackend =
+  PPBInMemory |
+  PPBSQLite { _ppbSqliteConfig :: SQLiteConfig } |
+  PPBMSSQL { _ppbMssqlConfig :: Maybe MSSQLConfig,
+             _ppbMssqlConnStr :: String }
+  deriving (Show,Generic)
+
+data PPBType = SQLITE|MSSQL|INMEM deriving (Eq,Show,Read,Generic,FromJSON,ToJSON)
+
+instance FromJSON PactPersistBackend where
+  parseJSON = withObject "PactPersistBackend" $ \o -> do
+    ty <- o .: "type"
+    case ty of
+      SQLITE -> PPBSQLite <$> o .: "config"
+      MSSQL -> PPBMSSQL <$> o .:? "config" <*> o .: "connStr"
+      INMEM -> return PPBInMemory
+instance ToJSON PactPersistBackend where
+  toJSON p = object $ case p of
+    PPBInMemory -> [ "type" .= INMEM ]
+    PPBSQLite {..} -> [ "type" .= SQLITE, "config" .= _ppbSqliteConfig ]
+    PPBMSSQL {..} -> [ "type" .= MSSQL, "config" .= _ppbMssqlConfig, "connStr" .= _ppbMssqlConnStr ]
+
+data PactPersistConfig = PactPersistConfig {
+  _ppcWriteBehind :: Bool,
+  _ppcBackend :: PactPersistBackend
+  } deriving (Show,Generic)
+instance ToJSON PactPersistConfig where toJSON = lensyToJSON 4
+instance FromJSON PactPersistConfig where parseJSON = lensyParseJSON 4
+
+
 makeLenses ''Config
+
+
 
 instance ToJSON NominalDiffTime where
   toJSON = toJSON . show . toSeconds'

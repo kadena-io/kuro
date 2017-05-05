@@ -111,11 +111,11 @@ lookupRemote to = maybe (die $ "lookupRemote: invalid entity: " ++ show to) retu
                   HM.lookup to
 
 -- | Send updates entity outbound labeler, entity init noise, remote send labeler, remote noise.
-sendPrivate :: PrivateMessage -> Private PrivateEnvelope
-sendPrivate pm@PrivateMessage{..} = withStateRollback $ \(PrivateState Sessions {..}) -> do
+sendPrivate :: PrivatePlaintext -> Private PrivateCiphertext
+sendPrivate pm@PrivatePlaintext{..} = withStateRollback $ \(PrivateState Sessions {..}) -> do
   let pt = convert $ encode pm
   entName <- view $ entityLocal . elName
-  remotePayloads <- forM (S.toList _pmTo) $ \to -> do
+  remotePayloads <- forM (S.toList _ppTo) $ \to -> do
     when (to == entName) $ die "sendPrivate: sending to same entity!"
     RemoteSession {..} <- lookupRemote to _sRemotes
     (ct,n') <- liftEither ("sendPrivate:" ++ show to) $ writeMessage _rsSendNoise pt
@@ -125,36 +125,36 @@ sendPrivate pm@PrivateMessage{..} = withStateRollback $ \(PrivateState Sessions 
     (ct,n') <- liftEither "sendPrivate:entity" $ writeMessage (_esSendNoise _sEntity) pt
     sessions . sEntity %= (set esSendNoise n' . over esSendLabeler updateLabeler . over esVersion succ)
     return $ Labeled (makeLabel (_esSendLabeler _sEntity)) (convert ct)
-  return $ PrivateEnvelope entityPayload remotePayloads
+  return $ PrivateCiphertext entityPayload remotePayloads
 
 -- | Switch on message labels to handle as same-entity or remote-inbound message.
-handlePrivate :: PrivateEnvelope -> Private (Maybe PrivateMessage)
-handlePrivate pe@PrivateEnvelope{..} = do
+handlePrivate :: PrivateCiphertext -> Private (Maybe PrivatePlaintext)
+handlePrivate pe@PrivateCiphertext{..} = do
   Sessions{..} <- use sessions
-  if _lLabel _peEntity == _esLabel _sEntity
+  if _lLabel _pcEntity == _esLabel _sEntity
     then Just <$> readEntity pe
     else let testRemote _ done@Just {} = done
              testRemote ll@Labeled{..} Nothing =
                (ll,) <$> HM.lookup _lLabel _sLabels
-         in mapM readRemote $ foldr testRemote Nothing _peRemotes
+         in mapM readRemote $ foldr testRemote Nothing _pcRemotes
 
 -- | inbound entity updates entity inbound labeler, label, inbound entity resp noise. If not sender,
 -- also retro-update entity out labeler, entity init noise, remote send labeler, remote noise.
-readEntity :: PrivateEnvelope -> Private PrivateMessage
-readEntity PrivateEnvelope{..} = do
+readEntity :: PrivateCiphertext -> Private PrivatePlaintext
+readEntity PrivateCiphertext{..} = do
   Sessions{..} <- use sessions
-  (pt,n') <- liftEither "readEntity:decrypt" $ readMessage (_esRecvNoise _sEntity) (_lPayload _peEntity)
-  pm@PrivateMessage{..} <- liftEither "readEntity:deser" $ decode (convert pt)
+  (pt,n') <- liftEither "readEntity:decrypt" $ readMessage (_esRecvNoise _sEntity) (_lPayload _pcEntity)
+  pm@PrivatePlaintext{..} <- liftEither "readEntity:deser" $ decode (convert pt)
   me <- view nodeAlias
   let ilblr = updateLabeler $ _esRecvLabeler _sEntity
       update = set esRecvNoise n' . set esLabel (makeLabel ilblr) . set esRecvLabeler ilblr . over esVersion succ
-  if _pmSender == me
+  if _ppSender == me
     then do
     sessions . sEntity %= update
     else do
     (_,in') <- liftEither "readEntity:updateEntInit" $ writeMessage (_esSendNoise _sEntity) pt
     sessions . sEntity %= update . set esSendNoise in' . over esSendLabeler updateLabeler
-    forM_ (S.toList _pmTo) $ \to -> do
+    forM_ (S.toList _ppTo) $ \to -> do
       RemoteSession{..} <- lookupRemote to _sRemotes
       (_,rn') <- liftEither ("readEntity:updateRemote:" ++ show _rsName) $
                  writeMessage _rsSendNoise pt
@@ -163,7 +163,7 @@ readEntity PrivateEnvelope{..} = do
   return pm
 
 -- | inbound remote updates remote label, recv labeler, remote noise.
-readRemote :: (Labeled,EntityName) -> Private PrivateMessage
+readRemote :: (Labeled,EntityName) -> Private PrivatePlaintext
 readRemote (Labeled{..},remoteEntName) = do
   rs@RemoteSession{..} <- lookupRemote remoteEntName =<< use (sessions . sRemotes)
   (pt,n') <- liftEither ("readRemote:decrypt:" ++ show rs) $ readMessage _rsRecvNoise _lPayload

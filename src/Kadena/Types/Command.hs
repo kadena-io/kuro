@@ -50,7 +50,6 @@ import Kadena.Types.Config
 import Kadena.Types.Message.Signed
 
 import qualified Pact.Types.Command as Pact
-import qualified Pact.Server.PactService as Pact
 import qualified Pact.Types.RPC as Pact
 import Pact.Types.Util
 
@@ -286,7 +285,7 @@ verifyCommand cmd@ConsensusConfigCommand{..} =
 {-# INLINE verifyCommand #-}
 
 getCmdBodyHash :: Command -> Hash
-getCmdBodyHash SmartContractCommand{ _sccCmd = Pact.PublicCommand{..}} = _cmdHash
+getCmdBodyHash SmartContractCommand{ _sccCmd = Pact.Command{..}} = _cmdHash
 getCmdBodyHash ConsensusConfigCommand{ _cccCmd = ConfigUpdate{..}} = _cuHash
 
 toRequestKey :: Command -> RequestKey

@@ -23,8 +23,8 @@ module Kadena.Private.Types
   ,esSendNoise,esRecvNoise,esSendLabeler,esRecvLabeler,esLabel,esVersion
   ,Sessions(..)
   ,sEntity,sRemotes,sLabels
-  ,PrivateMessage(..)
-  ,PrivateEnvelope(..)
+  ,PrivatePlaintext(..)
+  ,PrivateCiphertext(..)
   ,PrivateEnv(..)
   ,entityLocal,entityRemotes,nodeAlias
   ,PrivateState(..)
@@ -82,38 +82,38 @@ instance AsString Label where asString (Label l) = T.pack $ B8.unpack $ B16.enco
 type Noise = NoiseState AESGCM Curve25519 SHA256
 
 data Labeler = Labeler {
-    _lSymKey :: SymmetricKey AESGCM
-  , _lNonce :: Nonce AESGCM
-  , _lAssocData :: AssocData
+    _lSymKey :: !(SymmetricKey AESGCM)
+  , _lNonce :: !(Nonce AESGCM)
+  , _lAssocData :: !AssocData
   }
 makeLenses ''Labeler
 
 data EntityLocal = EntityLocal {
-    _elName :: EntityName
-  , _elStatic :: KeyPair Curve25519
-  , _elEphemeral :: KeyPair Curve25519
+    _elName :: !EntityName
+  , _elStatic :: !(KeyPair Curve25519)
+  , _elEphemeral :: !(KeyPair Curve25519)
   }
 makeLenses ''EntityLocal
 instance Show EntityLocal where
   show EntityLocal{..} = show ("EntityLocal:" <> asString _elName)
 
 data EntityRemote = EntityRemote {
-    _erName :: EntityName
-  , _erStatic :: PublicKey Curve25519
+    _erName :: !EntityName
+  , _erStatic :: !(PublicKey Curve25519)
   }
 makeLenses ''EntityRemote
 instance Show EntityRemote where
   show EntityRemote{..} = show ("EntityRemote:" <> asString _erName)
 
 data RemoteSession = RemoteSession {
-    _rsName :: Text
-  , _rsEntity :: EntityName
-  , _rsSendNoise :: Noise
-  , _rsRecvNoise :: Noise
-  , _rsSendLabeler :: Labeler
-  , _rsRecvLabeler :: Labeler
-  , _rsLabel :: Label
-  , _rsVersion :: Word64
+    _rsName :: !Text
+  , _rsEntity :: !EntityName
+  , _rsSendNoise :: !Noise
+  , _rsRecvNoise :: !Noise
+  , _rsSendLabeler :: !Labeler
+  , _rsRecvLabeler :: !Labeler
+  , _rsLabel :: !Label
+  , _rsVersion :: !Word64
   }
 makeLenses ''RemoteSession
 instance Show RemoteSession where
@@ -123,12 +123,12 @@ instance Show RemoteSession where
     show _rsVersion
 
 data EntitySession = EntitySession {
-    _esSendNoise :: Noise
-  , _esRecvNoise :: Noise
-  , _esSendLabeler :: Labeler
-  , _esRecvLabeler :: Labeler
-  , _esLabel :: Label
-  , _esVersion :: Word64
+    _esSendNoise :: !Noise
+  , _esRecvNoise :: !Noise
+  , _esSendLabeler :: !Labeler
+  , _esRecvLabeler :: !Labeler
+  , _esLabel :: !Label
+  , _esVersion :: !Word64
   }
 makeLenses ''EntitySession
 instance Show EntitySession where
@@ -136,48 +136,48 @@ instance Show EntitySession where
 
 
 data Sessions = Sessions {
-    _sEntity :: EntitySession
-  , _sRemotes :: HM.HashMap EntityName RemoteSession
-  , _sLabels :: HM.HashMap Label EntityName
+    _sEntity :: !EntitySession
+  , _sRemotes :: !(HM.HashMap EntityName RemoteSession)
+  , _sLabels :: !(HM.HashMap Label EntityName)
   } deriving (Show)
 makeLenses ''Sessions
 
 
-data PrivateMessage = PrivateMessage {
-    _pmFrom :: EntityName
-  , _pmSender :: Alias
-  , _pmTo :: S.Set EntityName
-  , _pmMessage :: ByteString
+data PrivatePlaintext = PrivatePlaintext {
+    _ppFrom :: !EntityName
+  , _ppSender :: !Alias
+  , _ppTo :: !(S.Set EntityName)
+  , _ppMessage :: !ByteString
   } deriving (Eq,Show,Generic)
-instance Serialize PrivateMessage
+instance Serialize PrivatePlaintext
 
 newtype PrivateException = PrivateException String
   deriving (Eq,Show,Ord,IsString)
 instance Exception PrivateException
 
 data Labeled = Labeled {
-    _lLabel :: Label
-  , _lPayload :: ByteString
+    _lLabel :: !Label
+  , _lPayload :: !ByteString
   } deriving (Generic)
 instance Serialize Labeled
 instance Show Labeled where
   show Labeled{..} = "label=" ++ show _lLabel ++ ",payload=" ++ show (B16.encode _lPayload)
 
-data PrivateEnvelope = PrivateEnvelope {
-    _peEntity :: Labeled
-  , _peRemotes :: [Labeled]
+data PrivateCiphertext = PrivateCiphertext {
+    _pcEntity :: !Labeled
+  , _pcRemotes :: ![Labeled]
   } deriving (Generic,Show)
-instance Serialize PrivateEnvelope
+instance Serialize PrivateCiphertext
 
 data PrivateEnv = PrivateEnv {
-    _entityLocal :: EntityLocal
-  , _entityRemotes :: [EntityRemote]
-  , _nodeAlias :: Alias
+    _entityLocal :: !EntityLocal
+  , _entityRemotes :: ![EntityRemote]
+  , _nodeAlias :: !Alias
   } deriving (Show)
 makeLenses ''PrivateEnv
 
 data PrivateState = PrivateState {
-      _sessions :: Sessions
+      _sessions :: !Sessions
   } deriving (Show)
 makeLenses ''PrivateState
 

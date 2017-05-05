@@ -6,8 +6,9 @@ module Kadena.Commit.Types
   ( ApplyFn
   , Commit(..)
   , CommitEnv(..)
-  , commitChannel, commandConfig, debugPrint, publishMetric
-  , getTimestamp, historyChannel, enableWB, mConfig
+  , commitChannel, debugPrint, publishMetric
+  , getTimestamp, historyChannel, mConfig
+  , pactPersistConfig, commitLoggers
   , CommitState(..)
   , nodeId, keySet, commandExecInterface
   , CommitChannel(..)
@@ -28,6 +29,7 @@ import Data.Aeson (Value)
 import qualified Pact.Types.Command as Pact
 import qualified Pact.Types.Server as Pact
 import qualified Pact.Types.RPC as Pact
+import Pact.Types.Logger (Loggers)
 
 import Kadena.Types.Base as X
 import Kadena.Types.Config as X hiding (nodeId, _nodeId)
@@ -49,7 +51,7 @@ data Commit =
   ChangeNodeId
     { newNodeId :: !NodeId } |
   UpdateKeySet
-    { newKeySet :: !(KeySet) } |
+    { newKeySet :: !KeySet } |
   Heart Beat |
   ExecLocal
     { localCmd :: !(Pact.Command ByteString),
@@ -66,11 +68,11 @@ instance Comms Commit CommitChannel where
 data CommitEnv = CommitEnv
   { _commitChannel :: !CommitChannel
   , _historyChannel :: !HistoryChannel
-  , _commandConfig :: !Pact.CommandConfig
+  , _pactPersistConfig :: !PactPersistConfig
   , _debugPrint :: !(String -> IO ())
+  , _commitLoggers :: !Loggers
   , _publishMetric :: !(Metric -> IO ())
   , _getTimestamp :: !(IO UTCTime)
-  , _enableWB :: !Bool
   , _mConfig :: GlobalConfigTMVar
   }
 makeLenses ''CommitEnv

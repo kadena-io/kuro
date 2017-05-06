@@ -240,7 +240,7 @@ mkPactPersistConfig ConfigParams{..} enablePersist NodeId{..} = PactPersistConfi
                   then PPBSQLite
                        { _ppbSqliteConfig = SQLiteConfig {
                              dbFile = logDir </> (show $ _alias) ++ "-pact.sqlite"
-                           , pragmas = fastNoJournalPragmas } }
+                           , pragmas = if enableWB then [] else fastNoJournalPragmas } }
                   else PPBInMemory
   }
 

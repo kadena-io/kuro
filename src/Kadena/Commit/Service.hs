@@ -26,18 +26,19 @@ import Data.Aeson (Value)
 import System.Directory
 
 import qualified Pact.Types.Command as Pact
-import qualified Pact.Server.PactService as Pact
 import Pact.Types.Command (CommandExecInterface(..), ExecutionMode(..),ParsedCode(..))
-import Pact.Types.Runtime (EvalEnv(..))
-import Pact.Types.RPC (PactRPC)
+import Pact.Types.Runtime (EntityName)
+import Pact.Types.RPC (PactRPC,PactConfig(..))
 import Pact.Server.PactService (applyCmd)
-import Pact.Types.Server (CommandConfig(..), CommandState(..))
-import Pact.PersistPactDb (initDbEnv, createSchema, pactdb,DbEnv(..))
-import Pact.Native (initEvalEnv)
-import Pact.Types.Logger (LogRules(..),initLoggers,doLog)
+import Pact.Types.Server (CommandState(..))
+import Pact.PersistPactDb (initDbEnv,pactdb)
+import Pact.Types.Logger (LogRules(..),initLoggers,doLog,logLog,Logger,Loggers,newLogger)
+import Pact.Interpreter (initSchema,initRefStore,PactDbEnv(..))
 import qualified Pact.Persist.SQLite as SQLite
 import qualified Pact.Persist.Pure as Pure
-import Pact.Persist.CacheAdapter
+import qualified Pact.Persist.MSSQL as MSSQL
+import Pact.Persist.CacheAdapter (initPureCacheWB)
+import Pact.Persist (Persister)
 import qualified Pact.Persist.WriteBehind as WB
 
 import Kadena.Util.Util (linkAsyncTrack)
@@ -52,15 +53,17 @@ initCommitEnv
   :: Dispatch
   -> (String -> IO ())
   -> PactPersistConfig
+  -> EntityName
   -> LogRules
   -> (Metric -> IO ())
   -> IO UTCTime
   -> Config.GlobalConfigTMVar
   -> CommitEnv
-initCommitEnv dispatch' debugPrint' persistConfig logRules' publishMetric' getTimestamp' gcm' = CommitEnv
+initCommitEnv dispatch' debugPrint' persistConfig entName logRules' publishMetric' getTimestamp' gcm' = CommitEnv
   { _commitChannel = dispatch' ^. D.commitService
   , _historyChannel = dispatch' ^. D.historyChannel
   , _pactPersistConfig = persistConfig
+  , _pactConfig = PactConfig entName
   , _debugPrint = debugPrint'
   , _commitLoggers = initLoggers debugPrint' doLog logRules'
   , _publishMetric = publishMetric'
@@ -75,48 +78,47 @@ onUpdateConf oChan conf@Config.Config{ _nodeId = nodeId' } = do
   writeComm oChan $ ChangeNodeId nodeId'
   writeComm oChan $ UpdateKeySet $ Config.confToKeySet conf
 
-initPactService :: CommitEnv -> PactPersistConfig -> IO (CommandExecInterface (PactRPC ParsedCode))
-initPactService CommitEnv{..} config@PactPersistConfig {..} = undefined {- do
-  let klog s = _ccDebugFn ("[PactService] " ++ s)
-      mkCEI :: MVar (DbEnv a) -> MVar CommandState -> CommandExecInterface (PactRPC ParsedCode)
-      mkCEI dbVar cmdVar = CommandExecInterface
-        { _ceiApplyCmd = \eMode cmd -> applyCmd config dbVar cmdVar eMode cmd (Pact.verifyCommand cmd)
-        , _ceiApplyPPCmd = applyCmd config dbVar cmdVar }
-  case _ccDbFile of
-    Nothing -> do
-      klog "Initializing pure pact"
-      ee <- initEvalEnv (initDbEnv _ccDebugFn Pure.persister Pure.initPureDb) pactdb
-      rv <- newMVar (CommandState $ _eeRefStore ee)
-      klog "Creating Pact Schema"
-      createSchema (_eePactDbVar ee)
-      return $ mkCEI (_eePactDbVar ee) rv
-    Just f -> do
-      dbExists <- doesFileExist f
-      when dbExists $ klog "Deleting Existing Pact DB File" >> removeFile f
-      if _enableWB
-      then do
-        sl <- SQLite.initSQLite [] putStrLn f
-        wb <- initPureCacheWB SQLite.persister sl putStrLn
-        linkAsyncTrack "WriteBehindThread" (WB.runWBService wb)
-        p <- return $ initDbEnv klog WB.persister wb
-        ee <- initEvalEnv p pactdb
-        rv <- newMVar (CommandState $ _eeRefStore ee)
-        let v = _eePactDbVar ee
-        klog "Creating Pact Schema"
-        createSchema v
-        return $ mkCEI v rv
-      else do
-        p <- initDbEnv _ccDebugFn SQLite.persister <$> SQLite.initSQLite _ccPragmas klog f
-        ee <- initEvalEnv p pactdb
-        rv <- newMVar (CommandState $ _eeRefStore ee)
-        let v = _eePactDbVar ee
-        klog "Creating Pact Schema"
-        createSchema v
-        return $ mkCEI v rv
--}
+logInit :: Logger -> String -> IO ()
+logInit l = logLog l "INIT"
+
+initPactService :: CommitEnv -> IO (CommandExecInterface (PactRPC ParsedCode))
+initPactService CommitEnv{..} = do
+  let PactPersistConfig{..} = _pactPersistConfig
+      logger = newLogger _commitLoggers "PactService"
+      initCI = initCommandInterface logger _commitLoggers _pactConfig
+      initWB p db = if _ppcWriteBehind
+        then do
+          wb <- initPureCacheWB p db  _commitLoggers
+          linkAsyncTrack "WriteBehindThread" (WB.runWBService wb)
+          initCI WB.persister wb
+        else initCI p db
+  case _ppcBackend of
+    PPBInMemory -> do
+      logInit logger "Initializing pure pact"
+      initCI Pure.persister Pure.initPureDb
+    PPBSQLite conf@SQLite.SQLiteConfig{..} -> do
+      dbExists <- doesFileExist dbFile
+      when dbExists $ logInit logger "Deleting Existing Pact DB File" >> removeFile dbFile
+      logInit logger "Initializing SQLite"
+      initWB SQLite.persister =<< SQLite.initSQLite conf _commitLoggers
+    PPBMSSQL conf connStr -> do
+      logInit logger "Initializing MSSQL"
+      initWB MSSQL.persister =<< MSSQL.initMSSQL connStr conf _commitLoggers
+
+initCommandInterface :: Logger -> Loggers -> PactConfig -> Persister w -> w -> IO (CommandExecInterface (PactRPC ParsedCode))
+initCommandInterface logger loggers pconf p db = do
+  pde <- PactDbEnv pactdb <$> newMVar (initDbEnv loggers p db)
+  cmdVar <- newMVar (CommandState initRefStore)
+  logInit logger "Creating Pact Schema"
+  initSchema pde
+  return CommandExecInterface
+    { _ceiApplyCmd = \eMode cmd -> applyCmd logger pconf pde cmdVar eMode cmd (Pact.verifyCommand cmd)
+    , _ceiApplyPPCmd = applyCmd logger pconf pde cmdVar }
+
+
 runCommitService :: CommitEnv -> NodeId -> KeySet -> IO ()
 runCommitService env nodeId' keySet' = do
-  cmdExecInter <- initPactService env (env ^. pactPersistConfig)
+  cmdExecInter <- initPactService env
   initCommitState <- return $! CommitState { _nodeId = nodeId', _keySet = keySet', _commandExecInterface = cmdExecInter}
   let cu = Config.ConfigUpdater (env ^. debugPrint) "Service|Commit" (onUpdateConf (env ^. commitChannel))
   linkAsyncTrack "CommitConfUpdater" $ runConfigUpdater cu (env ^. mConfig)

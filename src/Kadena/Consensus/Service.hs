@@ -10,12 +10,6 @@ import Control.Monad
 import qualified Data.Set as Set
 import Data.Thyme.Clock (UTCTime)
 
-import System.FilePath
-
-import qualified Pact.Types.SQLite as Pact
-import qualified Pact.Types.Server as Pact
-import Pact.Types.Server (CommandConfig(..))
-
 import Kadena.Consensus.Handle
 import Kadena.Consensus.Util
 import Kadena.Types
@@ -81,7 +75,7 @@ launchCommitService :: Dispatch
 launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' gcm' = do
   rconf' <- readCurrentConfig gcm'
   commitEnv <- return $! Commit.initCommitEnv
-    dispatch' dbgPrint' (_pactPersist rconf') (_logRules rconf') publishMetric' getTimestamp' gcm'
+    dispatch' dbgPrint' (_pactPersist rconf') (_entity rconf') (_logRules rconf') publishMetric' getTimestamp' gcm'
   linkAsyncTrack "CommitThread" (Commit.runCommitService commitEnv nodeId' keySet')
   linkAsyncTrack "CommitHB" $ foreverHeart (_commitService dispatch') 1000000 Commit.Heart
 

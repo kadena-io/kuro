@@ -3,21 +3,17 @@ pactPersist:
   backend:
     config:
       dbFile: ./log/node0-pact.sqlite
-      pragmas:
-      - synchronous = OFF
-      - journal_mode = MEMORY
-      - locking_mode = EXCLUSIVE
-      - temp_store = MEMORY
+      pragmas: []
     type: SQLITE
 publicKeys:
 - - node0
-  - abf8976a52263cde1e4181ab8b1f23e0c131b8b7c2daea156c10ac1df1895cf0
+  - 0a38b9e904b57d5e8375dbb722dc19ef79493d683853b23a461a4a23b6a844d7
 - - node1
-  - 482f6bd95deb32ca8f1358ccaaa08a9504532644cf5a81acd960c28904577829
+  - 9e559cba0f1c09e4ec03212b9f06788ff6a1ffb67743bac79d1993ca6395e643
 - - node2
-  - 35a34a8ab1ae7e8fa93212b61681cf2da775ff52a47353e74d46a501483990cc
+  - 2bb2b61854317dbc8a91bb2d7e8ca0a27748761ef0f2ddbcab1a117d60f3fa32
 - - node3
-  - c1da881786cfd26e1e35cf085f81bf76ad8e17f475cce7170a538a9b00efe2d9
+  - e91b9e6f0f000ce25e0b84cf8aafed1df98779cfadcb1b5a4a0ae20399313df4
 aeBatchSize: 20000
 heartbeatTimeout: 1000000
 logDir: ./log
@@ -42,7 +38,7 @@ otherNodes:
   host: '127.0.0.1'
   port: 10003
 inMemTxCache: 200000
-myPublicKey: abf8976a52263cde1e4181ab8b1f23e0c131b8b7c2daea156c10ac1df1895cf0
+myPublicKey: 0a38b9e904b57d5e8375dbb722dc19ef79493d683853b23a461a4a23b6a844d7
 nodeId:
   alias: node0
   fullAddr: tcp://127.0.0.1:10000
@@ -52,8 +48,8 @@ enableDebug: true
 entity: me
 adminKeys:
 - - admin0
-  - ee996260c1dbdae0292ab73ceb1095bac6aff13696494543145b877d39cb049a
+  - baf1423d60a98d5d2a33618a05888fd6cea3f9a7a463affc5bdd7e44323915c5
 nodeClass: active
 enablePersistence: true
-myPrivateKey: d0f25c762fecb91fb7a48af252ed4ec0894cfded2973ed38d5442c870eae4fea
+myPrivateKey: bdad56e6eec8e31af2631694bb2d6b023ab24e103b5125e62cc64d4116dd100c
 preProcUsePar: true

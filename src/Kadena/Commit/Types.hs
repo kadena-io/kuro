@@ -9,6 +9,7 @@ module Kadena.Commit.Types
   , commitChannel, debugPrint, publishMetric
   , getTimestamp, historyChannel, mConfig
   , pactPersistConfig, pactConfig, commitLoggers
+  , privateChannel
   , CommitState(..)
   , nodeId, keySet, commandExecInterface
   , CommitChannel(..)
@@ -41,6 +42,7 @@ import Kadena.Types.Message as X
 import Kadena.Types.Event (Beat)
 
 import Kadena.History.Types (HistoryChannel)
+import Kadena.Private.Types (PrivateChannel)
 
 type ApplyFn = LogEntry -> IO Pact.CommandResult
 
@@ -69,6 +71,7 @@ instance Comms Commit CommitChannel where
 data CommitEnv = CommitEnv
   { _commitChannel :: !CommitChannel
   , _historyChannel :: !HistoryChannel
+  , _privateChannel :: !PrivateChannel
   , _pactPersistConfig :: !PactPersistConfig
   , _pactConfig :: !Pact.PactConfig
   , _debugPrint :: !(String -> IO ())

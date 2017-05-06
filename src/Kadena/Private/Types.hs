@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TupleSections #-}
@@ -35,6 +36,7 @@ module Kadena.Private.Types
   ,runPrivate
   ,PrivateRpc(..)
   ,PrivateChannel(..)
+  ,PrivateResult(..)
     ) where
 
 
@@ -69,16 +71,15 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Word (Word64)
 import GHC.Generics (Generic)
+import Data.Aeson (ToJSON,FromJSON)
 
 import Kadena.Types.Base (Alias(..))
 import Kadena.Types.Comms (Comms(..),initCommsNormal,readCommNormal,writeCommNormal)
 
 import Pact.Types.Orphans ()
 import Pact.Types.Util (AsString(..))
+import Pact.Types.Runtime (EntityName(..))
 
-newtype EntityName = EntityName Text
-  deriving (IsString,AsString,Eq,Ord,Hashable,Serialize,NFData)
-instance Show EntityName where show (EntityName t) = show t
 
 newtype Label = Label ByteString
   deriving (IsString,Eq,Ord,Hashable,Serialize,NFData,Monoid,ByteArray,ByteArrayAccess)
@@ -218,3 +219,11 @@ instance Comms PrivateRpc PrivateChannel where
   initComms = PrivateChannel <$> initCommsNormal
   readComm (PrivateChannel c) = readCommNormal c
   writeComm (PrivateChannel c) = writeCommNormal c
+
+data PrivateResult a =
+  PrivateFailure !String
+  | PrivatePrivate
+  | PrivateSuccess a
+  deriving (Show, Eq, Generic, Functor)
+instance ToJSON a => ToJSON (PrivateResult a)
+instance FromJSON a => FromJSON (PrivateResult a)

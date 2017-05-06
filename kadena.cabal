@@ -67,6 +67,9 @@ library
                      , Kadena.Monitoring.Server
                      , Kadena.PreProc.Service
                      , Kadena.PreProc.Types
+                     , Kadena.Private.Private
+                     , Kadena.Private.Types
+                     , Kadena.Private.Service
                      , Kadena.Sender.Service
                      , Kadena.Sender.Types
                      , Kadena.Spec.Simple

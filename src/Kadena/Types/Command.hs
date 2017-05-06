@@ -6,9 +6,10 @@
 {-# LANGUAGE TemplateHaskell #-}
 
 module Kadena.Types.Command
-  ( Command(..), sccCmd, sccPreProc, cccCmd, cccPreProc
+  ( Command(..), sccCmd, sccPreProc, cccCmd, cccPreProc, pcCmd
+  , Hashed(..)
   , encodeCommand, decodeCommand, decodeCommandEither
-  , decodeCommandIO, decodeCommandEitherIO
+  , {- decodeCommandIO, -} decodeCommandEitherIO
   , verifyCommand, verifyCommandIfNotPending
   , prepPreprocCommand
   , Preprocessed(..), RunPreProc(..), runPreproc, runPreprocPure
@@ -18,7 +19,7 @@ module Kadena.Types.Command
   , SCCPreProcResult, CCCPreProcResult
   , CMDWire(..)
   , toRequestKey
-  , CommandResult(..), scrResult, scrHash, cmdrLogIndex, cmdrLatMetrics, ccrHash, ccrResult
+  , CommandResult(..), scrResult, crHash, crLogIndex, crLatMetrics, ccrResult, cprResult
   , CmdLatencyMetrics(..), lmFirstSeen, lmHitTurbine, lmHitPreProc, lmAerConsensus, lmLogConsensus
   , lmFinPreProc, lmHitCommit, lmFinCommit, lmHitConsensus, lmFinConsensus
   , initCmdLat, populateCmdLat
@@ -48,7 +49,7 @@ import GHC.Int (Int64)
 import Kadena.Types.Base
 import Kadena.Types.Config
 import Kadena.Types.Message.Signed
-import Kadena.Private.Types (PrivateCiphertext)
+import Kadena.Private.Types (PrivateCiphertext,PrivateResult)
 
 import qualified Pact.Types.Command as Pact
 import qualified Pact.Types.RPC as Pact
@@ -172,6 +173,13 @@ runPreproc hitPreProc RunCCCPreProc{..} = do
   unless succPut $ putStrLn $ "Preprocessor encountered a duplicate: " ++ show _rpCccRaw
 {-# INLINE runPreproc #-}
 
+data Hashed a = Hashed
+  { _hValue :: !a
+  , _hHash :: !Hash
+  } deriving (Show,Eq,Generic)
+instance Serialize a => Serialize (Hashed a)
+instance NFData a => NFData (Hashed a)
+
 data Command =
   SmartContractCommand
   { _sccCmd :: !(Pact.Command ByteString)
@@ -179,8 +187,8 @@ data Command =
   ConsensusConfigCommand
   { _cccCmd :: !(ConfigUpdate ByteString)
   , _cccPreProc :: !(Preprocessed ProcessedConfigUpdate)} |
-  EncryptedCommand {
-  _ecCmd :: !PrivateCiphertext
+  PrivateCommand
+  { _pcCmd :: !(Hashed PrivateCiphertext)
   }
   deriving (Show, Eq, Generic)
 makeLenses ''Command
@@ -191,13 +199,14 @@ instance Ord Command where
 data CMDWire =
   SCCWire !ByteString |
   CCCWire !ByteString |
-  ECWire !ByteString
+  PCWire !ByteString
   deriving (Show, Eq, Generic)
 instance Serialize CMDWire
 
 encodeCommand :: Command -> CMDWire
 encodeCommand SmartContractCommand{..} = SCCWire $! S.encode _sccCmd
 encodeCommand ConsensusConfigCommand{..} = CCCWire $! S.encode _cccCmd
+encodeCommand PrivateCommand{..} = PCWire $! S.encode _pcCmd
 {-# INLINE encodeCommand #-}
 
 -- | Decode that throws `DeserializationError`
@@ -216,6 +225,13 @@ decodeCommand (CCCWire !b) =
       Right v -> v
     !res = ConsensusConfigCommand cmd Unprocessed
   in res `seq` res
+decodeCommand (PCWire !b) =
+  let
+    !cmd = case S.decode b of
+      Left err -> throw $ DeserializationError $ err ++ "\n### for ###\n" ++ show b
+      Right v -> v
+    !res = PrivateCommand cmd
+  in res `seq` res
 {-# INLINE decodeCommand #-}
 
 decodeCommandEither :: CMDWire -> Either String Command
@@ -225,8 +241,12 @@ decodeCommandEither (SCCWire !b) = case S.decode b of
 decodeCommandEither (CCCWire !b) = case S.decode b of
   Left !err -> Left $! err ++ "\n### for ###\n" ++ show b
   Right !cmd -> Right $! (ConsensusConfigCommand cmd Unprocessed)
+decodeCommandEither (PCWire !b) = case S.decode b of
+  Left !err -> Left $! err ++ "\n### for ###\n" ++ show b
+  Right !cmd -> Right $! (PrivateCommand cmd)
 {-# INLINE decodeCommandEither #-}
 
+{-
 decodeCommandIO :: CMDWire -> IO (Command, RunPreProc)
 decodeCommandIO cmd = case decodeCommand cmd of
   r@SmartContractCommand{..} -> do
@@ -237,33 +257,36 @@ decodeCommandIO cmd = case decodeCommand cmd of
     mv <- newEmptyMVar
     let rpp = RunCCCPreProc _cccCmd mv
     return $! (r { _cccPreProc = Pending mv }, rpp)
+-}
 
-decodeCommandEitherIO :: CMDWire -> IO (Either String (Command, RunPreProc))
+decodeCommandEitherIO :: CMDWire -> IO (Either String (Command, Maybe RunPreProc))
 decodeCommandEitherIO cmd = case decodeCommandEither cmd of
   Left err -> return $ Left $ err ++ "\n### for ###\n" ++ show cmd
   Right v -> case v of
     r@SmartContractCommand{..} -> do
       mv <- newEmptyMVar
       let rpp = RunSCCPreProc _sccCmd mv
-      return $ Right $! (r { _sccPreProc = Pending mv }, rpp)
+      return $ Right $! (r { _sccPreProc = Pending mv }, Just rpp)
     r@ConsensusConfigCommand{..} -> do
       mv <- newEmptyMVar
       let rpp = RunCCCPreProc _cccCmd mv
-      return $! Right $! (r { _cccPreProc = Pending mv }, rpp)
+      return $! Right $! (r { _cccPreProc = Pending mv }, Just rpp)
+    r@PrivateCommand{} -> return $! Right (r,Nothing)
 
-prepPreprocCommand :: Command -> IO (Command, RunPreProc)
+prepPreprocCommand :: Command -> IO (Command, Maybe RunPreProc)
 prepPreprocCommand cmd@SmartContractCommand{..} = do
   case _sccPreProc of
     Unprocessed -> do
       mv <- newEmptyMVar
-      return $ (cmd { _sccPreProc = Pending mv}, RunSCCPreProc _sccCmd mv)
+      return $ (cmd { _sccPreProc = Pending mv}, Just $ RunSCCPreProc _sccCmd mv)
     err -> error $ "Invariant Error: cmd has already been preped: " ++ show err ++ "\n### for ###\n" ++ show _sccCmd
 prepPreprocCommand cmd@ConsensusConfigCommand{..} = do
   case _cccPreProc of
     Unprocessed -> do
       mv <- newEmptyMVar
-      return $ (cmd { _cccPreProc = Pending mv}, RunCCCPreProc _cccCmd mv)
+      return $ (cmd { _cccPreProc = Pending mv}, Just $ RunCCCPreProc _cccCmd mv)
     err -> error $ "Invariant Error: cmd has already been preped: " ++ show err ++ "\n### for ###\n" ++ show _cccCmd
+prepPreprocCommand c@PrivateCommand{} = return $! (c,Nothing)
 
 verifyCommandIfNotPending :: Command -> Command
 verifyCommandIfNotPending cmd@SmartContractCommand{..} =
@@ -278,6 +301,7 @@ verifyCommandIfNotPending cmd@ConsensusConfigCommand{..} =
               Pending{} -> cmd
               Result{} -> cmd
   in res `seq` res
+verifyCommandIfNotPending cmd@PrivateCommand{} = cmd
 {-# INLINE verifyCommandIfNotPending #-}
 
 verifyCommand :: Command -> Command
@@ -287,11 +311,13 @@ verifyCommand cmd@SmartContractCommand{..} =
 verifyCommand cmd@ConsensusConfigCommand{..} =
   let !res = Result $! processConfigUpdate _cccCmd
   in res `seq` cmd { _cccPreProc = res }
+verifyCommand cmd@PrivateCommand{} = cmd
 {-# INLINE verifyCommand #-}
 
 getCmdBodyHash :: Command -> Hash
 getCmdBodyHash SmartContractCommand{ _sccCmd = Pact.Command{..}} = _cmdHash
 getCmdBodyHash ConsensusConfigCommand{ _cccCmd = ConfigUpdate{..}} = _cuHash
+getCmdBodyHash PrivateCommand { _pcCmd = Hashed{..}} = _hHash
 
 toRequestKey :: Command -> RequestKey
 toRequestKey = RequestKey . getCmdBodyHash
@@ -332,14 +358,19 @@ mkLatResults CmdLatencyMetrics{..} = CmdResultLatencyMetrics
 
 data CommandResult =
   SmartContractResult
-    { _scrHash :: !Hash
+    { _crHash :: !Hash
     , _scrResult :: !Pact.CommandResult
-    , _cmdrLogIndex :: !LogIndex
-    , _cmdrLatMetrics :: !(Maybe CmdResultLatencyMetrics) } |
+    , _crLogIndex :: !LogIndex
+    , _crLatMetrics :: !(Maybe CmdResultLatencyMetrics) } |
   ConsensusConfigResult
-    { _ccrHash :: !Hash
+    { _crHash :: !Hash
     , _ccrResult :: !ConfigUpdateResult
-    , _cmdrLogIndex :: !LogIndex
-    , _cmdrLatMetrics :: !(Maybe CmdResultLatencyMetrics) }
+    , _crLogIndex :: !LogIndex
+    , _crLatMetrics :: !(Maybe CmdResultLatencyMetrics) } |
+  PrivateCommandResult
+    { _crHash :: !Hash
+    , _cprResult :: !(PrivateResult Pact.CommandResult)
+    , _crLogIndex :: !LogIndex
+    , _crLatMetrics :: !(Maybe CmdResultLatencyMetrics) }
   deriving (Show, Eq, Generic)
 makeLenses ''CommandResult

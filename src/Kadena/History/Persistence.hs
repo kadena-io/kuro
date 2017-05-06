@@ -33,16 +33,18 @@ import Kadena.Types
 import Kadena.Types.Sqlite
 import Kadena.History.Types
 
-data HistType = SCC | CCC deriving (Show, Eq)
+data HistType = SCC | CCC | PC deriving (Show, Eq)
 
 htToField :: HistType -> SType
 htToField SCC = SText $ Utf8 "smart_contract"
 htToField CCC = SText $ Utf8 "config"
+htToField PC = SText $ Utf8 "private"
 
 htFromField :: SType -> Either String HistType
 htFromField s@(SText (Utf8 v))
   | v == "smart_contract" = Right SCC
   | v == "config" = Right CCC
+  | v == "private" = Right PC
   | otherwise = Left $ "unrecognized 'type' field in history db: " ++ show s
 htFromField s = Left $ "unrecognized 'type' field in history db: " ++ show s
 
@@ -55,25 +57,31 @@ crToField r = SText $ Utf8 $ BSL.toStrict $ A.encode r
 latToField :: Maybe CmdResultLatencyMetrics -> SType
 latToField r = SText $ Utf8 $ BSL.toStrict $ A.encode r
 
-crFromField :: Hash -> LogIndex -> Maybe TxId -> ByteString -> ByteString -> CommandResult
-crFromField hsh li tid cr lat = SmartContractResult hsh (Pact.CommandResult (Pact.RequestKey hsh) tid v) li lat'
-  where
-    lat' = case A.eitherDecodeStrict' lat of
+latFromField :: (Show a1, A.FromJSON a) => a1 -> ByteString -> a
+latFromField cr lat = case A.eitherDecodeStrict' lat of
       Left err -> error $ "crFromField: unable to decode CmdResultLatMetrics from database! " ++ show err ++ "\n" ++ show cr
       Right v' -> v'
+
+crFromField :: Hash -> LogIndex -> Maybe TxId -> ByteString -> ByteString -> CommandResult
+crFromField hsh li tid cr lat = SmartContractResult hsh (Pact.CommandResult (Pact.RequestKey hsh) tid v) li (latFromField cr lat)
+  where
     v = case A.eitherDecodeStrict' cr of
       Left err -> error $ "crFromField: unable to decode CommandResult from database! " ++ show err ++ "\n" ++ show cr
       Right v' -> v'
 
 ccFromField :: Hash -> LogIndex -> ByteString -> ByteString -> CommandResult
-ccFromField hsh li ccr lat = ConsensusConfigResult hsh v li lat'
+ccFromField hsh li ccr lat = ConsensusConfigResult hsh v li (latFromField ccr lat)
   where
-    lat' = case A.eitherDecodeStrict' lat of
-      Left err -> error $ "ccFromField: unable to decode CmdResultLatMetrics from database! " ++ show err ++ "\n" ++ show ccr
-      Right v' -> v'
     v = case A.eitherDecodeStrict' ccr of
       Left err -> error $ "ccFromField: unable to decode CommandResult from database! " ++ show err ++ "\n" ++ show ccr
       Right v' -> v'
+
+pcFromField :: Hash -> LogIndex -> Maybe TxId -> ByteString -> ByteString -> CommandResult
+pcFromField hsh li tid pc lat = PrivateCommandResult hsh v li (latFromField pc lat)
+  where
+    v = case A.eitherDecodeStrict' pc of
+      Left err -> error $ "ccFromField: unable to decode CommandResult from database! " ++ show err ++ "\n" ++ show pc
+      Right v' -> fmap (Pact.CommandResult (Pact.RequestKey hsh) tid) v'
 
 sqlDbSchema :: Utf8
 sqlDbSchema =
@@ -115,23 +123,30 @@ sqlInsertHistoryRow =
 
 insertRow :: Statement -> CommandResult -> IO ()
 insertRow s SmartContractResult{..} =
-    execs "insertRow" s [hashToField _scrHash
-            ,SInt $ fromIntegral _cmdrLogIndex
+    execs "insertRow" s [hashToField _crHash
+            ,SInt $ fromIntegral _crLogIndex
             ,SInt $ fromIntegral (fromMaybe (-1) (Pact._crTxId _scrResult))
             ,htToField SCC
             ,crToField (Pact._crResult _scrResult)
-            ,latToField _cmdrLatMetrics]
+            ,latToField _crLatMetrics]
 insertRow s ConsensusConfigResult{..} =
-    execs "insertRow" s [hashToField _ccrHash
-            ,SInt $ fromIntegral _cmdrLogIndex
+    execs "insertRow" s [hashToField _crHash
+            ,SInt $ fromIntegral _crLogIndex
             ,SInt $ -1
             ,htToField CCC
             ,crToField $ A.toJSON _ccrResult
-            ,latToField _cmdrLatMetrics]
+            ,latToField _crLatMetrics]
+insertRow s PrivateCommandResult{..} =
+  execs "insertRow" s [hashToField _crHash
+            ,SInt $ fromIntegral _crLogIndex
+            ,SInt $ -1
+            ,htToField PC
+            ,crToField $ A.toJSON (Pact._crResult <$> _cprResult)
+            ,latToField _crLatMetrics]
 
 insertCompletedCommand :: DbEnv -> [CommandResult] -> IO ()
 insertCompletedCommand DbEnv{..} v = do
-  let sortCmds a b = compare (_cmdrLogIndex a) (_cmdrLogIndex b)
+  let sortCmds a b = compare (_crLogIndex a) (_crLogIndex b)
   eitherToError "start insert transaction" <$> exec _conn "BEGIN TRANSACTION"
   mapM_ (insertRow _insertStatement) $ sortBy sortCmds v
   eitherToError "end insert transaction" <$> exec _conn "END TRANSACTION"
@@ -156,12 +171,21 @@ selectCompletedCommands :: DbEnv -> HashSet RequestKey -> IO (HashMap RequestKey
 selectCompletedCommands e v = foldM f HashMap.empty v
   where
     f m rk = do
-      rs' <- qrys "selectCompletedCommands.1" (_qryCompletedStmt e) [hashToField $ unRequestKey rk] [RInt, RInt, RText, RText, RText]
+      rs' <- qrys "selectCompletedCommands.1" (_qryCompletedStmt e) [hashToField $ unRequestKey rk]
+             [RInt, RInt, RText, RText, RText]
       if null rs'
-      then return m
-      else case head rs' of
-          [SInt li, SInt tid, type'@SText{}, SText (Utf8 cr),SText (Utf8 lat)] -> case htFromField type' of
-              Left err -> dbError "selectCompletedCommands.2" $ "unmatched 'type': " ++ err ++ "\n## ROW ##\n" ++ show (head rs')
-              Right SCC -> return $ HashMap.insert rk (crFromField (unRequestKey rk) (fromIntegral li) (if tid < 0 then Nothing else Just (fromIntegral tid)) cr lat) m
-              Right CCC -> return $ HashMap.insert rk (ccFromField (unRequestKey rk) (fromIntegral li) cr lat) m
-          r -> dbError "selectCompletedCommands.3" $ "Invalid result from query `History.selectCompletedCommands`: " ++ show r
+        then return m
+        else case head rs' of
+          [SInt li, SInt tid, type'@SText{}, SText (Utf8 cr),SText (Utf8 lat)] -> do
+            let tid' = if tid < 0 then Nothing else Just (fromIntegral tid)
+            case htFromField type' of
+              Left err -> dbError "selectCompletedCommands.2" $
+                "unmatched 'type': " ++ err ++ "\n## ROW ##\n" ++ show (head rs')
+              Right SCC -> return $ HashMap.insert rk
+                (crFromField (unRequestKey rk) (fromIntegral li) tid' cr lat) m
+              Right CCC -> return $ HashMap.insert rk
+                (ccFromField (unRequestKey rk) (fromIntegral li) cr lat) m
+              Right PC -> return $ HashMap.insert rk
+                (pcFromField (unRequestKey rk) (fromIntegral li) tid' cr lat) m
+          r -> dbError "selectCompletedCommands.3" $
+            "Invalid result from query `History.selectCompletedCommands`: " ++ show r

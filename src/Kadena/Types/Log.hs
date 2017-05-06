@@ -79,7 +79,7 @@ newtype LogEntries = LogEntries { _logEntries :: Map LogIndex LogEntry }
     deriving (Eq,Show,Ord,Generic)
 makeLenses ''LogEntries
 
-preprocLogEntry :: LogEntry -> IO (LogEntry, RunPreProc)
+preprocLogEntry :: LogEntry -> IO (LogEntry, Maybe RunPreProc)
 preprocLogEntry le@LogEntry{..} = do
   (newCmd, rpp) <- prepPreprocCommand _leCommand
   return $ (le { _leCommand = newCmd }, rpp)
@@ -89,7 +89,10 @@ preprocLogEntries :: LogEntries -> IO (LogEntries, Map LogIndex RunPreProc)
 preprocLogEntries LogEntries{..} = do
   let les = Map.toAscList _logEntries
       prep (k, le) = (,) <$> pure k <*> preprocLogEntry le
-      reinsert (k,(le,rpp)) (les', rpps') = (Map.insert k le les', Map.insert k rpp rpps')
+      reinsert (k,(le,rpp)) (les', rpps') =
+        (Map.insert k le les', case rpp of
+            Nothing -> rpps'
+            Just rpp' -> Map.insert k rpp' rpps')
   (newLes, newRpps) <- foldr' reinsert (Map.empty, Map.empty) <$> forM les prep
   return $ (LogEntries newLes, newRpps)
 {-# INLINE preprocLogEntries #-}

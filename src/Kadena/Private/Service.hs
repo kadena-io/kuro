@@ -6,7 +6,8 @@ module Kadena.Private.Service
 import Control.Concurrent (putMVar,newEmptyMVar,takeMVar)
 import Control.Monad (void,forever)
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad.Catch (catch, throwM)
+import Control.Monad.Catch (catch)
+import Control.Exception (SomeException)
 
 import Kadena.Types.Dispatch (Dispatch(..))
 import Kadena.Types.Config (Config(..))
@@ -37,20 +38,15 @@ handle chan logFn = do
             liftIO $ putMVar mv (Right ptm))
         (\e -> liftIO $ putMVar mv (Left e))
 
-encrypt :: PrivateChannel -> PrivatePlaintext -> IO PrivateCiphertext
+encrypt :: PrivateChannel -> PrivatePlaintext -> IO (Either SomeException PrivateCiphertext)
 encrypt chan pp = do
   mv <- newEmptyMVar
   writeComm chan (Encrypt pp mv)
-  r <- takeMVar mv
-  case r of
-    Left e -> throwM e
-    Right pc -> return pc
+  takeMVar mv
 
-decrypt :: PrivateChannel -> PrivateCiphertext -> IO (Maybe PrivatePlaintext)
+
+decrypt :: PrivateChannel -> PrivateCiphertext -> IO (Either SomeException (Maybe PrivatePlaintext))
 decrypt chan pc = do
   mv <- newEmptyMVar
   writeComm chan (Decrypt pc mv)
-  r <- takeMVar mv
-  case r of
-    Left e -> throwM e
-    Right pp -> return pp
+  takeMVar mv

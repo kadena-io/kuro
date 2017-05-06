@@ -29,6 +29,7 @@ import Data.HashSet (HashSet)
 import qualified Data.HashSet as HashSet
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
+import qualified Data.Set as Set
 
 import qualified Data.Serialize as SZ
 
@@ -41,6 +42,7 @@ import Data.Thyme.Clock
 
 import qualified Pact.Types.Runtime as Pact
 import qualified Pact.Types.Command as Pact
+import Pact.Types.RPC (PactRPC)
 import Pact.Types.API
 
 import Kadena.Types.Command
@@ -56,6 +58,8 @@ import qualified Kadena.Sender.Types as Sender
 import qualified Kadena.Commit.Types as Commit
 import Kadena.Types.Dispatch
 import Kadena.Util.Util
+import Kadena.Private.Service (encrypt)
+import Kadena.Private.Types (PrivatePlaintext(..),PrivateCiphertext(..),Labeled(..),PrivateResult(..))
 
 import Kadena.HTTP.Static
 
@@ -115,12 +119,18 @@ sendPublicBatch :: Api ()
 sendPublicBatch = do
   SubmitBatch cmds <- readJSON
   when (null cmds) $ die "Empty Batch"
-  PublishedConsensus{..} <- view aiPubConsensus >>= liftIO . tryReadMVar >>= fromMaybeM (die "Invariant error: consensus unavailable")
   conf <- view aiConfig >>= liftIO . readCurrentConfig
+  log $ "public: received batch of " ++ show (length cmds)
+  rpcs <- return $ buildCmdRpc <$> cmds
+  queueRpcs conf rpcs
+
+
+queueRpcs :: Config.Config -> [(RequestKey,CMDWire)] -> Api ()
+queueRpcs conf rpcs = do
+  PublishedConsensus{..} <- view aiPubConsensus >>= liftIO . tryReadMVar >>=
+    fromMaybeM (die "Invariant error: consensus unavailable")
   ldr <- fromMaybeM (die "System unavaiable, please try again later") _pcLeader
   rAt <- ReceivedAt <$> now
-  log $ "received batch of " ++ show (length cmds)
-  rpcs <- return $ buildCmdRpc <$> cmds
   cmds' <- return $! snd <$> rpcs
   rks' <- return $ RequestKeys $! fst <$> rpcs
   if _nodeId conf == ldr
@@ -136,24 +146,30 @@ sendPublicBatch = do
 sendPrivateBatch :: Api ()
 sendPrivateBatch = do
   SubmitBatch cmds <- readJSON
+  log $ "private: received batch of " ++ show (length cmds)
+
   when (null cmds) $ die "Empty Batch"
-  PublishedConsensus{..} <- view aiPubConsensus >>= liftIO . tryReadMVar >>= fromMaybeM (die "Invariant error: consensus unavailable")
   conf <- view aiConfig >>= liftIO . readCurrentConfig
-  ldr <- fromMaybeM (die "System unavaiable, please try again later") _pcLeader
-  rAt <- ReceivedAt <$> now
-  log $ "received batch of " ++ show (length cmds)
-  rpcs <- return $ buildCmdRpc <$> cmds
-  cmds' <- return $! snd <$> rpcs
-  rks' <- return $ RequestKeys $! fst <$> rpcs
-  if _nodeId conf == ldr
-  then do -- dispatch internally if we're leader, otherwise send outbound
-    oChan <- view (aiDispatch.inboundCMD)
-    liftIO $ writeComm oChan $ InboundCMDFromApi $ (rAt, NewCmdInternal cmds')
-    writeResponse $ ApiSuccess rks'
-  else do
-    oChan <- view (aiDispatch.senderService)
-    liftIO $ writeComm oChan $! Sender.ForwardCommandToLeader (NewCmdRPC cmds' NewMsg)
-    writeResponse $ ApiSuccess rks'
+  rpcs <- forM cmds $ \c -> do
+    let cb@Pact.Command{..} = fmap encodeUtf8 c
+    case eitherDecodeStrict' _cmdPayload of
+      Left e -> die $ "JSON payload decode failed: " ++ show e
+      Right (Pact.Payload{..} :: Pact.Payload (PactRPC T.Text)) -> case _pAddress of
+        Nothing -> die $ "sendPrivateBatch: missing address in payload: " ++ show c
+        Just Pact.Address{..} -> do
+          pchan <- view (aiDispatch.privateChannel)
+          if Set.null _aTo || _aFrom `Set.member` _aTo || _aFrom /= _entity conf
+            then die $ "sendPrivateBatch: invalid address in payload: " ++ show c
+            else do
+              er <- liftIO $ encrypt pchan $
+                PrivatePlaintext _aFrom (_alias (_nodeId conf)) _aTo (SZ.encode cb)
+              case er of
+                Left e -> die $ "sendPrivateBatch: encrypt failed: " ++ show e ++ ", command: " ++ show c
+                Right pc@PrivateCiphertext{..} -> do
+                  let hsh = hash $ _lPayload $ _pcEntity
+                      hc = Hashed pc hsh
+                  return (RequestKey hsh,PCWire $ SZ.encode hc)
+  queueRpcs conf rpcs
 
 pactTextToCMDWire :: Pact.Command T.Text -> CMDWire
 pactTextToCMDWire cmd = SCCWire $ SZ.encode (encodeUtf8 <$> cmd)
@@ -173,13 +189,18 @@ pollResultToReponse :: HashMap RequestKey CommandResult -> ApiResponse PollRespo
 pollResultToReponse m = ApiSuccess $ PollResponses $ scrToAr <$> m
 
 scrToAr :: CommandResult -> ApiResult
-scrToAr SmartContractResult{..} =
-  let metaData' = Just $ toJSON $ _cmdrLatMetrics
-  in ApiResult (toJSON (Pact._crResult _scrResult)) (Pact._crTxId _scrResult) metaData'
-scrToAr ConsensusConfigResult{..} =
-  let metaData' = Just $ toJSON $ _cmdrLatMetrics
-  -- TODO: fix ApiResult to handle more than just TxId
-  in ApiResult (toJSON _ccrResult) (Just $ Pact.TxId $ fromIntegral _cmdrLogIndex) metaData'
+scrToAr cr = case cr of
+  SmartContractResult{..} ->
+    ApiResult (toJSON (Pact._crResult _scrResult)) (Pact._crTxId _scrResult) metaData'
+  ConsensusConfigResult{..} ->
+    ApiResult (toJSON _ccrResult) tidFromLid metaData'
+  PrivateCommandResult{..} ->
+    ApiResult (handlePR _cprResult) tidFromLid metaData'
+  where metaData' = Just $ toJSON $ _crLatMetrics $ cr
+        tidFromLid = Just $ Pact.TxId $ fromIntegral $ _crLogIndex $ cr
+        handlePR (PrivateFailure e) = toJSON $ "ERROR: " ++ show e
+        handlePR PrivatePrivate = String "Private message"
+        handlePR (PrivateSuccess pr) = toJSON (Pact._crResult pr)
 
 checkHistoryForResult :: HashSet RequestKey -> Api PossiblyIncompleteResults
 checkHistoryForResult rks = do

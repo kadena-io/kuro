@@ -75,6 +75,8 @@ decodeAndInformPreProc prChan cmdWire = do
   res <- decodeCommandEitherIO cmdWire
   case res of
     Left err -> return $ Left err
-    Right (cmd, rpp) -> do
-      writeComm prChan $ CommandPreProc rpp
-      return $! Right cmd
+    Right (cmd, rpp) -> case rpp of
+      Just rpp' -> do
+        writeComm prChan $ CommandPreProc rpp'
+        return $! Right cmd
+      Nothing -> return $! Right cmd

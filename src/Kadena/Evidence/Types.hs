@@ -25,6 +25,8 @@ import Kadena.Types.Config as X
 import Kadena.Types.Message as X
 import Kadena.Types.Comms as X
 
+import Kadena.Types.Event (Beat)
+
 data Evidence =
   -- * A list of verified AER's, the turbine handles the crypto
   VerifiedAER { _unVerifiedAER :: [AppendEntriesResponse]} |

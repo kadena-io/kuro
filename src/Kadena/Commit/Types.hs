@@ -38,6 +38,8 @@ import Kadena.Types.Metric as X
 import Kadena.Types.Log as X
 import Kadena.Types.Message as X
 
+import Kadena.Types.Event (Beat)
+
 import Kadena.History.Types (HistoryChannel)
 
 type ApplyFn = LogEntry -> IO Pact.CommandResult

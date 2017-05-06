@@ -6,6 +6,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 module Kadena.Private.Types
   ( EntityName(..)
   ,Label(..)
@@ -32,11 +33,15 @@ module Kadena.Private.Types
   ,liftEither,die
   ,Private(..)
   ,runPrivate
+  ,PrivateRpc(..)
+  ,PrivateChannel(..)
     ) where
 
 
+import Control.Concurrent (MVar)
+import Control.Concurrent.Chan (Chan)
 import Control.DeepSeq (NFData)
-import Control.Exception (Exception)
+import Control.Exception (Exception,SomeException)
 import Control.Lens (makeLenses)
 import Control.Monad.Catch (MonadThrow, MonadCatch, throwM)
 import Control.Monad.IO.Class (MonadIO)
@@ -66,6 +71,7 @@ import Data.Word (Word64)
 import GHC.Generics (Generic)
 
 import Kadena.Types.Base (Alias(..))
+import Kadena.Types.Comms (Comms(..),initCommsNormal,readCommNormal,writeCommNormal)
 
 import Pact.Types.Orphans ()
 import Pact.Types.Util (AsString(..))
@@ -158,7 +164,7 @@ instance Exception PrivateException
 data Labeled = Labeled {
     _lLabel :: !Label
   , _lPayload :: !ByteString
-  } deriving (Generic)
+  } deriving (Generic,Eq)
 instance Serialize Labeled
 instance Show Labeled where
   show Labeled{..} = "label=" ++ show _lLabel ++ ",payload=" ++ show (B16.encode _lPayload)
@@ -166,7 +172,7 @@ instance Show Labeled where
 data PrivateCiphertext = PrivateCiphertext {
     _pcEntity :: !Labeled
   , _pcRemotes :: ![Labeled]
-  } deriving (Generic,Show)
+  } deriving (Generic,Show,Eq)
 instance Serialize PrivateCiphertext
 
 data PrivateEnv = PrivateEnv {
@@ -194,3 +200,21 @@ newtype Private a = Private { unPrivate :: StateT PrivateState (ReaderT PrivateE
 runPrivate :: PrivateEnv -> PrivateState ->
               Private a -> IO (a,PrivateState)
 runPrivate e s a = runReaderT (runStateT (unPrivate a) s) e
+
+data PrivateRpc =
+  Encrypt {
+    plaintext :: !PrivatePlaintext,
+    cipherResult :: !(MVar (Either SomeException PrivateCiphertext))
+    } |
+  Decrypt {
+    ciphertext :: !PrivateCiphertext,
+    plainResult :: !(MVar (Either SomeException (Maybe PrivatePlaintext)))
+    }
+
+
+newtype PrivateChannel = PrivateChannel (Chan PrivateRpc)
+
+instance Comms PrivateRpc PrivateChannel where
+  initComms = PrivateChannel <$> initCommsNormal
+  readComm (PrivateChannel c) = readCommNormal c
+  writeComm (PrivateChannel c) = writeCommNormal c

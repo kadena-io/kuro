@@ -48,6 +48,7 @@ import GHC.Int (Int64)
 import Kadena.Types.Base
 import Kadena.Types.Config
 import Kadena.Types.Message.Signed
+import Kadena.Private.Types (PrivateCiphertext)
 
 import qualified Pact.Types.Command as Pact
 import qualified Pact.Types.RPC as Pact
@@ -177,7 +178,10 @@ data Command =
   , _sccPreProc :: !(Preprocessed (Pact.ProcessedCommand (Pact.PactRPC Pact.ParsedCode))) } |
   ConsensusConfigCommand
   { _cccCmd :: !(ConfigUpdate ByteString)
-  , _cccPreProc :: !(Preprocessed ProcessedConfigUpdate)}
+  , _cccPreProc :: !(Preprocessed ProcessedConfigUpdate)} |
+  EncryptedCommand {
+  _ecCmd :: !PrivateCiphertext
+  }
   deriving (Show, Eq, Generic)
 makeLenses ''Command
 
@@ -186,7 +190,8 @@ instance Ord Command where
 
 data CMDWire =
   SCCWire !ByteString |
-  CCCWire !ByteString
+  CCCWire !ByteString |
+  ECWire !ByteString
   deriving (Show, Eq, Generic)
 instance Serialize CMDWire
 

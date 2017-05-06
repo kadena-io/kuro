@@ -35,6 +35,7 @@ import Kadena.History.Types as X
 import qualified Kadena.History.Persistence as DB
 import Kadena.Types.Dispatch (Dispatch)
 import qualified Kadena.Types.Dispatch as D
+import Kadena.Types.Event (pprintBeat)
 
 initHistoryEnv
   :: Dispatch

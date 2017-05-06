@@ -35,6 +35,7 @@ import qualified Kadena.Evidence.Spec as Ev
 import qualified Kadena.Types.Dispatch as Dispatch
 import qualified Kadena.Commit.Types as Commit
 import Kadena.Types (Dispatch)
+import Kadena.Types.Event (pprintBeat)
 
 runLogService :: Dispatch
               -> (String -> IO())

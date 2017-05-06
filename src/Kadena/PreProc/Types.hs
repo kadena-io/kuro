@@ -22,6 +22,7 @@ import Data.Thyme.Clock (UTCTime)
 
 import Kadena.Types.Command as X
 import Kadena.Types.Comms as X
+import Kadena.Types.Event
 
 data ProcessRequest =
   CommandPreProc

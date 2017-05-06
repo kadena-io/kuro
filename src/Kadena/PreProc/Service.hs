@@ -26,6 +26,7 @@ import Data.Foldable
 import Kadena.PreProc.Types as X
 import Kadena.Types.Dispatch (Dispatch)
 import qualified Kadena.Types.Dispatch as D
+import Kadena.Types.Event (Beat, pprintBeat)
 
 initPreProcEnv
   :: Dispatch

@@ -1,38 +1,21 @@
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Kadena.Types.Comms
-  -- Hearts are useful
-  ( Beat(..)
-  , pprintBeat
-  , createBeat
-  , foreverHeart
-  , foreverHeartDebugWriteDelay
-  -- Comm Channels
-  , Comms(..)
+  ( Comms(..)
   , BatchedComms(..)
   , InboundAER(..)
   , InboundAERChannel(..)
-  , InboundCMD(..)
   , InboundRVorRVR(..)
-  , InboundCMDChannel(..)
   , InboundRVorRVRChannel(..)
   , InboundGeneral(..)
   , InboundGeneralChannel(..)
-  , OutboundGeneral(..)
-  , OutboundGeneralChannel(..)
-  , broadcastMsg, directMsg
-  , InternalEvent(..)
-  , InternalEventChannel(..)
   -- for construction of chans elsewhere
   , initCommsNormal
   , readCommNormal
@@ -48,65 +31,25 @@ module Kadena.Types.Comms
   ) where
 
 import Control.Monad
-import Control.Lens
 import qualified Control.Concurrent.Async as Async
-import Control.Concurrent (threadDelay)
 import Control.Concurrent.STM (atomically, retry)
 import Control.Concurrent.STM.TVar
 import Control.Concurrent.Chan
 import Control.Concurrent.BoundedChan (BoundedChan)
 import qualified Control.Concurrent.BoundedChan as BoundedChan
 
-import Data.ByteString (ByteString)
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import Data.Typeable
 
-import Data.AffineSpace ((.-.))
-import Data.Thyme.Clock (UTCTime, microseconds, getCurrentTime)
 
 import Kadena.Types.Base
-import Kadena.Types.Event
+-- import Kadena.Types.Event
 import Kadena.Types.Message.Signed
-import Kadena.Types.Message
+-- import Kadena.Types.Message
 
--- Beats are useful for seeing how backed up things are
-pprintBeat :: Beat -> IO String
-pprintBeat Beat{..} = do
-  t' <- getCurrentTime
-  (delay :: Int) <- return $! (fromIntegral $ view microseconds $ t' .-. _tockStartTime)
-  return $! "Heartbeat delayed by " ++ show delay ++ "mics"
-
-createBeat :: Int -> IO Beat
-createBeat delay = Beat <$> pure delay <*> getCurrentTime
-
-fireHeart :: (Comms a b) => b -> Int -> (Beat -> a) -> IO UTCTime
-fireHeart comm delay mkBeat = do
-  !t@(Beat _ st) <- createBeat delay
-  writeComm comm $ mkBeat t
-  return st
-
-foreverHeart :: Comms a b => b -> Int -> (Beat -> a) -> IO ()
-foreverHeart comm delay mkBeat = forever $ do
-  _ <- fireHeart comm delay mkBeat
-  threadDelay delay
-
-foreverHeartDebugWriteDelay :: Comms a b => (String -> IO ()) -> b -> Int -> (Beat -> a) -> IO ()
-foreverHeartDebugWriteDelay debug' comm delay mkBeat = forever $ do
-  !st <- fireHeart comm delay mkBeat
-  !t' <- getCurrentTime
-  !(writeDelay :: Int) <- return $! (fromIntegral $ view microseconds $ t' .-. st)
-  debug' $ "writing heartbeat to channel took " ++ show writeDelay ++ "mics"
-  threadDelay delay
 
 newtype InboundAER = InboundAER { _unInboundAER :: (ReceivedAt, SignedRPC)}
-  deriving (Show, Eq, Typeable)
-
-data InboundCMD =
-  InboundCMD
-  { _unInboundCMD :: (ReceivedAt, SignedRPC)} |
-  InboundCMDFromApi
-  { _unInboundCMDFromApi :: (ReceivedAt, NewCmdInternal)}
   deriving (Show, Eq, Typeable)
 
 newtype InboundGeneral = InboundGeneral { _unInboundGeneral :: (ReceivedAt, SignedRPC)}
@@ -115,24 +58,10 @@ newtype InboundGeneral = InboundGeneral { _unInboundGeneral :: (ReceivedAt, Sign
 newtype InboundRVorRVR = InboundRVorRVR { _unInboundRVorRVR :: (ReceivedAt, SignedRPC)}
   deriving (Show, Eq, Typeable)
 
-newtype OutboundGeneral = OutboundGeneral { _unOutboundGeneral :: [Envelope]}
-  deriving (Show, Eq, Typeable)
-
-directMsg :: [(NodeId, ByteString)] -> OutboundGeneral
-directMsg msgs = OutboundGeneral $! Envelope . (\(n,b) -> (Topic $ unAlias $ _alias n, b)) <$> msgs
-
-broadcastMsg :: [ByteString] -> OutboundGeneral
-broadcastMsg msgs = OutboundGeneral $! Envelope . (\b -> (Topic $ "all", b)) <$> msgs
-
-newtype InternalEvent = InternalEvent { _unInternalEvent :: Event}
-  deriving (Show, Typeable)
 
 newtype InboundAERChannel = InboundAERChannel (Chan InboundAER, TVar (Seq InboundAER))
-newtype InboundCMDChannel = InboundCMDChannel (Chan InboundCMD, TVar (Seq InboundCMD))
 newtype InboundRVorRVRChannel = InboundRVorRVRChannel (Chan InboundRVorRVR)
 newtype InboundGeneralChannel = InboundGeneralChannel (Chan InboundGeneral, TVar (Seq InboundGeneral))
-newtype OutboundGeneralChannel = OutboundGeneralChannel (Chan OutboundGeneral)
-newtype InternalEventChannel = InternalEventChannel (BoundedChan InternalEvent)
 
 class Comms f c | c -> f where
   initComms :: IO c
@@ -157,20 +86,6 @@ instance BatchedComms InboundAER InboundAERChannel where
   writeComms (InboundAERChannel (_,m)) xs = writeCommsBatched m xs
   {-# INLINE writeComms #-}
 
-instance Comms InboundCMD InboundCMDChannel where
-  initComms = InboundCMDChannel <$> initCommsBatched
-  readComm (InboundCMDChannel (_,m))  = readCommBatched m
-  writeComm (InboundCMDChannel (c,_)) = writeCommBatched c
-  {-# INLINE initComms #-}
-  {-# INLINE readComm #-}
-  {-# INLINE writeComm #-}
-
-instance BatchedComms InboundCMD InboundCMDChannel where
-  readComms (InboundCMDChannel (_,m)) cnt = readCommsBatched m cnt
-  {-# INLINE readComms #-}
-  writeComms (InboundCMDChannel (_,m)) xs = writeCommsBatched m xs
-  {-# INLINE writeComms #-}
-
 instance Comms InboundGeneral InboundGeneralChannel where
   initComms = InboundGeneralChannel <$> initCommsBatched
   readComm (InboundGeneralChannel (_,m))  = readCommBatched m
@@ -193,21 +108,6 @@ instance Comms InboundRVorRVR InboundRVorRVRChannel where
   {-# INLINE readComm #-}
   {-# INLINE writeComm #-}
 
-instance Comms OutboundGeneral OutboundGeneralChannel where
-  initComms = OutboundGeneralChannel <$> initCommsNormal
-  readComm (OutboundGeneralChannel c) = readCommNormal c
-  writeComm (OutboundGeneralChannel c) = writeCommNormal c
-  {-# INLINE initComms #-}
-  {-# INLINE readComm #-}
-  {-# INLINE writeComm #-}
-
-instance Comms InternalEvent InternalEventChannel where
-  initComms = InternalEventChannel <$> initCommsBounded
-  readComm (InternalEventChannel c) = readCommBounded c
-  writeComm (InternalEventChannel c) = writeCommBounded c
-  {-# INLINE initComms #-}
-  {-# INLINE readComm #-}
-  {-# INLINE writeComm #-}
 
 {-# INLINE initCommsNormal #-}
 initCommsNormal :: IO (Chan a)

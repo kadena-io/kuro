@@ -51,6 +51,8 @@ import Kadena.Types.Log
 import qualified Kadena.Types.Log as X
 import Kadena.Types.Comms
 
+import Kadena.Types.Event (Beat,InternalEventChannel)
+
 import Kadena.Evidence.Types (EvidenceChannel)
 import Kadena.Commit.Types (CommitChannel)
 import Kadena.Sender.Types (SenderServiceChannel)

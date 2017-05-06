@@ -99,6 +99,7 @@ api = route [
       ,("poll",poll)
       ,("listen",registerListener)
       ,("local",sendLocal)
+      ,("private",sendPrivateBatch)
       ]
 
 sendLocal :: Api ()
@@ -112,6 +113,28 @@ sendLocal = do
 
 sendPublicBatch :: Api ()
 sendPublicBatch = do
+  SubmitBatch cmds <- readJSON
+  when (null cmds) $ die "Empty Batch"
+  PublishedConsensus{..} <- view aiPubConsensus >>= liftIO . tryReadMVar >>= fromMaybeM (die "Invariant error: consensus unavailable")
+  conf <- view aiConfig >>= liftIO . readCurrentConfig
+  ldr <- fromMaybeM (die "System unavaiable, please try again later") _pcLeader
+  rAt <- ReceivedAt <$> now
+  log $ "received batch of " ++ show (length cmds)
+  rpcs <- return $ buildCmdRpc <$> cmds
+  cmds' <- return $! snd <$> rpcs
+  rks' <- return $ RequestKeys $! fst <$> rpcs
+  if _nodeId conf == ldr
+  then do -- dispatch internally if we're leader, otherwise send outbound
+    oChan <- view (aiDispatch.inboundCMD)
+    liftIO $ writeComm oChan $ InboundCMDFromApi $ (rAt, NewCmdInternal cmds')
+    writeResponse $ ApiSuccess rks'
+  else do
+    oChan <- view (aiDispatch.senderService)
+    liftIO $ writeComm oChan $! Sender.ForwardCommandToLeader (NewCmdRPC cmds' NewMsg)
+    writeResponse $ ApiSuccess rks'
+
+sendPrivateBatch :: Api ()
+sendPrivateBatch = do
   SubmitBatch cmds <- readJSON
   when (null cmds) $ die "Empty Batch"
   PublishedConsensus{..} <- view aiPubConsensus >>= liftIO . tryReadMVar >>= fromMaybeM (die "Invariant error: consensus unavailable")

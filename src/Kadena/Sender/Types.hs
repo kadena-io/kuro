@@ -30,6 +30,8 @@ import Kadena.Types.Base
 import Kadena.Types.Message
 import Kadena.Types.Comms
 
+import Kadena.Types.Event (Beat)
+
 data ServiceRequest' =
   ServiceRequest'
   { _unSS :: StateSnapshot

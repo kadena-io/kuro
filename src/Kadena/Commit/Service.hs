@@ -48,6 +48,7 @@ import Kadena.Types.Dispatch (Dispatch)
 import qualified Kadena.Types.Dispatch as D
 import qualified Kadena.History.Types as History
 import qualified Kadena.Log.Service as Log
+import Kadena.Types.Event (pprintBeat)
 
 initCommitEnv
   :: Dispatch

@@ -23,7 +23,7 @@ import Data.Thyme.Clock
 
 import Kadena.Util.Util (linkAsyncTrack)
 import Kadena.Types.Dispatch (Dispatch)
-import Kadena.Types.Event (ResetLeaderNoFollowersTimeout(..))
+import Kadena.Types.Event (ResetLeaderNoFollowersTimeout(..),pprintBeat)
 import Kadena.Evidence.Spec as X
 -- TODO: re-integrate EKG when Evidence Service is finished and hspec tests are written
 -- import Kadena.Types.Metric

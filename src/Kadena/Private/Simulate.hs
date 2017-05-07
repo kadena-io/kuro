@@ -11,7 +11,6 @@ module Kadena.Private.Simulate
 
 
 import Control.Lens hiding (levels)
-import Crypto.Noise.DH (dhGenKey)
 import qualified Data.Set as S
 import Control.Monad.State.Strict
 import Control.Monad.Catch
@@ -27,6 +26,7 @@ import Kadena.Types.Base (Alias)
 
 import Kadena.Private.Types
 import Kadena.Private.Private
+import Kadena.Types.Entity
 
 
 type SimNode = (PrivateEnv,PrivateState)
@@ -44,16 +44,18 @@ makeLenses ''ABC
 initNodes :: IO ABC
 initNodes = do
 
-  aStatic <- dhGenKey
-  aEph <- dhGenKey
-  bStatic <- dhGenKey
-  bEph <- dhGenKey
-  cStatic <- dhGenKey
-  cEph <- dhGenKey
+  aStatic <- genKeyPair
+  aEph <- genKeyPair
+  bStatic <- genKeyPair
+  bEph <- genKeyPair
+  cStatic <- genKeyPair
+  cEph <- genKeyPair
 
-  let aRemote = EntityRemote "A" (kpPublic $ aStatic)
-      bRemote = EntityRemote "B" (kpPublic $ bStatic)
-      cRemote = EntityRemote "C" (kpPublic $ cStatic)
+  let toPub = EntityPublicKey . _ekPublic
+
+  let aRemote = EntityRemote "A" (toPub $ aStatic)
+      bRemote = EntityRemote "B" (toPub $ bStatic)
+      cRemote = EntityRemote "C" (toPub $ cStatic)
 
       aEntity = EntityLocal "A" aStatic aEph
       bEntity = EntityLocal "B" bStatic bEph

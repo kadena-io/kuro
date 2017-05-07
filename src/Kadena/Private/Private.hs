@@ -45,6 +45,7 @@ import Pact.Types.Orphans ()
 import Pact.Types.Util (AsString(..))
 
 import Kadena.Private.Types
+import Kadena.Types.Entity
 
 
 noise :: HandshakePattern -> HandshakeRole
@@ -52,9 +53,9 @@ noise :: HandshakePattern -> HandshakeRole
         -> Noise
 noise pat rol EntityLocal{..} remoteStatic =
   noiseState $ defaultHandshakeOpts pat rol &
-      hoLocalStatic .~ Just _elStatic &
+      hoLocalStatic .~ Just (toKeyPair _elStatic) &
       hoRemoteStatic .~ Just remoteStatic &
-      hoLocalEphemeral .~ Just _elEphemeral
+      hoLocalEphemeral .~ Just (toKeyPair _elEphemeral)
 
 kpPublic :: KeyPair a -> PublicKey a
 kpPublic = snd
@@ -64,11 +65,11 @@ kpSecret = fst
 
 initEntitySession :: EntityLocal -> EntitySession
 initEntitySession el@EntityLocal{..} = EntitySession
-  (noise noiseK InitiatorRole el (kpPublic _elStatic))
-  (noise noiseK ResponderRole el (kpPublic _elStatic))
+  (noise noiseK InitiatorRole el (_ekPublic _elStatic))
+  (noise noiseK ResponderRole el (_ekPublic _elStatic))
   lblr lblr (makeLabel lblr) 0
   where lblr = initLabeler (encodeUtf8 $ asString _elName)
-               (kpSecret _elStatic) (kpPublic _elStatic)
+               (_ekSecret _elStatic) (_ekPublic _elStatic)
 
 initLabeler :: ByteString -> SecretKey Curve25519 -> PublicKey Curve25519 -> Labeler
 initLabeler ad sk pk = Labeler (cipherBytesToSym $ dhPerform sk pk) cipherZeroNonce (convert ad)
@@ -77,11 +78,11 @@ initRemote :: MonadThrow m => EntityLocal -> EntityRemote -> m RemoteSession
 initRemote el@EntityLocal{..} EntityRemote{..} = do
   let outName = asString _elName <> ":" <> asString _erName
       inName = asString _erName <> ":" <> asString _elName
-      sendL = initLabeler (encodeUtf8 outName) (kpSecret _elStatic) _erStatic
-      recvL = initLabeler (encodeUtf8 inName) (kpSecret _elStatic) _erStatic
+      sendL = initLabeler (encodeUtf8 outName) (_ekSecret _elStatic) $ _epPublic _erStatic
+      recvL = initLabeler (encodeUtf8 inName) (_ekSecret _elStatic) $ _epPublic _erStatic
   return $ RemoteSession outName _erName
-    (noise noiseK InitiatorRole el _erStatic)
-    (noise noiseK ResponderRole el _erStatic)
+    (noise noiseK InitiatorRole el $ _epPublic _erStatic)
+    (noise noiseK ResponderRole el $ _epPublic _erStatic)
     sendL recvL (makeLabel recvL) 0
 
 

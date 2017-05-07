@@ -79,6 +79,7 @@ library
                      , Kadena.Types.Comms
                      , Kadena.Types.Config
                      , Kadena.Types.Dispatch
+                     , Kadena.Types.Entity
                      , Kadena.Types.Event
                      , Kadena.Types.Log
                      , Kadena.Types.Message

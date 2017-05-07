@@ -15,10 +15,6 @@ module Kadena.Private.Types
   ,Labeled(..)
   ,Noise
   ,lSymKey,lNonce,lAssocData
-  ,EntityLocal(..)
-  ,elName,elStatic,elEphemeral
-  ,EntityRemote(..)
-  ,erName,erStatic
   ,RemoteSession(..)
   ,rsName,rsEntity,rsSendNoise,rsRecvNoise,rsSendLabeler,rsRecvLabeler,rsLabel,rsVersion
   ,EntitySession(..)
@@ -54,7 +50,6 @@ import Control.Monad.State.Strict
 import Crypto.Noise (NoiseState)
 import Crypto.Noise.Cipher (Cipher(..), AssocData)
 import Crypto.Noise.Cipher.AESGCM (AESGCM)
-import Crypto.Noise.DH (KeyPair, DH(..))
 import Crypto.Noise.DH.Curve25519 (Curve25519)
 import Crypto.Noise.Hash.SHA256 (SHA256)
 import Data.ByteArray (ByteArray, ByteArrayAccess)
@@ -75,6 +70,7 @@ import Data.Aeson (ToJSON,FromJSON)
 
 import Kadena.Types.Base (Alias(..))
 import Kadena.Types.Comms (Comms(..),initCommsNormal,readCommNormal,writeCommNormal)
+import Kadena.Types.Entity (EntityLocal,EntityRemote)
 
 import Pact.Types.Orphans ()
 import Pact.Types.Util (AsString(..))
@@ -94,23 +90,6 @@ data Labeler = Labeler {
   , _lAssocData :: !AssocData
   }
 makeLenses ''Labeler
-
-data EntityLocal = EntityLocal {
-    _elName :: !EntityName
-  , _elStatic :: !(KeyPair Curve25519)
-  , _elEphemeral :: !(KeyPair Curve25519)
-  }
-makeLenses ''EntityLocal
-instance Show EntityLocal where
-  show EntityLocal{..} = show ("EntityLocal:" <> asString _elName)
-
-data EntityRemote = EntityRemote {
-    _erName :: !EntityName
-  , _erStatic :: !(PublicKey Curve25519)
-  }
-makeLenses ''EntityRemote
-instance Show EntityRemote where
-  show EntityRemote{..} = show ("EntityRemote:" <> asString _erName)
 
 data RemoteSession = RemoteSession {
     _rsName :: !Text

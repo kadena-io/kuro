@@ -1,3 +1,4 @@
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -18,6 +19,8 @@ import qualified Data.Yaml as Y
 import Data.Word
 import Data.Maybe (fromJust, isJust)
 import Data.Default (def)
+import Data.String (fromString)
+import Control.Lens
 
 import qualified Data.Set as Set
 import Data.Map.Strict (Map)
@@ -28,6 +31,7 @@ import System.Directory
 import System.Exit
 
 import Kadena.Types hiding (logDir)
+import Kadena.Types.Entity
 import Apps.Kadena.Client hiding (main)
 
 import Pact.Types.SQLite
@@ -56,22 +60,30 @@ awsNodes = fmap (\h -> NodeId h 10000 ("tcp://" ++ h ++ ":10000") $ Alias (BSC.p
 awsKeyMaps :: [NodeId] -> [(PrivateKey, PublicKey)] -> (Map NodeId PrivateKey, Map NodeId PublicKey)
 awsKeyMaps nodes' ls = (M.fromList $ zip nodes' (fst <$> ls), M.fromList $ zip nodes' (snd <$> ls))
 
-getUserInput :: forall b. (Show b, Read b) => String -> Maybe b -> Maybe (b -> Either String b) -> IO b
+getUserInput :: forall b. (Show b, Read b) => String -> Maybe b ->
+                Maybe (b -> Either String b) -> IO b
 getUserInput prompt defaultVal safetyCheck = do
   putStrLn prompt
   hFlush stdout
   input' <- getLine
   if input' == "" && isJust defaultVal
-  then do
-    putStrLn ("Set to recommended value: " ++ (show $ fromJust defaultVal)) >> hFlush stdout
+    then do
+    putStrLn ("Set to recommended value: " ++ (show $ fromJust defaultVal))
+    hFlush stdout
     return $ fromJust defaultVal
-  else
+    else
     case readMaybe input' of
-      Nothing -> putStrLn "Invalid Input, try again" >> hFlush stdout >> getUserInput prompt defaultVal safetyCheck
+      Nothing -> do
+        putStrLn "Invalid Input, try again"
+        hFlush stdout
+        getUserInput prompt defaultVal safetyCheck
       Just y -> case safetyCheck of
         Nothing -> return y
         Just f -> case f y of
-          Left err -> putStrLn err >> hFlush stdout >> getUserInput prompt defaultVal safetyCheck
+          Left err -> do
+            putStrLn err
+            hFlush stdout
+            getUserInput prompt defaultVal safetyCheck
           Right y' -> return y'
 
 main :: IO ()
@@ -79,12 +91,11 @@ main = do
   runAws <- getArgs
   case runAws of
     [] -> mainLocal
-    [v,clustersFile,clientsFile] | v == "--distributed" -> mainAws clustersFile clientsFile
-    err -> putStrLn $ "Invalid args, wanted `` or `--aws path-to-cluster-ip-file path-to-client-ip-file` but got: " ++ show err
+    [v,clustersFile] | v == "--distributed" -> mainAws clustersFile
+    err -> putStrLn $ "Invalid args, wanted `` or `--aws path-to-cluster-ip-file` but got: " ++ show err
 
 data ConfigParams = ConfigParams
   { clusterCnt :: !Int
-  , clientCnt :: !Int
   , aeRepLimit :: !Int
   , ppThreadCnt :: !Int
   , ppUsePar :: !Bool
@@ -97,12 +108,12 @@ data ConfigParams = ConfigParams
   , enableWB :: !Bool
   , hostStaticDirB :: !Bool
   , adminKeyCnt :: !Int
+  , entityCnt :: !Int
   } deriving (Show)
 
 data ConfGenMode =
   AWS
-  { awsClientCnt :: !Int
-  , awsClusterCnt :: !Int } |
+  { awsClusterCnt :: !Int } |
   LOCAL
   deriving (Show, Eq)
 data YesNo = Yes | No deriving (Show, Eq, Read)
@@ -116,43 +127,74 @@ sparksThreadsToBool :: SparksThreads -> Bool
 sparksThreadsToBool Sparks = True
 sparksThreadsToBool Threads = False
 
+validate :: (a -> Bool) -> String -> Maybe (a -> Either String a)
+validate f msg = Just $ \a -> if f a then Right a else Left msg
+
 getParams :: ConfGenMode -> IO ConfigParams
 getParams cfgMode = do
   putStrLn "When a recommended setting is available, press Enter to use it" >> hFlush stdout
-  logDir' <- getUserInput "[FilePath] Which directory should hold the log files and SQLite DB's? (recommended: ./log)" (Just "./log") $ Just (\(x::FilePath)-> if null x then Left "This is required" else Right x)
-  confDir' <- getUserInput "[FilePath] Where should `genconfs` write the configuration files? (recommended: ./conf)" (Just "./conf") $ Just (\(x::FilePath)-> if null x then Left "This is required" else Right x)
+  let reqd = validate null "This is required"
+  logDir' <- getUserInput
+    "[FilePath] Which directory should hold the log files and SQLite DB's? (recommended: ./log)" (Just "./log") reqd
+  confDir' <- getUserInput
+    "[FilePath] Where should `genconfs` write the configuration files? (recommended: ./conf)" (Just "./conf") reqd
   confDirExists <- doesDirectoryExist confDir'
   unless confDirExists $ do
     absPath' <- makeAbsolute confDir'
-    putStrLn ("Warning: " ++ confDir' ++ " does not exist (absPath:" ++ absPath' ++" )") >> hFlush stdout
-    mkConfDir' <- yesNoToBool <$> getUserInput "[Yes|No] Should we create it? (recommended: Yes)" (Just Yes) Nothing
+    putStrLn ("Warning: " ++ confDir' ++ " does not exist (absPath:" ++ absPath' ++" )")
+    hFlush stdout
+    mkConfDir' <-
+      yesNoToBool <$> getUserInput "[Yes|No] Should we create it? (recommended: Yes)"
+        (Just Yes) Nothing
     if mkConfDir'
       then createDirectoryIfMissing True confDir'
       else die "Configuration directory is required and must exist"
   let checkGTE gt = Just $ \x -> if x >= gt then Right x else Left $ "Must be >= " ++ show gt
-  (clusterCnt',clientCnt') <- case cfgMode of
-    LOCAL -> (,) <$> getUserInput "[Integer] Number of consensus servers?" Nothing (checkGTE 3)
-                 <*> getUserInput "[Integer] Number of clients?" Nothing Nothing
-    AWS{..} -> return (awsClusterCnt,awsClientCnt)
-  heartbeat' <- getUserInput "[Integer] Leader's heartbeat timeout (in seconds)? (recommended: 2)" (Just 2) $ checkGTE 1
+  clusterCnt' <- case cfgMode of
+    LOCAL -> getUserInput "[Integer] Number of consensus servers?" Nothing (checkGTE 3)
+    AWS{..} -> return awsClusterCnt
+  heartbeat' <- getUserInput
+    "[Integer] Leader's heartbeat timeout (in seconds)? (recommended: 2)" (Just 2) $ checkGTE 1
   let elMinRec = (5 * heartbeat')
-  electionMin' <- getUserInput ("[Integer] Election timeout min in seconds? (recommended: " ++ show elMinRec ++ ")") (Just elMinRec) $ checkGTE (2*heartbeat')
+  electionMin' <- getUserInput
+    ("[Integer] Election timeout min in seconds? (recommended: " ++ show elMinRec ++ ")")
+    (Just elMinRec) $ checkGTE (2*heartbeat')
   let elMaxRec = (clusterCnt'*2)+electionMin'
-  electionMax' <- getUserInput ("[Integer] Election timeout max in seconds? (recommended: >=" ++ show elMaxRec ++ ")") (Just elMaxRec) $ checkGTE (1 + electionMin')
+  electionMax' <- getUserInput
+    ("[Integer] Election timeout max in seconds? (recommended: >=" ++ show elMaxRec ++ ")") (Just elMaxRec) $
+    checkGTE (1 + electionMin')
   let aeRepRec = 10000*heartbeat'
-  aeRepLimit' <- getUserInput ("[Integer] Pending transaction replication limit per heartbeat? (recommended: " ++ show aeRepRec ++ ")") (Just aeRepRec) $ checkGTE 1
+  aeRepLimit' <- getUserInput
+    ("[Integer] Pending transaction replication limit per heartbeat? (recommended: " ++ show aeRepRec ++ ")")
+    (Just aeRepRec) $ checkGTE 1
   let inMemRec = (10*aeRepLimit')
-  inMemTxs' <- getUserInput ("[Integer] How many committed transactions should be cached? (recommended: " ++ show inMemRec ++ ")" ) (Just inMemRec) $ checkGTE 0
-  ppUsePar' <- sparksThreadsToBool <$> getUserInput "[Sparks|Threads] Should the Crypto PreProcessor use spark or green thread based concurrency? (recommended: Sparks)" (Just Sparks) Nothing
-  ppThreadCnt' <- if ppUsePar'
-                  then getUserInput "[Integer] How many transactions should the Crypto PreProcessor work on at once? (recommended: 10)" (Just 10) $ checkGTE 1
-                  else getUserInput "[Integer] How many green threads should be allocated to the Crypto PreProcessor? (recommended: 5 to 100)" Nothing $ checkGTE 1
-  enableWB' <- yesNoToBool <$> getUserInput "[Yes|No] Use write-behind backend? (recommended: Yes)" (Just Yes) Nothing
-  hostStaticDir' <- yesNoToBool <$> getUserInput "[Yes|No] Should each node host the contents of './static' as '<host>:<port>/'? (recommended: Yes)" (Just Yes) Nothing
-  adminKeyCnt' <- getUserInput ("[Integer] How many admin key pair(s) should be made? (recommended: 1)" ) (Just 1) $ checkGTE 1
+  inMemTxs' <- getUserInput
+    ("[Integer] How many committed transactions should be cached? (recommended: " ++ show inMemRec ++ ")" )
+    (Just inMemRec) $ checkGTE 0
+  ppUsePar' <- sparksThreadsToBool <$> getUserInput
+    "[Sparks|Threads] Should the Crypto PreProcessor use spark or green thread based concurrency? (recommended: Sparks)"
+    (Just Sparks) Nothing
+  ppThreadCnt' <-
+    if ppUsePar'
+    then getUserInput
+      "[Integer] How many transactions should the Crypto PreProcessor work on at once? (recommended: 10)"
+      (Just 10) $ checkGTE 1
+    else getUserInput
+      "[Integer] How many green threads should be allocated to the Crypto PreProcessor? (recommended: 5 to 100)"
+      Nothing $ checkGTE 1
+  enableWB' <- yesNoToBool <$>
+     getUserInput "[Yes|No] Use write-behind backend? (recommended: Yes)" (Just Yes) Nothing
+  hostStaticDir' <- yesNoToBool <$>
+    getUserInput "[Yes|No] Should each node host the contents of './static' as '<host>:<port>/'? (recommended: Yes)"
+    (Just Yes) Nothing
+  adminKeyCnt' <- getUserInput
+    "[Integer] How many admin key pair(s) should be made? (recommended: 1)"
+    (Just 1) $ checkGTE 1
+  entityCnt' <- getUserInput
+    "[Integer] How many private entities to partition the cluster? (default: 2, must be >0, <= cluster size)"
+    (Just 2) $ validate ((&&) <$> (> 0) <*> (<= clusterCnt')) ("Must be >0, <=" ++ show clusterCnt')
   return $ ConfigParams
     { clusterCnt = clusterCnt'
-    , clientCnt = clientCnt'
     , aeRepLimit = aeRepLimit'
     , ppThreadCnt = ppThreadCnt'
     , ppUsePar = ppUsePar'
@@ -165,6 +207,7 @@ getParams cfgMode = do
     , enableWB = enableWB'
     , hostStaticDirB = hostStaticDir'
     , adminKeyCnt = adminKeyCnt'
+    , entityCnt = entityCnt'
     }
 
 makeAdminKeys :: Int -> IO (Map Alias KeyPair)
@@ -173,24 +216,18 @@ makeAdminKeys cnt = do
   let adminAliases = (\i -> Alias $ BSC.pack $ "admin" ++ show i) <$> [0..cnt-1]
   return $ M.fromList $ zip adminAliases adminKeys'
 
-mainAws :: FilePath -> FilePath -> IO ()
-mainAws clustersFile clientsFile = do
+mainAws :: FilePath -> IO ()
+mainAws clustersFile = do
   !clusters <- lines <$> readFile clustersFile
-  !clients <- lines <$> readFile clientsFile
   clusterIds <- return $ awsNodes clusters
   clusterKeys <- makeKeys (length clusters) <$> (newGenIO :: IO SystemRandom)
   clusterKeyMaps <- return $ awsKeyMaps clusterIds clusterKeys
-  clientIds <- return $ awsNodes clients
-  clientKeys <- makeKeys (length clients) <$> (newGenIO :: IO SystemRandom)
-  clientKeyMaps <- return $ awsKeyMaps clientIds clientKeys
-  cfgParams@ConfigParams{..} <- getParams AWS {awsClientCnt = length clientIds, awsClusterCnt = length clusterIds}
+  cfgParams@ConfigParams{..} <- getParams AWS { awsClusterCnt = length clusterIds }
   adminKeyPairs <- makeAdminKeys adminKeyCnt
   adminKeys' <- return $ fmap _kpPublicKey adminKeyPairs
-  clusterConfs <- return (createClusterConfig cfgParams adminKeys' clusterKeyMaps 8000 <$> clusterIds)
-  clientConfs <- return (createClientConfig clusterConfs clientKeyMaps <$> clientIds)
-  mapM_ (\c' -> Y.encodeFile (confDir </> _host (_nodeId c') ++ "-server.yaml") c') clusterConfs
-  mapM_ (\(ci,c') -> Y.encodeFile (confDir </> _host ci ++ "-client.yaml") c') $ zip clientIds clientConfs
-  mapM_ (\(a,kp) -> Y.encodeFile (confDir </> (BSC.unpack $ unAlias a) ++ "-keypair.yaml") kp) $ M.toList adminKeyPairs
+  ents <- mkEntities clusterIds entityCnt
+  clusterConfs <- return (createClusterConfig cfgParams adminKeys' clusterKeyMaps ents 8000 <$> clusterIds)
+  mkConfs confDir clusterConfs adminKeyPairs
 
 mainLocal :: IO ()
 mainLocal = do
@@ -198,18 +235,46 @@ mainLocal = do
   adminKeyPairs <- makeAdminKeys adminKeyCnt
   adminKeys' <- return $ fmap _kpPublicKey adminKeyPairs
   clusterKeyMaps <- mkNodes (mkNode "127.0.0.1" 10000 "node") . makeKeys clusterCnt <$> (newGenIO :: IO SystemRandom)
-  clientKeyMaps <- mkNodes (mkNode "127.0.0.1" 11000 "client") . makeKeys clientCnt <$> (newGenIO :: IO SystemRandom)
-  clusterConfs <- return $ zipWith (createClusterConfig cfgParams adminKeys' clusterKeyMaps) [8000..] (M.keys (fst clusterKeyMaps))
-  clientConfs <- return (createClientConfig clusterConfs clientKeyMaps <$> M.keys (fst clientKeyMaps))
+  let nids = M.keys (fst clusterKeyMaps)
+  ents <- mkEntities nids entityCnt
+  clusterConfs <- return $ zipWith (createClusterConfig cfgParams adminKeys' clusterKeyMaps ents)
+                  [8000..] nids
+  mkConfs confDir clusterConfs adminKeyPairs
+
+
+mkConfs :: FilePath -> [Config] -> Map Alias KeyPair -> IO ()
+mkConfs confDir clusterConfs adminKeyPairs = do
   mapM_ (\c' -> Y.encodeFile ("conf" </> show (_port $ _nodeId c') ++ "-cluster.yaml") c') clusterConfs
-  mapM_ (\(i :: Int,c') -> Y.encodeFile ("conf" </> "client" ++ show i ++ "-client.yaml") c') (zip [0..] clientConfs)
   mapM_ (\(a,kp) -> Y.encodeFile (confDir </> (BSC.unpack $ unAlias a) ++ "-keypair.yaml") kp) $ M.toList adminKeyPairs
+  [clientKey] <- makeKeys 1 <$> (newGenIO :: IO SystemRandom)
+  Y.encodeFile (confDir </> "client.yaml") . createClientConfig clusterConfs $ clientKey
+
+entNames :: [EntityName]
+entNames = ["Alice","Bob","Carol","Dinesh"] ++ ((\a b -> fromString (a:[b])) <$> ['A'..'Z'] <*> ['A'..'Z'])
+
+mkEntities :: [NodeId] -> Int -> IO (Map NodeId EntityConfig)
+mkEntities nids ec = do
+  kpMap <- fmap M.fromList $ forM (take ec entNames) $ \en -> do
+    kps <- (,) <$> genKeyPair <*> genKeyPair
+    return (en,kps)
+  let mkR (ren,(rstatic,_)) = EntityRemote ren (EntityPublicKey (_ekPublic rstatic))
+      ents = (`M.mapWithKey` kpMap) $ \en (static,eph) ->
+        EntityConfig
+        (EntityLocal en static eph)
+        (map mkR $ M.toList $ M.delete en kpMap)
+        False
+      nodePerEnt = length nids `div` ec
+      alloc [] _ = []
+      alloc _ [] = error $ "Ran out of entities! Bad entity count: " ++ show ec
+      alloc nids' (e:es) = (map (,e) $ take nodePerEnt nids') ++ alloc (drop nodePerEnt nids') es
+  return $ M.fromList $ set (ix 0 . _2 . ecSending) True $ alloc nids (M.elems ents)
 
 toAliasMap :: Map NodeId a -> Map Alias a
 toAliasMap = M.fromList . map (first _alias) . M.toList
 
-createClusterConfig :: ConfigParams -> (Map Alias PublicKey) -> (Map NodeId PrivateKey, Map NodeId PublicKey) -> Int -> NodeId -> Config
-createClusterConfig cp@ConfigParams{..} adminKeys' (privMap, pubMap) apiP nid = Config
+createClusterConfig :: ConfigParams -> (Map Alias PublicKey) -> (Map NodeId PrivateKey, Map NodeId PublicKey) ->
+                       (Map NodeId EntityConfig) -> Int -> NodeId -> Config
+createClusterConfig cp@ConfigParams{..} adminKeys' (privMap, pubMap) entMap apiP nid = Config
   { _otherNodes           = Set.delete nid $ M.keysSet pubMap
   , _nodeId               = nid
   , _publicKeys           = toAliasMap $ pubMap
@@ -223,7 +288,7 @@ createClusterConfig cp@ConfigParams{..} adminKeys' (privMap, pubMap) apiP nid = 
   , _pactPersist          = mkPactPersistConfig cp True nid
   , _logRules             = def
   , _apiPort              = apiP
-  , _entity               = "me"
+  , _entity               = entMap M.! nid
   , _logDir               = logDir
   , _aeBatchSize          = aeRepLimit
   , _preProcThreadCount   = ppThreadCnt
@@ -244,10 +309,11 @@ mkPactPersistConfig ConfigParams{..} enablePersist NodeId{..} = PactPersistConfi
                   else PPBInMemory
   }
 
-createClientConfig :: [Config] -> (Map NodeId PrivateKey, Map NodeId PublicKey) -> NodeId -> ClientConfig
-createClientConfig clusterConfs (privMap, pubMap) nid =
+createClientConfig :: [Config] -> (PrivateKey,PublicKey) -> ClientConfig
+createClientConfig clusterConfs (priv,pub) =
     ClientConfig
-    { _ccSecretKey = privMap M.! nid
-    , _ccPublicKey = pubMap M.! nid
-    , _ccEndpoints = HM.fromList $ map (\n -> (show $ _alias (_nodeId n), _host (_nodeId n) ++ ":" ++ show (_apiPort n))) clusterConfs
+    { _ccSecretKey = priv
+    , _ccPublicKey = pub
+    , _ccEndpoints = HM.fromList $ (`map` clusterConfs) $ \n ->
+        (show $ _alias (_nodeId n), _host (_nodeId n) ++ ":" ++ show (_apiPort n))
     }

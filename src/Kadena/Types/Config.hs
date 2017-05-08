@@ -55,11 +55,11 @@ import qualified Data.Yaml as Y
 
 import Pact.Types.Util
 import Pact.Types.Logger (LogRules)
-import Pact.Types.Runtime (EntityName)
 import Pact.Types.SQLite (SQLiteConfig)
 import Pact.Persist.MSSQL (MSSQLConfig(..))
 
 import Kadena.Types.Base
+import Kadena.Types.Entity (EntityConfig)
 
 
 
@@ -74,7 +74,7 @@ data Config = Config
   , _heartbeatTimeout     :: !Int
   , _enableDebug          :: !Bool
   , _apiPort              :: !Int
-  , _entity               :: !EntityName
+  , _entity               :: !EntityConfig
   , _logDir               :: !FilePath
   , _enablePersistence    :: !Bool
   , _pactPersist          :: !PactPersistConfig

@@ -1,0 +1,7 @@
+PublicKey: 7dc4ad3591d5e8ea903b8828fdf761fa153658bdd30af704f66f6e78dfd6b1a7
+SecretKey: bf1d9c78ed99e6dfb751db7a15a91884fa97b44ee837c919d176c5a03c98baa1
+Endpoints:
+  node0: 127.0.0.1:8000
+  node1: 127.0.0.1:8001
+  node2: 127.0.0.1:8002
+  node3: 127.0.0.1:8003

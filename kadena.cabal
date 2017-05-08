@@ -197,6 +197,7 @@ executable genconfs
                      , yaml
                      , pact
                      , data-default
+                     , lens
   hs-source-dirs:      executables
   ghc-options:         -Wall -threaded -rtsopts
   default-language:    Haskell2010

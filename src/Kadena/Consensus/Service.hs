@@ -13,6 +13,7 @@ import Data.Thyme.Clock (UTCTime)
 import Kadena.Consensus.Handle
 import Kadena.Consensus.Util
 import Kadena.Types
+import Kadena.Types.Entity
 
 import Kadena.Messaging.Turbine
 import qualified Kadena.Messaging.Turbine as Turbine
@@ -75,7 +76,8 @@ launchCommitService :: Dispatch
 launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' gcm' = do
   rconf' <- readCurrentConfig gcm'
   commitEnv <- return $! Commit.initCommitEnv
-    dispatch' dbgPrint' (_pactPersist rconf') (_entity rconf') (_logRules rconf') publishMetric' getTimestamp' gcm'
+    dispatch' dbgPrint' (_pactPersist rconf') (_elName $ _ecLocal $ _entity rconf')
+      (_logRules rconf') publishMetric' getTimestamp' gcm'
   linkAsyncTrack "CommitThread" (Commit.runCommitService commitEnv nodeId' keySet')
   linkAsyncTrack "CommitHB" $ foreverHeart (_commitService dispatch') 1000000 Commit.Heart
 

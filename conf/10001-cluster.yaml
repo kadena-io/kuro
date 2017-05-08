@@ -7,13 +7,13 @@ pactPersist:
     type: SQLITE
 publicKeys:
 - - node0
-  - 0a38b9e904b57d5e8375dbb722dc19ef79493d683853b23a461a4a23b6a844d7
+  - 1592c265da1cdd6fdc77f9a03c7558df3e0fe91de7601793ddfff1d43527a303
 - - node1
-  - 9e559cba0f1c09e4ec03212b9f06788ff6a1ffb67743bac79d1993ca6395e643
+  - c497c1e7221a5c8c5acb2b27a21ba83500af23a0fd658c4cfc7826228f3d36f3
 - - node2
-  - 2bb2b61854317dbc8a91bb2d7e8ca0a27748761ef0f2ddbcab1a117d60f3fa32
+  - 07380d44d9bbb9da2a56f79a539b424f84f8c89f2179e41e6426ed680d0852b9
 - - node3
-  - e91b9e6f0f000ce25e0b84cf8aafed1df98779cfadcb1b5a4a0ae20399313df4
+  - 4ab6b5c62b4cfe4c46990deea62e40d414efb1cc7a5316d0ab799a3b4f64537a
 aeBatchSize: 20000
 heartbeatTimeout: 1000000
 logDir: ./log
@@ -38,18 +38,30 @@ otherNodes:
   host: '127.0.0.1'
   port: 10003
 inMemTxCache: 200000
-myPublicKey: 9e559cba0f1c09e4ec03212b9f06788ff6a1ffb67743bac79d1993ca6395e643
+myPublicKey: c497c1e7221a5c8c5acb2b27a21ba83500af23a0fd658c4cfc7826228f3d36f3
 nodeId:
   alias: node1
   fullAddr: tcp://127.0.0.1:10001
   host: '127.0.0.1'
   port: 10001
 enableDebug: true
-entity: me
+entity:
+  local:
+    ephemeral:
+      secret: f6f3bba96de69dd9750806dcdb6dabc777f73ba5e38ddce45f25323f7747def5
+      public: f05a697c3084df0e763c44bd3fe238376d262483bfee15253e53bef38ccf9017
+    static:
+      secret: 3a3c0140b7d8a02027e7e2f7ca6fcc9896590336818785da6ae5027a53facaa7
+      public: e9fda5d71695f9fc7f1684134c6cd583964b69dd5775055ade9bf08e2614c927
+    name: Alice
+  sending: false
+  remotes:
+  - static: 5bffafc89e7a87c83cc766b9d29a40682de974f9d9454d6312e0e4f0c3c31d7c
+    name: Bob
 adminKeys:
 - - admin0
-  - baf1423d60a98d5d2a33618a05888fd6cea3f9a7a463affc5bdd7e44323915c5
+  - afdc356e4bdd95d772c1c60444b87f4bf598d2da15969a46d9b8133fbb86a4d3
 nodeClass: active
 enablePersistence: true
-myPrivateKey: a61d86ba99ce9a083e865aa0f4a811816ab790dd092cd658193427c89dc4f231
+myPrivateKey: 6b8f41c797a75abc86ead47c2262810c5500cc876258d482eef62a27430d6964
 preProcUsePar: true

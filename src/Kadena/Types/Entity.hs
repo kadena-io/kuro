@@ -3,7 +3,15 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Kadena.Types.Entity where
+module Kadena.Types.Entity
+  ( EntityKeyPair(..)
+  , toKeyPair, genKeyPair
+  , EntityPublicKey(..)
+  , EntityLocal(..),elName,elStatic,elEphemeral
+  , EntityRemote(..),erName,erStatic
+  , EntityConfig(..),ecLocal,ecRemotes,ecSending
+  , EntityName
+  ) where
 
 import Control.Lens (makeLenses)
 import Control.Monad (unless)
@@ -80,6 +88,7 @@ data EntityConfig = EntityConfig
   } deriving (Show,Generic)
 instance ToJSON EntityConfig where toJSON = lensyToJSON 3
 instance FromJSON EntityConfig where parseJSON = lensyParseJSON 3
+makeLenses ''EntityConfig
 
 genKeyPair :: DH c => IO (EntityKeyPair c)
 genKeyPair = uncurry EntityKeyPair <$> dhGenKey

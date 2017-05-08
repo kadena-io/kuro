@@ -51,6 +51,7 @@ import Kadena.Types.Comms
 import Kadena.Types.Message
 import Kadena.Types.Config as Config
 import Kadena.Types.Spec
+import Kadena.Types.Entity
 import Kadena.History.Types ( History(..)
                             , PossiblyIncompleteResults(..))
 import qualified Kadena.History.Types as History
@@ -145,11 +146,11 @@ queueRpcs conf rpcs = do
 
 sendPrivateBatch :: Api ()
 sendPrivateBatch = do
+  conf <- view aiConfig >>= liftIO . readCurrentConfig
+  unless (_ecSending $ _entity conf) $ die "Node is not configured as private sending node"
   SubmitBatch cmds <- readJSON
   log $ "private: received batch of " ++ show (length cmds)
-
   when (null cmds) $ die "Empty Batch"
-  conf <- view aiConfig >>= liftIO . readCurrentConfig
   rpcs <- forM cmds $ \c -> do
     let cb@Pact.Command{..} = fmap encodeUtf8 c
     case eitherDecodeStrict' _cmdPayload of
@@ -158,7 +159,7 @@ sendPrivateBatch = do
         Nothing -> die $ "sendPrivateBatch: missing address in payload: " ++ show c
         Just Pact.Address{..} -> do
           pchan <- view (aiDispatch.privateChannel)
-          if Set.null _aTo || _aFrom `Set.member` _aTo || _aFrom /= _entity conf
+          if Set.null _aTo || _aFrom `Set.member` _aTo || _aFrom /= (_elName $ _ecLocal$ _entity conf)
             then die $ "sendPrivateBatch: invalid address in payload: " ++ show c
             else do
               er <- liftIO $ encrypt pchan $

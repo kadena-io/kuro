@@ -43,6 +43,7 @@ import Kadena.Types.Dispatch
 import Kadena.Util.Util (awsDashVar, linkAsyncTrack)
 import Kadena.Messaging.ZMQ
 import Kadena.Monitoring.Server (startMonitoring)
+import Kadena.Private.Service (runPrivateService)
 import qualified Kadena.Messaging.Turbine as Turbine
 
 data Options = Options
@@ -158,6 +159,7 @@ runServer = do
   -- Each node has its own snap monitoring server
   pubMetric <- startMonitoring rconf
   linkAsyncTrack "ZmqServerThread" $ runMsgServer dispatch me oNodes debugFn gcm
+  linkAsyncTrack "PrivateThread" $ runPrivateService dispatch rconf debugFn (_entity rconf)
   let raftSpec = simpleConsensusSpec debugFn (liftIO . pubMetric)
 
   restartTurbo <- newEmptyMVar

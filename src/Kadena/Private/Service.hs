@@ -11,14 +11,17 @@ import Control.Exception (SomeException)
 
 import Kadena.Types.Dispatch (Dispatch(..))
 import Kadena.Types.Config (Config(..))
+import Kadena.Types.Base (_alias)
 import Kadena.Types.Comms (readComm,writeComm)
 
 import Kadena.Private.Types
 import Kadena.Private.Private
+import Kadena.Types.Entity
 
-runPrivateService :: Dispatch -> Config -> (String -> IO ()) -> PrivateEnv -> IO ()
-runPrivateService Dispatch{..} Config{..} logFn pe@PrivateEnv{..} = do
-  ps <- PrivateState <$> initSessions _entityLocal _entityRemotes
+runPrivateService :: Dispatch -> Config -> (String -> IO ()) -> EntityConfig -> IO ()
+runPrivateService Dispatch{..} Config{..} logFn EntityConfig{..} = do
+  ps <- PrivateState <$> initSessions _ecLocal _ecRemotes
+  let pe = PrivateEnv _ecLocal _ecRemotes (_alias _nodeId)
   void $ runPrivate pe ps (handle _privateChannel (\s -> liftIO $ logFn $ "[Service|Private] " ++ s))
 
 handle :: PrivateChannel -> (String -> Private ()) -> Private ()

@@ -14,7 +14,7 @@ module Apps.Kadena.Client
 import qualified Control.Exception as Exception
 import Control.Monad.State
 import Control.Monad.Reader
-import Control.Lens
+import Control.Lens hiding (to,from)
 import Control.Monad.Catch
 import Control.Concurrent.Lifted (threadDelay)
 import Control.Concurrent.MVar
@@ -28,6 +28,7 @@ import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Lazy.Char8 as BSL
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Vector as V
+import qualified Data.Set as S
 import Data.Function
 
 import qualified Data.Aeson as A
@@ -44,9 +45,10 @@ import Data.Foldable
 import Data.Int
 import Data.Maybe
 import Data.List
+import Data.String
 import Data.Thyme.Clock
 import Data.Thyme.Time.Core (unUTCTime, toMicroseconds)
-import GHC.Generics
+import GHC.Generics (Generic)
 import Network.Wreq hiding (Raw)
 import System.Console.GetOpt
 import System.Environment
@@ -64,6 +66,7 @@ import Pact.Types.Util
 
 
 import Kadena.Types.Base hiding (printLatTime)
+import Kadena.Types.Entity (EntityName)
 import Kadena.Types.Command (CmdResultLatencyMetrics(..))
 
 data KeyPair = KeyPair {
@@ -127,6 +130,7 @@ data CliCmd =
   Poll String |
   PollMetrics String |
   Send Mode String |
+  Private EntityName [EntityName] String |
   Server (Maybe String) |
   Sleep Int
   deriving (Eq,Show)
@@ -169,14 +173,14 @@ readPrompt = do
   e <- liftIO $ isEOF
   if e then return Nothing else Just <$> liftIO getLine
 
-mkExec :: String -> Value -> Repl (Pact.Command T.Text)
-mkExec code mdata = do
+mkExec :: String -> Value -> Maybe Pact.Address -> Repl (Pact.Command T.Text)
+mkExec code mdata addy = do
   kps <- use keys
   rid <- use requestId >>= liftIO . (`modifyMVar` (\i -> return $ (succ i, i)))
   return $ decodeUtf8 <$>
     Pact.mkCommand
     (map (\KeyPair {..} -> (Pact.ED25519,_kpSecret,_kpPublic)) kps)
-    Nothing
+    addy
     (T.pack $ show rid)
     (Exec (ExecMsg (T.pack code) mdata))
 
@@ -186,20 +190,32 @@ postAPI ep rq = do
   r <- liftIO $ post ("http://" ++ s ++ "/api/v1/" ++ ep) (toJSON rq)
   asJSON r
 
-sendCmd :: Mode -> String -> Repl ()
-sendCmd m cmd = do
-  j <- use cmdData
-  e <- mkExec cmd j
-  let handleResp a r = do
+handleResp :: (t -> Repl ()) -> Response (ApiResponse t) -> Repl ()
+handleResp a r = do
         case r ^. responseBody of
           ApiFailure{..} -> flushStrLn $ "Failure in API Send: " ++ show _apiError
           ApiSuccess{..} -> a _apiResponse
-  case m of
-    Transactional -> postAPI "send" (SubmitBatch [e]) >>= handleResp (\resp -> do
+
+handleBatchResp :: RequestKeys -> Repl ()
+handleBatchResp resp = do
         rk <- return $ head $ _rkRequestKeys resp
-        showResult 10000 [rk] Nothing)
+        showResult 10000 [rk] Nothing
+
+sendCmd :: Mode -> String -> Repl ()
+sendCmd m cmd = do
+  j <- use cmdData
+  e <- mkExec cmd j Nothing
+  case m of
+    Transactional -> postAPI "send" (SubmitBatch [e]) >>= handleResp handleBatchResp
     Local -> postAPI "local" e >>=
              handleResp (\(resp :: Value) -> putJSON resp)
+
+sendPrivate :: Pact.Address -> String -> Repl ()
+sendPrivate addy msg = do
+  j <- use cmdData
+  e <- mkExec msg j (Just addy)
+  postAPI "private" (SubmitBatch [e]) >>= handleResp handleBatchResp
+
 
 putJSON :: ToJSON a => a -> Repl ()
 putJSON a = use fmt >>= \f -> flushStrLn $ case f of
@@ -213,7 +229,7 @@ putJSON a = use fmt >>= \f -> flushStrLn $ case f of
 batchTest :: Int -> String -> Repl ()
 batchTest n cmd = do
   j <- use cmdData
-  es@(SubmitBatch es') <- SubmitBatch <$> replicateM n (mkExec cmd j)
+  es@(SubmitBatch es') <- SubmitBatch <$> replicateM n (mkExec cmd j Nothing)
   flushStrLn $ "Preparing " ++ show (length es') ++ " messages ..."
   resp <- postAPI "send" es
   flushStrLn $ "Sent, retrieving responses"
@@ -383,8 +399,19 @@ cliCmds = [
    Format <$> optional ((symbol "yaml" >> pure YAML) <|>
                         (symbol "raw" >> pure Raw) <|>
                         (symbol "pretty" >> pure PrettyJSON) <|>
-                        (symbol "table" >> pure Table)))
+                        (symbol "table" >> pure Table))),
+  ("private","TO [FROM1 FROM2...] CMD","Send private transactional command to server addressed with entity names",
+   parsePrivate)
   ]
+
+parsePrivate :: TF.Parser CliCmd
+parsePrivate = do
+  to <- fromString <$> some alphaNum
+  spaces
+  from <- map fromString <$> brackets (sepBy (some alphaNum) (some space))
+  spaces
+  cmd <- some anyChar
+  return $ Private to from cmd
 
 parseCliCmd :: TF.Parser CliCmd
 parseCliCmd = foldl1 (<|>) (map (\(c,_,_,p) -> symbol c >> p) cliCmds)
@@ -450,6 +477,7 @@ handleCmd cmd = case cmd of
     keys .= [KeyPair sk pk]
   Format Nothing -> use fmt >>= flushStrLn . show
   Format (Just f) -> fmt .= f
+  Private to from msg -> sendPrivate (Pact.Address to (S.fromList from)) msg
 
 parseRK :: String -> Repl B.ByteString
 parseRK cmd = case B16.decode $ BS8.pack cmd of

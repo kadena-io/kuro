@@ -191,7 +191,7 @@ getParams cfgMode = do
     "[Integer] How many admin key pair(s) should be made? (recommended: 1)"
     (Just 1) $ checkGTE 1
   entityCnt' <- getUserInput
-    "[Integer] How many private entities to partition the cluster? (default: 2, must be >0, <= cluster size)"
+    "[Integer] How many private entities to distribute over cluster? (default: 2, must be >0, <= cluster size)"
     (Just 2) $ validate ((&&) <$> (> 0) <*> (<= clusterCnt')) ("Must be >0, <=" ++ show clusterCnt')
   return $ ConfigParams
     { clusterCnt = clusterCnt'
@@ -264,10 +264,11 @@ mkEntities nids ec = do
         (map mkR $ M.toList $ M.delete en kpMap)
         False
       nodePerEnt = length nids `div` ec
+      setHeadSending = set (ix 0 . _2 . ecSending) True
       alloc [] _ = []
       alloc _ [] = error $ "Ran out of entities! Bad entity count: " ++ show ec
-      alloc nids' (e:es) = (map (,e) $ take nodePerEnt nids') ++ alloc (drop nodePerEnt nids') es
-  return $ M.fromList $ set (ix 0 . _2 . ecSending) True $ alloc nids (M.elems ents)
+      alloc nids' (e:es) = (setHeadSending $ map (,e) $ take nodePerEnt nids') ++ alloc (drop nodePerEnt nids') es
+  return $ M.fromList $ alloc nids (M.elems ents)
 
 toAliasMap :: Map NodeId a -> Map Alias a
 toAliasMap = M.fromList . map (first _alias) . M.toList

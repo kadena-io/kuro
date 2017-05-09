@@ -7,7 +7,7 @@
 module Kadena.Commit.Service
   ( initCommitEnv
   , runCommitService
-  , module X
+  , module Kadena.Commit.Types
   ) where
 
 import Control.Lens hiding (Index, (|>))
@@ -24,34 +24,28 @@ import Data.Maybe (fromJust)
 import Data.ByteString (ByteString)
 import Data.Aeson (Value)
 
-import System.Directory
-
 import qualified Pact.Types.Command as Pact
-import Pact.Types.Command (CommandExecInterface(..), ExecutionMode(..),ParsedCode(..))
+import Pact.Types.Command ( ExecutionMode(..))
 import Pact.Types.Runtime (EntityName)
-import Pact.Types.RPC (PactRPC,PactConfig(..))
-import Pact.Server.PactService (applyCmd)
-import Pact.Types.Server (CommandState(..))
-import Pact.PersistPactDb (initDbEnv,pactdb)
-import Pact.Types.Logger (LogRules(..),initLoggers,doLog,logLog,Logger,Loggers,newLogger)
-import Pact.Interpreter (initSchema,initRefStore,PactDbEnv(..))
-import qualified Pact.Persist.SQLite as SQLite
-import qualified Pact.Persist.Pure as Pure
-import qualified Pact.Persist.MSSQL as MSSQL
-import Pact.Persist.CacheAdapter (initPureCacheWB)
-import Pact.Persist (Persister)
-import qualified Pact.Persist.WriteBehind as WB
+import Pact.Types.Logger (LogRules(..),initLoggers,doLog)
+import Pact.Types.RPC (PactConfig(..))
 
 import Kadena.Util.Util (linkAsyncTrack)
-import qualified Kadena.Types.Config as Config
-import Kadena.Commit.Types as X
+import Kadena.Types.Config
+import Kadena.Types.Base
+import Kadena.Commit.Types
+import Kadena.Types.Metric
+import Kadena.Types.Command
+import Kadena.Types.Log
 import Kadena.Types.Dispatch (Dispatch)
 import qualified Kadena.Types.Dispatch as D
 import qualified Kadena.History.Types as History
 import qualified Kadena.Log.Service as Log
+import Kadena.Types.Comms (Comms(..))
 import Kadena.Types.Event (pprintBeat)
 import Kadena.Private.Service (decrypt)
 import Kadena.Private.Types (PrivatePlaintext(..),PrivateResult(..))
+import Kadena.Commit.Pact
 
 initCommitEnv
   :: Dispatch
@@ -61,7 +55,7 @@ initCommitEnv
   -> LogRules
   -> (Metric -> IO ())
   -> IO UTCTime
-  -> Config.GlobalConfigTMVar
+  -> GlobalConfigTMVar
   -> CommitEnv
 initCommitEnv dispatch' debugPrint' persistConfig entName logRules' publishMetric' getTimestamp' gcm' = CommitEnv
   { _commitChannel = dispatch' ^. D.commitService
@@ -78,54 +72,20 @@ initCommitEnv dispatch' debugPrint' persistConfig entName logRules' publishMetri
 
 data ReplayStatus = ReplayFromDisk | FreshCommands deriving (Show, Eq)
 
-onUpdateConf :: CommitChannel -> Config.Config -> IO ()
-onUpdateConf oChan conf@Config.Config{ _nodeId = nodeId' } = do
+onUpdateConf :: CommitChannel -> Config -> IO ()
+onUpdateConf oChan conf@Config{ _nodeId = nodeId' } = do
   writeComm oChan $ ChangeNodeId nodeId'
-  writeComm oChan $ UpdateKeySet $ Config.confToKeySet conf
-
-logInit :: Logger -> String -> IO ()
-logInit l = logLog l "INIT"
-
-initPactService :: CommitEnv -> IO (CommandExecInterface (PactRPC ParsedCode))
-initPactService CommitEnv{..} = do
-  let PactPersistConfig{..} = _pactPersistConfig
-      logger = newLogger _commitLoggers "PactService"
-      initCI = initCommandInterface logger _commitLoggers _pactConfig
-      initWB p db = if _ppcWriteBehind
-        then do
-          wb <- initPureCacheWB p db  _commitLoggers
-          linkAsyncTrack "WriteBehindThread" (WB.runWBService wb)
-          initCI WB.persister wb
-        else initCI p db
-  case _ppcBackend of
-    PPBInMemory -> do
-      logInit logger "Initializing pure pact"
-      initCI Pure.persister Pure.initPureDb
-    PPBSQLite conf@SQLite.SQLiteConfig{..} -> do
-      dbExists <- doesFileExist dbFile
-      when dbExists $ logInit logger "Deleting Existing Pact DB File" >> removeFile dbFile
-      logInit logger "Initializing SQLite"
-      initWB SQLite.persister =<< SQLite.initSQLite conf _commitLoggers
-    PPBMSSQL conf connStr -> do
-      logInit logger "Initializing MSSQL"
-      initWB MSSQL.persister =<< MSSQL.initMSSQL connStr conf _commitLoggers
-
-initCommandInterface :: Logger -> Loggers -> PactConfig -> Persister w -> w -> IO (CommandExecInterface (PactRPC ParsedCode))
-initCommandInterface logger loggers pconf p db = do
-  pde <- PactDbEnv pactdb <$> newMVar (initDbEnv loggers p db)
-  cmdVar <- newMVar (CommandState initRefStore)
-  logInit logger "Creating Pact Schema"
-  initSchema pde
-  return CommandExecInterface
-    { _ceiApplyCmd = \eMode cmd -> applyCmd logger pconf pde cmdVar eMode cmd (Pact.verifyCommand cmd)
-    , _ceiApplyPPCmd = applyCmd logger pconf pde cmdVar }
+  writeComm oChan $ UpdateKeySet $ confToKeySet conf
 
 
 runCommitService :: CommitEnv -> NodeId -> KeySet -> IO ()
 runCommitService env nodeId' keySet' = do
   cmdExecInter <- initPactService env
-  initCommitState <- return $! CommitState { _nodeId = nodeId', _keySet = keySet', _commandExecInterface = cmdExecInter}
-  let cu = Config.ConfigUpdater (env ^. debugPrint) "Service|Commit" (onUpdateConf (env ^. commitChannel))
+  initCommitState <- return $! CommitState {
+    _csNodeId = nodeId',
+    _csKeySet = keySet',
+    _csCommandExecInterface = cmdExecInter}
+  let cu = ConfigUpdater (env ^. debugPrint) "Service|Commit" (onUpdateConf (env ^. commitChannel))
   linkAsyncTrack "CommitConfUpdater" $ runConfigUpdater cu (env ^. mConfig)
   void $ runRWST handle env initCommitState
 
@@ -151,14 +111,14 @@ handle = do
     case q of
       Heart t -> liftIO (pprintBeat t) >>= debug
       ChangeNodeId{..} -> do
-        prevNodeId <- use nodeId
+        prevNodeId <- use csNodeId
         unless (prevNodeId == newNodeId) $ do
-          nodeId .= newNodeId
+          csNodeId .= newNodeId
           debug $ "Changed NodeId: " ++ show prevNodeId ++ " -> " ++ show newNodeId
       UpdateKeySet{..} -> do
-        prevKeySet <- use keySet
+        prevKeySet <- use csKeySet
         unless (prevKeySet == newKeySet) $ do
-          keySet .= newKeySet
+          csKeySet .= newKeySet
           debug $ "Updated keyset"
       CommitNewEntries{..} -> do
         debug $ (show . Log.lesCnt $ logEntriesToApply)
@@ -212,7 +172,7 @@ getPendingPreProcCCC startTime mvResult = liftIO (tryReadMVar mvResult) >>= \cas
 
 applyCommand :: UTCTime -> LogEntry -> CommitService (RequestKey, CommandResult)
 applyCommand _tEnd le@LogEntry{..} = do
-  apply <- Pact._ceiApplyPPCmd <$> use commandExecInterface
+  apply <- Pact._ceiApplyPPCmd <$> use csCommandExecInterface
   startTime <- now
   logApplyLatency startTime le
   let chash = getCmdBodyHash _leCommand
@@ -286,12 +246,12 @@ applyPrivate LogEntry{..} PrivatePlaintext{..} = case decode _ppMessage of
   Right cmd -> case Pact.verifyCommand cmd of
     Pact.ProcFail e -> return $ Left e
     p@Pact.ProcSucc {} -> do
-      apply <- Pact._ceiApplyPPCmd <$> use commandExecInterface
+      apply <- Pact._ceiApplyPPCmd <$> use csCommandExecInterface
       Right <$> liftIO (apply (Transactional (fromIntegral _leLogIndex)) cmd p)
 
 applyLocalCommand :: (Pact.Command ByteString, MVar Value) -> CommitService ()
 applyLocalCommand (cmd, mv) = do
-  applyLocal <- Pact._ceiApplyCmd <$> use commandExecInterface
+  applyLocal <- Pact._ceiApplyCmd <$> use csCommandExecInterface
   cr <- liftIO $ applyLocal Local cmd
   liftIO $ putMVar mv (Pact._crResult cr)
 

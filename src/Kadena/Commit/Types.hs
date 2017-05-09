@@ -11,15 +11,18 @@ module Kadena.Commit.Types
   , pactPersistConfig, pactConfig, commitLoggers
   , privateChannel
   , CommitState(..)
-  , nodeId, keySet, commandExecInterface
+  , csNodeId,csKeySet,csCommandExecInterface
   , CommitChannel(..)
   , CommitService
-  , module X
+  , PactState(..),psRefStore
+  , PactEnv(..),peConfig,peMode,peDbEnv,peState
+  , PactM, runPact
   ) where
 
 import Control.Lens hiding (Index)
 
-import Control.Monad.Trans.RWS.Strict
+import Control.Monad.Trans.RWS.Strict (RWST)
+import Control.Monad.Reader (ReaderT,runReaderT)
 import Control.Concurrent.Chan (Chan)
 import Control.Concurrent (MVar)
 
@@ -27,17 +30,19 @@ import Data.Thyme.Clock (UTCTime)
 import Data.ByteString (ByteString)
 import Data.Aeson (Value)
 
-import qualified Pact.Types.Command as Pact
-import qualified Pact.Types.RPC as Pact
+import Pact.Types.Command (ExecutionMode,ParsedCode,CommandExecInterface)
+import qualified Pact.Types.Command as Pact (CommandResult,Command)
+import Pact.Types.Runtime (RefStore)
 import Pact.Types.Logger (Loggers)
+import Pact.Types.RPC (PactConfig,PactRPC)
+import Pact.Interpreter (PactDbEnv)
 
-import Kadena.Types.Base as X
-import Kadena.Types.Config as X hiding (nodeId, _nodeId)
-import Kadena.Types.Command as X
-import Kadena.Types.Comms as X
-import Kadena.Types.Metric as X
-import Kadena.Types.Log as X
-import Kadena.Types.Message as X
+
+import Kadena.Types.Base (NodeId)
+import Kadena.Types.Config (PactPersistConfig,GlobalConfigTMVar,KeySet)
+import Kadena.Types.Comms (Comms(..),initCommsNormal,readCommNormal,writeCommNormal)
+import Kadena.Types.Metric (Metric)
+import Kadena.Types.Log (LogEntry,LogEntries)
 
 import Kadena.Types.Event (Beat)
 
@@ -73,7 +78,7 @@ data CommitEnv = CommitEnv
   , _historyChannel :: !HistoryChannel
   , _privateChannel :: !PrivateChannel
   , _pactPersistConfig :: !PactPersistConfig
-  , _pactConfig :: !Pact.PactConfig
+  , _pactConfig :: !PactConfig
   , _debugPrint :: !(String -> IO ())
   , _commitLoggers :: !Loggers
   , _publishMetric :: !(Metric -> IO ())
@@ -83,10 +88,28 @@ data CommitEnv = CommitEnv
 makeLenses ''CommitEnv
 
 data CommitState = CommitState
-  { _nodeId :: !NodeId
-  , _keySet :: !KeySet
-  , _commandExecInterface :: !(Pact.CommandExecInterface (Pact.PactRPC Pact.ParsedCode))
+  { _csNodeId :: !NodeId
+  , _csKeySet :: !KeySet
+  , _csCommandExecInterface :: !(CommandExecInterface (PactRPC ParsedCode))
   }
 makeLenses ''CommitState
 
 type CommitService = RWST CommitEnv () CommitState IO
+
+data PactState = PactState {
+  _psRefStore :: RefStore
+  }
+makeLenses ''PactState
+
+data PactEnv p = PactEnv {
+      _peConfig :: PactConfig
+    , _peMode :: ExecutionMode
+    , _peDbEnv :: PactDbEnv p
+    , _peState :: MVar PactState
+    }
+$(makeLenses ''PactEnv)
+
+type PactM p a = ReaderT (PactEnv p) IO a
+
+runPact :: PactEnv p -> (PactM p a) -> IO a
+runPact e a = runReaderT a e

@@ -48,19 +48,17 @@ import Pact.Types.API
 import Kadena.Types.Command
 import Kadena.Types.Base
 import Kadena.Types.Comms
-import Kadena.Types.Message
 import Kadena.Types.Config as Config
 import Kadena.Types.Spec
 import Kadena.Types.Entity
 import Kadena.History.Types ( History(..)
                             , PossiblyIncompleteResults(..))
 import qualified Kadena.History.Types as History
-import qualified Kadena.Sender.Types as Sender
 import qualified Kadena.Commit.Types as Commit
 import Kadena.Types.Dispatch
-import Kadena.Util.Util
 import Kadena.Private.Service (encrypt)
 import Kadena.Private.Types (PrivatePlaintext(..),PrivateCiphertext(..),Labeled(..),PrivateResult(..))
+import Kadena.Consensus.Publish
 
 import Kadena.HTTP.Static
 
@@ -68,9 +66,9 @@ data ApiEnv = ApiEnv
   { _aiLog :: String -> IO ()
   , _aiDispatch :: Dispatch
   , _aiConfig :: GlobalConfigTMVar
-  , _aiPubConsensus :: MVar PublishedConsensus
-  , _aiGetTimestamp :: IO UTCTime
+  , _aiPublish :: Publish
   }
+
 makeLenses ''ApiEnv
 
 type Api a = ReaderT ApiEnv Snap a
@@ -79,8 +77,13 @@ runApiServer :: Dispatch -> Config.GlobalConfigTMVar -> (String -> IO ())
              -> Int -> MVar PublishedConsensus -> IO UTCTime -> IO ()
 runApiServer dispatch gcm logFn port mPubConsensus' timeCache' = do
   logFn $ "[Service|API]: starting on port " ++ show port
-  let conf' = ApiEnv logFn dispatch gcm mPubConsensus' timeCache'
   rconf <- readCurrentConfig gcm
+  let conf' = ApiEnv logFn dispatch gcm $
+        Publish
+        mPubConsensus'
+        dispatch
+        timeCache'
+        (_nodeId rconf)
   let logDir' = _logDir rconf
       hostStaticDir' = _hostStaticDir rconf
   serverConf' <- serverConf port logFn logDir'
@@ -120,29 +123,16 @@ sendPublicBatch :: Api ()
 sendPublicBatch = do
   SubmitBatch cmds <- readJSON
   when (null cmds) $ die "Empty Batch"
-  conf <- view aiConfig >>= liftIO . readCurrentConfig
   log $ "public: received batch of " ++ show (length cmds)
   rpcs <- return $ buildCmdRpc <$> cmds
-  queueRpcs conf rpcs
+  queueRpcs rpcs
 
 
-queueRpcs :: Config.Config -> [(RequestKey,CMDWire)] -> Api ()
-queueRpcs conf rpcs = do
-  PublishedConsensus{..} <- view aiPubConsensus >>= liftIO . tryReadMVar >>=
-    fromMaybeM (die "Invariant error: consensus unavailable")
-  ldr <- fromMaybeM (die "System unavaiable, please try again later") _pcLeader
-  rAt <- ReceivedAt <$> now
-  cmds' <- return $! snd <$> rpcs
-  rks' <- return $ RequestKeys $! fst <$> rpcs
-  if _nodeId conf == ldr
-  then do -- dispatch internally if we're leader, otherwise send outbound
-    oChan <- view (aiDispatch.inboundCMD)
-    liftIO $ writeComm oChan $ InboundCMDFromApi $ (rAt, NewCmdInternal cmds')
-    writeResponse $ ApiSuccess rks'
-  else do
-    oChan <- view (aiDispatch.senderService)
-    liftIO $ writeComm oChan $! Sender.ForwardCommandToLeader (NewCmdRPC cmds' NewMsg)
-    writeResponse $ ApiSuccess rks'
+queueRpcs :: [(RequestKey,CMDWire)] -> Api ()
+queueRpcs rpcs = do
+  p <- view aiPublish
+  rks <- publish p die rpcs
+  writeResponse $ ApiSuccess rks
 
 sendPrivateBatch :: Api ()
 sendPrivateBatch = do
@@ -170,13 +160,8 @@ sendPrivateBatch = do
                   let hsh = hash $ _lPayload $ _pcEntity
                       hc = Hashed pc hsh
                   return (RequestKey hsh,PCWire $ SZ.encode hc)
-  queueRpcs conf rpcs
+  queueRpcs rpcs
 
-pactTextToCMDWire :: Pact.Command T.Text -> CMDWire
-pactTextToCMDWire cmd = SCCWire $ SZ.encode (encodeUtf8 <$> cmd)
-
-buildCmdRpc :: Pact.Command T.Text -> (RequestKey,CMDWire)
-buildCmdRpc c@Pact.Command{..} = (RequestKey _cmdHash, pactTextToCMDWire c)
 
 poll :: Api ()
 poll = do
@@ -256,6 +241,3 @@ registerListener = do
       setJSON
       ls <- return $ ApiSuccess $ scrToAr scr
       writeLBS $ encode ls
-
-now :: Api UTCTime
-now = view aiGetTimestamp >>= liftIO

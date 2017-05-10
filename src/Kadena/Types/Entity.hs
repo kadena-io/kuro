@@ -7,10 +7,11 @@ module Kadena.Types.Entity
   ( EntityKeyPair(..)
   , toKeyPair, genKeyPair
   , EntityPublicKey(..)
-  , EntityLocal(..),elName,elStatic,elEphemeral
+  , EntityLocal(..),elName,elStatic,elEphemeral,ecSigner
   , EntityRemote(..),erName,erStatic
   , EntityConfig(..),ecLocal,ecRemotes,ecSending
   , EntityName
+  , Signer(..)
   ) where
 
 import Control.Lens (makeLenses)
@@ -24,6 +25,7 @@ import GHC.Generics (Generic)
 
 import Pact.Types.Runtime (EntityName)
 import Pact.Types.Util (AsString(..),lensyToJSON,lensyParseJSON,toB16JSON,parseB16JSON,toB16Text)
+import qualified Pact.Types.Crypto as Signing
 
 
 data EntityKeyPair c = EntityKeyPair
@@ -81,10 +83,24 @@ instance Show EntityRemote where
 instance ToJSON EntityRemote where toJSON = lensyToJSON 3
 instance FromJSON EntityRemote where parseJSON = lensyParseJSON 3
 
+newtype Signer = Signer { signer :: (Signing.PPKScheme, Signing.PrivateKey, Signing.PublicKey) }
+  deriving (Show,Generic)
+instance ToJSON Signer where
+  toJSON (Signer (_sc,priv,pub)) = object [
+    "private" .= priv
+    , "public" .= pub
+    ]
+instance FromJSON Signer where
+  parseJSON = withObject "Signer" $ \o ->
+    Signer <$>
+      ((,,) <$> pure Signing.ED25519 <*> o .: "private" <*> o .: "public")
+
+
 data EntityConfig = EntityConfig
   { _ecLocal :: EntityLocal
   , _ecRemotes :: [EntityRemote]
   , _ecSending :: Bool
+  , _ecSigner :: Signer
   } deriving (Show,Generic)
 instance ToJSON EntityConfig where toJSON = lensyToJSON 3
 instance FromJSON EntityConfig where parseJSON = lensyParseJSON 3

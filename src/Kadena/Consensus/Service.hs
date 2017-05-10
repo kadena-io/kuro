@@ -24,6 +24,7 @@ import qualified Kadena.Evidence.Service as Ev
 import qualified Kadena.PreProc.Service as PreProc
 import qualified Kadena.History.Service as History
 import qualified Kadena.HTTP.ApiServer as ApiServer
+import Kadena.Consensus.Publish
 
 launchApiService
   :: Dispatch
@@ -72,13 +73,16 @@ launchCommitService :: Dispatch
   -> NodeId
   -> IO UTCTime
   -> GlobalConfigTMVar
+  -> MVar PublishedConsensus
+  -> EntityConfig
   -> IO ()
-launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' gcm' = do
+launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' gcm' pubConsensus ent = do
   rconf' <- readCurrentConfig gcm'
   commitEnv <- return $! Commit.initCommitEnv
     dispatch' dbgPrint' (_pactPersist rconf') (_elName $ _ecLocal $ _entity rconf')
-      (_logRules rconf') publishMetric' getTimestamp' gcm'
-  linkAsyncTrack "CommitThread" (Commit.runCommitService commitEnv nodeId' keySet')
+      (_logRules rconf') publishMetric' getTimestamp' gcm' ent
+  pub <- return $! Publish pubConsensus dispatch' getTimestamp' nodeId'
+  linkAsyncTrack "CommitThread" (Commit.runCommitService commitEnv pub nodeId' keySet')
   linkAsyncTrack "CommitHB" $ foreverHeart (_commitService dispatch') 1000000 Commit.Heart
 
 launchLogService :: Dispatch
@@ -127,7 +131,7 @@ runConsensusService renv gcm spec rstate timeCache' mPubConsensus' = do
   launchHistoryService dispatch' dbgPrint' getTimestamp' rconf
   launchPreProcService dispatch' dbgPrint' getTimestamp' rconf
   launchSenderService dispatch' dbgPrint' publishMetric' mEvState mPubConsensus' gcm
-  launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' gcm
+  launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' gcm mPubConsensus' (_entity rconf)
   launchEvidenceService dispatch' dbgPrint' publishMetric' mEvState gcm mLeaderNoFollowers
   launchLogService dispatch' dbgPrint' publishMetric' rconf
   launchApiService dispatch' gcm dbgPrint' mPubConsensus' getTimestamp'

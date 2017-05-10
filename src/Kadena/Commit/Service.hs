@@ -46,6 +46,8 @@ import Kadena.Types.Event (pprintBeat)
 import Kadena.Private.Service (decrypt)
 import Kadena.Private.Types (PrivatePlaintext(..),PrivateResult(..))
 import Kadena.Commit.Pact
+import Kadena.Consensus.Publish
+import Kadena.Types.Entity
 
 initCommitEnv
   :: Dispatch
@@ -56,8 +58,9 @@ initCommitEnv
   -> (Metric -> IO ())
   -> IO UTCTime
   -> GlobalConfigTMVar
+  -> EntityConfig
   -> CommitEnv
-initCommitEnv dispatch' debugPrint' persistConfig entName logRules' publishMetric' getTimestamp' gcm' = CommitEnv
+initCommitEnv dispatch' debugPrint' persistConfig entName logRules' publishMetric' getTimestamp' gcm' ent = CommitEnv
   { _commitChannel = dispatch' ^. D.commitService
   , _historyChannel = dispatch' ^. D.historyChannel
   , _privateChannel = dispatch' ^. D.privateChannel
@@ -68,6 +71,7 @@ initCommitEnv dispatch' debugPrint' persistConfig entName logRules' publishMetri
   , _publishMetric = publishMetric'
   , _getTimestamp = getTimestamp'
   , _mConfig = gcm'
+  , _entityConfig = ent
   }
 
 data ReplayStatus = ReplayFromDisk | FreshCommands deriving (Show, Eq)
@@ -78,9 +82,9 @@ onUpdateConf oChan conf@Config{ _nodeId = nodeId' } = do
   writeComm oChan $ UpdateKeySet $ confToKeySet conf
 
 
-runCommitService :: CommitEnv -> NodeId -> KeySet -> IO ()
-runCommitService env nodeId' keySet' = do
-  cmdExecInter <- initPactService env
+runCommitService :: CommitEnv -> Publish -> NodeId -> KeySet -> IO ()
+runCommitService env pub nodeId' keySet' = do
+  cmdExecInter <- initPactService env pub
   initCommitState <- return $! CommitState {
     _csNodeId = nodeId',
     _csKeySet = keySet',

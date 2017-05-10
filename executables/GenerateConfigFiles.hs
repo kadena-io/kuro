@@ -35,6 +35,7 @@ import Kadena.Types.Entity
 import Apps.Kadena.Client hiding (main)
 
 import Pact.Types.SQLite
+import Pact.Types.Crypto
 
 
 mkNodes :: (Word64 -> NodeId) -> [(PrivateKey,PublicKey)] -> (Map NodeId PrivateKey, Map NodeId PublicKey)
@@ -257,12 +258,14 @@ mkEntities nids ec = do
   kpMap <- fmap M.fromList $ forM (take ec entNames) $ \en -> do
     kps <- (,) <$> genKeyPair <*> genKeyPair
     return (en,kps)
+  [(spub,spriv)] <- makeKeys 1 <$> (newGenIO :: IO SystemRandom)
   let mkR (ren,(rstatic,_)) = EntityRemote ren (EntityPublicKey (_ekPublic rstatic))
       ents = (`M.mapWithKey` kpMap) $ \en (static,eph) ->
         EntityConfig
         (EntityLocal en static eph)
         (map mkR $ M.toList $ M.delete en kpMap)
         False
+        (Signer (ED25519,spub,spriv))
       nodePerEnt = length nids `div` ec
       setHeadSending = set (ix 0 . _2 . ecSending) True
       alloc [] _ = []

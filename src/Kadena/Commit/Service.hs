@@ -26,7 +26,6 @@ import Data.Aeson (Value)
 
 import qualified Pact.Types.Command as Pact
 import Pact.Types.Command ( ExecutionMode(..))
-import Pact.Types.Runtime (EntityName)
 import Pact.Types.Logger (LogRules(..),initLoggers,doLog)
 import Pact.Types.RPC (PactConfig(..))
 

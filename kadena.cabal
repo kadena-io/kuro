@@ -41,6 +41,7 @@ library
                      , Kadena.Consensus.Handle.HeartbeatTimeout
                      , Kadena.Consensus.Handle.RequestVote
                      , Kadena.Consensus.Handle.RequestVoteResponse
+                     , Kadena.Consensus.Publish
                      , Kadena.Consensus.Service
                      , Kadena.Consensus.Util
                      , Kadena.Evidence.Service
@@ -144,7 +145,7 @@ library
                      , mtl
                      , mtl-compat
                      , network
-                     , pact >= 2.2.0
+                     , pact == 2.2.*
                      , pact-persist
                      , parallel
                      , parsers

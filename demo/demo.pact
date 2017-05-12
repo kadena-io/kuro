@@ -27,6 +27,31 @@
               { "balance": (+ dest-balance amount), "amount": amount
               , "data": { "transfer-from": src } }))))
 
+  (defpact payment (src dest amount)
+    "Demo continuation-style payment, using 'Alice' and 'Bob' entities."
+    (step-with-rollback
+     "Alice"
+     (with-read
+         accounts src { "balance" := src-balance }
+         (check-balance src-balance amount)
+         (update accounts src
+                 { "balance": (- src-balance amount), "amount": (- amount)
+                 , "data": { "transfer-to": dest, "message": "Starting pact" } })
+         (yield { "message": "Hi Bob" }))
+     (with-read
+         accounts src { "balance" := src-balance }
+         (update accounts src
+                 { "balance": (+ src-balance amount), "amount": amount
+                 , "data": { "message": (format "rollback: {}" (pact-txid)) } })))
+    (step
+     "Bob"
+     (with-read
+         accounts dest { "balance" := dest-balance }
+         (resume { "message":= message }
+                 (update accounts dest
+                         { "balance": (+ dest-balance amount), "amount": amount
+                         , "data": { "transfer-from": src, "message": message } })))))
+
   (defun read-account (id)
     "Read data for account ID"
     (+ { "account": id } (read accounts id)))

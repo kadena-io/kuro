@@ -149,7 +149,7 @@ sendPrivateBatch = do
         Nothing -> die $ "sendPrivateBatch: missing address in payload: " ++ show c
         Just Pact.Address{..} -> do
           pchan <- view (aiDispatch.privateChannel)
-          if Set.null _aTo || _aFrom `Set.member` _aTo || _aFrom /= (_elName $ _ecLocal$ _entity conf)
+          if _aFrom `Set.member` _aTo || _aFrom /= (_elName $ _ecLocal$ _entity conf)
             then die $ "sendPrivateBatch: invalid address in payload: " ++ show c
             else do
               er <- liftIO $ encrypt pchan $

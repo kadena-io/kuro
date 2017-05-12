@@ -11,9 +11,9 @@
 
   (defun keys-all (count matched) (= count matched))
 
-  (defun create-account (id)
+  (defun create-account (id init-bal)
     (insert accounts id
-         { "balance": 0.0, "amount": 0.0, "data": "Created account" }))
+         { "balance": init-bal, "amount": init-bal, "data": "Created account" }))
 
   (defun transfer (src dest amount)
     "transfer AMOUNT from SRC to DEST"
@@ -66,12 +66,12 @@
             , "data": "Admin account funding" }))
 
  (defun read-all ()
-   (map (read-account) ["Acct1" "Acct2"]))
+   (map (read-account) (keys accounts)))
 
 )
 
 (create-table accounts)
 
-(create-account "Acct1")
-(fund-account "Acct1" 1000000.0)
-(create-account "Acct2")
+;;(create-account "Acct1")
+;;(fund-account "Acct1" 1000000.0)
+;;(create-account "Acct2")

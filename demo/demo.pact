@@ -9,48 +9,45 @@
 
   (deftable accounts:{account})
 
-  (defun keys-all (count matched) (= count matched))
-
   (defun create-account (id init-bal)
     (insert accounts id
          { "balance": init-bal, "amount": init-bal, "data": "Created account" }))
 
   (defun transfer (src dest amount)
-    "transfer AMOUNT from SRC to DEST"
-    (with-read accounts src { "balance":= src-balance }
-    (check-balance src-balance amount)
-      (with-read accounts dest { "balance":= dest-balance }
-      (update accounts src
-              { "balance": (- src-balance amount), "amount": (- amount)
-              , "data": { "transfer-to": dest } })
-      (update accounts dest
-              { "balance": (+ dest-balance amount), "amount": amount
-              , "data": { "transfer-from": src } }))))
+    "transfer AMOUNT from SRC to DEST for unencrypted accounts"
+    (debit src amount { "transfer-to": dest })
+    (credit dest amount { "transfer-from": src }))
 
   (defpact payment (src dest amount)
-    "Demo continuation-style payment, using 'Alice' and 'Bob' entities."
+    "Two-phase confidential payment, using 'Alice' and 'Bob' entities."
     (step-with-rollback
      "Alice"
-     (with-read
-         accounts src { "balance" := src-balance }
-         (check-balance src-balance amount)
-         (update accounts src
-                 { "balance": (- src-balance amount), "amount": (- amount)
-                 , "data": { "transfer-to": dest, "message": "Starting pact" } })
-         (yield { "message": "Hi Bob" }))
-     (with-read
-         accounts src { "balance" := src-balance }
-         (update accounts src
-                 { "balance": (+ src-balance amount), "amount": amount
-                 , "data": { "message": (format "rollback: {}" (pact-txid)) } })))
+     (let ((result (debit src amount { "transfer-to": dest, "message": "Starting pact" })))
+       (yield { "result": result, "amount": amount }))
+     (credit src amount { "rollback": (pact-txid) }))
     (step
      "Bob"
-     (with-read
-         accounts dest { "balance" := dest-balance }
-         (resume { "message":= message }
-                 (update accounts dest
-                         { "balance": (+ dest-balance amount), "amount": amount
-                         , "data": { "transfer-from": src, "message": message } })))))
+     (resume { "result":= result, "amount":= debit-amount }
+       (credit dest debit-amount
+               { "transfer-from": src, "debit-result": result }))))
+
+  (defun debit (acct amount data)
+    "Debit ACCT for AMOUNT, enforcing positive amount and sufficient funds, annotating with DATA"
+    (enforce-positive amount)
+    (with-read accounts acct { "balance":= balance }
+      (check-balance balance amount)
+      (update accounts acct
+            { "balance": (- balance amount), "amount": (- amount)
+            , "data": data })))
+
+  (defun credit (acct amount data)
+    "Credit ACCT for AMOUNT, enforcing positive amount"
+    (enforce-positive amount)
+    (with-read accounts acct { "balance":= balance }
+      (update accounts acct
+            { "balance": (+ balance amount), "amount": amount
+            , "data": data })))
+
 
   (defun read-account (id)
     "Read data for account ID"
@@ -59,19 +56,17 @@
   (defun check-balance (balance amount)
     (enforce (<= amount balance) "Insufficient funds"))
 
-  (defun fund-account (address amount)
-    (update accounts address
-            { "balance": amount
-            , "amount": amount
-            , "data": "Admin account funding" }))
+  (defun enforce-positive (amount)
+    (enforce (>= amount 0.0) "amount must be positive"))
 
  (defun read-all ()
    (map (read-account) (keys accounts)))
 
+ (defun create-global-accounts ()
+   (create-account "Acct1" 1000000.0)
+   (create-account "Acct2" 0.0)
+   (read-all))
+
 )
 
 (create-table accounts)
-
-;;(create-account "Acct1")
-;;(fund-account "Acct1" 1000000.0)
-;;(create-account "Acct2")

@@ -167,7 +167,7 @@ handleYield em sigs PactYield{..} = do
     Local -> return Nothing
     Transactional tid -> do
       ry <- mapM encodeResume _pyYield
-      publishCont tid tid 1 False ry
+      when _pyExecuted $ publishCont tid tid 1 False ry
       return $ Just $ Pact tid (head em) sigs _pyStepCount
 
 reverseAddy :: EntityName -> Address -> Address
@@ -203,37 +203,44 @@ applyContinuation cm@ContMsg{..} = do
                 (MsgData _pSigs Null (Just $ PactStep _cmStep _cmRollback _cmTxId res))
                 _psRefStore
           tryAny (liftIO $ evalContinuation evalEnv _pContinuation) >>=
-            either (handleContFailure tid pe cm ps pact) (handleContSuccess tid pe cm ps pact)
+            either (handleContFailure tid pe cm ps) (handleContSuccess tid pe cm ps pact)
 
 
-handleContFailure :: TxId -> PactEnv p -> ContMsg -> PactState -> Pact -> SomeException -> PactM p CommandResult
-handleContFailure tid PactEnv{..} ContMsg{..} PactState{..} Pact{..} ex = do
+handleContFailure :: TxId -> PactEnv p -> ContMsg -> PactState -> SomeException -> PactM p CommandResult
+handleContFailure tid pe cm ps ex = doRollback tid pe cm ps True >> throwM ex
+
+doRollback :: TxId -> PactEnv p -> ContMsg -> PactState -> Bool -> PactM p ()
+doRollback tid PactEnv{..} ContMsg{..} PactState{..} executed = do
   let prevStep = pred _cmStep
       done = prevStep < 0
   if done
     then do
     debug $ "handleContFailure: reaping pact: " ++ show _cmTxId
     void $ liftIO $ swapMVar _peState $ PactState _psRefStore $ M.delete _cmTxId _psPacts
-    else publishCont _cmTxId tid prevStep True Nothing
-  throwM ex
-
+    else when executed $ publishCont _cmTxId tid prevStep True Nothing
 
 handleContSuccess :: TxId -> PactEnv p -> ContMsg -> PactState -> Pact -> EvalResult -> PactM p CommandResult
-handleContSuccess tid PactEnv{..} ContMsg{..} PactState{..} Pact{..} EvalResult{..} = do
+handleContSuccess tid pe@PactEnv{..} cm@ContMsg{..} ps@PactState{..} p@Pact{..} er@EvalResult{..} = do
+  py@PactYield {..} <- maybe (throwCmdEx "No yield from continuation exec!") return erYield
+  if _cmRollback then
+    doRollback tid pe cm ps _pyExecuted
+  else
+    doResume tid pe cm ps p er py
+  jsonResult' $ CommandSuccess (last erOutput)
+
+doResume :: TxId -> PactEnv p -> ContMsg -> PactState -> Pact -> EvalResult -> PactYield -> PactM p ()
+doResume tid PactEnv{..} ContMsg{..} PactState{..} Pact{..} EvalResult{..} PactYield{..} = do
   let nextStep = succ _cmStep
       isLast = nextStep >= _pStepCount
       updateState pacts = void $ liftIO $ swapMVar _peState (PactState erRefStore pacts)
   if isLast
     then do
-    debug $ "handleContSuccess: reaping pact: " ++ show _cmTxId
-    updateState $ M.delete _cmTxId _psPacts
-    else case erYield of
-      Nothing -> throwCmdEx $ "No yield from continuation exec!"
-      Just PactYield{..} -> do
-        ry <- mapM encodeResume _pyYield
-        publishCont _cmTxId tid nextStep False ry
-        updateState _psPacts
-  jsonResult' $ CommandSuccess (last erOutput)
+      debug $ "handleContSuccess: reaping pact: " ++ show _cmTxId
+      updateState $ M.delete _cmTxId _psPacts
+    else do
+      ry <- mapM encodeResume _pyYield
+      when _pyExecuted $ publishCont _cmTxId tid nextStep False ry
+      updateState _psPacts
 
 publishCont :: TxId -> TxId -> Int -> Bool -> Maybe Value -> PactM p ()
 publishCont pactTid tid step rollback resume = do

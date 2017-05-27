@@ -137,7 +137,7 @@ library
                      , lens-aeson
                      , lifted-base
                      , lz4
-                     , megaparsec >= 4.2.0 && < 4.3
+                     , megaparsec
                      , memory >= 0.13
                      , monad-control
                      , monad-loops
@@ -156,7 +156,6 @@ library
                      , safe-exceptions >= 0.1.4.0
                      , semigroups
                      , snap-core
-                     , snap-core-cors
                      , snap-server
                      , sqlite-simple
                      , stm

@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -26,19 +25,14 @@ module Kadena.Types.Base
 
 import Control.Lens
 import Control.Monad (mzero)
-
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC
 import Data.String
-
-import Data.Map (Map)
-import qualified Data.Map as Map
 
 import Data.AffineSpace ((.-.))
 import Data.Thyme.Clock
 
 import Data.Serialize (Serialize)
-import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.Aeson
 import Data.Aeson.Types
 
@@ -51,19 +45,14 @@ import Pact.Types.Crypto
 import Pact.Types.Util
 import Pact.Types.Command (RequestKey(..), initialRequestKey)
 
-newtype Alias = Alias { unAlias :: BSC.ByteString }
-  deriving (Eq, Ord, Generic, Serialize)
+
+newtype Alias = Alias { unAlias :: ByteString }
+  deriving (Eq, Ord, Generic, Serialize, ToJSON, ToJSONKey, FromJSON, FromJSONKey)
 instance IsString Alias where fromString s = Alias $ BSC.pack s
 
 instance Show Alias where
   show (Alias a) = BSC.unpack a
 
-instance ToJSON Alias where
-  toJSON = toJSON . decodeUtf8 . unAlias
-instance FromJSON Alias where
-  parseJSON (String s) = do
-    return $ Alias $ encodeUtf8 s
-  parseJSON _ = mzero
 
 data NodeId = NodeId { _host :: !String, _port :: !Word64, _fullAddr :: !String, _alias :: !Alias}
   deriving (Eq,Ord,Generic)
@@ -98,10 +87,6 @@ instance ToJSON EncryptionKey where
 instance FromJSON EncryptionKey where
   parseJSON s = EncryptionKey <$> parseB16JSON s
 
-instance ToJSON (Map NodeId PrivateKey) where
-  toJSON = toJSON . Map.toList
-instance FromJSON (Map NodeId PrivateKey) where
-  parseJSON = fmap Map.fromList . parseJSON
 
 -- | UTCTime from Thyme of when ZMQ received the message
 newtype ReceivedAt = ReceivedAt {_unReceivedAt :: UTCTime}

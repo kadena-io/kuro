@@ -35,7 +35,7 @@ import qualified Data.Serialize as SZ
 
 import Snap.Core
 import Snap.Http.Server as Snap
-import Snap.CORS
+import Snap.Util.CORS
 import System.FilePath
 import System.Directory
 import Data.Thyme.Clock

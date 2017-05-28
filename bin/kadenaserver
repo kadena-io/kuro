@@ -1,5 +1,5 @@
 #!/bin/sh
 
-kadenaserver=$(find ./.stack-work/install -iname kadenaserver)
+kadenaserver=$(stack exec -- which kadenaserver)
 
 $kadenaserver $*

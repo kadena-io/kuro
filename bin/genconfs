@@ -1,5 +1,5 @@
 #!/bin/sh
 
-genconfs=$(find ./.stack-work/install -iname genconfs)
+genconfs=$(stack exec -- which genconfs)
 
 $genconfs $*

@@ -1,5 +1,5 @@
 #!/bin/sh
 
-kadenaclient=$(find ./.stack-work/install -iname kadenaclient)
+kadenaclient=$(stack exec -- which kadenaclient)
 
 $kadenaclient $*

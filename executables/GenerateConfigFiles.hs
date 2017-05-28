@@ -18,7 +18,6 @@ import System.Environment
 import qualified Data.Yaml as Y
 import Data.Word
 import Data.Maybe (fromJust, isJust)
-import Data.Default (def)
 import Data.String (fromString)
 import Control.Lens
 
@@ -26,6 +25,7 @@ import qualified Data.Set as Set
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
 import qualified Data.HashMap.Strict as HM
+import qualified Data.HashSet as HS
 import qualified Data.ByteString.Char8 as BSC
 import System.Directory
 import System.Exit
@@ -36,6 +36,7 @@ import Apps.Kadena.Client hiding (main)
 
 import Pact.Types.SQLite
 import Pact.Types.Crypto
+import Pact.Types.Logger
 
 
 mkNodes :: (Word64 -> NodeId) -> [(PrivateKey,PublicKey)] -> (Map NodeId PrivateKey, Map NodeId PublicKey)
@@ -192,8 +193,9 @@ getParams cfgMode = do
     "[Integer] How many admin key pair(s) should be made? (recommended: 1)"
     (Just 1) $ checkGTE 1
   entityCnt' <- getUserInput
-    "[Integer] How many private entities to distribute over cluster? (default: 2, must be >0, <= cluster size)"
-    (Just 2) $ validate ((&&) <$> (> 0) <*> (<= clusterCnt')) ("Must be >0, <=" ++ show clusterCnt')
+    ("[Integer] How many private entities to distribute over cluster? (default: " ++ show clusterCnt' ++
+     ", must be >0, <= cluster size)")
+    (Just clusterCnt') $ validate ((&&) <$> (> 0) <*> (<= clusterCnt')) ("Must be >0, <=" ++ show clusterCnt')
   return $ ConfigParams
     { clusterCnt = clusterCnt'
     , aeRepLimit = aeRepLimit'
@@ -290,7 +292,7 @@ createClusterConfig cp@ConfigParams{..} adminKeys' (privMap, pubMap) entMap apiP
   , _enableDebug          = True
   , _enablePersistence    = True
   , _pactPersist          = mkPactPersistConfig cp True nid
-  , _logRules             = def
+  , _logRules             = mkLogRules
   , _apiPort              = apiP
   , _entity               = entMap M.! nid
   , _logDir               = logDir
@@ -321,3 +323,8 @@ createClientConfig clusterConfs (priv,pub) =
     , _ccEndpoints = HM.fromList $ (`map` clusterConfs) $ \n ->
         (show $ _alias (_nodeId n), _host (_nodeId n) ++ ":" ++ show (_apiPort n))
     }
+
+mkLogRules :: LogRules
+mkLogRules = LogRules $ HM.fromList [
+  ("PactService",LogRule Nothing Nothing (Just $ HS.fromList ["DEBUG"]))
+  ]

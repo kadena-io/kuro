@@ -53,7 +53,7 @@ makeKeys :: CryptoRandomGen g => Int -> g -> [(PrivateKey,PublicKey)]
 makeKeys 0 _ = []
 makeKeys n g = case generateKeyPair g of
   Left err -> error $ show err
-  Right (p,priv,g') -> (p,priv) : makeKeys (n-1) g'
+  Right (s,p,g') -> (s,p) : makeKeys (n-1) g'
 
 awsNodes :: [String] -> [NodeId]
 awsNodes = fmap (\h -> NodeId h 10000 ("tcp://" ++ h ++ ":10000") $ Alias (BSC.pack h))

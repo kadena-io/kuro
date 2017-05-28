@@ -225,20 +225,20 @@ executable kadenaclient
 test-suite hspec
   type: exitcode-stdio-1.0
   main-is: hspec.hs
-  other-modules:       EvidenceSpec
-                     , LogSpec
-                     , WireFormatSpec
   hs-source-dirs: tests
   default-language: Haskell2010
   build-depends:
-                       base
-                     , aeson
-                     , bytestring
-                     , cereal
-                     , containers
-                     , crypto-api
-                     , parallel
-                     , lens
-                     , hspec
-                     , kadena
-                     , text >= 1.2.0.0 && < 1.3
+                base
+              , aeson
+              , bytestring
+              , cereal
+              , containers
+              , unordered-containers
+              , crypto-api
+              , parallel
+              , lens
+              , ed25519-donna
+              , pact
+              , hspec
+              , kadena
+              , text

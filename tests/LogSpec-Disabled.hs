@@ -12,6 +12,7 @@ import Kadena.Types
 import Kadena.Log.LogApi hiding (keySet)
 -- import Kadena.Log.Types hiding (keySet)
 
+{-
 spec :: Spec
 spec = do
   describe "LogEntries manipulation functions" testLogEntries
@@ -274,3 +275,4 @@ overwriteState2 = LogState
     sampleLogs1 = updateLogEntriesHashes (lesMaxEntry sampleLogs0) $ mkLogEntries 10 19
     sampleLogs2 = updateLogEntriesHashes (lesMaxEntry sampleLogs1) $ mkLogEntries 20 29
     sampleLogs3 = updateLogEntriesHashes (lesMaxEntry sampleLogs2) $ mkLogEntriesBar 30 49
+-}

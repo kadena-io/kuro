@@ -28,27 +28,28 @@ testString1 = "foo"
 testString2 :: ByteString
 testString2 = "foo"
 
-testString3 = "foo"
-testString4 = "foo"
-
 testWireRoundtrip :: Spec
 testWireRoundtrip = do
-  it "ByteString Stability" $
+  let testString3 = "foo"
+      testString4 = "foo"
+  it "ByteString Stability (unary)" $
     testString1 `shouldBe` testString2
-  it "OverloadedStrings ByteString Stability" $
+  it "OverloadedStrings ByteString Stability (unary)" $
     testString3 `shouldBe` testString4
-  it "Hashing Stability" $
+  it "ByteString Stability (repeated)" $
+    replicate 10 testString1 `shouldBe` replicate 10 testString2
+  it "OverloadedStrings ByteString Stability (repeated)" $
+    replicate 10 testString3 `shouldBe` replicate 10 testString4
+  it "Stability (unary)" $
     hash testString1 `shouldBe` hash testString1
-  it "Hashing Generally 1" $
-    hash testString1 `shouldBe` hash testString2
-  it "Hashing Generally 2" $
-    hash "foo" `shouldBe` hash "foo"
-  it "Hashing Generally 3" $
-    hash testString3 `shouldBe` hash testString3
-  it "Hashing Generally 4" $
-    hash testString3 `shouldBe` hash testString4
-  it "Repeated Hashing" $
+  it "Stability (repeated)" $
     (hash <$> replicate 10 testString1) `shouldBe` (hash <$> replicate 10 testString1)
+  it "Equiv 1" $
+    hash testString1 `shouldBe` hash testString2
+  it "Equiv 3" $
+    hash testString3 `shouldBe` hash testString3
+  it "Equiv 4" $
+    hash testString3 `shouldBe` hash testString4
   it "Command" $
     fromWire Nothing keySet cmdSignedRPC1
       `shouldBe`

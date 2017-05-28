@@ -11,6 +11,7 @@ import qualified Data.Set as Set
 import Data.Aeson
 import Data.Text (Text)
 import Data.Maybe
+import Data.ByteString (ByteString)
 
 
 import Kadena.Types
@@ -21,8 +22,33 @@ import Pact.Types.RPC
 spec :: Spec
 spec = describe "WireFormat RoundTrips" testWireRoundtrip
 
+testString1 :: ByteString
+testString1 = "foo"
+
+testString2 :: ByteString
+testString2 = "foo"
+
+testString3 = "foo"
+testString4 = "foo"
+
 testWireRoundtrip :: Spec
 testWireRoundtrip = do
+  it "ByteString Stability" $
+    testString1 `shouldBe` testString2
+  it "OverloadedStrings ByteString Stability" $
+    testString3 `shouldBe` testString4
+  it "Hashing Stability" $
+    hash testString1 `shouldBe` hash testString1
+  it "Hashing Generally 1" $
+    hash testString1 `shouldBe` hash testString2
+  it "Hashing Generally 2" $
+    hash "foo" `shouldBe` hash "foo"
+  it "Hashing Generally 3" $
+    hash testString3 `shouldBe` hash testString3
+  it "Hashing Generally 4" $
+    hash testString3 `shouldBe` hash testString4
+  it "Repeated Hashing" $
+    (hash <$> replicate 10 testString1) `shouldBe` (hash <$> replicate 10 testString1)
   it "Command" $
     fromWire Nothing keySet cmdSignedRPC1
       `shouldBe`

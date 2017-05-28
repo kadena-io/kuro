@@ -6,15 +6,11 @@ pactPersist:
       pragmas: []
     type: SQLITE
 publicKeys:
-- - node0
-  - 09cf567ffa5b6b134d0ca77360480dac7d98a44e911706f2cceae9bd409f6683
-- - node1
-  - 9d3040100271c4e1ff189f10f83e68056cf379020b16b6ce7ce77660c1b7fb16
-- - node2
-  - 88c20466ac3dbc77b165bd1f4bbe23d99b085e5b1d3d714810fe51786a455e5f
-- - node3
-  - 58eaddb32be5766812b57be14f729f92cfafff8242d403366ff0e56c4ca35647
-aeBatchSize: 20000
+  node0: c37aecd72a7a79f123fd4f4700f111fd98557084a377e1cd4f037dd126f63aab
+  node1: 6183525dff4bf8e9d7931cd158d94af73ea331c72124495f9e51e2aff3f3c44d
+  node2: 92844e0287373c80c53b92be7c73051aaafae88cec5f649c2b44740f15472b11
+  node3: eaf1167e935fb6facfd30e4c21b6d82f3ddb174fc677b003fa964950fc3dfdac
+aeBatchSize: 4000
 heartbeatTimeout: 1000000
 logDir: ./log
 apiPort: 8002
@@ -37,8 +33,8 @@ otherNodes:
   fullAddr: tcp://127.0.0.1:10003
   host: '127.0.0.1'
   port: 10003
-inMemTxCache: 200000
-myPublicKey: 88c20466ac3dbc77b165bd1f4bbe23d99b085e5b1d3d714810fe51786a455e5f
+inMemTxCache: 40000
+myPublicKey: 92844e0287373c80c53b92be7c73051aaafae88cec5f649c2b44740f15472b11
 nodeId:
   alias: node2
   fullAddr: tcp://127.0.0.1:10002
@@ -47,28 +43,23 @@ nodeId:
 enableDebug: true
 entity:
   signer:
-    private: 4bcf7ff59d5c3c688514c43f2f8823cfd1caf5d8a89f2aeb513cc349111b3a51
-    public: ec541d5c9162b33330f189cc0130c6515e82e9043835ce420680ed87019a2cd4
+    private: 5aed333cc1d49844c0cce2ed4858131b5036014a46813c21f6cb85e10092281c
+    public: bdffc7ea2c0dc046ba571a53fbccc2f9bbf8fd19b0a620c7ef02a9b629f3e1ba
   local:
     ephemeral:
-      secret: 7c0aacc5547739f72490e102d056a9e8c3e9cbcacda5acde3fc9bd60b15a2676
-      public: b0062f9fd3d91ba5fd8308189355de723275440090da1ac90b6116c1a254831e
+      secret: 890ddea3df3982fe04557b91748b7d7aed8d26c2dd13732771a904c8ae80fc0c
+      public: de6153b368be6a0f1b6c29131b7fd66a19da17329377505e30da17ba60182c23
     static:
-      secret: d0241108ddc2a0f98e0eefd8933afc9579acac564636a748f13f79c959722e72
-      public: 779f99a9e177453b223425a0743c49fe7d538d2188c6976da3e70b2e1972695c
-    name: Carol
+      secret: afd3cfbb9c42f353c473b8b208a059bfc5d6e985d24a9eefd1320b126730fb3a
+      public: 9d50902e64ea5d70dcc4d69041b13f63860a95325a22e980e2402a140b15cf45
+    name: Bob
   sending: true
   remotes:
-  - static: 12e750ce61685f49bac50b71bcc49856556d5b465a2e08f6fe985b4bb0634673
+  - static: 6ae176d5372f2e37ded9670358e91b21215e2e19eff73986d8f199b8845f0f15
     name: Alice
-  - static: 8c1ab0099efdc00313b95b8f9408099ba856fc7318e11eecdbfc19e0053c4a7b
-    name: Bob
-  - static: 84b696eb6048beaf304376963472388765b083f895a14e42567863eb3143865c
-    name: Dinesh
 adminKeys:
-- - admin0
-  - 0111b7fd53f1bb885c0528536d9f64e9c4629524a13fb9872c57da6c306eddb1
+  admin0: 4a8542611e813cf233852bf51effc083505036247a346d4c5e31399adc344882
 nodeClass: active
 enablePersistence: true
-myPrivateKey: 8cb918df12b45ffbe94c2aaec437c59c25130f970365bd183b43f606286271cb
+myPrivateKey: 4212953862b3b5cdaa64d461697fc5b5d30c049bb8f34d26796453dfd6153226
 preProcUsePar: true

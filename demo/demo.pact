@@ -18,15 +18,15 @@
     (debit src amount { "transfer-to": dest })
     (credit dest amount { "transfer-from": src }))
 
-  (defpact payment (src dest amount)
-    "Two-phase confidential payment, using 'Alice' and 'Bob' entities."
+  (defpact payment (src-entity src dest-entity dest amount)
+    "Two-phase confidential payment, sending money from SRC at SRC-ENTITY to DEST at DEST-ENTITY."
     (step-with-rollback
-     "Alice"
+     src-entity
      (let ((result (debit src amount { "transfer-to": dest, "message": "Starting pact" })))
        (yield { "result": result, "amount": amount }))
      (credit src amount { "rollback": (pact-txid) }))
     (step
-     "Bob"
+     dest-entity
      (resume { "result":= result, "amount":= debit-amount }
        (credit dest debit-amount
                { "transfer-from": src, "debit-result": result }))))
@@ -66,6 +66,12 @@
    (create-account "Acct1" 1000000.0)
    (create-account "Acct2" 0.0)
    (read-all))
+
+ (defpact create-private-accounts ()
+   (step "Alice" (create-account "A" 1000.0))
+   (step "Bob" (create-account "B" 1000.0))
+   (step "Carol" (create-account "C" 1000.0))
+   (step "Dinesh" (create-account "D" 1000.0)))
 
 )
 

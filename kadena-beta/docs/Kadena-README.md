@@ -1,13 +1,7 @@
 # Kadena Blockchain Documentation
 ---
 
-
-#### Version
-
-Kadena Binary: 1.0 - 2.0
-
-Documentation: v1
-
+Kadena Version: 1.1.x
 
 # Getting Started
 
@@ -153,7 +147,7 @@ It operates in 2 modes:
 It will ask you how many cluster and client nodes you'd like.
 * `./genconfs --distributed <cluster-ips file> <client-ips file>` will create a set of config files using the IP addresses specified in the files.
 
-In either mode `genconfs` will try to recommend the right settings as you specify your environment:
+In either mode `genconfs` will interactively prompt for settings with recommendations.
 
 ```
 $ ./genconfs
@@ -162,35 +156,9 @@ When a recommended setting is available, press Enter to use it
 
 Set to recommended value: "./log"
 [FilePath] Where should `genconfs` write the configuration files? (recommended: ./conf)
-
-Set to recommended value: "./conf"
-[Integer] Number of consensus servers?
-4
-[Integer] Number of clients?
-1
-[Integer] Leader's heartbeat timeout (in seconds)? (recommended: 2)
-
-Set to recommended value: 2
-[Integer] Election timeout min in seconds? (recommended: 10)
-
-Set to recommended value: 10
-[Integer] Election timeout max in seconds? (recommended: >=18)
-
-Set to recommended value: 18
-[Integer] Pending transaction replication limit per heartbeat? (recommended: 20000)
-
-Set to recommended value: 20000
-[Integer] How many committed transactions should be cached? (recommended: 200000)
-
-Set to recommended value: 200000
-[Sparks|Threads] Should the Crypto PreProcessor use spark or green thread based concurrency? (recommended: Sparks)
-
-Set to recommended value: Sparks
-[Integer] How many transactions should the Crypto PreProcessor work on at once? (recommended: 100)
-
-Set to recommended value: 100
-
+... etc ...
 ```
+
 In distributed mode:
 
 ```
@@ -219,7 +187,7 @@ You may interact with any node's API. Indeed, this is what `kadenaclient` itself
 
 While simple to use/interact with, there are a lot of details for more advance usage.
 Please contact us on slack if there topics you'd like dive deeper into than we detail here.
-To begin, when the REPL is running there are a number of REPL specific commands are available:
+The client REPL has a `help` command to view the available commands.
 
 ```
 $ ./kadenaclient.sh
@@ -233,27 +201,10 @@ data [JSON]
     Show/set current JSON data payload
 load YAMLFILE [MODE]
     Load and submit yaml file with optional mode (transactional|local), defaults to transactional
-batch TIMES
-    Repeat command in batch message specified times
-pollMetrics REQUESTKEY
-    Poll each server for the request key but print latency metrics from each.
-poll REQUESTKEY
-    Poll server for request key
-exec COMMAND
-    Send command transactionally to server
-local COMMAND
-    Send command locally to server
-server [SERVERID]
-    Show server info or set current server
-help
-    Show command help
-keys [PUBLIC PRIVATE]
-    Show or set signing keypair
-exit
-    Exit client
-format [FORMATTER]
-    Show/set current output formatter (yaml|raw|pretty)
+...
 ```
+
+#### `load` command
 
 `load` is designed to assist with initializing a new environment on a running blockchain.
 Here is an example load yaml file:
@@ -277,7 +228,7 @@ batchCmd: |-
 
 ```
 
-#### Sample Usage: running the payments demo
+#### Sample Usage: running the payments demo (non-private) and testing batch performance
 
 Launch the client and (optionally) target the leader node (in this case `node0`).
 The only reason to target the leader is to forgo the forwarding of new transactions to the leader.
@@ -288,8 +239,9 @@ cd kadena-beta
 ./bin/osx/kadenaclient.sh
 node3> server node0
 ```
-Initialize the chain (for the Payments performance demo) and read the intial balances.
-When initialized, the `cmd` is set to a single dollar transfer.
+Initialize the chain (for the Payments performance demo) and create the global/non-private accounts.
+A feature of the yaml loadfile format is to set the batch `cmd`; here it is set to
+transfer `1.00` between the demo accounts.
 
 ```
 node0> load payments/demo.yaml
@@ -297,13 +249,13 @@ status: success
 data: Write succeeded
 
 Setting batch command to: (demo.transfer "Acct1" "Acct2" 1.00)
-node0> exec (demo.read-all)
+node0> exec (demo.create-global-accounts)
 account      | amount       | balance      | data
 ---------------------------------------------------------
 "Acct1"      | "1000000.0"  | "1000000.0"  | "Admin account funding"
 "Acct2"      | "0.0"        | "0.0"        | "Created account"
 ```
-Execute a single dollar transfer and check the balances again.
+Execute a single dollar transfer and check the balances again with `read-all`.
 
 ```
 node0> exec (demo.transfer "Acct1" "Acct2" 1.00)
@@ -373,8 +325,108 @@ First Seen:          2017-03-19 05:43:14.868 UTC
 ... etc ...
 ```
 
-NB: the `Crypto took` metric is only accurate when the concurrency system is set to `Threads`. 
+NB: the `Crypto took` metric is only accurate when the concurrency system is set to `Threads`.
 All other metrics are always accurate.
+
+#### Sample usage: Running the payments demo with private functionality
+
+Refer to "Entity Configuration" below for general notes on privacy configurations. This demo requires that there be 4 entities configured by the `genconfs` tool, which will name them "Alice", "Bob", "Carol" and "Dinesh". These would correspond to business entities on the blockchain, communicating with private messages over the blockchain. In a 4-node demo, these correspond to servers as follows:
+
+- Alice: node0
+- Bob: node1
+- Carol: node2
+- Dinesh: node3
+
+Launch the cluster, and load the demo.yaml file.
+
+```
+node3> load demo/demo.yaml
+status: success
+data: TableCreated
+
+Setting batch command to: (demo.transfer "Acct1" "Acct2" 1.00)
+```
+
+Create the private accounts by sending a _private message_ that executes a multi-step _pact_ to create private accounts on each entity. Change to Alice's server (node0) and send a private message to the other 3 participants with the demo code:
+
+```
+node3> server node0
+node0> private Alice [Bob Carol Dinesh] (demo.create-private-accounts)
+```
+
+The `private` command creates an encrypted message, sent from Alice to Bob, Carol and Dinesh. The `create-private-accounts` pact executes a single command on the different servers. To see the results, perform _local queries_ on each node.
+
+```
+node0> local (demo.read-all)
+account | amount   | balance  | data
+-------------------------------------------------
+"A"     | "1000.0" | "1000.0" | "Created account"
+node0> server node1
+node1> local (demo.read-all)
+account | amount   | balance  | data
+-------------------------------------------------
+"B"     | "1000.0" | "1000.0" | "Created account"
+node1> server node2
+node2> local (demo.read-all)
+account | amount   | balance  | data
+-------------------------------------------------
+"C"     | "1000.0" | "1000.0" | "Created account"
+node2> server node3
+node3> local (demo.read-all)
+account | amount   | balance  | data
+-------------------------------------------------
+"D"     | "1000.0" | "1000.0" | "Created account"
+```
+
+This illustrates how the different servers (which would be presumably behind firewalls, etc) contain different, private data.
+
+Now, execute a confidential transfer between Alice and Bob, transfering money from Alice's account "A" to Bob's account "B".
+
+For this, the pact "payment" is used, which executes the debit step on the "source" entity, and the credit step on the "dest" entity. You can see the function docs by simply executing `payment`:
+
+```
+node3> local demo.payment
+status: success
+data: (TDef defpact demo.payment (src-entity:<i> src:<j> dest-entity:<k> dest:<l>
+  amount:<m> -> <n>) "Two-phase confidential payment, sending money from SRC at SRC-ENTITY
+  to DEST at DEST-ENTITY.")
+```
+
+Set the server to node0 for Alice, and execute the pact to send 1.00 to Bob:
+
+```
+node3> server node0
+node0> private Alice [Bob] (demo.payment "Alice" "A" "Bob" "B" 1.00)
+status: success
+data:
+  amount: '1.00'
+  result: Write succeeded
+```
+
+To see the results, issue local queries on the nodes. Note that node2 and node 3 are unchanged:
+
+```
+node0> local (demo.read-all)
+account | amount  | balance  | data
+----------------------------------------------------------------------------
+"A"     | "-1.00" | "999.00" | {"transfer-to":"B","message":"Starting pact"}
+node0> server node1
+node1> local (demo.read-all)
+account | amount | balance   | data
+-------------------------------------------------------------------------------------
+"B"     | "1.00" | "1001.00" | {"debit-result":"Write succeeded","transfer-from":"A"}
+node1> server node2
+node2> local (demo.read-all)
+account | amount   | balance  | data
+-------------------------------------------------
+"C"     | "1000.0" | "1000.0" | "Created account"
+node2> server node3
+node3> local (demo.read-all)
+account | amount   | balance  | data
+-------------------------------------------------
+"D"     | "1000.0" | "1000.0" | "Created account"
+```
+
 
 #### Sample Usage: Viewing the Performance Monitor
 
@@ -388,7 +440,7 @@ The `kadena-beta` also bundles the [Pact TodoMVC](github.com/kadena-io/pact-todo
 $ cd kadena-beta
 
 # launch the cluster
- 
+
 $ ./bin/osx/kadenaclient.sh
 node3> load todomvc/demo.yaml
 
@@ -477,6 +529,19 @@ These settings should be identical for each node.
 * `electionTimeoutRange:[<min::microseconds>,<max::microseconds>]`: Classic Raft-Style election timeouts.
   * `min` should be >= 5x of `heartbeatTimeout`
   * `max` should be around `min + (heartbeatTimeout*clusterSize)`.
+
+### Entity Configuration and Confidentiality
+
+The Kadena platform uses the [Noise protocol](http://noiseprotocol.org/) to provide the best possible on-chain encryption, as used by Signal, Whatsapp and Facebook. Messages are thoroughly encrypted with perfect forward secrecy, resulting in opaque blobs on-chain that leak no information about contents, senders or recipients.
+
+Configuring for confidential execution employs the notion of "entities", which identify sub-clusters of nodes as belonging to a business entity with private data. Entities maintain keys for encrypting as well as signing.
+
+Within an entity sub-cluster, a single node is configured as a "sending node" which must be used to initiate private messages; this allows other sub-cluster nodes to avoid race conditions surrounding the key "ratcheting" used by the Noise protocol for forward secrecy; this way sub-cluster nodes will stay perfectly in sync and replicate properly.
+
+For a given entity, the `signer` and `local` entries must match for all nodes in the sub-cluster; only one may be designated as `sender` setting that to `true` for that node only. `remotes` list the static public key and the entity name for each remote entity in the cluster.
+
+The `signer` private and public keys are ED25519 signing keys; the `secret` and `public` keys for local ephemeral and static keys, as well as for remote public keys, are Curve25519 Diffie-Hellman keys.
+
 
 ### Performance Considerations
 

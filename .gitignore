@@ -4,6 +4,7 @@ kadena-beta.tgz
 payments-demo*
 *.swp
 aws-conf/*
+bin/*
 *.swp
 .dir-locals.el
 .stack-work/

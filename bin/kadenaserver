@@ -1,5 +1,0 @@
-#!/bin/sh
-
-kadenaserver=$(stack exec -- which kadenaserver)
-
-$kadenaserver $*

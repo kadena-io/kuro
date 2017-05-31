@@ -1,5 +1,0 @@
-#!/bin/sh
-
-genconfs=$(stack exec -- which genconfs)
-
-$genconfs $*

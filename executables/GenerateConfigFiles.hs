@@ -321,7 +321,10 @@ createClientConfig clusterConfs (priv,pub) =
     { _ccSecretKey = priv
     , _ccPublicKey = pub
     , _ccEndpoints = HM.fromList $ (`map` clusterConfs) $ \n ->
-        (show $ _alias (_nodeId n), _host (_nodeId n) ++ ":" ++ show (_apiPort n))
+        (show $ _alias (_nodeId n),Node
+          { _nEntity = (_elName (_ecLocal $ _entity n))
+          , _nURL = (_host (_nodeId n) ++ ":" ++ show (_apiPort n))
+          , _nSender = (_ecSending (_entity n)) } )
     }
 
 mkLogRules :: LogRules

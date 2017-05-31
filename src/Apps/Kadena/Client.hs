@@ -9,6 +9,7 @@
 module Apps.Kadena.Client
   ( main
   , ClientConfig(..), ccSecretKey, ccPublicKey, ccEndpoints
+  , Node(..)
   ) where
 
 import qualified Control.Exception as Exception
@@ -101,16 +102,24 @@ coptions =
            "Configuration File"
   ]
 
+data Node = Node
+  { _nEntity :: EntityName
+  , _nURL :: String
+  , _nSender :: Bool
+  } deriving (Eq,Generic,Ord)
+instance ToJSON Node where toJSON = lensyToJSON 2
+instance FromJSON Node where parseJSON = lensyParseJSON 2
+instance Show Node where
+  show Node{..} = _nURL ++ " [" ++ show _nEntity ++ ", sending: " ++ show _nSender ++ "]"
+
 data ClientConfig = ClientConfig {
       _ccSecretKey :: PrivateKey
     , _ccPublicKey :: PublicKey
-    , _ccEndpoints :: HM.HashMap String String
+    , _ccEndpoints :: HM.HashMap String Node
     } deriving (Eq,Show,Generic)
 makeLenses ''ClientConfig
-instance ToJSON ClientConfig where
-  toJSON = genericToJSON defaultOptions { fieldLabelModifier = drop 3 }
-instance FromJSON ClientConfig where
-  parseJSON = genericParseJSON defaultOptions { fieldLabelModifier = drop 3 }
+instance ToJSON ClientConfig where toJSON = lensyToJSON 3
+instance FromJSON ClientConfig where parseJSON = lensyParseJSON 3
 
 
 data Mode = Transactional|Local
@@ -165,7 +174,7 @@ getServer = do
   s <- use server
   case HM.lookup s ss of
     Nothing -> die $ "Invalid server id: " ++ show s
-    Just a -> return a
+    Just a -> return (_nURL a)
 
 readPrompt :: Repl (Maybe String)
 readPrompt = do
@@ -447,8 +456,8 @@ handleCmd cmd = case cmd of
   Server Nothing -> do
     use server >>= \s -> flushStrLn $ "Current server: " ++ s
     flushStrLn "Servers:"
-    view ccEndpoints >>= \es -> forM_ (HM.toList es) $ \(i,e) -> do
-      flushStrLn $ i ++ ": " ++ e
+    view ccEndpoints >>= \es -> forM_ (sort $ HM.toList es) $ \(i,e) -> do
+      flushStrLn $ i ++ ": " ++ show e
   Server (Just s) -> server .= s
   Batch n | n <= 50000 -> use batchCmd >>= batchTest n
           | otherwise -> void $ flushStrLn "Aborting: batch count limited to 50000"
@@ -523,7 +532,7 @@ main = do
            Y.decodeFileEither (_oConfig opts)
          void $ runStateT (runReaderT runREPL conf) $ ReplState
            {
-             _server = fst (head (HM.toList (_ccEndpoints conf))),
+             _server = fst (minimum $ HM.toList (_ccEndpoints conf)),
              _batchCmd = "\"Hello Kadena\"",
              _requestId = i,
              _cmdData = Null,

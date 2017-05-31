@@ -1,7 +1,19 @@
-PublicKey: 40c26c170c11f289971ed19ce94668d89a4716fb4f36edf7658e67b23cdc02e4
-SecretKey: f88ad24d2d67fa5979a13f94d3c63ee71cb35d6f721f522b777e8cd4136a21e0
-Endpoints:
-  node0: 127.0.0.1:8000
-  node1: 127.0.0.1:8001
-  node2: 127.0.0.1:8002
-  node3: 127.0.0.1:8003
+publicKey: 201a45a367e5ebc8ca5bba94602419749f452a85b7e9144f29a99f3f906c0dbc
+secretKey: 53108fc90b19a24aa7724184e6b9c6c1d3247765be4535906342bd5f8138f7d2
+endpoints:
+  node0:
+    sender: true
+    uRL: 127.0.0.1:8000
+    entity: Alice
+  node1:
+    sender: true
+    uRL: 127.0.0.1:8001
+    entity: Bob
+  node2:
+    sender: true
+    uRL: 127.0.0.1:8002
+    entity: Carol
+  node3:
+    sender: true
+    uRL: 127.0.0.1:8003
+    entity: Dinesh

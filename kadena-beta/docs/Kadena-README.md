@@ -179,15 +179,19 @@ For details about what each of these configuration choices do, please refer to t
 
 # Interacting With a Running Cluster
 
-All interaction with the cluster is done via a REST API.
-The REST API is identical to the [Pact development server](http://pact-language.readthedocs.io/en/latest/pact-reference.html#rest-api) API with the exception that every node will host it's own instance.
-You may interact with any node's API. Indeed, this is what `kadenaclient` itself does.
+Interaction with the cluster is performed via the Kadena REST API, exposed by each running node.
+The endpoints of interest here support the [Pact REST API](http://pact-language.readthedocs.io/en/latest/pact-reference.html#rest-api) for executing transactional and local commands on the cluster.
 
-### Via the `kadenaclient` REPL
+### The `kadenaclient` tool
 
-While simple to use/interact with, there are a lot of details for more advance usage.
-Please contact us on slack if there topics you'd like dive deeper into than we detail here.
-The client REPL has a `help` command to view the available commands.
+Kadena ships with `kadenaclient`, which is a command-line tool for interacting with the cluster via the REST API.
+It is an interactive program or "REPL", similar to the command-line itself. It supports command history,
+such that recently-issued commands are accessible via the up- and down-arrow keys, and the history can be
+searched with Control-R.
+
+#### Getting help
+
+The `help` command documents all available commands.
 
 ```
 $ ./kadenaclient.sh
@@ -204,10 +208,29 @@ load YAMLFILE [MODE]
 ...
 ```
 
+#### `server` command
+
+Issue `server` to list all nodes known to the client, and `server NODE` to point the client at
+the REST API for NODE.
+
+```
+node0> server
+Current server: node0
+Servers:
+node0: 127.0.0.1:8000 ["Alice", sending: True]
+node1: 127.0.0.1:8001 ["Bob", sending: True]
+node2: 127.0.0.1:8002 ["Carol", sending: True]
+node3: 127.0.0.1:8003 ["Dinesh", sending: True]
+node0> server node1
+node1>
+```
+
 #### `load` command
 
-`load` is designed to assist with initializing a new environment on a running blockchain.
-Here is an example load yaml file:
+`load` is designed to assist with initializing a new environment on a running blockchain,
+accepting a yaml file to instruct how the code and data is loaded.
+
+The beta ships with the "demo" smart contract for exploring this:
 
 ```
 $ tree kadena-beta/payments
@@ -239,8 +262,10 @@ cd kadena-beta
 ./bin/osx/kadenaclient.sh
 node3> server node0
 ```
-Initialize the chain (for the Payments performance demo) and create the global/non-private accounts.
-A feature of the yaml loadfile format is to set the batch `cmd`; here it is set to
+
+Initialize the chain with the `demo` smart contract, and create the global/non-private accounts.
+Note that the load process has an optional feature to set the batch command (see docs for `cmd` in help).
+The demo.yaml sets the batch command to
 transfer `1.00` between the demo accounts.
 
 ```
@@ -255,23 +280,26 @@ account      | amount       | balance      | data
 "Acct1"      | "1000000.0"  | "1000000.0"  | "Admin account funding"
 "Acct2"      | "0.0"        | "0.0"        | "Created account"
 ```
-Execute a single dollar transfer and check the balances again with `read-all`.
+Execute a single dollar transfer and check the balances again with `read-all`. `exec` sends
+a command to execute transactionally on the blockchain; `local` queries the local node (here "node0")
+to prevent a needless transaction for a query.
 
 ```
 node0> exec (demo.transfer "Acct1" "Acct2" 1.00)
 status: success
 data: Write succeeded
 
-node0> exec (demo.read-all)
+node0> local (demo.read-all)
 account      | amount       | balance      | data
 ---------------------------------------------------------
 "Acct1"      | "-1.00"      | "999999.00"  | {"transfer-to":"Acct2"}
 "Acct2"      | "1.00"       | "1.00"       | {"transfer-from":"Acct1"}
 ```
-Verify that `cmd` is properly setup and perform a `batch` test.
+
+Verify that `cmd` is properly setup, and perform a `batch` test.
 `batch N` will create N identical transactions, using the command specified in `cmd` for each, and then send them to the cluster via the server specified by `server` (in this case to `node0`).
 
-Once sent, the REPL will then `listen` for the final transaction, collect and show its timing metrics, and print out the throughput seen in the test (i.e. `"Finished Commit" / N`).
+Once sent, the client will then `listen` for the final transaction, collect and show its timing metrics, and print out the throughput seen in the test (i.e. `"Finished Commit" / N`).
 The "First Seen" time is the moment when the targeted server first saw the **batch** of transactions and the "Finished Commit" time delta fully captures the time it took for the replication, consensus, cryptography, and execution of the final transaction (meaning that all previous transactions needed to first be fully executed.)
 
 Some of the metrics may be of interest to you:
@@ -330,12 +358,7 @@ All other metrics are always accurate.
 
 #### Sample usage: Running the payments demo with private functionality
 
-Refer to "Entity Configuration" below for general notes on privacy configurations. This demo requires that there be 4 entities configured by the `genconfs` tool, which will name them "Alice", "Bob", "Carol" and "Dinesh". These would correspond to business entities on the blockchain, communicating with private messages over the blockchain. In a 4-node demo, these correspond to servers as follows:
-
-- Alice: node0
-- Bob: node1
-- Carol: node2
-- Dinesh: node3
+Refer to "Entity Configuration" below for general notes on privacy configurations. This demo requires that there be 4 entities configured by the `genconfs` tool, which will name them "Alice", "Bob", "Carol" and "Dinesh". These would correspond to business entities on the blockchain, communicating with private messages over the blockchain. Confirm this setup with the `server` command.
 
 Launch the cluster, and load the demo.yaml file.
 

@@ -1,5 +1,8 @@
 resolver: lts-8.15
 
+build:
+  copy-bins: true
+
 # Local packages, usually specified by relative directory name
 packages:
 - '.'
@@ -34,6 +37,7 @@ flags: {}
 # Extra package databases containing global packages
 extra-package-dbs: []
 
+local-bin-path: ./bin
 # Extra directories used by stack for building
 # extra-include-dirs: [/path/to/dir]
 # extra-lib-dirs: [/path/to/dir]

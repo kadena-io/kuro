@@ -1,5 +1,0 @@
-#!/bin/sh
-
-kadenaclient=$(stack exec -- which kadenaclient)
-
-$kadenaclient $*

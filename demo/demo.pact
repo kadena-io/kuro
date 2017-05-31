@@ -20,16 +20,18 @@
 
   (defpact payment (src-entity src dest-entity dest amount)
     "Two-phase confidential payment, sending money from SRC at SRC-ENTITY to DEST at DEST-ENTITY."
+
     (step-with-rollback
      src-entity
      (let ((result (debit src amount { "transfer-to": dest, "message": "Starting pact" })))
-       (yield { "result": result, "amount": amount }))
+       (yield { "result": result, "amount": amount, "tx": (pact-txid) }))
      (credit src amount { "rollback": (pact-txid) }))
+
     (step
      dest-entity
      (resume { "result":= result, "amount":= debit-amount }
        (credit dest debit-amount
-               { "transfer-from": src, "debit-result": result }))))
+               { "transfer-from": src, "debit-result": result, "tx": (pact-txid) }))))
 
   (defun debit (acct amount data)
     "Debit ACCT for AMOUNT, enforcing positive amount and sufficient funds, annotating with DATA"

@@ -409,12 +409,12 @@ To see the results, issue local queries on the nodes. Note that node2 and node 3
 node0> local (demo.read-all)
 account | amount  | balance  | data
 ----------------------------------------------------------------------------
-"A"     | "-1.00" | "999.00" | {"transfer-to":"B","message":"Starting pact"}
+"A"     | "-1.00" | "999.00" | {"tx":5,"transfer-to":"B","message":"Starting pact"}
 node0> server node1
 node1> local (demo.read-all)
 account | amount | balance   | data
 -------------------------------------------------------------------------------------
-"B"     | "1.00" | "1001.00" | {"debit-result":"Write succeeded","transfer-from":"A"}
+"B"     | "1.00" | "1001.00" | {"tx":5,"debit-result":"Write succeeded","transfer-from":"A"}
 node1> server node2
 node2> local (demo.read-all)
 account | amount   | balance  | data
@@ -426,6 +426,29 @@ account | amount   | balance  | data
 -------------------------------------------------
 "D"     | "1000.0" | "1000.0" | "Created account"
 ```
+
+You can also test out the rollback functionality on an error. Mistype the recipient account id (in this case we use "bad" instead of "B"). The pact will execute the debit on Alice/node0; attempt the credit on Bob/node1, failing because of the bad ID; finally the rollback will execute on Alice/node0. Bob's account will be unchanged, while Alice's account will note the rollback with the original tx id of the pact execution.
+
+```
+node0> private Alice [Bob] (demo.payment "Alice" "A" "Bob" "bad" 1.00)
+status: success
+data:
+  tx: 7
+  amount: '1.00'
+  result: Write succeeded
+
+node0> local (demo.read-all)
+account | amount | balance  | data
+--------------------------------------------
+"A"     | "1.00" | "999.00" | {"rollback":7}
+node0> server node1
+node1> local (demo.read-all)
+account | amount | balance   | data
+--------------------------------------------------------------------------------------------
+"B"     | "1.00" | "1001.00" | {"tx":5,"debit-result":"Write succeeded","transfer-from":"A"}
+```
+
+NB: The result of the first send shows you the result of the first part of the multi-phase tx, thus the "success"/"Write succeeded" status. Querying the database reveals the rollback which occurred two transactions later.
 
 
 #### Sample Usage: Viewing the Performance Monitor

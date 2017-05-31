@@ -235,8 +235,8 @@ doResume tid PactEnv{..} ContMsg{..} PactState{..} Pact{..} EvalResult{..} PactY
       updateState pacts = void $ liftIO $ swapMVar _peState (PactState erRefStore pacts)
   if isLast
     then do
-      debug $ "handleContSuccess: reaping pact: " ++ show _cmTxId
-      updateState $ M.delete _cmTxId _psPacts
+      debug $ "handleContSuccess: reaping pact [disabled]: " ++ show _cmTxId
+      -- updateState $ M.delete _cmTxId _psPacts
     else do
       ry <- mapM encodeResume _pyYield
       when _pyExecuted $ publishCont _cmTxId tid nextStep False ry

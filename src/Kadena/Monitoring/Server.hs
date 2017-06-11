@@ -21,7 +21,7 @@ import Kadena.Monitoring.EkgMonitor (Server, forkServer, getLabel, getGauge, get
 -- TODO: possibly switch to 'newStore' API. this allows us to use groups.
 
 startApi :: Config -> IO Server
-startApi config = forkServer "localhost" port
+startApi config = forkServer "0.0.0.0" port
   where
     port = 80 + fromIntegral (config ^. nodeId . to _port)
 

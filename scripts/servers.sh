@@ -34,7 +34,7 @@ case $cmd in
     exit 0
     ;;
   reset)
-    for i in `cat kadenaservers.privateIp`; do ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i ~/user.pem ec2-user@$i "'rm ./'$i'-output.log' ; rm ./log/*" & done
+    for i in `cat kadenaservers.privateIp`; do ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i ~/user.pem ec2-user@$i "'rm ~/*-output.log' ~/log/*" & done
     exit 0
     ;;
   ps)

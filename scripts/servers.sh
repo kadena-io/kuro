@@ -7,7 +7,9 @@ cmd="$1"
 case $cmd in
   distBins)
       for i in `cat kadenaservers.privateIp`; do
-          scp -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i ~/user.pem -r ../bin/kadenaserver ec2-user@$i: & ;
+          scp -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i ~/user.pem -r ../bin/kadenaserver ec2-user@$i: &
+      done
+      for i in `cat kadenaservers.privateIp`; do
           ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i ~/user.pem ec2-user@$i 'mkdir ./conf; mkdir ./log' &
       done
     exit 0

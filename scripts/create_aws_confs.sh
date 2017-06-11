@@ -26,7 +26,7 @@ for ip in `cat aws-conf/kadenaservers.privateIp`; do
     script="${idir}/start.sh"
     mv aws-conf/$conf $idir/conf/$conf
     echo "#!/bin/sh
-nohup ./kadenaserver +RTS -N -T -RTS -c conf/${conf} --apiPort 8000 --disablePersistence >> ./${ip}-output.log 2>&1 &
+nohup ./kadenaserver +RTS -N -RTS -c conf/${conf} >> ./${ip}-output.log 2>&1 &
 " > $script
     chmod +x $script
 done

@@ -30,6 +30,6 @@ case $cmd in
     exit 0
     ;;
   *)
-    echo "Commands: config start stop"
+    echo "Commands: config start stop copyLogs clearLogs ps"
     ;;
 esac

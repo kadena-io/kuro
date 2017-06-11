@@ -18,9 +18,9 @@ chirp "Builing and Copying: OSX"
 rm ./kadena-beta/bin/osx/{genconfs,kadenaserver,kadenaclient}
 safe stack build --flag kadena:kill-switch
 safe stack install --flag kadena:kill-switch
-safe cp `which genconfs` ./kadena-beta/bin/osx/;
-safe cp `which kadenaserver` ./kadena-beta/bin/osx/;
-safe cp `which kadenaclient` ./kadena-beta/bin/osx/;
+safe cp ./bin/genconfs ./kadena-beta/bin/osx/;
+safe cp ./bin/kadenaserver ./kadena-beta/bin/osx/;
+safe cp ./bin/kadenaclient ./kadena-beta/bin/osx/;
 
 chirp "Builing and Copying: Ubuntu"
 rm -rf ./kadena-beta/bin/ubuntu-16.04/{genconfs,kadenaserver,kadenaclient}

@@ -28,8 +28,9 @@ data ReconfSub = ReconfSub
   { _mNewNodeList :: !(Maybe (Set NodeId))
   , _mShutdownSub :: !(Maybe (MVar Shutdown)) }
 
-nodeIdToZmqAddr :: NodeId -> String
+nodeIdToZmqAddr, myInterface :: NodeId -> String
 nodeIdToZmqAddr NodeId{..} = "tcp://" ++ _host ++ ":" ++ show _port
+myInterface NodeId{..} = "tcp://0.0.0.0:" ++ show _port
 
 zmqLinkedAsync :: String -> ZMQ z a -> ZMQ z ()
 zmqLinkedAsync loc fn = do
@@ -63,7 +64,7 @@ runMsgServer dispatch me addrList debug gcm = forever $ do
     zmqLinkedAsync "ZmqPub" $ do
       liftIO $ debug $ zmqPub ++ "launch!"
       pubSock <- socket Pub
-      _ <- bind pubSock $ nodeIdToZmqAddr me
+      _ <- bind pubSock $ myInterface me
       liftIO $ putMVar semephory ()
       let
         runPub = liftIO (tryTakeMVar shutdownPub) >>= \case

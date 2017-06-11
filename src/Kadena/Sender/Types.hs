@@ -53,8 +53,8 @@ instance Comms ServiceRequest' SenderServiceChannel where
   writeComm (SenderServiceChannel c) = writeCommNormal c
 
 data AEBroadcastControl =
-  SendAERegardless |
-  OnlySendIfFollowersAreInSync
+  SendAERegardless -- ^ Causes an AE to be sent no matter what. Use with care, under load we don't want to send > 1 replication AE per heartbeat period
+  | OnlySendIfFollowersAreInSync -- ^ Only dispatches the AE if follower are all in sync (steady state) AND if the last AE to replicate entries was > 1 HB Timeout ago
   deriving (Show, Eq)
 
 data ServiceRequest =

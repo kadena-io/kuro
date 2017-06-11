@@ -36,7 +36,7 @@ import Data.Thyme.Clock (UTCTime, getCurrentTime)
 import Kadena.Types hiding (debugPrint, ConsensusState(..), Config(..)
   , Consensus, ConsensusSpec(..), nodeId, sendMessage, outboundGeneral
   , myPublicKey, myPrivateKey, otherNodes, nodeRole, term, Event(..)
-  , logService, publishMetric, currentLeader)
+  , logService, publishMetric, currentLeader, heartbeatTimeout)
 import qualified Kadena.Types as KD
 
 import qualified Kadena.Types.Spec as Spec
@@ -219,7 +219,6 @@ establishDominance = do
   pubRPC rpc
   debug $ "asserted dominance: " ++ show (interval stTime edTime) ++ "mics"
 
-
 -- | Send all append entries is only needed in special circumstances. Either we have a Heartbeat event or we are getting a quick win in with CMD's
 sendAllAppendEntries :: Map NodeId (LogIndex, UTCTime) -> Set NodeId -> AEBroadcastControl -> SenderService ()
 sendAllAppendEntries nodeCurrentIndex' nodesThatFollow' sendIfOutOfSync = do
@@ -229,42 +228,48 @@ sendAllAppendEntries nodeCurrentIndex' nodesThatFollow' sendIfOutOfSync = do
   yesVotes' <- view yesVotes
   oNodes <- view otherNodes
   limit' <- view aeReplicationLogLimit
-  inSync' <- canBroadcastAE (length oNodes) nodeCurrentIndex' ct myNodeId' nodesThatFollow'
+  inSync' <- canBroadcastAE (length oNodes) nodeCurrentIndex' ct myNodeId' nodesThatFollow' sendIfOutOfSync
   synTime' <- liftIO $ getCurrentTime
-  case (inSync', sendIfOutOfSync) of
-    (BackStreet (broadcastRPC, laggingFollowers), SendAERegardless) -> do
-      -- We can't take the short cut but the AE (which is overloaded as a heartbeat grr...) still need to be sent
-      -- This usually takes place when we hit a heartbeat timeout
-      pubRPC broadcastRPC -- TODO: this is terrible as laggers will need a pause to catch up correctly unless we have them cache future AE
-      debug "followers are out of sync, publishing latest LogEntries"
-      mv <- queryLogs $ Set.map (\n -> Log.GetInfoAndEntriesAfter ((+) 1 . fst <$> Map.lookup n nodeCurrentIndex') limit') oNodes
-      rpcs <- return $!
-        (\target -> ( target
-                    , createAppendEntries' target
-                      (Log.hasQueryResult (Log.InfoAndEntriesAfter ((+) 1 .fst <$> Map.lookup target nodeCurrentIndex') limit') mv)
-                      ct myNodeId' nodesThatFollow' yesVotes')
-                    ) <$> Set.toList laggingFollowers
-      endTime' <- liftIO $ getCurrentTime
-      debug $ "AE servicing lagging nodes, taking " ++ printInterval startTime' endTime' ++ " to create (syncTime=" ++ printInterval startTime' synTime' ++ ")"
-      sendRpcsPeicewise rpcs (length rpcs, endTime')
-      debug $ "AE sent Regardless"
-    (BackStreet (broadcastRPC, _laggingFollowers), OnlySendIfFollowersAreInSync) -> do
-      -- We can't just spam AE's to the followers because they can get clogged with overlapping/redundant AE's. This eventually trips an election.
-      -- TODO: figure out how an out of date follower can precache LEs that it can't add to it's log yet (withough tripping an election)
-      -- NB: We're doing it anyway for now, so we can test scaling accurately
-      pubRPC broadcastRPC -- TODO: this is terrible as laggers will need a pause to catch up correctly unless we have them cache future AE
-      endTime' <- liftIO $ getCurrentTime
-      debug $ "followers are out of sync, broadcasting AE anyway: " ++ printInterval startTime' endTime'
-        ++ " (synTime=" ++ printInterval startTime' synTime' ++ ")"
-    (InSync (ae, ln), _) -> do
+  case inSync' of
+    BackStreet{..} -> do
+      case broadcastRPC of
+        Just broadcastableRPC -> do -- NB: SendAERegardless gets you here
+          -- We can't take the short cut but the AE (which is overloaded as a heartbeat grr...) still need to be sent
+          -- This usually takes place when we hit a heartbeat timeout
+          debug "followers are out of sync, publishing latest LogEntries"
+          mv <- queryLogs $ Set.map (\n -> Log.GetInfoAndEntriesAfter ((+) 1 . fst <$> Map.lookup n nodeCurrentIndex') limit') oNodes
+          rpcs <- return $!
+            (\target -> ( target
+                        , createAppendEntries' target
+                          (Log.hasQueryResult (Log.InfoAndEntriesAfter ((+) 1 .fst <$> Map.lookup target nodeCurrentIndex') limit') mv)
+                          ct myNodeId' nodesThatFollow' yesVotes')
+                        ) <$> Set.toList laggingFollowers
+          endTime' <- liftIO $ getCurrentTime
+          debug $ "AE servicing lagging nodes, taking " ++ printInterval startTime' endTime' ++ " to create (syncTime=" ++ printInterval startTime' synTime' ++ ")"
+          sendRpcsPeicewise rpcs (length rpcs, endTime')
+          debug $ "AE sent Regardless"
+          pubRPC broadcastableRPC -- TODO: this is terrible as laggers will need a pause to catch up correctly unless we have them cache future AE
+        Nothing -> do -- NB: OnlySendIfInSync gets you here
+          -- We can't just spam AE's to the followers because they can get clogged with overlapping/redundant AE's. This eventually trips an election.
+          -- TODO: figure out how an out of date follower can precache LEs that it can't add to it's log yet (without tripping an election)
+          debug $ "AE withheld, followers are out of sync (synTime=" ++ printInterval startTime' synTime' ++ ")"
+--           endTime' <- liftIO $ getCurrentTime
+--           debug $ "followers are out of sync, broadcasting AE anyway: " ++ printInterval startTime' endTime'
+--             ++ " (synTime=" ++ printInterval startTime' synTime' ++ ")"
+    InSync{..} -> do
       -- Hell yeah, we can just broadcast. We don't care about the Broadcast control if we know we can broadcast.
       -- This saves us a lot of time when node count grows.
-      pubRPC $ ae
+      pubRPC $ broadcastableRPC
       endTime' <- liftIO $ getCurrentTime
-      debug $ "followers are in sync, pub AE with " ++ show ln ++ " log entries: " ++ printInterval startTime' endTime'
+      debug $ "AE broadcasted, followers are in sync" ++ printInterval startTime' endTime'
         ++ " (synTime=" ++ printInterval startTime' synTime' ++ ")"
 
-data InSync = InSync (RPC, Int) | BackStreet (RPC, Set NodeId) deriving (Show, Eq)
+data InSync =
+  InSync { broadcastableRPC :: !RPC}
+  | BackStreet
+    { broadcastRPC :: !(Maybe RPC)
+    , laggingFollowers :: !(Set NodeId) }
+  deriving (Show, Eq)
 
 willBroadcastAE :: Int
                 -> Map NodeId (LogIndex, UTCTime)
@@ -285,8 +290,9 @@ canBroadcastAE :: Int
                -> Term
                -> NodeId
                -> Set NodeId
+               -> AEBroadcastControl
                -> SenderService InSync
-canBroadcastAE clusterSize' nodeCurrentIndex' ct myNodeId' vts =
+canBroadcastAE clusterSize' nodeCurrentIndex' ct myNodeId' vts broadcastControl =
   -- we only want to do this if we know that every node is in sync with us (the leader)
   let
     everyoneBelieves = Set.size vts == clusterSize'
@@ -304,20 +310,23 @@ canBroadcastAE clusterSize' nodeCurrentIndex' ct myNodeId' vts =
       (pli,plt, es) <- return $ Log.hasQueryResult (Log.InfoAndEntriesAfter (Just $ 1 + mni) limit') mv
 --      debug $ "InfoAndEntriesAfter InSync " ++ (show (Just $ 1 + mni)) ++ " " ++ show limit'
 --            ++ " with results " ++ show (Log.lesMinIndex es, Log.lesMaxIndex es)
-      return $ InSync (AE' $ AppendEntries ct myNodeId' pli plt es Set.empty NewMsg, Log.lesCnt es)
+      return $ InSync $ AE' $ AppendEntries ct myNodeId' pli plt es Set.empty NewMsg
     else do
-      limit' <- view aeReplicationLogLimit
-      mv <- queryLogs $ Set.singleton $ Log.GetInfoAndEntriesAfter (Just $ 1 + latestFollower) limit'
-      (pli,plt, es) <- return $ Log.hasQueryResult (Log.InfoAndEntriesAfter (Just $ 1 + latestFollower) limit') mv
---      debug $ "InfoAndEntriesAfter Backstreet " ++ (show (Just $ 1 + latestFollower)) ++ " " ++ show limit'
---            ++ " with results " ++ show (Log.lesMinIndex es, Log.lesMaxIndex es)
-      inSyncRpc <- return $! AE' $ AppendEntries ct myNodeId' pli plt es Set.empty NewMsg
+      inSyncRpc <- case broadcastControl of
+        OnlySendIfFollowersAreInSync -> return Nothing
+        SendAERegardless -> do
+          limit' <- view aeReplicationLogLimit
+          mv <- queryLogs $ Set.singleton $ Log.GetInfoAndEntriesAfter (Just $ 1 + latestFollower) limit'
+          (pli,plt, es) <- return $ Log.hasQueryResult (Log.InfoAndEntriesAfter (Just $ 1 + latestFollower) limit') mv
+--        debug $ "InfoAndEntriesAfter Backstreet " ++ (show (Just $ 1 + latestFollower)) ++ " " ++ show limit'
+--              ++ " with results " ++ show (Log.lesMinIndex es, Log.lesMaxIndex es)
+          return $! Just $! AE' $ AppendEntries ct myNodeId' pli plt es Set.empty NewMsg
       if everyoneBelieves
-      then return $ BackStreet (inSyncRpc, laggingFollowers)
+      then return $ BackStreet inSyncRpc laggingFollowers
       else do
         oNodes' <- view otherNodes
         debug $ "non-believers exist, establishing dominance over " ++ show ((Set.size vts) - 1)
-        return $ BackStreet (inSyncRpc, Set.union laggingFollowers (oNodes' Set.\\ vts))
+        return $ BackStreet inSyncRpc $ Set.union laggingFollowers (oNodes' Set.\\ vts)
 {-# INLINE canBroadcastAE #-}
 
 createAppendEntriesResponse' :: Bool -> Bool -> Term -> NodeId -> LogIndex -> Hash -> RPC

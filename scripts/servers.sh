@@ -33,8 +33,8 @@ case $cmd in
     for i in `cat kadenaservers.privateIp`; do scp -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i ~/user.pem -r ec2-user@$i:./${i}-output.log ~/kadena/cluster-logs/${i}-output.log & done
     exit 0
     ;;
-  clearLogs)
-    for i in `cat kadenaservers.privateIp`; do ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i ~/user.pem ec2-user@$i 'rm ./'$i'-output.log' & done
+  reset)
+    for i in `cat kadenaservers.privateIp`; do ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i ~/user.pem ec2-user@$i "'rm ./'$i'-output.log' ; rm ./log/*" & done
     exit 0
     ;;
   ps)

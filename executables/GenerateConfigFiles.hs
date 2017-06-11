@@ -287,8 +287,8 @@ createClusterConfig cp@ConfigParams{..} adminKeys' (privMap, pubMap) entMap apiP
   , _adminKeys            = adminKeys'
   , _myPrivateKey         = privMap M.! nid
   , _myPublicKey          = pubMap M.! nid
-  , _electionTimeoutRange = (3000000,6000000)
-  , _heartbeatTimeout     = 1000000
+  , _electionTimeoutRange = (electionMin, electionMax)
+  , _heartbeatTimeout     = heartbeat
   , _enableDebug          = True
   , _enablePersistence    = True
   , _pactPersist          = mkPactPersistConfig cp True nid

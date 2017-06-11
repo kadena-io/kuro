@@ -6,20 +6,25 @@ cd aws-conf
 cmd="$1"
 case $cmd in
   distBins)
-      for i in `cat kadenaservers.privateIp`;
-        do scp -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i ~/user.pem -r ../bin/kadenaserver ec2-user@$i: & done
-      exit 0
-      ;;
+      for i in `cat kadenaservers.privateIp`; do
+          scp -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i ~/user.pem -r ../bin/kadenaserver ec2-user@$i: & ;
+          ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i ~/user.pem ec2-user@$i 'mkdir ./conf; mkdir ./log' &
+      done
+    exit 0
+    ;;
   config)
-    for i in `cat kadenaservers.privateIp`; do scp -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i ~/user.pem -r $i/* ec2-user@$i: & done
+    for i in `cat kadenaservers.privateIp`;
+      do scp -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i ~/user.pem -r $i/* ec2-user@$i: & done
     exit 0
     ;;
   start)
-    for i in `cat kadenaservers.privateIp`; do ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i ~/user.pem ec2-user@$i './start.sh' & done
+    for i in `cat kadenaservers.privateIp`;
+      do ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i ~/user.pem ec2-user@$i './start.sh' & done
     exit 0
     ;;
   stop)
-    for i in `cat kadenaservers.privateIp`; do ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i ~/user.pem ec2-user@$i 'pkill kadenaserver' & done
+    for i in `cat kadenaservers.privateIp`;
+      do ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i ~/user.pem ec2-user@$i 'pkill kadenaserver' & done
     exit 0
     ;;
   copyLogs)

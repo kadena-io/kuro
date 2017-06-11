@@ -22,7 +22,7 @@ aws ec2 describe-instances --filter Name=tag:Name,Values=kadenaclient \
 for ip in `cat aws-conf/kadenaservers.privateIp`; do
     idir="aws-conf/${ip}"
     mkdir -p $idir/conf
-    conf="${ip}-cluster-aws.yaml"
+    conf="${ip}-cluster.yaml"
     script="${idir}/start.sh"
     mv ./conf/$conf $idir/conf/$conf
     echo "#!/bin/sh

@@ -19,6 +19,7 @@ import Control.Lens hiding (to,from)
 import Control.Monad.Catch
 import Control.Concurrent.Lifted (threadDelay)
 import Control.Concurrent.MVar
+import Control.Concurrent.Async
 import Control.Applicative
 
 import qualified Data.Text as T
@@ -129,6 +130,11 @@ data Formatter = YAML|Raw|PrettyJSON|Table deriving (Eq,Show)
 
 data CliCmd =
   Batch Int |
+  ParallelBatch
+   { totalNumCmds :: Int
+   , batchSize :: Int
+   , sleepBetweenBatches :: Int
+   } |
   Cmd (Maybe String) |
   Data (Maybe String) |
   Exit |
@@ -196,7 +202,11 @@ mkExec code mdata addy = do
 postAPI :: (ToJSON req,FromJSON resp) => String -> req -> Repl (Response resp)
 postAPI ep rq = do
   s <- getServer
-  r <- liftIO $ post ("http://" ++ s ++ "/api/v1/" ++ ep) (toJSON rq)
+  liftIO $ postSpecifyServerAPI ep s rq
+
+postSpecifyServerAPI :: (ToJSON req,FromJSON resp) => String -> String -> req -> IO (Response resp)
+postSpecifyServerAPI ep server' rq = do
+  r <- liftIO $ post ("http://" ++ server' ++ "/api/v1/" ++ ep) (toJSON rq)
   asJSON r
 
 handleResp :: (t -> Repl ()) -> Response (ApiResponse t) -> Repl ()
@@ -238,8 +248,8 @@ putJSON a = use fmt >>= \f -> flushStrLn $ case f of
 batchTest :: Int -> String -> Repl ()
 batchTest n cmd = do
   j <- use cmdData
-  es@(SubmitBatch es') <- SubmitBatch <$> replicateM n (mkExec cmd j Nothing)
-  flushStrLn $ "Preparing " ++ show (length es') ++ " messages ..."
+  flushStrLn $ "Preparing " ++ show n ++ " messages ..."
+  es <- SubmitBatch <$> replicateM n (mkExec cmd j Nothing)
   resp <- postAPI "send" es
   flushStrLn $ "Sent, retrieving responses"
   case resp ^. responseBody of
@@ -249,6 +259,47 @@ batchTest n cmd = do
       rk <- return $ last $ _rkRequestKeys _apiResponse
       flushStrLn $ "Polling for RequestKey: " ++ show rk
       showResult 10000 [rk] (Just (fromIntegral n))
+
+chunksOf :: Int -> [e] -> [[e]]
+chunksOf i ls = map (take i) (build (splitter ls)) where
+  splitter :: [e] -> ([e] -> a -> a) -> a -> a
+  splitter [] _ n = n
+  splitter l c n  = l `c` splitter (drop i l) c n
+  build :: ((a -> [a] -> [a]) -> [a] -> [a]) -> [a]
+  build g = g (:) []
+
+intoNumLists :: Int -> [e] -> [[e]]
+intoNumLists numLists ls = chunksOf numPerList ls
+  where
+    numPerList :: Int
+    numPerList = fromIntegral (ceiling ((fromIntegral $ length ls) / (fromIntegral numLists) :: Double) :: Integer)
+
+processParBatchPerServer :: Int -> (MVar (), (Node, [[Pact.Command T.Text]])) -> IO ()
+processParBatchPerServer sleep' (sema, (Node{..}, batches)) = do
+  forM_ batches $ \batch -> do
+    resp <- postSpecifyServerAPI "send" _nURL $ SubmitBatch batch
+    flushStrLn $ "Sent a batch to " ++ _nURL
+    case resp ^. responseBody of
+      ApiFailure{..} -> do
+        flushStrLn $ _nURL ++ " Failure: " ++ show _apiError
+      ApiSuccess{..} -> do
+        rk <- return $ last $ _rkRequestKeys _apiResponse
+        flushStrLn $ _nURL ++ " Success: " ++ show rk
+    threadDelay (sleep' * 1000)
+  putMVar sema ()
+
+parallelBatchTest :: Int -> Int -> Int -> Repl ()
+parallelBatchTest totalNumCmds' batchSize' sleep' = do
+  cmd <- use batchCmd
+  j <- use cmdData
+  servers <- HM.elems <$> view ccEndpoints
+  semas <- replicateM (length servers) $ liftIO newEmptyMVar
+  flushStrLn $ "Preparing " ++ show totalNumCmds' ++ " messages to distribute among "
+    ++ show (length servers) ++ " servers in batches of " ++ show batchSize'
+    ++ " with a delay of " ++ show sleep' ++ " milliseconds"
+  allocatedBatches <- zip semas . zip servers . intoNumLists (length servers) . chunksOf batchSize' <$> replicateM totalNumCmds' (mkExec cmd j Nothing)
+  liftIO $ forConcurrently_ allocatedBatches $ processParBatchPerServer sleep'
+  liftIO $ forM_ semas takeMVar
 
 load :: Mode -> FilePath -> Repl ()
 load m fp = do
@@ -367,10 +418,6 @@ pprintTable val = do
       h1 = colify (HM.mapWithKey (\k _ -> T.unpack k) lengths)
   return $ h1 ++ "\n" ++ replicate (length h1) '-' ++ "\n" ++ intercalate "\n" (V.toList $ fmap colify rendered)
 
-
-
-
-
 parseMode :: TF.Parser Mode
 parseMode =
   (symbol "tx" >> pure Transactional) <|>
@@ -390,6 +437,16 @@ cliCmds = [
    Load <$> some anyChar <*> (fromMaybe Transactional <$> optional parseMode)),
   ("batch","TIMES","Repeat command in batch message specified times",
    Batch . fromIntegral <$> integer),
+  ("par-batch","N:Int B:Int [S:Int]"
+  ,"Similar to `batch` but the commands are distributed among the nodes:\n\
+   \  * the REPL will create N batch messages\n\
+   \  * group them into individual batches of size B\n\
+   \  * submit them (in parallel) to each available node\n\
+   \ Optional: pause for S milliseconds between submissions to a given server.",
+   ParallelBatch <$> (fromIntegral <$> integer)
+                 <*> (fromIntegral <$> integer)
+                 <*> (fromIntegral <$> integer)
+  ),
   ("pollMetrics","REQUESTKEY", "Poll each server for the request key but print latency metrics from each.",
    PollMetrics <$> some anyChar),
   ("poll","REQUESTKEY", "Poll server for request key",
@@ -461,6 +518,10 @@ handleCmd cmd = case cmd of
   Server (Just s) -> server .= s
   Batch n | n <= 50000 -> use batchCmd >>= batchTest n
           | otherwise -> void $ flushStrLn "Aborting: batch count limited to 50000"
+  ParallelBatch{..}
+   | batchSize >= 10000 -> void $ flushStrLn "Aborting: batch count for parallel issuance too large"
+   | sleepBetweenBatches < 250 -> void $ flushStrLn "Aborting: sleep between batches needs to be >= 250"
+   | otherwise -> parallelBatchTest totalNumCmds batchSize sleepBetweenBatches
   Load s m -> load m s
   Poll s -> parseRK s >>= void . pollForResult False . RequestKey . Hash
   PollMetrics rk -> do

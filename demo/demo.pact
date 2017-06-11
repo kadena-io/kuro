@@ -64,7 +64,7 @@
  (defun read-all ()
    (map (read-account) (keys accounts)))
 
- (defun read-all ()
+ (defun read-all-global ()
    (map (read-account) ["Acct1" "Acct2"]))
 
  (defun create-global-accounts ()

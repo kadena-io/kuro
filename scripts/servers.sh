@@ -5,6 +5,11 @@ cd aws-conf
 
 cmd="$1"
 case $cmd in
+  distBins)
+      for i in `cat kadenaservers.privateIp`;
+        do scp -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i ~/user.pem -r ../kadena/bin/* ec2-user@$i: & done
+      exit 0
+      ;;
   config)
     for i in `cat kadenaservers.privateIp`; do scp -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i ~/user.pem -r $i/* ec2-user@$i: & done
     exit 0
@@ -30,6 +35,6 @@ case $cmd in
     exit 0
     ;;
   *)
-    echo "Commands: config start stop copyLogs clearLogs ps"
+    echo "Commands: distBins config start stop copyLogs clearLogs ps"
     ;;
 esac

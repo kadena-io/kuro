@@ -17,7 +17,7 @@ aws ec2 describe-instances --filter Name=tag:Name,Values=kadenaclient \
   | sed 's/[^(0-9).]//g' \
   | uniq | sort > aws-conf/kadenaclient.privateIp
 
-./bin/genconfs --aws aws-conf/kadenaservers.privateIp aws-conf/kadenaclient.privateIp
+./bin/genconfs --distributed aws-conf/kadenaservers.privateIp aws-conf/kadenaclient.privateIp
 
 for ip in `cat aws-conf/kadenaservers.privateIp`; do
     idir="aws-conf/${ip}"

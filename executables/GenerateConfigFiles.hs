@@ -94,7 +94,7 @@ main = do
   case runAws of
     [] -> mainLocal
     [v,clustersFile] | v == "--distributed" -> mainAws clustersFile
-    err -> putStrLn $ "Invalid args, wanted `` or `--aws path-to-cluster-ip-file` but got: " ++ show err
+    err -> putStrLn $ "Invalid args, wanted `` or `--distributed path-to-cluster-ip-file` but got: " ++ show err
 
 data ConfigParams = ConfigParams
   { clusterCnt :: !Int
@@ -230,7 +230,7 @@ mainAws clustersFile = do
   adminKeys' <- return $ fmap _kpPublicKey adminKeyPairs
   ents <- mkEntities clusterIds entityCnt
   clusterConfs <- return (createClusterConfig cfgParams adminKeys' clusterKeyMaps ents 8000 <$> clusterIds)
-  mkConfs confDir clusterConfs adminKeyPairs
+  mkConfs confDir clusterConfs adminKeyPairs True
 
 mainLocal :: IO ()
 mainLocal = do
@@ -242,12 +242,13 @@ mainLocal = do
   ents <- mkEntities nids entityCnt
   clusterConfs <- return $ zipWith (createClusterConfig cfgParams adminKeys' clusterKeyMaps ents)
                   [8000..] nids
-  mkConfs confDir clusterConfs adminKeyPairs
+  mkConfs confDir clusterConfs adminKeyPairs False
 
 
-mkConfs :: FilePath -> [Config] -> Map Alias KeyPair -> IO ()
-mkConfs confDir clusterConfs adminKeyPairs = do
-  mapM_ (\c' -> Y.encodeFile ("conf" </> show (_port $ _nodeId c') ++ "-cluster.yaml") c') clusterConfs
+mkConfs :: FilePath -> [Config] -> Map Alias KeyPair -> Bool -> IO ()
+mkConfs confDir clusterConfs adminKeyPairs useHostForId = do
+  let getNodeName nid = if not useHostForId then show (_port $ _nodeId nid) else _host $ _nodeId nid
+  mapM_ (\c' -> Y.encodeFile ("conf" </> getNodeName c' ++ "-cluster.yaml") c') clusterConfs
   mapM_ (\(a,kp) -> Y.encodeFile (confDir </> (BSC.unpack $ unAlias a) ++ "-keypair.yaml") kp) $ M.toList adminKeyPairs
   [clientKey] <- makeKeys 1 <$> (newGenIO :: IO SystemRandom)
   Y.encodeFile (confDir </> "client.yaml") . createClientConfig clusterConfs $ clientKey

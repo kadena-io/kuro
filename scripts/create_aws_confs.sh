@@ -17,14 +17,14 @@ aws ec2 describe-instances --filter Name=tag:Name,Values=kadenaclient \
   | sed 's/[^(0-9).]//g' \
   | uniq | sort > aws-conf/kadenaclient.privateIp
 
-stack exec -- genconfs --aws aws-conf/kadenaservers.privateIp aws-conf/kadenaclient.privateIp
+./bin/genconfs --aws aws-conf/kadenaservers.privateIp aws-conf/kadenaclient.privateIp
 
 for ip in `cat aws-conf/kadenaservers.privateIp`; do
     idir="aws-conf/${ip}"
     mkdir -p $idir/conf
     conf="${ip}-cluster-aws.yaml"
     script="${idir}/start.sh"
-    mv aws-conf/$conf $idir/conf/$conf
+    mv ./conf/$conf $idir/conf/$conf
     echo "#!/bin/sh
 nohup ./kadenaserver +RTS -N -RTS -c conf/${conf} >> ./${ip}-output.log 2>&1 &
 " > $script

@@ -132,7 +132,7 @@ data CliCmd =
   Batch Int |
   ParallelBatch
    { totalNumCmds :: Int
-   , batchSize :: Int
+   , cmdRate :: Int
    , sleepBetweenBatches :: Int
    } |
   Cmd (Maybe String) |
@@ -288,11 +288,20 @@ processParBatchPerServer sleep' (sema, (Node{..}, batches)) = do
     threadDelay (sleep' * 1000)
   putMVar sema ()
 
+calcBatchSize :: Int -> Int -> Int -> Int
+calcBatchSize cmdRate' sleep' clusterSize' = fromIntegral (ceiling $ cr * (sl/1000) / (cs) :: Int)
+  where
+    cr, sl, cs :: Double
+    cr = fromIntegral cmdRate'
+    sl = fromIntegral sleep'
+    cs = fromIntegral clusterSize'
+
 parallelBatchTest :: Int -> Int -> Int -> Repl ()
-parallelBatchTest totalNumCmds' batchSize' sleep' = do
+parallelBatchTest totalNumCmds' cmdRate' sleep' = do
   cmd <- use batchCmd
   j <- use cmdData
   servers <- HM.elems <$> view ccEndpoints
+  batchSize' <- return $ calcBatchSize cmdRate' sleep' (length servers)
   semas <- replicateM (length servers) $ liftIO newEmptyMVar
   flushStrLn $ "Preparing " ++ show totalNumCmds' ++ " messages to distribute among "
     ++ show (length servers) ++ " servers in batches of " ++ show batchSize'
@@ -437,12 +446,13 @@ cliCmds = [
    Load <$> some anyChar <*> (fromMaybe Transactional <$> optional parseMode)),
   ("batch","TIMES","Repeat command in batch message specified times",
    Batch . fromIntegral <$> integer),
-  ("par-batch","N:Int B:Int [S:Int]"
+  ("par-batch","TOTAL_CMD_CNT CMD_PER_SEC SLEEP"
   ,"Similar to `batch` but the commands are distributed among the nodes:\n\
-   \  * the REPL will create N batch messages\n\
-   \  * group them into individual batches of size B\n\
+   \  * the REPL will create N batch messages and group them into individual batches\n\
+   \  * CMD_PER_SEC refers to the overall command submission rate\n\
+   \  * individual batch sizes are calculated by `ceiling (CMD_PER_SEC * (SLEEP/1000) / clusterSize)`\n\
    \  * submit them (in parallel) to each available node\n\
-   \ Optional: pause for S milliseconds between submissions to a given server.",
+   \  * pause for S milliseconds between submissions to a given server",
    ParallelBatch <$> (fromIntegral <$> integer)
                  <*> (fromIntegral <$> integer)
                  <*> (fromIntegral <$> integer)
@@ -519,9 +529,9 @@ handleCmd cmd = case cmd of
   Batch n | n <= 50000 -> use batchCmd >>= batchTest n
           | otherwise -> void $ flushStrLn "Aborting: batch count limited to 50000"
   ParallelBatch{..}
-   | batchSize >= 10000 -> void $ flushStrLn "Aborting: batch count for parallel issuance too large"
+   | cmdRate >= 20000 -> void $ flushStrLn "Aborting: cmd rate too large (limited to 25k/s)"
    | sleepBetweenBatches < 250 -> void $ flushStrLn "Aborting: sleep between batches needs to be >= 250"
-   | otherwise -> parallelBatchTest totalNumCmds batchSize sleepBetweenBatches
+   | otherwise -> parallelBatchTest totalNumCmds cmdRate sleepBetweenBatches
   Load s m -> load m s
   Poll s -> parseRK s >>= void . pollForResult False . RequestKey . Hash
   PollMetrics rk -> do

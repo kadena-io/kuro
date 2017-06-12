@@ -36,7 +36,7 @@ case $cmd in
          ;;
   status)
     for i in `cat kadenaservers.privateIp`;
-      do curl -sH "Accept: application/json" "$i:10080" | jq '.kadena | {role: .node.role.val, commit_index: .consensus.commit_index.val, applied_index: .node.applied_index.val}' done
+      do echo $i ; curl -sH "Accept: application/json" "$i:10080" | jq '.kadena | {role: .node.role.val, commit_index: .consensus.commit_index.val, applied_index: .node.applied_index.val}' ; done
     exit 0
     ;;
   copyLogs)

@@ -34,11 +34,18 @@ data RequestVoteEnv = RequestVoteEnv {
   }
 makeLenses ''RequestVoteEnv
 
-data RequestVoteOut = NoAction
-                    | UpdateLazyVote { _updateLazyVote :: !LazyVote}
-                    | ReplyToRPCSender { _targetNode :: !NodeId
-                                       , _lastLogIndex :: !(Maybe HeardFromLeader)
-                                       , _vote :: Bool }
+data RequestVoteOut =
+  NoAction |
+  UpdateLazyVote { _updateLazyVote :: !LazyVote } |
+  UpdateLazyVoteAndVote
+    { _updateLazyVote :: !LazyVote
+    , _targetNode :: !NodeId
+    , _lastLogIndex :: !(Maybe HeardFromLeader)
+    , _vote :: Bool } |
+  ReplyToRPCSender
+    { _targetNode :: !NodeId
+    , _lastLogIndex :: !(Maybe HeardFromLeader)
+    , _vote :: Bool }
 
 handleRequestVote :: (MonadWriter [String] m, MonadReader RequestVoteEnv m) => RequestVote -> m RequestVoteOut
 handleRequestVote rv@RequestVote{..} = do
@@ -77,9 +84,13 @@ handleRequestVote rv@RequestVote{..} = do
     _ | (_rvLastLogTerm, _rvLastLogIndex) >= (llt, lli) -> do
       lv <- view lazyVote
       case lv of
-        Nothing -> do
-          tell ["haven't voted, (lazily) voting for this candidate"]
-          return $ UpdateLazyVote $ LazyVote rv (Map.singleton (rv ^. rvCandidateId) rv)
+        Nothing -> if currentLeader' == Nothing && term' == startTerm
+          then do
+            tell ["At cluster launch, so vote immediately and update lazy vote"]
+            return $ UpdateLazyVoteAndVote (LazyVote rv (Map.singleton (rv ^. rvCandidateId) rv)) _rvCandidateId hfl False
+          else do
+            tell ["haven't voted, (lazily) voting for this candidate"]
+            return $ UpdateLazyVote $ LazyVote rv (Map.singleton (rv ^. rvCandidateId) rv)
         Just lv'
           | (lv' ^. lvVoteFor.rvTerm) >= _rvTerm -> do
               tell ["would vote lazily, but already voted lazily for candidate in same or higher term"]
@@ -129,4 +140,7 @@ handle rv = do
     case rvo of
       NoAction -> return ()
       UpdateLazyVote stateUpdate -> KD.lazyVote .= Just stateUpdate
+      UpdateLazyVoteAndVote{..} -> do
+        KD.lazyVote .= Just _updateLazyVote
+        enqueueRequest $ Sender.BroadcastRVR _targetNode Nothing _vote
       ReplyToRPCSender{..} -> enqueueRequest $ Sender.BroadcastRVR _targetNode Nothing _vote

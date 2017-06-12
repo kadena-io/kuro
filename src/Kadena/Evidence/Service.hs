@@ -107,6 +107,10 @@ runEvidenceProcessor es = do
           if (not $ Set.null $ newEs ^. esCacheMissAers)
           then processCacheMisses newEs >>= runEvidenceProcessor
           else runEvidenceProcessor newEs
+        StrangeResultInProcessor ci -> do
+          debug $ "CommitIndex still: " ++ show ci
+          debug $ "checkForNewCommitIndex is in a funny state likely because the cluster is under load, we'll see if it resolves itself: " ++ show ci
+          runEvidenceProcessor newEs
         NeedMoreEvidence i -> do
           if (not $ Set.null $ newEs ^. esCacheMissAers)
           then processCacheMisses newEs >>= runEvidenceProcessor
@@ -193,20 +197,22 @@ checkForNewCommitIndex = do
       Left i -> return $ NeedMoreEvidence i
       Right ci | ci > commitIndex' -> do
         esEvidenceCache' <- use esEvidenceCache
-        newHash <- case Map.lookup ci esEvidenceCache' of
+        case Map.lookup ci esEvidenceCache' of
           Nothing -> do
-             es <- get
-             error $ "deep invariant error: checkForNewCommitIndex found a new commit index "
-                   ++ show ci ++ " but the hash was not in the Evidence Cache\n### STATE DUMP ###\n"
-                   ++ show es
-          Just h -> return h
-        esHashAtCommitIndex .= newHash
-        esCommitIndex .= ci
-        -- though the code in `processResult Successful` should be enough to keep everything in sync
-        -- we're going to make doubly sure that we don't double count
-        esPartialEvidence %= Map.filterWithKey (\k _ -> k > ci)
-        return $ NewCommitIndex ci
-               | otherwise         -> return $ SteadyState commitIndex'
+-- TODO: this tripped a bug in prod (64 node cluster, par-batch 200k 2k/s 500ms) in June... not sure what happened
+--              es <- get
+--              error $ "deep invariant error: checkForNewCommitIndex found a new commit index "
+--                    ++ show ci ++ " but the hash was not in the Evidence Cache\n### STATE DUMP ###\n"
+--                    ++ show es
+            return $ StrangeResultInProcessor ci
+          Just newHash -> do
+            esHashAtCommitIndex .= newHash
+            esCommitIndex .= ci
+            -- though the code in `processResult Successful` should be enough to keep everything in sync
+            -- we're going to make doubly sure that we don't double count
+            esPartialEvidence %= Map.filterWithKey (\k _ -> k > ci)
+            return $ NewCommitIndex ci
+                  | otherwise         -> return $ SteadyState commitIndex'
 --        es <- get
 --        error $ "Deep invariant error: Calculated a new commit index lower than our current one: "
 --              ++ show ci ++ " <= " ++ show commitIndex'
@@ -240,6 +246,9 @@ processCacheMisses es = do
           return newEs
         NeedMoreEvidence i -> do
           debug $ "even after processing cache misses, evidence still required (" ++ (show i) ++ " of " ++ show (1 + _esQuorumSize newEs) ++ ")"
+          return newEs
+        StrangeResultInProcessor ci -> do
+          debug $ "checkForNewCommitIndex is in a funny state likely because the cluster is under load, we'll see if it resolves itself: " ++ show ci
           return newEs
         NewCommitIndex ci -> do
           now' <- liftIO $ getCurrentTime

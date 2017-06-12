@@ -103,5 +103,6 @@ data Result =
 data CommitCheckResult =
   SteadyState {_ccrCommitIndex :: !LogIndex}|
   NeedMoreEvidence {_ccrEvRequired :: Int} |
+  StrangeResultInProcessor {_ccrCommitIndex :: !LogIndex} |
   NewCommitIndex {_ccrCommitIndex :: !LogIndex}
   deriving (Show)

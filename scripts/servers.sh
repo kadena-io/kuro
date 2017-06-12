@@ -29,6 +29,11 @@ case $cmd in
       do ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i ~/user.pem ec2-user@$i 'pkill kadenaserver' & done
     exit 0
     ;;
+  map)
+    for i in `cat kadenaservers.privateIp`;
+      do ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i ~/user.pem ec2-user@$i "\'${@:2}\'" done
+    exit 0
+    ;;
   copyLogs)
     for i in `cat kadenaservers.privateIp`; do scp -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i ~/user.pem -r ec2-user@$i:./${i}-output.log ~/kadena/cluster-logs/${i}-output.log & done
     exit 0
@@ -42,6 +47,6 @@ case $cmd in
     exit 0
     ;;
   *)
-    echo "Commands: distBins config start stop copyLogs clearLogs ps"
+    echo "Commands: distBins config start stop copyLogs clearLogs ps map"
     ;;
 esac

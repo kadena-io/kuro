@@ -8,11 +8,11 @@ packages:
 - '.'
 - location:
     git: git@bitbucket.org:spopejoy/pact.git
-    commit: 03eb72b8d1c41677323d6441262c2a6fad932d9d
+    commit: 5035b73f0f826c5581418a2b69f6217e1e486fc5
   extra-dep: true
 - location:
     git: git@bitbucket.org:spopejoy/pact-persist.git
-    commit: 7d0babb5f971fd9c3b4eb0161cb7b4c9ba1cf93b
+    commit: 55cdc8a8cd64f3026a11922c5fd3b7126ab3fd80
   extra-dep: true
 - location:
     git: https://github.com/abbradar/hdbc-odbc.git

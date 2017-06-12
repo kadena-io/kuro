@@ -30,8 +30,13 @@ case $cmd in
     exit 0
     ;;
   map)
+      for i in `cat kadenaservers.privateIp`;
+      do ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i ~/user.pem ec2-user@$i "${@:2}" ; done
+         exit 0
+         ;;
+  status)
     for i in `cat kadenaservers.privateIp`;
-      do ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i ~/user.pem ec2-user@$i "\'${@:2}\'" done
+      do curl -sH "Accept: application/json" "$i:10080" | jq '.kadena | {role: .node.role.val, commit_index: .consensus.commit_index.val, applied_index: .node.applied_index.val}' done
     exit 0
     ;;
   copyLogs)

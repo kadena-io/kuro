@@ -3,6 +3,17 @@
 
 Kadena Version: 1.1.x
 
+# Change Log
+
+* Kadena 1.1.2 (June 12th, 2017)
+  * Integrated privacy mechanism (on-chain Noise protocol based private channels)
+  * Added `par-batch` to REPL
+  * Fixed issues with new command forwarding and batching mechanics
+  * `local` queries now execute immediately, skipping the write behind's queue
+  * Nodes are automatically configured to run on `0.0.0.0`
+  * `genconfs` inputs now are reflected in the configuration files
+  * Fixed `genconfs --distributed` 
+
 # Getting Started
 
 ### Dependencies
@@ -145,7 +156,7 @@ It operates in 2 modes:
 
 * `./genconfs` will create a set of config files for a localhost test of kadena.
 It will ask you how many cluster and client nodes you'd like.
-* `./genconfs --distributed <cluster-ips file> <client-ips file>` will create a set of config files using the IP addresses specified in the files.
+* `./genconfs --distributed <cluster-ips file>` will create a set of config files using the IP addresses specified in the files.
 
 In either mode `genconfs` will interactively prompt for settings with recommendations.
 
@@ -167,9 +178,7 @@ $ cat server-ips
 54.73.153.2
 54.73.153.3
 54.73.153.4
-$ cat client-ips
-54.73.153.5
-$ ./genconfs --distributed ./server-ips ./client-ips
+$ ./genconfs --distributed ./server-ips
 When a recommended setting is available, press Enter to use it
 [FilePath] Which directory should hold the log files and SQLite DB's? (recommended: ./log)
 ... etc ...
@@ -356,7 +365,23 @@ First Seen:          2017-03-19 05:43:14.868 UTC
 NB: the `Crypto took` metric is only accurate when the concurrency system is set to `Threads`.
 All other metrics are always accurate.
 
-#### Sample usage: Running the payments demo with private functionality
+#### Sample Usage: Stressing the Cluster
+
+The aforementioned performance test revolves around the idea that, in production, there will be a resource pool that batches new commands and forwards them directly to the Leader for the cluster.
+This is, by far, the best architectural setup from a performance and efficiency perspective.
+However, if you'd like to test the worst-case setup -- one where new commands are distributed evenly across the cluster and the cluster is forced to forward and batch them as best it can -- you can use `par-batch`.
+
+`par-batch TOTAL_CMD_CNT CMD_RATE_PER_SEC DELAY` works much like `batch` except that `kadenaclient` will evenly distributed the new commands across the entire cluster.
+It is creates `TOTAL_CMD_CNT` commands first and then submits portions of the new command pool to each node in individual batches with a `DELAY` millisecond pause between each submission.
+Globally, it will achieve the `CMD_RATE_PER_SEC` specified. 
+
+For example, on a 4 node cluster `par-batch 10000 1000 200` will submit 50 new commands to each node every 200ms for 10 seconds.
+
+NB: In-REPL performance metrics for this test are inaccurate.
+Also, being the worst case architecture means that the cluster will make a best effort at performance but it will not be as high as `batch`.
+
+
+#### Sample Usage: Running the payments demo with private functionality
 
 Refer to "Entity Configuration" below for general notes on privacy configurations. This demo requires that there be 4 entities configured by the `genconfs` tool, which will name them "Alice", "Bob", "Carol" and "Dinesh". These would correspond to business entities on the blockchain, communicating with private messages over the blockchain. Confirm this setup with the `server` command.
 
@@ -494,6 +519,33 @@ node3> load todomvc/demo.yaml
 ```
 
 NB: this demo can be run at the same time as the `payments` demo.
+
+#### Sample Usage: Running a cluster on AWS
+
+The scripts we use for quickly testing Kadena on AWS are now available as well, located in `kadena-beta/scripts`.
+The include: 
+
+* `create_aws_confs.sh`: This script will query AWS for a list of IP addresses, use it to create the configs for each node (and one client), and create a file directory `aws-confs` that stores the configs and the startup scripts for each node.
+* `servers.sh`: This script is used for managing the cluster and requires the `aws-confs` file hierarchy to be in place prior to running. It can distribute the `kadenaserver` binaries to each node, configure each server (transfer configs, start scripts, create directories), start/stop/reset the cluster, query the status of each node, etc... View the source for more details. 
+
+#### Sample Usage: Querying the Cluster for Server Metrics
+
+Each `kadenaserver` hosts an instance of `ekg` (a performance monitoring tool) on `<node-host>:<node-port>+80`. 
+It returns a JSON blob of the latest tracked metrics. 
+`server.sh status` uses this mechanism for status querying:
+
+```
+status)
+  for i in `cat kadenaservers.privateIp`;
+    do echo $i ; 
+      curl -sH "Accept: application/json" "$i:10080" | jq '.kadena | {role: .node.role.val, commit_index: .consensus.commit_index.val, applied_index: .node.applied_index.val}' ; 
+    done
+  exit 0
+  ;;
+
+```
+
+NB: The `port` that `genconfs` when running in `--distributed` mode is `10000` therefore `ekg` runs on port `10080` on each node.
 
 # Configuration File Documentation
 

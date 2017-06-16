@@ -6,6 +6,7 @@ payments-demo*
 aws-conf/*
 bin/*
 *.swp
+*.tgz
 .dir-locals.el
 .stack-work/
 .stack-work*

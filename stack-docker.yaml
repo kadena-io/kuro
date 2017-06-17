@@ -9,6 +9,9 @@ packages:
   extra-dep: true
 - location: submodules/hdbc-odbc
   extra-dep: true
+- location: submodules/bound
+  extra-dep: true
+
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)
 extra-deps:

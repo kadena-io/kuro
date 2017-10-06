@@ -8,7 +8,7 @@ packages:
 - '.'
 - location:
     git: git@bitbucket.org:spopejoy/pact.git
-    commit: 5035b73f0f826c5581418a2b69f6217e1e486fc5
+    commit: a3c93471166e175093a83ed4d46a828b65946aad
   extra-dep: true
 - location:
     git: git@bitbucket.org:spopejoy/pact-persist.git

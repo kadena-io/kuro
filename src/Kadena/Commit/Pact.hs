@@ -55,8 +55,7 @@ data PactState = PactState
   }
 
 data PactEnv p = PactEnv {
-      _peConfig :: PactConfig
-    , _peMode :: ExecutionMode
+      _peMode :: ExecutionMode
     , _peDbEnv :: PactDbEnv p
     , _peState :: MVar PactState
     , _peCommand :: Command (Payload (PactRPC ParsedCode))
@@ -78,7 +77,7 @@ initPactService :: CommitEnv -> Publish -> IO (CommandExecInterface (PactRPC Par
 initPactService CommitEnv{..} pub = do
   let PactPersistConfig{..} = _pactPersistConfig
       logger = newLogger _commitLoggers "PactService"
-      initCI = initCommandInterface _entityConfig pub logger _commitLoggers _pactConfig
+      initCI = initCommandInterface _entityConfig pub logger _commitLoggers
       initWB p db = if _ppcWriteBehind
         then do
           wb <- initPureCacheWB p db  _commitLoggers
@@ -98,25 +97,25 @@ initPactService CommitEnv{..} pub = do
       logInit logger "Initializing MSSQL"
       initWB MSSQL.persister =<< MSSQL.initMSSQL connStr conf _commitLoggers
 
-initCommandInterface :: EntityConfig -> Publish -> Logger -> Loggers -> PactConfig -> Persister w -> w ->
+initCommandInterface :: EntityConfig -> Publish -> Logger -> Loggers -> Persister w -> w ->
                         IO (CommandExecInterface (PactRPC ParsedCode))
-initCommandInterface ent pub logger loggers pconf p db = do
+initCommandInterface ent pub logger loggers p db = do
   pde <- PactDbEnv pactdb <$> newMVar (initDbEnv loggers p db)
   cmdVar <- newMVar (PactState initRefStore M.empty)
   logInit logger "Creating Pact Schema"
   initSchema pde
   return CommandExecInterface
-    { _ceiApplyCmd = \eMode cmd -> applyCmd ent pub logger pconf pde cmdVar eMode cmd (verifyCommand cmd)
-    , _ceiApplyPPCmd = applyCmd ent pub logger pconf pde cmdVar }
+    { _ceiApplyCmd = \eMode cmd -> applyCmd ent pub logger pde cmdVar eMode cmd (verifyCommand cmd)
+    , _ceiApplyPPCmd = applyCmd ent pub logger pde cmdVar }
 
 
 
 
-applyCmd :: EntityConfig -> Publish -> Logger -> PactConfig -> PactDbEnv p -> MVar PactState -> ExecutionMode -> Command a ->
+applyCmd :: EntityConfig -> Publish -> Logger -> PactDbEnv p -> MVar PactState -> ExecutionMode -> Command a ->
             ProcessedCommand (PactRPC ParsedCode) -> IO CommandResult
-applyCmd _ _ _ _ _ _ ex cmd (ProcFail s) = return $ jsonResult ex (cmdToRequestKey cmd) s
-applyCmd ent pub logger conf dbv cv exMode _ (ProcSucc cmd) = do
-  r <- tryAny $ runPact (PactEnv conf exMode dbv cv cmd pub ent logger) $ runPayload cmd
+applyCmd _ _ _ _ _ ex cmd (ProcFail s) = return $ jsonResult ex (cmdToRequestKey cmd) s
+applyCmd ent pub logger dbv cv exMode _ (ProcSucc cmd) = do
+  r <- tryAny $ runPact (PactEnv exMode dbv cv cmd pub ent logger) $ runPayload cmd
   case r of
     Right cr -> do
       logLog logger "DEBUG" $ "success for requestKey: " ++ show (cmdToRequestKey cmd)
@@ -144,10 +143,10 @@ applyExec (ExecMsg parsedCode edata) ks = do
   when (null (_pcExps parsedCode)) $ throwCmdEx "No expressions found"
   PactState{..} <- liftIO $ readMVar _peState
   let sigs = userSigsToPactKeySet ks
-      evalEnv = setupEvalEnv _peDbEnv _peConfig _peMode
+      evalEnv = setupEvalEnv _peDbEnv (Just (_elName $ _ecLocal $ _peEntity)) _peMode
                 (MsgData sigs edata Nothing) _psRefStore
   EvalResult{..} <- liftIO $ evalExec evalEnv parsedCode
-  mp <- join <$> mapM (handleYield erInput sigs) erYield
+  mp <- join <$> mapM (handleYield erInput sigs) erExec
   let newState = PactState erRefStore $ case mp of
         Nothing -> _psPacts
         Just (p@Pact{..}) -> M.insert _pTxId p _psPacts
@@ -157,8 +156,8 @@ applyExec (ExecMsg parsedCode edata) ks = do
 debug :: String -> PactM p ()
 debug m = reader _peLogger >>= \l -> liftIO $ logLog l "DEBUG" m
 
-handleYield :: [Term Name] -> S.Set PublicKey -> PactYield -> PactM p (Maybe Pact)
-handleYield em sigs PactYield{..} = do
+handleYield :: [Term Name] -> S.Set PublicKey -> PactExec -> PactM p (Maybe Pact)
+handleYield em sigs PactExec{..} = do
   PactEnv{..} <- ask
   let EntityConfig{..} = _peEntity
   unless (length em == 1) $
@@ -166,9 +165,9 @@ handleYield em sigs PactYield{..} = do
   case _peMode of
     Local -> return Nothing
     Transactional tid -> do
-      ry <- mapM encodeResume _pyYield
-      when _pyExecuted $ publishCont tid tid 1 False ry
-      return $ Just $ Pact tid (head em) sigs _pyStepCount
+      ry <- mapM encodeResume _peYield
+      when _peExecuted $ publishCont tid tid 1 False ry
+      return $ Just $ Pact tid (head em) sigs _peStepCount
 
 reverseAddy :: EntityName -> Address -> Address
 reverseAddy me Address{..} = Address me (S.delete me $ S.insert _aFrom _aTo)
@@ -199,8 +198,8 @@ applyContinuation cm@ContMsg{..} = do
         Just pact@Pact{..} -> do
           when (_cmStep < 0 || _cmStep >= _pStepCount) $ throwCmdEx $ "Invalid step value: " ++ show _cmStep
           res <- mapM decodeResume _cmResume
-          let evalEnv = setupEvalEnv _peDbEnv _peConfig _peMode
-                (MsgData _pSigs Null (Just $ PactStep _cmStep _cmRollback _cmTxId res))
+          let evalEnv = setupEvalEnv _peDbEnv (Just (_elName $ _ecLocal $ _peEntity)) _peMode
+                (MsgData _pSigs Null (Just $ PactStep _cmStep _cmRollback (fromString $ show $ _cmTxId) res))
                 _psRefStore
           tryAny (liftIO $ evalContinuation evalEnv _pContinuation) >>=
             either (handleContFailure tid pe cm ps) (handleContSuccess tid pe cm ps pact)
@@ -221,15 +220,15 @@ doRollback tid PactEnv{..} ContMsg{..} PactState{..} executed = do
 
 handleContSuccess :: TxId -> PactEnv p -> ContMsg -> PactState -> Pact -> EvalResult -> PactM p CommandResult
 handleContSuccess tid pe@PactEnv{..} cm@ContMsg{..} ps@PactState{..} p@Pact{..} er@EvalResult{..} = do
-  py@PactYield {..} <- maybe (throwCmdEx "No yield from continuation exec!") return erYield
+  py@PactExec {..} <- maybe (throwCmdEx "No yield from continuation exec!") return erExec
   if _cmRollback then
-    doRollback tid pe cm ps _pyExecuted
+    doRollback tid pe cm ps _peExecuted
   else
     doResume tid pe cm ps p er py
   jsonResult' $ CommandSuccess (last erOutput)
 
-doResume :: TxId -> PactEnv p -> ContMsg -> PactState -> Pact -> EvalResult -> PactYield -> PactM p ()
-doResume tid PactEnv{..} ContMsg{..} PactState{..} Pact{..} EvalResult{..} PactYield{..} = do
+doResume :: TxId -> PactEnv p -> ContMsg -> PactState -> Pact -> EvalResult -> PactExec -> PactM p ()
+doResume tid PactEnv{..} ContMsg{..} PactState{..} Pact{..} EvalResult{..} PactExec{..} = do
   let nextStep = succ _cmStep
       isLast = nextStep >= _pStepCount
       updateState pacts = void $ liftIO $ swapMVar _peState (PactState erRefStore pacts)
@@ -238,8 +237,8 @@ doResume tid PactEnv{..} ContMsg{..} PactState{..} Pact{..} EvalResult{..} PactY
       debug $ "handleContSuccess: reaping pact [disabled]: " ++ show _cmTxId
       -- updateState $ M.delete _cmTxId _psPacts
     else do
-      ry <- mapM encodeResume _pyYield
-      when _pyExecuted $ publishCont _cmTxId tid nextStep False ry
+      ry <- mapM encodeResume _peYield
+      when _peExecuted $ publishCont _cmTxId tid nextStep False ry
       updateState _psPacts
 
 publishCont :: TxId -> TxId -> Int -> Bool -> Maybe Value -> PactM p ()

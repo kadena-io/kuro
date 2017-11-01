@@ -24,14 +24,14 @@
     (step-with-rollback
      src-entity
      (let ((result (debit src amount { "transfer-to": dest, "message": "Starting pact" })))
-       (yield { "result": result, "amount": amount, "tx": (pact-txid) }))
-     (credit src amount { "rollback": (pact-txid) }))
+       (yield { "result": result, "amount": amount, "tx": (pact-id) }))
+     (credit src amount { "rollback": (pact-id) }))
 
     (step
      dest-entity
      (resume { "result":= result, "amount":= debit-amount }
        (credit dest debit-amount
-               { "transfer-from": src, "debit-result": result, "tx": (pact-txid) }))))
+               { "transfer-from": src, "debit-result": result, "tx": (pact-id) }))))
 
   (defun debit (acct amount data)
     "Debit ACCT for AMOUNT, enforcing positive amount and sufficient funds, annotating with DATA"

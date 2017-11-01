@@ -56,8 +56,6 @@ import System.Console.GetOpt
 import System.Environment
 import System.Exit hiding (die)
 import System.IO
-import System.Directory
-import System.FilePath
 
 import Pact.Types.API hiding (Poll)
 import qualified Pact.Types.API as Pact
@@ -66,28 +64,13 @@ import qualified Pact.Types.Command as Pact
 import qualified Pact.Types.Crypto as Pact
 import Pact.Types.Util
 
+import Pact.ApiReq
+
 
 import Kadena.Types.Base hiding (printLatTime)
 import Kadena.Types.Entity (EntityName)
 import Kadena.Types.Command (CmdResultLatencyMetrics(..))
 
-data KeyPair = KeyPair {
-  _kpSecret :: PrivateKey,
-  _kpPublic :: PublicKey
-  } deriving (Eq,Show,Generic)
-instance ToJSON KeyPair where toJSON = lensyToJSON 3
-instance FromJSON KeyPair where parseJSON = lensyParseJSON 3
-
-data YamlLoad = YamlLoad {
-  _ylData :: Maybe String,
-  _ylDataFile :: Maybe FilePath,
-  _ylCode :: Maybe String,
-  _ylCodeFile :: Maybe FilePath,
-  _ylKeyPairs :: [KeyPair],
-  _ylBatchCmd :: Maybe String
-  } deriving (Eq,Show,Generic)
-instance ToJSON YamlLoad where toJSON = lensyToJSON 3
-instance FromJSON YamlLoad where parseJSON = lensyParseJSON 3
 
 data ClientOpts = ClientOpts {
       _oConfig :: FilePath
@@ -312,29 +295,17 @@ parallelBatchTest totalNumCmds' cmdRate' sleep' = do
 
 load :: Mode -> FilePath -> Repl ()
 load m fp = do
-  YamlLoad {..} <- either (\pe -> die $ "File load failed: " ++ show pe) return =<<
-        liftIO (Y.decodeFileEither fp)
-  oldCwd <- liftIO $ getCurrentDirectory
-  liftIO $ setCurrentDirectory (takeDirectory fp)
-  (code,cdata) <- (`finally` liftIO (setCurrentDirectory oldCwd)) $ do
-    code <- case (_ylCodeFile,_ylCode) of
-      (Nothing,Just c) -> return c
-      (Just f,Nothing) -> liftIO (readFile f)
-      _ -> die "Expected either a 'code' or 'codeFile' entry"
-    cdata <- case (_ylDataFile,_ylData) of
-      (Nothing,Just v) -> either (\e -> die $ "Data decode failed: " ++ show e) return $ eitherDecode (BSL.pack v)
-      (Just f,Nothing) -> liftIO (BSL.readFile f) >>=
-                          either (\e -> die $ "Data file load failed: " ++ show e) return .
-                          eitherDecode
-      (Nothing,Nothing) -> return Null
-      _ -> die "Expected either a 'data' or 'dataFile' entry, or neither"
-    return (code,cdata)
+  ((ApiReq {..},code,cdata,_),_) <- liftIO $ mkApiReqExec fp
+
   keys .= _ylKeyPairs
   cmdData .= cdata
   sendCmd m code
-  case _ylBatchCmd of
+  -- re-parse yaml for batch command
+  v :: Value <- either (\pe -> die $ "File load failed: " ++ show pe) return =<<
+                liftIO (Y.decodeFileEither fp)
+  case firstOf (key "batchCmd" . _String) v of
     Nothing -> return ()
-    Just c -> flushStrLn ("Setting batch command to: " ++ c) >> batchCmd .= c
+    Just c -> flushStrLn ("Setting batch command to: " ++ show c) >> batchCmd .= (T.unpack c)
   cmdData .= Null
 
 showResult :: Int -> [RequestKey] -> Maybe Int64 -> Repl ()

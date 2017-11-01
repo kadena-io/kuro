@@ -8,7 +8,7 @@ module Kadena.Commit.Types
   , CommitEnv(..)
   , commitChannel, debugPrint, publishMetric
   , getTimestamp, historyChannel, mConfig
-  , pactPersistConfig, pactConfig, commitLoggers, entityConfig
+  , pactPersistConfig, commitLoggers, entityConfig
   , privateChannel
   , CommitState(..)
   , csNodeId,csKeySet,csCommandExecInterface
@@ -29,7 +29,7 @@ import Data.Aeson (Value)
 import Pact.Types.Command (ParsedCode,CommandExecInterface)
 import qualified Pact.Types.Command as Pact (CommandResult,Command)
 import Pact.Types.Logger (Loggers)
-import Pact.Types.RPC (PactConfig,PactRPC)
+import Pact.Types.RPC (PactRPC)
 
 
 import Kadena.Types.Base (NodeId)
@@ -73,7 +73,6 @@ data CommitEnv = CommitEnv
   , _historyChannel :: !HistoryChannel
   , _privateChannel :: !PrivateChannel
   , _pactPersistConfig :: !PactPersistConfig
-  , _pactConfig :: !PactConfig
   , _debugPrint :: !(String -> IO ())
   , _commitLoggers :: !Loggers
   , _publishMetric :: !(Metric -> IO ())

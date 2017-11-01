@@ -79,7 +79,7 @@ launchCommitService :: Dispatch
 launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' gcm' pubConsensus ent = do
   rconf' <- readCurrentConfig gcm'
   commitEnv <- return $! Commit.initCommitEnv
-    dispatch' dbgPrint' (_pactPersist rconf') (_elName $ _ecLocal $ _entity rconf')
+    dispatch' dbgPrint' (_pactPersist rconf')
       (_logRules rconf') publishMetric' getTimestamp' gcm' ent
   pub <- return $! Publish pubConsensus dispatch' getTimestamp' nodeId'
   linkAsyncTrack "CommitThread" (Commit.runCommitService commitEnv pub nodeId' keySet')

@@ -1,5 +1,7 @@
-data: |-
-  { "demo-admin-keyset": { "keys": ["demoadmin"], "pred": ">" } }
+data:
+  demo-admin-keyset:
+    "keys": ["demoadmin"]
+    "pred": ">"
 codeFile: demo.pact
 keyPairs:
   - public: 06c9c56daa8a068e1f19f5578cdf1797b047252e1ef0eb4a1809aa3c2226f61e

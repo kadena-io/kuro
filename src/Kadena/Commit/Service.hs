@@ -27,7 +27,6 @@ import Data.Aeson (Value)
 import qualified Pact.Types.Command as Pact
 import Pact.Types.Command ( ExecutionMode(..))
 import Pact.Types.Logger (LogRules(..),initLoggers,doLog)
-import Pact.Types.RPC (PactConfig(..))
 
 import Kadena.Util.Util (linkAsyncTrack)
 import Kadena.Types.Config
@@ -52,19 +51,17 @@ initCommitEnv
   :: Dispatch
   -> (String -> IO ())
   -> PactPersistConfig
-  -> EntityName
   -> LogRules
   -> (Metric -> IO ())
   -> IO UTCTime
   -> GlobalConfigTMVar
   -> EntityConfig
   -> CommitEnv
-initCommitEnv dispatch' debugPrint' persistConfig entName logRules' publishMetric' getTimestamp' gcm' ent = CommitEnv
+initCommitEnv dispatch' debugPrint' persistConfig logRules' publishMetric' getTimestamp' gcm' ent = CommitEnv
   { _commitChannel = dispatch' ^. D.commitService
   , _historyChannel = dispatch' ^. D.historyChannel
   , _privateChannel = dispatch' ^. D.privateChannel
   , _pactPersistConfig = persistConfig
-  , _pactConfig = PactConfig entName
   , _debugPrint = debugPrint'
   , _commitLoggers = initLoggers debugPrint' doLog logRules'
   , _publishMetric = publishMetric'

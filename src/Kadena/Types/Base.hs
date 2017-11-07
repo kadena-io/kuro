@@ -44,6 +44,7 @@ import Pact.Types.Orphans ()
 import Pact.Types.Crypto
 import Pact.Types.Util
 import Pact.Types.Command (RequestKey(..), initialRequestKey)
+import Pact.Types.Hash
 
 
 newtype Alias = Alias { unAlias :: ByteString }

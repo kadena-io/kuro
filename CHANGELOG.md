@@ -1,3 +1,6 @@
+# Version 1.1.1.1
+* Pact 2.3.7
+
 # Version 1.1.1
 
 * Upgrade to Pact 2.3.6

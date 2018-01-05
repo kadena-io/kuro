@@ -105,6 +105,10 @@ makeLenses ''ClientConfig
 instance ToJSON ClientConfig where toJSON = lensyToJSON 3
 instance FromJSON ClientConfig where parseJSON = lensyParseJSON 3
 
+data KeyPairFile = KeyPairFile {
+    _kpKeyPairs :: [KeyPair]
+  } deriving (Generic)
+instance FromJSON KeyPairFile where parseJSON = lensyParseJSON 3
 
 data Mode = Transactional|Local
   deriving (Eq,Show,Ord,Enum)
@@ -123,14 +127,15 @@ data CliCmd =
   Exit |
   Format (Maybe Formatter) |
   Help |
-  Keys (Maybe (T.Text,T.Text)) |
+  Keys (Maybe (T.Text,Maybe T.Text)) |
   Load FilePath Mode |
   Poll String |
   PollMetrics String |
   Send Mode String |
   Private EntityName [EntityName] String |
   Server (Maybe String) |
-  Sleep Int
+  Sleep Int |
+  Echo Bool
   deriving (Eq,Show)
 
 data ReplState = ReplState {
@@ -140,6 +145,7 @@ data ReplState = ReplState {
     , _cmdData :: Value
     , _keys :: [KeyPair]
     , _fmt :: Formatter
+    , _echo :: Bool
 }
 makeLenses ''ReplState
 
@@ -184,6 +190,7 @@ mkExec code mdata addy = do
 
 postAPI :: (ToJSON req,FromJSON resp) => String -> req -> Repl (Response resp)
 postAPI ep rq = do
+  use echo >>= \e -> when e $ putJSON rq
   s <- getServer
   liftIO $ postSpecifyServerAPI ep s rq
 
@@ -389,7 +396,7 @@ pprintLatency CmdResultLatencyMetrics{..} = do
 
 pprintTable :: Value -> Maybe String
 pprintTable val = do
-  os <- firstOf (key "data" . _Array) val >>= sequence . fmap (firstOf _Object)
+  os <- firstOf (key "data" . _Array) val >>= traverse (firstOf _Object)
   let rendered = fmap (fmap (BSL.unpack . encode)) os
       lengths = foldl' (\r m -> HM.unionWith max (HM.mapWithKey (\k v -> max (T.length k) (length v)) m) r) HM.empty rendered
       fill n s = s ++ replicate (n - length s) ' '
@@ -412,6 +419,8 @@ cliCmds = [
    Cmd <$> optional (some anyChar)),
   ("data","[JSON]","Show/set current JSON data payload",
    Data <$> optional (some anyChar)),
+  ("echo", "on|off", "Set message echoing on|off",
+   Echo <$> ((symbol "on" >> pure True) <|> (symbol "off" >> pure False))),
   ("load","YAMLFILE [MODE]",
    "Load and submit yaml file with optional mode (transactional|local), defaults to transactional",
    Load <$> some anyChar <*> (fromMaybe Transactional <$> optional parseMode)),
@@ -439,8 +448,9 @@ cliCmds = [
   ("server","[SERVERID]","Show server info or set current server",
    Server <$> optional (some anyChar)),
   ("help","","Show command help", pure Help),
-  ("keys","[PUBLIC PRIVATE]","Show or set signing keypair",
-   Keys <$> optional ((,) <$> (T.pack <$> some alphaNum) <*> (spaces >> (T.pack <$> some alphaNum)))),
+  ("keys","[PUBLIC PRIVATE | FILE]","Show or set signing keypair/read keypairs from file",
+   Keys <$> optional ((,) <$> (T.pack <$> some anyChar) <*>
+                      (optional (spaces >> (T.pack <$> some alphaNum))))),
   ("exit","","Exit client", pure Exit),
   ("format","[FORMATTER]","Show/set current output formatter (yaml|raw|pretty|table)",
    Format <$> optional ((symbol "yaml" >> pure YAML) <|>
@@ -518,7 +528,7 @@ handleCmd cmd = case cmd of
   Data Nothing -> use cmdData >>= flushStrLn . BSL.unpack . encode
   Data (Just s) -> either (\e -> flushStrLn $ "Bad JSON value: " ++ show e) (cmdData .=) $ eitherDecode (BSL.pack s)
   Keys Nothing -> use keys >>= mapM_ putJSON
-  Keys (Just (p,s)) -> do
+  Keys (Just (p,Just s)) -> do
     sk <- case fromJSON (String s) of
       A.Error e -> die $ "Bad secret key value: " ++ show e
       A.Success k -> return k
@@ -526,9 +536,13 @@ handleCmd cmd = case cmd of
       A.Error e -> die $ "Bad public key value: " ++ show e
       A.Success k -> return k
     keys .= [KeyPair sk pk]
+  Keys (Just (kpFile,Nothing)) -> do
+    (KeyPairFile kps) <- either (die . show) return =<< liftIO (Y.decodeFileEither (T.unpack kpFile))
+    keys .= kps
   Format Nothing -> use fmt >>= flushStrLn . show
   Format (Just f) -> fmt .= f
   Private to from msg -> sendPrivate (Pact.Address to (S.fromList from)) msg
+  Echo e -> echo .= e
 
 parseRK :: String -> Repl B.ByteString
 parseRK cmd = case B16.decode $ BS8.pack cmd of
@@ -579,5 +593,6 @@ main = do
              _requestId = i,
              _cmdData = Null,
              _keys = [KeyPair (_ccSecretKey conf) (_ccPublicKey conf)],
-             _fmt = Table
+             _fmt = Table,
+             _echo = False
            }

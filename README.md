@@ -39,6 +39,23 @@ cd ../thyme
 git fetch && git checkout 6ee9fcb026ebdb49b810802a981d166680d867c9
 ```
 
+3. Upgrade the stack-docker.yaml file:
+
+```
+> cp stack.yaml stack-docker.yaml
+
+# Edit all of these...
+- location:
+    git: git@github.com:kadena-io/thyme.git
+    commit: 6ee9fcb026ebdb49b810802a981d166680d867c9
+  extra-dep: true
+# ...to be these
+- './submodules/thyme'
+  extra-dep: true
+
+
+```
+
 NB: we do this because it's easier than fighting with either submodules or getting docker to be able to clone on it's own
 
 ### Automated Part

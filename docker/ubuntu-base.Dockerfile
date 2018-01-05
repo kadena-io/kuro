@@ -1,7 +1,8 @@
 FROM ubuntu:16.04
 MAINTAINER Will <will@kadena.io>
 
-RUN apt-get -y update && apt-get -y upgrade
+RUN apt-get -y update && \
+    apt-get -y upgrade
 
 RUN apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 575159689BEFB442 && \
     echo 'deb http://download.fpcomplete.com/ubuntu xenial main' >> /etc/apt/sources.list.d/fpco.list && \
@@ -15,13 +16,13 @@ RUN wget https://github.com/tmux/tmux/releases/download/2.0/tmux-2.0.tar.gz && \
     make install && \
     cd .. && rm -rf tmux-2.0*
 
-RUN wget https://download.libsodium.org/libsodium/releases/libsodium-1.0.11.tar.gz && \
-    tar -xvf libsodium-1.0.11.tar.gz  && \
-    cd libsodium-1.0.11  && \
+RUN wget https://download.libsodium.org/libsodium/releases/libsodium-1.0.16.tar.gz && \
+    tar -xvf libsodium-1.0.16.tar.gz  && \
+    cd libsodium-1.0.16  && \
     ./configure  && \
     make && \
     make install && \
-    cd .. && rm -rf libsodium-1.0.11*
+    cd .. && rm -rf libsodium-1.0.16*
 
 RUN cd && touch ./build-exports && \
     echo '/usr/local/lib' >> /etc/ld.so.conf.d/libsodium.conf && \

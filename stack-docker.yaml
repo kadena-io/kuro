@@ -9,6 +9,8 @@ packages:
   extra-dep: true
 - location: submodules/hdbc-odbc
   extra-dep: true
+- location: submodules/thyme
+  extra-dep: true
 - location: submodules/bound
   extra-dep: true
 

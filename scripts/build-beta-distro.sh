@@ -38,7 +38,7 @@ safe docker build --cpuset-cpus="0-3" --cpu-shares=1024 --memory=8g -t kadena:ce
 safe docker run -i -v ${PWD}:/work_dir kadena:centos-6.8 << COMMANDS
 cp -R /centos-6.8 /work_dir/kadena-beta/bin
 COMMANDS
-safe cp docker/centos-base.Dockerfile kadena-beta/docker/
+safe cp docker/centos6-base.Dockerfile kadena-beta/docker/
 
 chirp "Builing and Copying: Performance Monitor"
 rm -rf ./kadena-beta/static/monitor/*

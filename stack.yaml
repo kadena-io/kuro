@@ -8,15 +8,19 @@ packages:
 - '.'
 - location:
     git: git@bitbucket.org:spopejoy/pact.git
-    commit: e780d3c3817630ace6c48f6a09bf13089427c6b2
+    commit: 41d0cae570af056a06868298546a806da2d2eadc
   extra-dep: true
 - location:
     git: git@bitbucket.org:spopejoy/pact-persist.git
-    commit: 2015f7b5ca4f6ee12b7f5d0c859bc98e4965da85
+    commit: b9c627663d402ec7d2fe9665872e9c01ab8de07a
   extra-dep: true
 - location:
     git: https://github.com/abbradar/hdbc-odbc.git
     commit: 79ffd1f5060d2c8b5cbdfd4eba8ae6414372d6b7
+  extra-dep: true
+- location:
+    git: git@github.com:kadena-io/thyme.git
+    commit: 6ee9fcb026ebdb49b810802a981d166680d867c9
   extra-dep: true
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)

@@ -33,8 +33,8 @@ safe cp docker/ubuntu-base.Dockerfile kadena-beta/docker/
 
 chirp "Builing and Copying: CENTOS 6.8"
 rm -rf ./kadena-beta/bin/centos-6.8/{genconfs,kadenaserver,kadenaclient}
-safe docker build --cpuset-cpus="0-3" --cpu-shares=1024 --memory=8g -t kadena-base:centos-6.8 -f docker/centos-base.Dockerfile .
-safe docker build --cpuset-cpus="0-3" --cpu-shares=1024 --memory=8g -t kadena:centos-6.8 -f docker/centos-build.Dockerfile .
+safe docker build --cpuset-cpus="0-3" --cpu-shares=1024 --memory=8g -t kadena-base:centos-6.8 -f docker/centos6-base.Dockerfile .
+safe docker build --cpuset-cpus="0-3" --cpu-shares=1024 --memory=8g -t kadena:centos-6.8 -f docker/centos6-build.Dockerfile .
 safe docker run -i -v ${PWD}:/work_dir kadena:centos-6.8 << COMMANDS
 cp -R /centos-6.8 /work_dir/kadena-beta/bin
 COMMANDS

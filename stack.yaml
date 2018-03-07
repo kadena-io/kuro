@@ -7,11 +7,11 @@ build:
 packages:
 - '.'
 - location:
-    git: git@bitbucket.org:spopejoy/pact.git
+    git: https://bitbucket.org/stuart-kadena/pact.git
     commit: d1f2892bc739c1f8fb26b59b4e7528a592d5d12d
   extra-dep: true
 - location:
-    git: git@bitbucket.org:spopejoy/pact-persist.git
+    git: https://bitbucket.org/stuart-kadena/pact-persist.git
     commit: b9c627663d402ec7d2fe9665872e9c01ab8de07a
   extra-dep: true
 - location:
@@ -19,7 +19,7 @@ packages:
     commit: 79ffd1f5060d2c8b5cbdfd4eba8ae6414372d6b7
   extra-dep: true
 - location:
-    git: git@github.com:kadena-io/thyme.git
+    git: https://github.com/kadena-io/thyme.git
     commit: 6ee9fcb026ebdb49b810802a981d166680d867c9
   extra-dep: true
 

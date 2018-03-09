@@ -29,7 +29,7 @@ startApi config = do
   let port = 80 + fromIntegral (config ^. nodeId . to _port)
   server <- forkServer "0.0.0.0" port
   let store = serverMetricStore server
-  _ <- mkRegistry store $ port + 1
+  _ <- mkRegistry store $ port + 256
   return server
 
 mkRegistry :: System.Metrics.Store -> R.Port -> IO ()

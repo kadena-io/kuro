@@ -10,20 +10,33 @@ import Data.Text.Encoding (decodeUtf8)
 
 import qualified Data.ByteString.Base64 as B64
 import qualified Data.Text as T
+import System.Metrics (Store)
 import qualified System.Metrics.Label as Label
 import qualified System.Metrics.Gauge as Gauge
 import qualified System.Metrics.Distribution as Dist
+import qualified System.Metrics.Prometheus.Ridley as R
+import qualified System.Metrics.Prometheus.Ridley.Types as R
 
 import Kadena.Util.Util (awsDashVar)
 import Kadena.Types (Config, nodeId, Metric(..), LogIndex(..), Term(..), NodeId(..), _port)
-import Kadena.Monitoring.EkgMonitor (Server, forkServer, getLabel, getGauge, getDistribution)
+import Kadena.Monitoring.EkgMonitor ( Server, forkServer, getLabel, getGauge, getDistribution
+                                    , serverMetricStore)
 
 -- TODO: possibly switch to 'newStore' API. this allows us to use groups.
 
 startApi :: Config -> IO Server
-startApi config = forkServer "0.0.0.0" port
-  where
-    port = 80 + fromIntegral (config ^. nodeId . to _port)
+startApi config = do 
+  let port = 80 + fromIntegral (config ^. nodeId . to _port)
+  server <- forkServer "0.0.0.0" port
+  let store = serverMetricStore server
+  _ <- mkRegistry store $ port + 1
+  return server
+
+mkRegistry :: System.Metrics.Store -> R.Port -> IO ()
+mkRegistry store port = do
+  let rOptions = R.newOptions [] R.defaultMetrics 
+  _ <- R.startRidleyWithStore rOptions ["/"] port store
+  return ()
 
 startMonitoring :: Config -> IO (Metric -> IO ())
 startMonitoring config = do

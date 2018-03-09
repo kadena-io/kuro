@@ -152,6 +152,7 @@ library
                      , primitive
                      , process
                      , random
+                     , ridley
                      , safe-exceptions >= 0.1.4.0
                      , semigroups
                      , snap-core

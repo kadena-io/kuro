@@ -74,3 +74,6 @@ demoui/node_modules
 jmeter.log
 .stack-work-prof/*
 /kadena-beta/CHANGELOG.md
+
+# VS code
+.vscode/*

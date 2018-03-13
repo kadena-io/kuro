@@ -35,7 +35,7 @@ startApi config = do
 mkRegistry :: System.Metrics.Store -> R.Port -> IO ()
 mkRegistry store port = do
   let rOptions = R.newOptions [] R.defaultMetrics 
-  _ <- R.startRidleyWithStore rOptions ["/"] port store
+  _ <- R.startRidleyWithStore rOptions ["metrics"] port store
   return ()
 
 startMonitoring :: Config -> IO (Metric -> IO ())

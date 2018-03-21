@@ -3,7 +3,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 
 module Kadena.Evidence.Spec
-  ( EvidenceProcEnv
+  ( EvidenceService
   , checkEvidence
   , processResult
   , EvidenceChannel(..)
@@ -22,8 +22,8 @@ module Kadena.Evidence.Spec
   ) where
 
 import Control.Lens hiding (Index)
+import Control.Monad.RWS.Lazy
 import Control.Monad.Trans.State.Strict
-import Control.Monad.Trans.Reader
 import Control.Concurrent (MVar)
 
 import Data.Map.Strict (Map)
@@ -52,7 +52,7 @@ data EvidenceEnv = EvidenceEnv
   }
 makeLenses ''EvidenceEnv
 
-type EvidenceProcEnv = ReaderT EvidenceEnv IO
+type EvidenceService s = RWST EvidenceEnv () s IO
 
 data EvidenceState = EvidenceState
   { _esOtherNodes :: !(Set NodeId)

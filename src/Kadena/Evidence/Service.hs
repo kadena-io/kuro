@@ -1,6 +1,4 @@
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE LambdaCase #-}
 
 module Kadena.Evidence.Service
   ( runEvidenceService
@@ -107,41 +105,21 @@ runEvidenceProcessor = do
       case res of
         SteadyState ci -> do
           debug $ "CommitIndex still: " ++ show ci 
-          if (not $ Set.null $ newEs ^. esCacheMissAers)
-          then do 
-            put newEs 
-            processCacheMisses 
-            runEvidenceProcessor         
-          else do
-            put newEs
-            runEvidenceProcessor
+          cacheMisses newEs
         StrangeResultInProcessor ci -> do
           debug $ "CommitIndex still: " ++ show ci
           debug $ "checkForNewCommitIndex is in a funny state likely because the cluster is under load, we'll see if it resolves itself: " ++ show ci
           put newEs
           runEvidenceProcessor
         NeedMoreEvidence i -> do
-          if (not $ Set.null $ newEs ^. esCacheMissAers)
-          then do 
-            put newEs 
-            processCacheMisses 
-            runEvidenceProcessor
-          else do
+          cacheMisses newEs        
+          when (Set.null $ newEs ^. esCacheMissAers) $
             debug $ "evidence is still required (" ++ (show i) ++ " of " ++ show (1 + _esQuorumSize newEs) ++ ")"
-            put newEs
-            runEvidenceProcessor
         NewCommitIndex ci -> do
           now' <- liftIO $ getCurrentTime
           updateLogs $ Log.ULCommitIdx $ Log.UpdateCommitIndex ci now'
           debug $ "new CommitIndex: " ++ (show ci)
-          if (not $ Set.null $ newEs ^. esCacheMissAers)
-          then do 
-            put newEs 
-            processCacheMisses 
-            runEvidenceProcessor
-          else do
-            put newEs
-            runEvidenceProcessor
+          cacheMisses newEs
     Heart tock -> do
       liftIO (pprintBeat tock) >>= debug
       put $ garbageCollectCache es
@@ -159,6 +137,17 @@ runEvidenceProcessor = do
         { _esEvidenceCache = Map.insert _cLogIndex _cHash (_esEvidenceCache es)
         , _esMaxCachedIndex = if _cLogIndex > (_esMaxCachedIndex es) then _cLogIndex else (_esMaxCachedIndex es)
         }
+      runEvidenceProcessor
+
+cacheMisses :: EvidenceState -> EvidenceService EvidenceState () 
+cacheMisses newEs =       
+  if (not $ Set.null $ newEs ^. esCacheMissAers)
+    then do 
+      put newEs 
+      processCacheMisses 
+      runEvidenceProcessor
+    else do
+      put newEs
       runEvidenceProcessor
 
 runEvidenceService :: EvidenceEnv -> IO ()

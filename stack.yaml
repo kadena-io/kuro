@@ -34,6 +34,9 @@ extra-deps:
 - unagi-chan-0.4.0.0
 - bloomfilter-2.0.1.0
 - concurrent-extra-0.7.0.10
+- ridley-0.3.1.2
+- ekg-prometheus-adapter-0.1.0.3
+- prometheus-0.4.2
 
 # Override default flag values for local packages and extra-deps
 flags: {}

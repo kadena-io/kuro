@@ -105,21 +105,21 @@ runEvidenceProcessor = do
       case res of
         SteadyState ci -> do
           debug $ "CommitIndex still: " ++ show ci 
-          cacheMisses newEs
+          checkCache newEs
         StrangeResultInProcessor ci -> do
           debug $ "CommitIndex still: " ++ show ci
           debug $ "checkForNewCommitIndex is in a funny state likely because the cluster is under load, we'll see if it resolves itself: " ++ show ci
           put newEs
           runEvidenceProcessor
         NeedMoreEvidence i -> do
-          cacheMisses newEs        
+          checkCache newEs        
           when (Set.null $ newEs ^. esCacheMissAers) $
             debug $ "evidence is still required (" ++ (show i) ++ " of " ++ show (1 + _esQuorumSize newEs) ++ ")"
         NewCommitIndex ci -> do
           now' <- liftIO $ getCurrentTime
           updateLogs $ Log.ULCommitIdx $ Log.UpdateCommitIndex ci now'
           debug $ "new CommitIndex: " ++ (show ci)
-          cacheMisses newEs
+          checkCache newEs
     Heart tock -> do
       liftIO (pprintBeat tock) >>= debug
       put $ garbageCollectCache es
@@ -139,8 +139,8 @@ runEvidenceProcessor = do
         }
       runEvidenceProcessor
 
-cacheMisses :: EvidenceState -> EvidenceService EvidenceState () 
-cacheMisses newEs =       
+checkCache :: EvidenceState -> EvidenceService EvidenceState () 
+checkCache newEs =       
   if (not $ Set.null $ newEs ^. esCacheMissAers)
     then do 
       put newEs 

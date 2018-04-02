@@ -92,7 +92,6 @@ runEvidenceProcessor = do
     VerifiedAER aers -> do
       -- every time we process evidence, we want to tick the 'alert consensus that they aren't talking to a wall'...
       let es' = es {_esResetLeaderNoFollowers = False}
-      put es'
       -- ... variable to False
       (res, newEs) <- return $! if Set.null $ _esCacheMissAers es'
                                 then runState (processEvidence aers) es'
@@ -102,24 +101,8 @@ runEvidenceProcessor = do
       put newEs
       publishEvidence
       when (newEs ^. esResetLeaderNoFollowers) tellKadenaToResetLeaderNoFollowersTimeout
-      case res of
-        SteadyState ci -> do
-          debug $ "CommitIndex still: " ++ show ci 
-          checkCache newEs
-        StrangeResultInProcessor ci -> do
-          debug $ "CommitIndex still: " ++ show ci
-          debug $ "checkForNewCommitIndex is in a funny state likely because the cluster is under load, we'll see if it resolves itself: " ++ show ci
-          put newEs
-          runEvidenceProcessor
-        NeedMoreEvidence i -> do
-          checkCache newEs        
-          when (Set.null $ newEs ^. esCacheMissAers) $
-            debug $ "evidence is still required (" ++ (show i) ++ " of " ++ show (1 + _esQuorumSize newEs) ++ ")"
-        NewCommitIndex ci -> do
-          now' <- liftIO $ getCurrentTime
-          updateLogs $ Log.ULCommitIdx $ Log.UpdateCommitIndex ci now'
-          debug $ "new CommitIndex: " ++ (show ci)
-          checkCache newEs
+      processCommitCkResult res
+      runEvidenceProcessor
     Heart tock -> do
       liftIO (pprintBeat tock) >>= debug
       put $ garbageCollectCache es
@@ -139,16 +122,29 @@ runEvidenceProcessor = do
         }
       runEvidenceProcessor
 
-checkCache :: EvidenceState -> EvidenceService EvidenceState () 
-checkCache newEs =       
-  if (not $ Set.null $ newEs ^. esCacheMissAers)
-    then do 
-      put newEs 
-      processCacheMisses 
-      runEvidenceProcessor
-    else do
-      put newEs
-      runEvidenceProcessor
+processCommitCkResult :: CommitCheckResult -> EvidenceService EvidenceState () 
+processCommitCkResult (SteadyState ci) = do
+  debug $ "CommitIndex still: " ++ show ci 
+  updateCache
+processCommitCkResult (StrangeResultInProcessor ci) = do
+  debug $ "CommitIndex still: " ++ show ci
+  debug $ "checkForNewCommitIndex is in a funny state likely because the cluster is under load, we'll see if it resolves itself: " ++ show ci
+processCommitCkResult (NeedMoreEvidence i) = do
+  newEs <- get
+  when (Set.null $ newEs ^. esCacheMissAers) $
+    debug $ "evidence is still required (" ++ (show i) ++ " of " ++ show (1 + _esQuorumSize newEs) ++ ")"
+  updateCache  
+processCommitCkResult(NewCommitIndex ci) = do
+  now' <- liftIO $ getCurrentTime
+  updateLogs $ Log.ULCommitIdx $ Log.UpdateCommitIndex ci now'
+  debug $ "new CommitIndex: " ++ (show ci)
+  updateCache
+
+updateCache :: EvidenceService EvidenceState () 
+updateCache = do     
+  newEs <- get
+  unless (Set.null $ newEs ^. esCacheMissAers)
+    processCacheMisses 
 
 runEvidenceService :: EvidenceEnv -> IO ()
 runEvidenceService ev = do

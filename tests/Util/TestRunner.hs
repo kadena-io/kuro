@@ -3,16 +3,12 @@
 
 module Util.TestRunner 
   ( delTempFiles
-  -- , runClientCommands
-  -- , runServers
-  -- , stopProcesses
   , runAll
   , testDir
   , testConfDir) where 
 
 import Apps.Kadena.Client   
 import Control.Concurrent
---import Control.Concurrent.Async
 import Control.Exception.Safe
 import Control.Monad
 import Control.Monad.State
@@ -37,10 +33,6 @@ delTempFiles = do
     _ <- createProcess p
     return ()
 
-clientArgs :: [String]
-clientArgs = words $ "-c " ++ testConfDir ++ "client.yaml"
-
--- catchAny :: MonadCatch m => m a -> (SomeException -> m a) -> m a 
 runAll :: IO ()
 runAll = do
   procHandles <- runServers 
@@ -65,7 +57,6 @@ runServer args = do
     sleep 1
     return procHandle
 
---FIXME: stop these the right way...but for now:    
 stopProcesses :: [ProcessHandle] -> IO ()
 stopProcesses handles = do
     mapM_ terminateProcess handles
@@ -79,6 +70,9 @@ serverArgs0 = "+RTS -N4 -RTS -c " ++ testConfDir ++ "10000-cluster.yaml"
 serverArgs1 = "+RTS -N4 -RTS -c " ++ testConfDir ++ "10001-cluster.yaml"
 serverArgs2 = "+RTS -N4 -RTS -c " ++ testConfDir ++ "10002-cluster.yaml"
 serverArgs3 = "+RTS -N4 -RTS -c " ++ testConfDir ++ "10003-cluster.yaml"
+
+clientArgs :: [String]
+clientArgs = words $ "-c " ++ testConfDir ++ "client.yaml"
 
 runClientCommands :: [String] -> IO ()
 runClientCommands args = 

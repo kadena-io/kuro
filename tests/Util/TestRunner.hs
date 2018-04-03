@@ -3,15 +3,17 @@
 
 module Util.TestRunner 
   ( delTempFiles
-  , runClientCommands
-  , runServers
-  , stopProcesses
+  -- , runClientCommands
+  -- , runServers
+  -- , stopProcesses
+  , runAll
   , testDir
   , testConfDir) where 
 
 import Apps.Kadena.Client   
 import Control.Concurrent
 --import Control.Concurrent.Async
+import Control.Exception.Safe
 import Control.Monad
 import Control.Monad.State
 import Control.Monad.Reader
@@ -35,6 +37,20 @@ delTempFiles = do
     _ <- createProcess p
     return ()
 
+clientArgs :: [String]
+clientArgs = words $ "-c " ++ testConfDir ++ "client.yaml"
+
+-- catchAny :: MonadCatch m => m a -> (SomeException -> m a) -> m a 
+runAll :: IO ()
+runAll = do
+  procHandles <- runServers 
+  putStrLn $ "Servers are running, sleeping for 3 seconds"
+  _ <- sleep 3
+  catchAny (do 
+             runClientCommands clientArgs
+             stopProcesses procHandles) 
+           (\_ -> stopProcesses procHandles)
+  
 runServers :: IO [ProcessHandle]
 runServers = 
   foldM f [] serverArgs where

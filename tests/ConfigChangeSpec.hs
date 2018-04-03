@@ -1,6 +1,6 @@
 module ConfigChangeSpec (spec) where 
 
-import System.Time.Extra    
+-- import System.Time.Extra    
 import Test.Hspec
 import Util.TestRunner
 
@@ -10,19 +10,20 @@ spec =
         it "tests configuration change" $ do
             delTempFiles      
             
-            serverHandles <- runServers
+            runAll
+            -- serverHandles <- runServers
             -- runServers
 
-            putStrLn $ "Servers are running, sleeping for 3 seconds"
-            _ <- sleep 5
+            -- putStrLn $ "Servers are running, sleeping for 3 seconds"
+            -- _ <- sleep 3
             
-            let args = words $ "-c " ++ testConfDir ++ "client.yaml"
-            runClientCommands args
+            -- let args = words $ "-c " ++ testConfDir ++ "client.yaml"
+            -- runClientCommands args
 
             -- putStrLn $ "Client command sent"
             -- _ <- sleep 5
 
-            stopProcesses serverHandles
+            -- stopProcesses serverHandles
           
             True `shouldBe` True
  

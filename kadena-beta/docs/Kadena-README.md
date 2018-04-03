@@ -45,8 +45,7 @@ Quickly launch a local instance, see "Sample Usage: `[payments|monitor|todomvc]`
 
 ```
 $ tmux
-$ cd kadena-beta
-$ ./bin/osx/start.sh
+$ demo/start.sh
 ```
 
 #### Ubuntu 16.04
@@ -242,13 +241,13 @@ accepting a yaml file to instruct how the code and data is loaded.
 The beta ships with the "demo" smart contract for exploring this:
 
 ```
-$ tree kadena-beta/payments
+$ tree demo
 payments
 ├── demo.pact
 ├── demo.repl
 └── demo.yaml
 
-$ cat kadena-beta/payments/demo.yaml
+$ cat demo/demo.yaml
 data: |-
   { "demo-admin-keyset": { "keys": ["demoadmin"], "pred": ">" } }
 codeFile: demo.pact
@@ -267,8 +266,7 @@ The only reason to target the leader is to forgo the forwarding of new transacti
 The cluster will handle the forwarding automatically.
 
 ```
-cd kadena-beta
-./bin/osx/kadenaclient.sh
+./kadenaclient.sh
 node3> server node0
 ```
 
@@ -278,11 +276,12 @@ The demo.yaml sets the batch command to
 transfer `1.00` between the demo accounts.
 
 ```
-node0> load payments/demo.yaml
+node0> load demo/demo.yaml
 status: success
 data: Write succeeded
 
 Setting batch command to: (demo.transfer "Acct1" "Acct2" 1.00)
+
 node0> exec (demo.create-global-accounts)
 account      | amount       | balance      | data
 ---------------------------------------------------------

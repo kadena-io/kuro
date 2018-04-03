@@ -37,6 +37,7 @@ extra-deps:
 - ridley-0.3.1.2
 - ekg-prometheus-adapter-0.1.0.3
 - prometheus-0.4.2
+- system-command-0.0.10
 
 # Override default flag values for local packages and extra-deps
 flags: {}

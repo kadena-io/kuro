@@ -174,7 +174,7 @@ library
                      , zeromq4-haskell >= 0.6.3
                      , zlib
   hs-source-dirs:      src
-  ghc-options:         -Wall -fno-warn-unused-do-bind -O3 -rtsopts
+  ghc-options:         -Wall -fno-warn-unused-do-bind -O3
   ghc-prof-options:    -fprof-auto -fprof-auto-calls
   default-language:    Haskell2010
   if flag(pact-persistence)
@@ -227,18 +227,20 @@ test-suite hspec
   main-is: hspec.hs
   hs-source-dirs: tests
   default-language: Haskell2010
-  build-depends:
-                base
-              , aeson
-              , bytestring
-              , cereal
-              , containers
-              , unordered-containers
-              , crypto-api
-              , parallel
-              , lens
-              , ed25519-donna
-              , pact
-              , hspec
-              , kadena
-              , text
+  build-depends: aeson
+               , base
+               , containers
+               , crypto-api
+               , data-default
+               , ed25519-donna
+               , extra
+               , hspec
+               , kadena
+               , mtl
+               , pact
+               , process
+               , system-command
+               , text
+               , trifecta
+               , unordered-containers
+               , yaml

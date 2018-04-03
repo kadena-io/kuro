@@ -10,6 +10,9 @@ module Apps.Kadena.Client
   ( main
   , ClientConfig(..), ccSecretKey, ccPublicKey, ccEndpoints
   , Node(..)
+  -- exported for testing
+  , CliCmd(..), ClientOpts(..), coptions, flushStrLn, Formatter(..), handleCmd, initRequestId
+  , parseCliCmd, Repl, ReplState(..), runREPL
   ) where
 
 import qualified Control.Exception as Exception
@@ -303,7 +306,7 @@ parallelBatchTest totalNumCmds' cmdRate' sleep' = do
 load :: Mode -> FilePath -> Repl ()
 load m fp = do
   ((ApiReq {..},code,cdata,_),_) <- liftIO $ mkApiReqExec fp
-
+  
   keys .= _ylKeyPairs
   cmdData .= cdata
   sendCmd m code

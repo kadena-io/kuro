@@ -11,8 +11,7 @@ import Apps.Kadena.Client
 import Control.Concurrent
 import Control.Exception.Safe
 import Control.Monad
-import Control.Monad.State
-import Control.Monad.Reader
+import Control.Monad.Trans.RWS.Lazy
 import Data.Aeson hiding (Success)
 import Data.Default
 import qualified Data.HashMap.Strict as HM
@@ -84,7 +83,8 @@ runClientCommands args =
       (conf :: ClientConfig) <- either (\e -> print e >> exitFailure) return 
         =<< (Y.decodeFileEither (_oConfig opts))
       cmdLines <- readCmdLines
-      void $ runStateT (runReaderT (simpleRunREPL cmdLines) conf) $ ReplState
+      -- void $ runStateT (runReaderT (simpleRunREPL cmdLines) conf) $ ReplState
+      _ <- runRWST (simpleRunREPL cmdLines) conf ReplState
        {
           _server = fst (minimum $ HM.toList (_ccEndpoints conf)),
           _batchCmd = "\"Hello Kadena\"",
@@ -94,6 +94,7 @@ runClientCommands args =
           _fmt = Table,
           _echo = False
         }
+      return ()
 
 simpleRunREPL :: [String] -> Repl ()
 simpleRunREPL [] = return ()
@@ -101,10 +102,20 @@ simpleRunREPL (x:xs) =
   case parseString parseCliCmd mempty x of 
     Failure (ErrInfo e _) -> do 
       flushStrLn $ "Parse failure (help for command help):\n" ++ show e
-      return ()
+      return () 
     Success c -> do
       handleCmd c 
+      {-
+      liftIO $ putStrLn "--------------------------------------------------------------------------------"
+      url <- ask getServer
+      liftIO $ putStrLn $ "Server URL: " ++ url
+      s <- get 
+      liftIO $ putStrLn $ "batchCmnd: " ++ show (_batchCmd s) 
+      liftIO $ putStrLn $ "cmdData: " ++ show (_cmdData s)
+      liftIO $ putStrLn "--------------------------------------------------------------------------------\n"
+      -}
       simpleRunREPL xs 
 
 readCmdLines :: IO [String]
-readCmdLines = fmap lines . readFile $ testDir ++ "commands.txt"
+-- readCmdLines = fmap lines . readFile $ testDir ++ "commands.txt"
+readCmdLines = fmap (filter (/= "") . lines) (readFile (testDir ++ "commands.txt")) 

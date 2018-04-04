@@ -242,6 +242,7 @@ test-suite hspec
                , safe-exceptions
                , system-command
                , text
+               , transformers
                , trifecta
                , unordered-containers
                , yaml

@@ -11,15 +11,16 @@ module Apps.Kadena.Client
   , ClientConfig(..), ccSecretKey, ccPublicKey, ccEndpoints
   , Node(..)
   -- exported for testing
-  , CliCmd(..), ClientOpts(..), coptions, flushStrLn, Formatter(..), handleCmd, initRequestId
-  , parseCliCmd, Repl, ReplState(..), runREPL
+  , CliCmd(..), ClientOpts(..), coptions, flushStrLn, Formatter(..), getServer, handleCmd
+  , initRequestId, parseCliCmd, Repl, ReplState(..), runREPL
   ) where
 
 import qualified Control.Exception as Exception
-import Control.Monad.State
+-- import Control.Monad.State
 import Control.Monad.Reader
 import Control.Lens hiding (to,from)
 import Control.Monad.Catch
+import Control.Monad.Trans.RWS.Lazy
 import Control.Concurrent.Lifted (threadDelay)
 import Control.Concurrent.MVar
 import Control.Concurrent.Async
@@ -54,7 +55,7 @@ import Data.String
 import Data.Thyme.Clock
 import Data.Thyme.Time.Core (unUTCTime, toMicroseconds)
 import GHC.Generics (Generic)
-import Network.Wreq hiding (Raw)
+import Network.Wreq hiding (get, Raw)
 import System.Console.GetOpt
 import System.Environment
 import System.Exit hiding (die)
@@ -152,7 +153,7 @@ data ReplState = ReplState {
 }
 makeLenses ''ReplState
 
-type Repl a = ReaderT ClientConfig (StateT ReplState IO) a
+type Repl a = RWST ClientConfig [ApiResult] ReplState IO a 
 
 prompt :: String -> String
 prompt s = "\ESC[0;31m" ++ s ++ "> \ESC[0m"
@@ -213,7 +214,7 @@ handleBatchResp resp = do
         rk <- return $ head $ _rkRequestKeys resp
         showResult 10000 [rk] Nothing
 
-sendCmd :: Mode -> String -> Repl ()
+sendCmd :: Mode -> String -> Repl () 
 sendCmd m cmd = do
   j <- use cmdData
   e <- mkExec cmd j Nothing
@@ -329,16 +330,16 @@ showResult tdelay rks countm = loop (0 :: Int)
       case resp ^. responseBody of
         ApiFailure err -> flushStrLn $ "Error: no results received: " ++ show err
         ApiSuccess ApiResult{..} ->
-                case countm of
-                  Nothing -> putJSON _arResult
-                  Just cnt -> case fromJSON <$>_arMetaData of
-                    Nothing -> flushStrLn "Success"
-                    Just (A.Success lats@CmdResultLatencyMetrics{..}) -> do
-                      pprintLatency lats
-                      case _rlmFinCommit of
-                        Nothing -> flushStrLn "Latency Measurement Unavailable"
-                        Just n -> flushStrLn $ intervalOfNumerous cnt n
-                    Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
+          case countm of
+            Nothing -> putJSON _arResult
+            Just cnt -> case fromJSON <$>_arMetaData of
+              Nothing -> flushStrLn "Success"
+              Just (A.Success lats@CmdResultLatencyMetrics{..}) -> do
+                pprintLatency lats
+                case _rlmFinCommit of
+                  Nothing -> flushStrLn "Latency Measurement Unavailable"
+                  Just n -> flushStrLn $ intervalOfNumerous cnt n
+              Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
 
 pollForResult :: Bool -> RequestKey -> Repl ()
 pollForResult printMetrics rk = do
@@ -350,15 +351,14 @@ pollForResult printMetrics rk = do
       resp <- asJSON r
       case resp ^. responseBody of
         ApiFailure err -> flushStrLn $ "Error: no results received: " ++ show err
-        ApiSuccess (PollResponses prs) -> forM_ (HM.elems prs) $ \ApiResult{..} -> do
+        ApiSuccess (PollResponses prs) -> forM_ (HM.elems prs) $ \w@ApiResult{..} -> do
+          tell [w]
           putJSON _arResult
-          when printMetrics $ do
+          when printMetrics $
                 case fromJSON <$>_arMetaData of
                   Nothing -> flushStrLn "Metrics Unavailable"
-                  Just (A.Success lats@CmdResultLatencyMetrics{..}) -> do
-                    pprintLatency lats
+                  Just (A.Success lats@CmdResultLatencyMetrics{..}) -> pprintLatency lats
                   Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
-
 
 printLatTime :: (Num a, Ord a, Show a) => a -> String
 printLatTime s
@@ -585,17 +585,18 @@ main = do
   case getOpt Permute coptions as of
     (_,_,es@(_:_)) -> print es >> exitFailure
     (o,_,_) -> do
-         let opts = foldl (flip id) def o
-         i <- newMVar =<< initRequestId
-         (conf :: ClientConfig) <- either (\e -> print e >> exitFailure) return =<<
-           Y.decodeFileEither (_oConfig opts)
-         void $ runStateT (runReaderT runREPL conf) $ ReplState
-           {
-             _server = fst (minimum $ HM.toList (_ccEndpoints conf)),
-             _batchCmd = "\"Hello Kadena\"",
-             _requestId = i,
-             _cmdData = Null,
-             _keys = [KeyPair (_ccSecretKey conf) (_ccPublicKey conf)],
-             _fmt = Table,
-             _echo = False
-           }
+      let opts = foldl (flip id) def o
+      i <- newMVar =<< initRequestId
+      (conf :: ClientConfig) <- either (\e -> print e >> exitFailure) return =<<
+        Y.decodeFileEither (_oConfig opts)
+      _ <- runRWST runREPL conf ReplState
+        {
+          _server = fst (minimum $ HM.toList (_ccEndpoints conf)),
+          _batchCmd = "\"Hello Kadena\"",
+          _requestId = i,
+          _cmdData = Null,
+          _keys = [KeyPair (_ccSecretKey conf) (_ccPublicKey conf)],
+          _fmt = Table,
+          _echo = False
+        }
+      return ()

@@ -1,11 +1,13 @@
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Util.TestRunner 
   ( delTempFiles
   , runAll
   , testDir
-  , testConfDir) where 
+  , testConfDir
+  , TestResult(..)) where 
 
 import Apps.Kadena.Client   
 import Control.Concurrent
@@ -15,8 +17,10 @@ import Control.Monad.Trans.RWS.Lazy
 import Data.Aeson hiding (Success)
 import Data.Default
 import qualified Data.HashMap.Strict as HM
+import qualified Data.Text as T
 import qualified Data.Yaml as Y
 import Pact.ApiReq
+import Pact.Types.API
 import System.Command
 import System.Console.GetOpt
 import System.Time.Extra 
@@ -32,15 +36,18 @@ delTempFiles = do
     _ <- createProcess p
     return ()
 
-runAll :: IO ()
+runAll :: IO [TestResult]
 runAll = do
   procHandles <- runServers 
   putStrLn $ "Servers are running, sleeping for 3 seconds"
   _ <- sleep 3
   catchAny (do 
-             runClientCommands clientArgs
-             stopProcesses procHandles) 
-           (\_ -> stopProcesses procHandles)
+             let results = runClientCommands clientArgs
+             stopProcesses procHandles
+             results) 
+           (\e -> do 
+             stopProcesses procHandles
+             throw e)
   
 runServers :: IO [ProcessHandle]
 runServers = 
@@ -59,7 +66,6 @@ runServer args = do
 stopProcesses :: [ProcessHandle] -> IO ()
 stopProcesses handles = do
     mapM_ terminateProcess handles
-    return ()
 
 serverArgs :: [String]      
 serverArgs = [serverArgs0, serverArgs1, serverArgs2, serverArgs3]
@@ -73,8 +79,9 @@ serverArgs3 = "+RTS -N4 -RTS -c " ++ testConfDir ++ "10003-cluster.yaml"
 clientArgs :: [String]
 clientArgs = words $ "-c " ++ testConfDir ++ "client.yaml"
 
-runClientCommands :: [String] -> IO ()
-runClientCommands args = 
+runClientCommands :: [String] -> IO [TestResult]
+runClientCommands args = do 
+  putStrLn $ "runClientCommand with args: " ++ (unlines args)
   case getOpt Permute coptions args of
     (_,_,es@(_:_)) -> print es >> exitFailure
     (o,_,_) -> do
@@ -83,8 +90,8 @@ runClientCommands args =
       (conf :: ClientConfig) <- either (\e -> print e >> exitFailure) return 
         =<< (Y.decodeFileEither (_oConfig opts))
       cmdLines <- readCmdLines
-      -- void $ runStateT (runReaderT (simpleRunREPL cmdLines) conf) $ ReplState
-      _ <- runRWST (simpleRunREPL cmdLines) conf ReplState
+      -- void $ runStateT (runReaderT (simpleRunREPL cmdLines) conf) $ ReplState -- MLN:  
+      (_, _, w) <- runRWST (simpleRunREPL cmdLines) conf $ ReplState
        {
           _server = fst (minimum $ HM.toList (_ccEndpoints conf)),
           _batchCmd = "\"Hello Kadena\"",
@@ -94,7 +101,27 @@ runClientCommands args =
           _fmt = Table,
           _echo = False
         }
-      return ()
+      putStrLn $ "Count of items in writer is: " ++ show (length w)
+      mapM_ (\x -> putStrLn (show (_arResult x))) w
+      return $ fmap convertResult w
+
+convertResult :: ApiResult -> TestResult
+convertResult ar = 
+  let str = show $ _arResult ar
+      ok = case _arResult ar of 
+        (Object ht) -> case HM.lookup (T.pack "status") ht of 
+          Nothing -> False
+          Just t -> (t == "success") 
+        _ -> False
+      
+  in TestResult { resultSuccess = ok
+                , apiResultsStr = str } 
+  
+data TestResult = TestResult
+  { resultSuccess :: Bool
+  , apiResultsStr :: String
+  --more to come... 
+  }
 
 simpleRunREPL :: [String] -> Repl ()
 simpleRunREPL [] = return ()
@@ -105,15 +132,6 @@ simpleRunREPL (x:xs) =
       return () 
     Success c -> do
       handleCmd c 
-      {-
-      liftIO $ putStrLn "--------------------------------------------------------------------------------"
-      url <- ask getServer
-      liftIO $ putStrLn $ "Server URL: " ++ url
-      s <- get 
-      liftIO $ putStrLn $ "batchCmnd: " ++ show (_batchCmd s) 
-      liftIO $ putStrLn $ "cmdData: " ++ show (_cmdData s)
-      liftIO $ putStrLn "--------------------------------------------------------------------------------\n"
-      -}
       simpleRunREPL xs 
 
 readCmdLines :: IO [String]

@@ -67,7 +67,6 @@ import Pact.Types.RPC
 import qualified Pact.Types.Command as Pact
 import qualified Pact.Types.Crypto as Pact
 import Pact.Types.Util
-
 import Pact.ApiReq
 
 
@@ -153,6 +152,7 @@ data ReplState = ReplState {
 }
 makeLenses ''ReplState
 
+-- type Repl a = ReaderT ClientConfig (StateT ReplState IO) a -- MLN:
 type Repl a = RWST ClientConfig [ApiResult] ReplState IO a 
 
 prompt :: String -> String
@@ -200,6 +200,8 @@ postAPI ep rq = do
 
 postSpecifyServerAPI :: (ToJSON req,FromJSON resp) => String -> String -> req -> IO (Response resp)
 postSpecifyServerAPI ep server' rq = do
+  flushStrLn $ "postSpecifyServerAPI: " ++ "http://" ++ server' ++ "/api/v1/" ++ ep
+  flushStrLn $ show (toJSON rq)
   r <- liftIO $ post ("http://" ++ server' ++ "/api/v1/" ++ ep) (toJSON rq)
   asJSON r
 
@@ -329,7 +331,8 @@ showResult tdelay rks countm = loop (0 :: Int)
       resp <- postAPI "listen" (ListenerRequest $ last rks)
       case resp ^. responseBody of
         ApiFailure err -> flushStrLn $ "Error: no results received: " ++ show err
-        ApiSuccess ApiResult{..} ->
+        ApiSuccess w@ApiResult{..} -> do
+          tell [w]
           case countm of
             Nothing -> putJSON _arResult
             Just cnt -> case fromJSON <$>_arMetaData of
@@ -589,7 +592,8 @@ main = do
       i <- newMVar =<< initRequestId
       (conf :: ClientConfig) <- either (\e -> print e >> exitFailure) return =<<
         Y.decodeFileEither (_oConfig opts)
-      _ <- runRWST runREPL conf ReplState
+      -- void $ runStateT (runReaderT runREPL conf) $ ReplState  --MLN: 
+      _ <- runRWST runREPL conf $ ReplState
         {
           _server = fst (minimum $ HM.toList (_ccEndpoints conf)),
           _batchCmd = "\"Hello Kadena\"",
@@ -599,4 +603,5 @@ main = do
           _fmt = Table,
           _echo = False
         }
+      -- MLN: 
       return ()

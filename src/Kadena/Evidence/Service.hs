@@ -153,7 +153,7 @@ runEvidenceService ev = do
   putMVar (ev ^. mPubStateTo) $! PublishedEvidenceState (startingEs ^. esConvincedNodes) (startingEs ^. esNodeStates)
   let cu = ConfigUpdater (ev ^. debugFn) "Service|Evidence|Config" (const $ writeComm (ev ^. evidence) $ Bounce)
   linkAsyncTrack "EvidenceConfUpdater" $ runConfigUpdater cu (ev ^. mConfig)
-  runRWST (debug "Launch!" >> foreverRunProcessor) ev startingEs 
+  _ <- runRWST (debug "Launch!" >> foreverRunProcessor) ev startingEs 
   return ()
 
 foreverRunProcessor :: (EvidenceService EvidenceState) ()

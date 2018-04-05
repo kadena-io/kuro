@@ -1,5 +1,6 @@
 module ConfigChangeSpec (spec) where 
 
+import Control.Monad
 import Test.Hspec
 import Util.TestRunner
 
@@ -8,6 +9,14 @@ spec =
     describe "testConfigConfigChange" $ 
         it "tests configuration change" $ do
             delTempFiles      
-            runAll
-            True `shouldBe` True
- 
+            results <- runAll
+            _debugResults results
+            all resultSuccess results `shouldBe` True
+
+_debugResults :: [TestResult] -> IO ()
+_debugResults results = do
+    let pairs = zip ([1,2..] :: [Integer]) results
+    forM_ pairs $ (\p -> do
+        putStrLn $ "Results # " ++ show (fst p) ++ ": " 
+        putStrLn $ show $ resultSuccess $ snd p
+        putStrLn $ show $ apiResultsStr $ snd p)

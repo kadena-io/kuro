@@ -3,6 +3,7 @@ module Kadena.Types
   ) where
 
 -- NB: This is really the Consensus Service's type module but as consensus is all encompassing, it's also the primary types file
+-- NB: this is evil, please remove
 
 import Kadena.Types.Base as X
 import Kadena.Types.Comms as X

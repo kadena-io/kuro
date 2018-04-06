@@ -38,7 +38,7 @@ import Kadena.Types.Log
 import Kadena.Types.Dispatch (Dispatch)
 import qualified Kadena.Types.Dispatch as D
 import qualified Kadena.History.Types as History
-import qualified Kadena.Log.Service as Log
+import qualified Kadena.Types.Log as Log
 import Kadena.Types.Comms (Comms(..))
 import Kadena.Types.Event (pprintBeat)
 import Kadena.Private.Service (decrypt)

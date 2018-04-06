@@ -10,7 +10,6 @@ module Kadena.Log.LogApi
   , updateLogs
   , evalQuery
   -- ReExports
-  , module X
   , LogIndex(..)
   , KeySet(..)
   -- for tesing
@@ -30,7 +29,7 @@ import Kadena.Types.Base
 import Kadena.Types.Comms
 import Kadena.Types.Command (Command(..), CmdLatencyMetrics)
 import Kadena.Log.Types
-import qualified Kadena.Log.Types as X
+import Kadena.Types.Log
 import Kadena.Log.Persistence
 import Kadena.Sender.Types (ServiceRequest'(..))
 

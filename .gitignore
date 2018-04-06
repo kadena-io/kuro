@@ -14,7 +14,7 @@ bin/*
 submodules/*
 *~
 log/*
-test-files/log/*
+test-files/log/node*
 dist/*
 sample-data/*
 datadump

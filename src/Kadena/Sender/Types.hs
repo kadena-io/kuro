@@ -15,8 +15,8 @@ module Kadena.Sender.Types
   ( SenderServiceChannel(..)
   , ServiceRequest'(..)
   , ServiceRequest(..)
-  , StateSnapshot(..), newNodeId, newRole, newOtherNodes, newLeader, newTerm, newPublicKey
-  , newPrivateKey, newYesVotes
+  , StateSnapshot(..), snapNodeId, snapNodeRole, snapOtherNodes, snapLeader, snapTerm, snapPublicKey
+  , snapPrivateKey, snapYesVotes
   , AEBroadcastControl(..)
   ) where
 
@@ -75,13 +75,13 @@ data ServiceRequest =
     deriving (Eq, Show)
 
 data StateSnapshot = StateSnapshot
-  { _newNodeId :: !NodeId
-  , _newRole :: !Role
-  , _newOtherNodes :: !(Set NodeId)
-  , _newLeader :: !(Maybe NodeId)
-  , _newTerm :: !Term
-  , _newPublicKey :: !PublicKey
-  , _newPrivateKey :: !PrivateKey
-  , _newYesVotes :: !(Set RequestVoteResponse)
+  { _snapNodeId :: !NodeId
+  , _snapNodeRole :: !Role
+  , _snapOtherNodes :: !(Set NodeId)
+  , _snapLeader :: !(Maybe NodeId)
+  , _snapTerm :: !Term
+  , _snapPublicKey :: !PublicKey
+  , _snapPrivateKey :: !PrivateKey
+  , _snapYesVotes :: !(Set RequestVoteResponse)
   } deriving (Eq, Show)
 makeLenses ''StateSnapshot

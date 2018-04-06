@@ -8,9 +8,8 @@
 
 module Kadena.Sender.Service
   ( SenderService
-  , ServiceEnv(..), myNodeId, currentLeader, currentTerm, myPublicKey
-  , myPrivateKey, yesVotes, debugPrint, serviceRequestChan, outboundGeneral
-  , logService, otherNodes, nodeRole, getEvidenceState, publishMetric, aeReplicationLogLimit
+  , ServiceEnv(..), debugPrint, serviceRequestChan, outboundGeneral
+  , logService, getEvidenceState, publishMetric, aeReplicationLogLimit
   , runSenderService
   , createAppendEntriesResponse' -- we need this for AER Evidence
   , willBroadcastAE
@@ -21,22 +20,21 @@ import Control.Lens
 import Control.Concurrent
 import Control.Parallel.Strategies
 
-import Control.Monad.Trans.Reader
 import Control.Monad
 import Control.Monad.IO.Class
+import Control.Monad.RWS.Lazy
 
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Data.Serialize
+import Data.Serialize hiding (get, put)
 
 import Data.Thyme.Clock (UTCTime, getCurrentTime)
 
 import Kadena.Types hiding (debugPrint, ConsensusState(..), Config(..)
   , Consensus, ConsensusSpec(..), nodeId, sendMessage, outboundGeneral
-  , myPublicKey, myPrivateKey, otherNodes, nodeRole, term, Event(..)
-  , logService, publishMetric, currentLeader, heartbeatTimeout)
+  , term, Event(..), logService, publishMetric, heartbeatTimeout)
 import qualified Kadena.Types as KD
 
 import qualified Kadena.Types.Spec as Spec
@@ -49,15 +47,7 @@ import qualified Kadena.Evidence.Spec as Ev
 import Kadena.Sender.Types as X
 
 data ServiceEnv = ServiceEnv
-  { _myNodeId :: !NodeId
-  , _nodeRole :: !Role
-  , _otherNodes :: !(Set NodeId)
-  , _currentLeader :: !(Maybe NodeId)
-  , _currentTerm :: !Term
-  , _myPublicKey :: !PublicKey
-  , _myPrivateKey :: !PrivateKey
-  , _yesVotes :: !(Set RequestVoteResponse)
-  , _debugPrint :: !(String -> IO ())
+  { _debugPrint :: !(String -> IO ())
   , _aeReplicationLogLimit :: Int
   -- Comm Channels
   , _serviceRequestChan :: !SenderServiceChannel
@@ -72,23 +62,23 @@ data ServiceEnv = ServiceEnv
   }
 makeLenses ''ServiceEnv
 
-type SenderService = ReaderT ServiceEnv IO
+type SenderService s = RWST ServiceEnv () s IO
 
--- TODO: refactor sender run in RWST and use configUpdater to populate an MVar local to it
+-- TODO use configUpdater to populate an MVar local to the RWST
 -- vs hitting the TVar every time we need to send something (or have SenderService do this internally)
 getStateSnapshot :: GlobalConfigTMVar -> MVar PublishedConsensus -> IO StateSnapshot
 getStateSnapshot conf' pcons' = do
   conf <- readCurrentConfig conf'
   st <- readMVar pcons'
   return $! StateSnapshot
-    { _newNodeId = conf ^. KD.nodeId
-    , _newRole = st ^. Spec.pcRole
-    , _newOtherNodes = conf ^. KD.otherNodes
-    , _newLeader = st ^. Spec.pcLeader
-    , _newTerm = st ^. Spec.pcTerm
-    , _newPublicKey = conf ^. KD.myPublicKey
-    , _newPrivateKey = conf ^. KD.myPrivateKey
-    , _newYesVotes = st ^. Spec.pcYesVotes
+    { _snapNodeId = conf ^. KD.nodeId
+    , _snapNodeRole = st ^. Spec.pcRole
+    , _snapOtherNodes = conf ^. KD.otherNodes
+    , _snapLeader = st ^. Spec.pcLeader
+    , _snapTerm = st ^. Spec.pcTerm
+    , _snapPublicKey = conf ^. KD.myPublicKey
+    , _snapPrivateKey = conf ^. KD.myPrivateKey
+    , _snapYesVotes = st ^. Spec.pcYesVotes
     }
 
 runSenderService
@@ -101,16 +91,18 @@ runSenderService
   -> IO ()
 runSenderService dispatch gcm debugFn publishMetric' mPubEvState mPubCons = do
   conf <- readCurrentConfig gcm
-  s <- return $ ServiceEnv
-    { _myNodeId = conf ^. KD.nodeId
-    , _nodeRole = Follower
-    , _otherNodes = conf ^. KD.otherNodes
-    , _currentLeader = Nothing
-    , _currentTerm = startTerm
-    , _myPublicKey = conf ^. KD.myPublicKey
-    , _myPrivateKey = conf ^. KD.myPrivateKey
-    , _yesVotes = Set.empty
-    , _debugPrint = debugFn
+  s <- return $ StateSnapshot
+    { _snapNodeId = conf ^. KD.nodeId
+    , _snapNodeRole = Follower
+    , _snapOtherNodes = conf ^. KD.otherNodes
+    , _snapLeader = Nothing
+    , _snapTerm = startTerm
+    , _snapPublicKey = conf ^. KD.myPublicKey
+    , _snapPrivateKey = conf ^. KD.myPrivateKey
+    , _snapYesVotes = Set.empty
+    }
+  env <- return $ ServiceEnv
+    { _debugPrint = debugFn
     , _aeReplicationLogLimit = conf ^. KD.aeBatchSize
     -- Comm Channels
     , _serviceRequestChan = dispatch ^. senderService
@@ -122,48 +114,40 @@ runSenderService dispatch gcm debugFn publishMetric' mPubEvState mPubCons = do
     , _config = gcm
     , _pubCons = mPubCons
     }
-  void $ liftIO $ runReaderT serviceRequests s
+  void $ liftIO $ runRWST serviceRequests env s
 
-updateEnv :: StateSnapshot -> ServiceEnv -> ServiceEnv
-updateEnv StateSnapshot{..} s = s
-  { _myNodeId = _newNodeId
-  , _nodeRole = _newRole
-  , _otherNodes = _newOtherNodes
-  , _currentLeader = _newLeader
-  , _currentTerm = _newTerm
-  , _myPublicKey = _newPublicKey
-  , _myPrivateKey = _newPrivateKey
-  , _yesVotes = _newYesVotes
-  }
-
-snapshotStateExternal :: SenderService (StateSnapshot)
+snapshotStateExternal :: SenderService StateSnapshot ()  
 snapshotStateExternal = do
   mPubCons <- view pubCons
   conf <- view config
-  liftIO $ getStateSnapshot conf mPubCons
+  snap <- liftIO $ getStateSnapshot conf mPubCons
+  put snap
+  return ()
 
-serviceRequests :: SenderService ()
+serviceRequests :: SenderService StateSnapshot ()
 serviceRequests = do
   rrc <- view serviceRequestChan
   debug "launch!"
-  forever $ do
+  forever $ do 
     sr <- liftIO $ readComm rrc
     case sr of
       SendAllAppendEntriesResponse{..} -> do
-        newSt <- snapshotStateExternal
-        local (updateEnv newSt) $ do
-          stTime <- liftIO $ getCurrentTime
-          sendAllAppendEntriesResponse' (Just _srIssuedTime) stTime _srLastLogHash _srMaxIndex
+        snapshotStateExternal
+        stTime <- liftIO $ getCurrentTime
+        sendAllAppendEntriesResponse' (Just _srIssuedTime) stTime _srLastLogHash _srMaxIndex
+      
       ForwardCommandToLeader{..} -> do
-        newSt <- snapshotStateExternal
-        local (updateEnv newSt) $ do
-          ldr <- view currentLeader
-          case ldr of
-            Nothing -> debug $ "Leader is down, unable to forward commands. Dropping..."
-            Just ldr' -> do
-              debug $ "fowarding " ++ show (length $ _newCmd $ _srCommands) ++ "commands to leader"
-              sendRPC ldr' $ NEW' _srCommands
-      (ServiceRequest' ss m) -> local (updateEnv ss) $ case m of
+        snapshotStateExternal
+        s <- get
+        let ldr = view snapLeader s
+        case ldr of
+          Nothing -> debug $ "Leader is down, unable to forward commands. Dropping..."
+          Just ldr' -> do
+            debug $ "fowarding " ++ show (length $ _newCmd $ _srCommands) ++ "commands to leader"
+            sendRPC ldr' $ NEW' _srCommands
+      (ServiceRequest' ss m) -> do 
+        put ss
+        case m of
           BroadcastAE{..} -> do
             evState <- view getEvidenceState >>= liftIO
             sendAllAppendEntries (evState ^. Ev.pesNodeStates) (evState ^. Ev.pesConvincedNodes) _srAeBoardcastControl
@@ -174,20 +158,20 @@ serviceRequests = do
           BroadcastRVR{..} -> sendRequestVoteResponse _srCandidate _srHeardFromLeader _srVote
       Heart t -> liftIO (pprintBeat t) >>= debug
 
-queryLogs :: Set Log.AtomicQuery -> SenderService (Map Log.AtomicQuery Log.QueryResult)
+queryLogs :: Set Log.AtomicQuery -> SenderService StateSnapshot (Map Log.AtomicQuery Log.QueryResult)
 queryLogs q = do
   ls <- view logService
   mv <- liftIO newEmptyMVar
   liftIO . writeComm ls $ Log.Query q mv
   liftIO $ takeMVar mv
 
-debug :: String -> SenderService ()
+debug :: String -> SenderService StateSnapshot ()
 debug s = do
   dbg <- view debugPrint
   liftIO $ dbg $ "[Service|Sender] " ++ s
 
 -- views state, but does not update
-sendAllRequestVotes :: RequestVote -> SenderService ()
+sendAllRequestVotes :: RequestVote -> SenderService StateSnapshot ()
 sendAllRequestVotes rv = do
   pubRPC $ RV' $ rv
 
@@ -204,13 +188,14 @@ createAppendEntries' target (pli, plt, es) ct myNodeId' vts yesVotes' =
   in
     AE' $ AppendEntries ct myNodeId' pli plt es vts' NewMsg
 
-establishDominance :: SenderService ()
+establishDominance :: SenderService StateSnapshot ()
 establishDominance = do
   debug "establishing general dominance"
   stTime <- liftIO $ getCurrentTime
-  ct <- view currentTerm
-  myNodeId' <- view myNodeId
-  yesVotes' <- view yesVotes
+  s <- get
+  let ct = view snapTerm s
+  let myNodeId' = view snapNodeId s
+  let yesVotes' = view snapYesVotes s
   mv <- queryLogs $ Set.fromList [Log.GetMaxIndex, Log.GetLastLogTerm]
   pli <- return $! Log.hasQueryResult Log.MaxIndex mv
   plt <- return $! Log.hasQueryResult Log.LastLogTerm mv
@@ -220,13 +205,14 @@ establishDominance = do
   debug $ "asserted dominance: " ++ show (interval stTime edTime) ++ "mics"
 
 -- | Send all append entries is only needed in special circumstances. Either we have a Heartbeat event or we are getting a quick win in with CMD's
-sendAllAppendEntries :: Map NodeId (LogIndex, UTCTime) -> Set NodeId -> AEBroadcastControl -> SenderService ()
+sendAllAppendEntries :: Map NodeId (LogIndex, UTCTime) -> Set NodeId -> AEBroadcastControl -> SenderService StateSnapshot ()
 sendAllAppendEntries nodeCurrentIndex' nodesThatFollow' sendIfOutOfSync = do
   startTime' <- liftIO $ getCurrentTime
-  ct <- view currentTerm
-  myNodeId' <- view myNodeId
-  yesVotes' <- view yesVotes
-  oNodes <- view otherNodes
+  s <- get
+  let ct = view snapTerm s
+  let myNodeId' = view snapNodeId s 
+  let yesVotes' = view snapYesVotes s 
+  let oNodes = view snapOtherNodes s
   limit' <- view aeReplicationLogLimit
   inSync' <- canBroadcastAE (length oNodes) nodeCurrentIndex' ct myNodeId' nodesThatFollow' sendIfOutOfSync
   synTime' <- liftIO $ getCurrentTime
@@ -291,7 +277,7 @@ canBroadcastAE :: Int
                -> NodeId
                -> Set NodeId
                -> AEBroadcastControl
-               -> SenderService InSync
+               -> SenderService StateSnapshot InSync
 canBroadcastAE clusterSize' nodeCurrentIndex' ct myNodeId' vts broadcastControl =
   -- we only want to do this if we know that every node is in sync with us (the leader)
   let
@@ -324,7 +310,8 @@ canBroadcastAE clusterSize' nodeCurrentIndex' ct myNodeId' vts broadcastControl 
       if everyoneBelieves
       then return $ BackStreet inSyncRpc laggingFollowers
       else do
-        oNodes' <- view otherNodes
+        s <- get
+        let oNodes' = view snapOtherNodes s 
         debug $ "non-believers exist, establishing dominance over " ++ show ((Set.size vts) - 1)
         return $ BackStreet inSyncRpc $ Set.union laggingFollowers (oNodes' Set.\\ vts)
 {-# INLINE canBroadcastAE #-}
@@ -334,20 +321,22 @@ createAppendEntriesResponse' success convinced ct myNodeId' lindex lhash =
   AER' $ AppendEntriesResponse ct myNodeId' success convinced lindex lhash NewMsg
 
 -- this only gets used when a Follower is replying in the negative to the Leader
-sendAppendEntriesResponse :: NodeId -> Bool -> Bool -> SenderService ()
+sendAppendEntriesResponse :: NodeId -> Bool -> Bool -> SenderService StateSnapshot ()
 sendAppendEntriesResponse target success convinced = do
-  ct <- view currentTerm
-  myNodeId' <- view myNodeId
+  s <- get
+  let ct = view snapTerm s
+  let myNodeId' = view snapNodeId s 
   mv <- queryLogs $ Set.fromList [Log.GetMaxIndex, Log.GetLastLogHash]
   maxIndex' <- return $ Log.hasQueryResult Log.MaxIndex mv
   lastLogHash' <- return $ Log.hasQueryResult Log.LastLogHash mv
   sendRPC target $ createAppendEntriesResponse' success convinced ct myNodeId' maxIndex' lastLogHash'
   debug $ "sent AppendEntriesResponse: " ++ show ct
 
-sendAllAppendEntriesResponse' :: Maybe UTCTime -> UTCTime -> LogIndex -> Hash -> SenderService ()
+sendAllAppendEntriesResponse' :: Maybe UTCTime -> UTCTime -> LogIndex -> Hash -> SenderService StateSnapshot ()
 sendAllAppendEntriesResponse' issueTime stTime maxIndex' lastLogHash' = do
-  ct <- view currentTerm
-  myNodeId' <- view myNodeId
+  s <- get
+  let ct = view snapTerm s
+  let myNodeId' = view snapNodeId s
   aer <- return $ createAppendEntriesResponse' True True ct myNodeId' maxIndex' lastLogHash'
   pubRPC aer
   edTime <- liftIO $ getCurrentTime
@@ -357,7 +346,7 @@ sendAllAppendEntriesResponse' issueTime stTime maxIndex' lastLogHash' = do
                                 ++ "(issueTime=" ++ printInterval issueTime' edTime ++ ")"
 
 -- this is used for distributed evidence + updating the Leader with nodeCurrentIndex
-sendAllAppendEntriesResponse :: SenderService ()
+sendAllAppendEntriesResponse :: SenderService StateSnapshot ()
 sendAllAppendEntriesResponse = do
   stTime <- liftIO $ getCurrentTime
   mv <- queryLogs $ Set.fromList [Log.GetMaxIndex, Log.GetLastLogHash]
@@ -365,18 +354,20 @@ sendAllAppendEntriesResponse = do
   lastLogHash' <- return $ Log.hasQueryResult Log.LastLogHash mv
   sendAllAppendEntriesResponse' Nothing stTime maxIndex' lastLogHash'
 
-sendRequestVoteResponse :: NodeId -> Maybe HeardFromLeader -> Bool -> SenderService ()
+sendRequestVoteResponse :: NodeId -> Maybe HeardFromLeader -> Bool -> SenderService StateSnapshot ()
 sendRequestVoteResponse target heardFromLeader vote = do
-  term' <- view currentTerm
-  myNodeId' <- view myNodeId
+  s <- get
+  let term' = view snapTerm s
+  let myNodeId' = view snapNodeId s
   pubRPC $! RVR' $! RequestVoteResponse term' heardFromLeader myNodeId' vote target NewMsg
 
-pubRPC :: RPC -> SenderService ()
+pubRPC :: RPC -> SenderService StateSnapshot ()
 pubRPC rpc = do
   oChan <- view outboundGeneral
-  myNodeId' <- view myNodeId
-  privKey <- view myPrivateKey
-  pubKey <- view myPublicKey
+  s <- get
+  let myNodeId' = view snapNodeId s
+  let privKey = view snapPrivateKey s
+  let pubKey = view snapPublicKey s 
   sRpc <- return $ rpcToSignedRPC myNodeId' pubKey privKey rpc
   debug $ "broadcast msg sent: "
         ++ show (_digType $ _sigDigest sRpc)
@@ -387,17 +378,18 @@ pubRPC rpc = do
               _ -> "")
   liftIO $ writeComm oChan $ broadcastMsg [encode $ sRpc]
 
-sendRPC :: NodeId -> RPC -> SenderService ()
+sendRPC :: NodeId -> RPC -> SenderService StateSnapshot ()
 sendRPC target rpc = do
   oChan <- view outboundGeneral
-  myNodeId' <- view myNodeId
-  privKey <- view myPrivateKey
-  pubKey <- view myPublicKey
+  s <- get
+  let myNodeId' = view snapNodeId s
+  let privKey = view snapPrivateKey s
+  let pubKey = view snapPublicKey s 
   sRpc <- return $ rpcToSignedRPC myNodeId' pubKey privKey rpc
   debug $ "issuing direct msg: " ++ show (_digType $ _sigDigest sRpc) ++ " to " ++ show (unAlias $ _alias target)
   liftIO $! writeComm oChan $! directMsg [(target, encode $ sRpc)]
 
-sendRpcsPeicewise :: [(NodeId, RPC)] -> (Int, UTCTime) -> SenderService ()
+sendRpcsPeicewise :: [(NodeId, RPC)] -> (Int, UTCTime) -> SenderService StateSnapshot ()
 sendRpcsPeicewise rpcs d@(total, stTime) = do
   (aFewRpcs,rest) <- return $! splitAt 8 rpcs
   if null rest
@@ -407,11 +399,12 @@ sendRpcsPeicewise rpcs d@(total, stTime) = do
     debug $ "Sent " ++ show total ++ " RPCs taking " ++ show (interval stTime edTime) ++ "mics to construct"
   else sendRpcsPeicewise rest d
 
-sendRPCs :: [(NodeId, RPC)] -> SenderService ()
+sendRPCs :: [(NodeId, RPC)] -> SenderService StateSnapshot ()
 sendRPCs rpcs = do
   oChan <- view outboundGeneral
-  myNodeId' <- view myNodeId
-  privKey <- view myPrivateKey
-  pubKey <- view myPublicKey
+  s <- get
+  let myNodeId' = view snapNodeId s
+  let privKey = view snapPrivateKey s
+  let pubKey = view snapPublicKey s
   msgs <- return (((\(n,msg) -> (n, encode $ rpcToSignedRPC myNodeId' pubKey privKey msg)) <$> rpcs) `using` parList rseq)
   liftIO $ writeComm oChan $! directMsg msgs

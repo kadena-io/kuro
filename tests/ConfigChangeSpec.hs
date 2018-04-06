@@ -10,7 +10,7 @@ spec =
         it "tests configuration change" $ do
             delTempFiles      
             results <- runAll
-            _debugResults results
+            -- _debugResults results
             all resultSuccess results `shouldBe` True
 
 _debugResults :: [TestResult] -> IO ()

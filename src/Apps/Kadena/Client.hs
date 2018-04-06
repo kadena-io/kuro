@@ -200,8 +200,6 @@ postAPI ep rq = do
 
 postSpecifyServerAPI :: (ToJSON req,FromJSON resp) => String -> String -> req -> IO (Response resp)
 postSpecifyServerAPI ep server' rq = do
-  flushStrLn $ "postSpecifyServerAPI: " ++ "http://" ++ server' ++ "/api/v1/" ++ ep
-  flushStrLn $ show (toJSON rq)
   r <- liftIO $ post ("http://" ++ server' ++ "/api/v1/" ++ ep) (toJSON rq)
   asJSON r
 

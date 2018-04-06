@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -11,6 +12,7 @@ module Util.TestRunner
 
 import Apps.Kadena.Client   
 import Control.Concurrent
+import Control.DeepSeq
 import Control.Exception.Safe
 import Control.Monad
 import Control.Monad.Trans.RWS.Lazy
@@ -19,6 +21,7 @@ import Data.Default
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Text as T
 import qualified Data.Yaml as Y
+import GHC.Generics (Generic)
 import Pact.ApiReq
 import Pact.Types.API
 import System.Command
@@ -42,12 +45,12 @@ runAll = do
   putStrLn $ "Servers are running, sleeping for 3 seconds"
   _ <- sleep 3
   catchAny (do 
-             let results = runClientCommands clientArgs
-             stopProcesses procHandles
-             results) 
+              results <- runClientCommands clientArgs
+              results `deepseq` stopProcesses procHandles
+              return results)
            (\e -> do 
-             stopProcesses procHandles
-             throw e)
+              stopProcesses procHandles
+              throw e)
   
 runServers :: IO [ProcessHandle]
 runServers = 
@@ -102,7 +105,6 @@ runClientCommands args = do
           _echo = False
         }
       putStrLn $ "Count of items in writer is: " ++ show (length w)
-      mapM_ (\x -> putStrLn (show (_arResult x))) w
       return $ fmap convertResult w
 
 convertResult :: ApiResult -> TestResult
@@ -121,7 +123,8 @@ data TestResult = TestResult
   { resultSuccess :: Bool
   , apiResultsStr :: String
   --more to come... 
-  }
+  } deriving Generic
+instance NFData TestResult
 
 simpleRunREPL :: [String] -> Repl ()
 simpleRunREPL [] = return ()

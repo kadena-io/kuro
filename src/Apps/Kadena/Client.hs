@@ -16,7 +16,6 @@ module Apps.Kadena.Client
   ) where
 
 import qualified Control.Exception as Exception
--- import Control.Monad.State
 import Control.Monad.Reader
 import Control.Lens hiding (to,from)
 import Control.Monad.Catch
@@ -40,11 +39,11 @@ import Data.Function
 import qualified Data.Aeson as A
 import Data.Aeson hiding ((.=), Result(..), Value(..))
 import Data.Aeson.Lens
-import Data.Aeson.Types hiding ((.=),parse, Result(..))
+import Data.Aeson.Types hiding ((.=), Result(..))
 import Data.Aeson.Encode.Pretty
 import qualified Data.Yaml as Y
 
-import Text.Trifecta as TF hiding (err,render,rendered)
+import Text.Trifecta as TF hiding (err, rendered)
 
 import Data.Default
 import Data.Foldable
@@ -55,7 +54,7 @@ import Data.String
 import Data.Thyme.Clock
 import Data.Thyme.Time.Core (unUTCTime, toMicroseconds)
 import GHC.Generics (Generic)
-import Network.Wreq hiding (get, Raw)
+import Network.Wreq hiding (Raw)
 import System.Console.GetOpt
 import System.Environment
 import System.Exit hiding (die)
@@ -152,7 +151,6 @@ data ReplState = ReplState {
 }
 makeLenses ''ReplState
 
--- type Repl a = ReaderT ClientConfig (StateT ReplState IO) a -- MLN:
 type Repl a = RWST ClientConfig [ApiResult] ReplState IO a 
 
 prompt :: String -> String
@@ -477,8 +475,6 @@ parsePrivate = do
 parseCliCmd :: TF.Parser CliCmd
 parseCliCmd = foldl1 (<|>) (map (\(c,_,_,p) -> symbol c >> p) cliCmds)
 
-
-
 runREPL :: Repl ()
 runREPL = loop True
   where
@@ -590,8 +586,7 @@ main = do
       i <- newMVar =<< initRequestId
       (conf :: ClientConfig) <- either (\e -> print e >> exitFailure) return =<<
         Y.decodeFileEither (_oConfig opts)
-      -- void $ runStateT (runReaderT runREPL conf) $ ReplState  --MLN: 
-      _ <- runRWST runREPL conf $ ReplState
+      _ <- runRWST runREPL conf ReplState
         {
           _server = fst (minimum $ HM.toList (_ccEndpoints conf)),
           _batchCmd = "\"Hello Kadena\"",
@@ -601,5 +596,4 @@ main = do
           _fmt = Table,
           _echo = False
         }
-      -- MLN: 
       return ()

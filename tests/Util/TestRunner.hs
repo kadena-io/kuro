@@ -42,7 +42,7 @@ delTempFiles = do
 runAll :: IO [TestResult]
 runAll = do
   procHandles <- runServers 
-  putStrLn $ "Servers are running, sleeping for 3 seconds"
+  putStrLn "Servers are running, sleeping for 3 seconds"
   _ <- sleep 3
   catchAny (do 
               results <- runClientCommands clientArgs
@@ -67,8 +67,7 @@ runServer args = do
     return procHandle
 
 stopProcesses :: [ProcessHandle] -> IO ()
-stopProcesses handles = do
-    mapM_ terminateProcess handles
+stopProcesses handles = mapM_ terminateProcess handles
 
 serverArgs :: [String]      
 serverArgs = [serverArgs0, serverArgs1, serverArgs2, serverArgs3]
@@ -84,26 +83,23 @@ clientArgs = words $ "-c " ++ testConfDir ++ "client.yaml"
 
 runClientCommands :: [String] -> IO [TestResult]
 runClientCommands args = do 
-  putStrLn $ "runClientCommand with args: " ++ (unlines args)
+  putStrLn $ "runClientCommand with args: " ++ unlines args
   case getOpt Permute coptions args of
     (_,_,es@(_:_)) -> print es >> exitFailure
     (o,_,_) -> do
       let opts = foldl (flip id) def o
       i <- newMVar =<< initRequestId
       (conf :: ClientConfig) <- either (\e -> print e >> exitFailure) return 
-        =<< (Y.decodeFileEither (_oConfig opts))
+        =<< Y.decodeFileEither (_oConfig opts)
       cmdLines <- readCmdLines
-      -- void $ runStateT (runReaderT (simpleRunREPL cmdLines) conf) $ ReplState -- MLN:  
-      (_, _, w) <- runRWST (simpleRunREPL cmdLines) conf $ ReplState
-       {
-          _server = fst (minimum $ HM.toList (_ccEndpoints conf)),
-          _batchCmd = "\"Hello Kadena\"",
-          _requestId = i,
-          _cmdData = Null,
-          _keys = [KeyPair (_ccSecretKey conf) (_ccPublicKey conf)],
-          _fmt = Table,
-          _echo = False
-        }
+      (_, _, w) <- runRWST (simpleRunREPL cmdLines) conf ReplState
+        { _server = fst (minimum $ HM.toList (_ccEndpoints conf))
+        , _batchCmd = "\"Hello Kadena\""
+        , _requestId = i
+        , _cmdData = Null
+        , _keys = [KeyPair (_ccSecretKey conf) (_ccPublicKey conf)]
+        , _fmt = Table
+        , _echo = False }
       putStrLn $ "Count of items in writer is: " ++ show (length w)
       return $ fmap convertResult w
 
@@ -113,7 +109,7 @@ convertResult ar =
       ok = case _arResult ar of 
         (Object ht) -> case HM.lookup (T.pack "status") ht of 
           Nothing -> False
-          Just t -> (t == "success") 
+          Just t -> t == "success" 
         _ -> False
       
   in TestResult { resultSuccess = ok
@@ -138,5 +134,4 @@ simpleRunREPL (x:xs) =
       simpleRunREPL xs 
 
 readCmdLines :: IO [String]
--- readCmdLines = fmap lines . readFile $ testDir ++ "commands.txt"
 readCmdLines = fmap (filter (/= "") . lines) (readFile (testDir ++ "commands.txt")) 

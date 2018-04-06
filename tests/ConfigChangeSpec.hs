@@ -16,7 +16,7 @@ spec =
 _debugResults :: [TestResult] -> IO ()
 _debugResults results = do
     let pairs = zip ([1,2..] :: [Integer]) results
-    forM_ pairs $ (\p -> do
+    forM_ pairs (\p -> do
         putStrLn $ "Results # " ++ show (fst p) ++ ": " 
-        putStrLn $ show $ resultSuccess $ snd p
-        putStrLn $ show $ apiResultsStr $ snd p)
+        print $ resultSuccess $ snd p
+        print $ apiResultsStr $ snd p)

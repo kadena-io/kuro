@@ -16,7 +16,7 @@ import qualified Data.Set as Set
 import qualified Data.Map.Strict as Map
 
 import qualified Kadena.Sender.Service as Sender
-import qualified Kadena.Log.Service as Log
+import qualified Kadena.Types.Log as Log
 import qualified Kadena.Types as KD
 
 import Kadena.Types hiding (votedFor, term, currentLeader, ignoreLeader, lazyVote)

@@ -26,7 +26,6 @@ module Kadena.Consensus.Util
   , queryHistoryForExisting
   , queryHistoryForPriorApplication
   , now
-  , module X -- convenience for Handlers
   ) where
 
 import Control.Lens hiding (Index)
@@ -46,9 +45,10 @@ import qualified System.Random as R
 
 import Kadena.Types
 import qualified Kadena.Sender.Types as Sender
-import qualified Kadena.Log.Service as Log
+import qualified Kadena.Log.Types as Log
+import qualified Kadena.Types.Log as Log
 import qualified Kadena.History.Types as History
-import Kadena.Util.Util as X
+import Kadena.Util.Util
 
 getNewElectionTimeout :: Consensus Int
 getNewElectionTimeout = viewConfig electionTimeoutRange >>= randomRIO
@@ -127,14 +127,14 @@ enqueueRequest s = do
   conf <- readConfig
   st <- get
   ss <- return $! Sender.StateSnapshot
-    { Sender._newNodeId = conf ^. nodeId
-    , Sender._newRole = st ^. nodeRole
-    , Sender._newOtherNodes = conf ^. otherNodes
-    , Sender._newLeader = st ^. currentLeader
-    , Sender._newTerm = st ^. term
-    , Sender._newPublicKey = conf ^. myPublicKey
-    , Sender._newPrivateKey = conf ^. myPrivateKey
-    , Sender._newYesVotes = st ^. cYesVotes
+    { Sender._snapNodeId = conf ^. nodeId
+    , Sender._snapNodeRole = st ^. nodeRole
+    , Sender._snapOtherNodes = conf ^. otherNodes
+    , Sender._snapLeader = st ^. currentLeader
+    , Sender._snapTerm = st ^. term
+    , Sender._snapPublicKey = conf ^. myPublicKey
+    , Sender._snapPrivateKey = conf ^. myPrivateKey
+    , Sender._snapYesVotes = st ^. cYesVotes
     }
   liftIO $! sendMsg $! Sender.ServiceRequest' ss s
 

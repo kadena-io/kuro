@@ -3,7 +3,6 @@
 module Kadena.Evidence.Service
   ( runEvidenceService
   , initEvidenceEnv
-  , module X
   ) where
 
 import Control.Concurrent (MVar, newEmptyMVar, takeMVar, swapMVar, tryPutMVar, putMVar)
@@ -23,6 +22,14 @@ import Kadena.Util.Util (linkAsyncTrack)
 import Kadena.Types.Dispatch (Dispatch)
 import Kadena.Types.Event (ResetLeaderNoFollowersTimeout(..),pprintBeat)
 import Kadena.Evidence.Spec as X
+import Kadena.Types.Metric (Metric)
+import Kadena.Types.Config
+import Kadena.Evidence.Types
+import Kadena.Types.Log as Log
+import Kadena.Types.Message
+import Kadena.Types.Base
+import Kadena.Types.Comms
+
 -- TODO: re-integrate EKG when Evidence Service is finished and hspec tests are written
 -- import Kadena.Types.Metric
 import qualified Kadena.Types.Dispatch as Dispatch
@@ -78,13 +85,13 @@ handleConfUpdate = do
     return ()
 
 publishEvidence :: EvidenceService EvidenceState ()
-publishEvidence = do  
+publishEvidence = do
   es <- get
   esPub <- view mPubStateTo
   liftIO $ void $ swapMVar esPub $ PublishedEvidenceState (es ^. esConvincedNodes) (es ^. esNodeStates)
   --debug $ "Published Evidence" ++ show (es ^. esNodeStates)
 
-runEvidenceProcessor :: EvidenceService EvidenceState () 
+runEvidenceProcessor :: EvidenceService EvidenceState ()
 runEvidenceProcessor = do
   es <- get
   newEv <- view evidence >>= liftIO . readComm
@@ -97,7 +104,7 @@ runEvidenceProcessor = do
                                 then runState (processEvidence aers) es'
                                 else let es'' = es' { _esCacheMissAers = Set.empty }
                                          aers' = aers ++ (Set.toList $ _esCacheMissAers es')
-                                     in runState (processEvidence aers') es''  
+                                     in runState (processEvidence aers') es''
       put newEs
       publishEvidence
       when (newEs ^. esResetLeaderNoFollowers) tellKadenaToResetLeaderNoFollowersTimeout
@@ -116,15 +123,15 @@ runEvidenceProcessor = do
       runEvidenceProcessor
     CacheNewHash{..} -> do
       debug $ "new hash to cache received: " ++ show _cLogIndex
-      put $ es 
+      put $ es
         { _esEvidenceCache = Map.insert _cLogIndex _cHash (_esEvidenceCache es)
         , _esMaxCachedIndex = if _cLogIndex > (_esMaxCachedIndex es) then _cLogIndex else (_esMaxCachedIndex es)
         }
       runEvidenceProcessor
 
-processCommitCkResult :: CommitCheckResult -> EvidenceService EvidenceState () 
+processCommitCkResult :: CommitCheckResult -> EvidenceService EvidenceState ()
 processCommitCkResult (SteadyState ci) = do
-  debug $ "CommitIndex still: " ++ show ci 
+  debug $ "CommitIndex still: " ++ show ci
   updateCache
 processCommitCkResult (StrangeResultInProcessor ci) = do
   debug $ "CommitIndex still: " ++ show ci
@@ -133,37 +140,41 @@ processCommitCkResult (NeedMoreEvidence i) = do
   newEs <- get
   when (Set.null $ newEs ^. esCacheMissAers) $
     debug $ "evidence is still required (" ++ (show i) ++ " of " ++ show (1 + _esQuorumSize newEs) ++ ")"
-  updateCache  
+  updateCache
 processCommitCkResult(NewCommitIndex ci) = do
   now' <- liftIO $ getCurrentTime
   updateLogs $ Log.ULCommitIdx $ Log.UpdateCommitIndex ci now'
   debug $ "new CommitIndex: " ++ (show ci)
   updateCache
 
-updateCache :: EvidenceService EvidenceState () 
-updateCache = do     
+updateCache :: EvidenceService EvidenceState ()
+updateCache = do
   newEs <- get
   unless (Set.null $ newEs ^. esCacheMissAers)
-    processCacheMisses 
+    processCacheMisses
 
 runEvidenceService :: EvidenceEnv -> IO ()
 runEvidenceService ev = do
-  startingEs <- initializeState ev 
+  startingEs <- initializeState ev
 
   putMVar (ev ^. mPubStateTo) $! PublishedEvidenceState (startingEs ^. esConvincedNodes) (startingEs ^. esNodeStates)
   let cu = ConfigUpdater (ev ^. debugFn) "Service|Evidence|Config" (const $ writeComm (ev ^. evidence) $ Bounce)
   linkAsyncTrack "EvidenceConfUpdater" $ runConfigUpdater cu (ev ^. mConfig)
+<<<<<<< HEAD
   _ <- runRWST (debug "Launch!" >> foreverRunProcessor) ev startingEs 
+=======
+  runRWST (debug "Launch!" >> foreverRunProcessor) ev startingEs
+>>>>>>> origin/develop
   return ()
 
 foreverRunProcessor :: (EvidenceService EvidenceState) ()
 foreverRunProcessor = do
-  runEvidenceProcessor 
-  handleConfUpdate 
+  runEvidenceProcessor
+  handleConfUpdate
   foreverRunProcessor
 
 queryLogs :: EvidenceEnv -> Set Log.AtomicQuery -> IO (Map Log.AtomicQuery Log.QueryResult)
-queryLogs env aq = do 
+queryLogs env aq = do
   let c = view logService env
   mv <- liftIO $ newEmptyMVar
   writeComm c $ Log.Query aq mv
@@ -231,7 +242,7 @@ checkForNewCommitIndex = do
 
 processCacheMisses :: EvidenceService EvidenceState ()
 processCacheMisses = do
-  es <- get  
+  es <- get
   (aerCacheMisses, futureAers) <- return $ Set.partition (\a -> _aerIndex a <= _esMaxCachedIndex es) (es ^. esCacheMissAers)
   if Set.null aerCacheMisses
   then do
@@ -252,7 +263,7 @@ processCacheMisses = do
     -- the cached evidence may not have changed anything, doubtful but could happen
     then return ()
     else do
-      publishEvidence 
+      publishEvidence
       when (newEs ^. esResetLeaderNoFollowers) tellKadenaToResetLeaderNoFollowersTimeout
       case res of
         SteadyState _ -> return ()

@@ -8,7 +8,6 @@ module Kadena.Evidence.Types
   , EvidenceChannel(..)
   , Result(..)
   , CommitCheckResult(..)
-  , module X
   ) where
 
 import Control.Lens hiding (Index)
@@ -20,10 +19,9 @@ import Data.Set (Set)
 import Data.Typeable
 import Data.Thyme.Clock (UTCTime)
 
-import Kadena.Types.Base as X
-import Kadena.Types.Config as X
-import Kadena.Types.Message as X
-import Kadena.Types.Comms as X
+import Kadena.Types.Base
+import Kadena.Types.Message
+import Kadena.Types.Comms
 
 import Kadena.Types.Event (Beat)
 

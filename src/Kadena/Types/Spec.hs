@@ -51,7 +51,7 @@ import Kadena.Types.Dispatch
 import Kadena.Sender.Types (SenderServiceChannel, ServiceRequest')
 import Kadena.Log.Types (QueryApi(..))
 import Kadena.History.Types (History(..))
-import Kadena.Evidence.Spec (PublishedEvidenceState, Evidence(ClearConvincedNodes))
+import Kadena.Evidence.Types (PublishedEvidenceState, Evidence(ClearConvincedNodes))
 
 data PublishedConsensus = PublishedConsensus
     { _pcLeader :: !(Maybe NodeId)

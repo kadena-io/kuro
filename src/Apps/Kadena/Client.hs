@@ -12,7 +12,7 @@ module Apps.Kadena.Client
   , Node(..)
   -- exported for testing
   , CliCmd(..), ClientOpts(..), coptions, flushStrLn, Formatter(..), getServer, handleCmd
-  , initRequestId, parseCliCmd, Repl, ReplState(..), runREPL
+  , initRequestId, parseCliCmd, Repl, ReplApiData(..), ReplState(..), runREPL
   ) where
 
 import qualified Control.Exception as Exception
@@ -65,6 +65,7 @@ import qualified Pact.Types.API as Pact
 import Pact.Types.RPC
 import qualified Pact.Types.Command as Pact
 import qualified Pact.Types.Crypto as Pact
+import Pact.Types.Runtime (TxId)
 import Pact.Types.Util
 import Pact.ApiReq
 
@@ -151,7 +152,15 @@ data ReplState = ReplState {
 }
 makeLenses ''ReplState
 
-type Repl a = RWST ClientConfig [ApiResult] ReplState IO a 
+type Repl a = RWST ClientConfig [ReplApiData] ReplState IO a 
+
+data ReplApiData = 
+    ReplApiRequest 
+      { _apiRequestId :: Int64
+      , _replCmd :: String }  
+  | ReplApiResponse 
+      { _apiResponseId :: Maybe TxId
+      , _apiResult :: ApiResult }  
 
 prompt :: String -> String
 prompt s = "\ESC[0;31m" ++ s ++ "> \ESC[0m"
@@ -212,10 +221,13 @@ handleBatchResp resp = do
         rk <- return $ head $ _rkRequestKeys resp
         showResult 10000 [rk] Nothing
 
-sendCmd :: Mode -> String -> Repl () 
-sendCmd m cmd = do
+sendCmd :: Mode -> String -> String -> Repl () 
+sendCmd m cmd replCmd = do
   j <- use cmdData
   e <- mkExec cmd j Nothing
+  mvReqId <- use requestId
+  reqId <- liftIO $ readMVar mvReqId
+  tell [ReplApiRequest { _apiRequestId = reqId, _replCmd = replCmd }]
   case m of
     Transactional -> postAPI "send" (SubmitBatch [e]) >>= handleResp handleBatchResp
     Local -> postAPI "local" e >>=
@@ -308,7 +320,7 @@ load m fp = do
   
   keys .= _ylKeyPairs
   cmdData .= cdata
-  sendCmd m code
+  sendCmd m code fp
   -- re-parse yaml for batch command
   v :: Value <- either (\pe -> die $ "File load failed: " ++ show pe) return =<<
                 liftIO (Y.decodeFileEither fp)
@@ -327,8 +339,8 @@ showResult tdelay rks countm = loop (0 :: Int)
       resp <- postAPI "listen" (ListenerRequest $ last rks)
       case resp ^. responseBody of
         ApiFailure err -> flushStrLn $ "Error: no results received: " ++ show err
-        ApiSuccess w@ApiResult{..} -> do
-          tell [w]
+        ApiSuccess ar@ApiResult{..} -> do
+          tell [ReplApiResponse {_apiResponseId = _arTxId, _apiResult = ar}]
           case countm of
             Nothing -> putJSON _arResult
             Just cnt -> case fromJSON <$>_arMetaData of
@@ -350,8 +362,8 @@ pollForResult printMetrics rk = do
       resp <- asJSON r
       case resp ^. responseBody of
         ApiFailure err -> flushStrLn $ "Error: no results received: " ++ show err
-        ApiSuccess (PollResponses prs) -> forM_ (HM.elems prs) $ \w@ApiResult{..} -> do
-          tell [w]
+        ApiSuccess (PollResponses prs) -> forM_ (HM.elems prs) $ \ar@ApiResult{..} -> do
+          tell [ReplApiResponse {_apiResponseId = _arTxId, _apiResult = ar}]
           putJSON _arResult
           when printMetrics $
                 case fromJSON <$>_arMetaData of
@@ -492,15 +504,15 @@ runREPL = loop True
             loop True
           Success c -> case c of
             Exit -> loop False
-            _ -> handleCmd c >> loop True
+            _ -> handleCmd c cmd >> loop True
 
-handleCmd :: CliCmd -> Repl ()
-handleCmd cmd = case cmd of
+handleCmd :: CliCmd -> String -> Repl ()
+handleCmd cmd reqStr = case cmd of
   Help -> help
   Sleep i -> threadDelay (i * 1000)
   Cmd Nothing -> use batchCmd >>= flushStrLn
   Cmd (Just c) -> batchCmd .= c
-  Send m c -> sendCmd m c
+  Send m c -> sendCmd m c reqStr
   Server Nothing -> do
     use server >>= \s -> flushStrLn $ "Current server: " ++ s
     flushStrLn "Servers:"

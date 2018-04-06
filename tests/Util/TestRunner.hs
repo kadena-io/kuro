@@ -2,12 +2,15 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE RecordWildCards #-}
+
 
 module Util.TestRunner 
   ( delTempFiles
   , runAll
   , testDir
   , testConfDir
+  , TestRequest(..)
   , TestResult(..)) where 
 
 import Apps.Kadena.Client   
@@ -39,13 +42,13 @@ delTempFiles = do
     _ <- createProcess p
     return ()
 
-runAll :: IO [TestResult]
-runAll = do
+runAll :: [TestRequest] -> IO [TestResult]
+runAll testRequests = do
   procHandles <- runServers 
   putStrLn "Servers are running, sleeping for 3 seconds"
   _ <- sleep 3
   catchAny (do 
-              results <- runClientCommands clientArgs
+              results <- runClientCommands clientArgs testRequests
               results `deepseq` stopProcesses procHandles
               return results)
            (\e -> do 
@@ -81,8 +84,8 @@ serverArgs3 = "+RTS -N4 -RTS -c " ++ testConfDir ++ "10003-cluster.yaml"
 clientArgs :: [String]
 clientArgs = words $ "-c " ++ testConfDir ++ "client.yaml"
 
-runClientCommands :: [String] -> IO [TestResult]
-runClientCommands args = do 
+runClientCommands :: [String] ->  [TestRequest] -> IO [TestResult]
+runClientCommands args testRequests = do 
   putStrLn $ "runClientCommand with args: " ++ unlines args
   case getOpt Permute coptions args of
     (_,_,es@(_:_)) -> print es >> exitFailure
@@ -91,8 +94,7 @@ runClientCommands args = do
       i <- newMVar =<< initRequestId
       (conf :: ClientConfig) <- either (\e -> print e >> exitFailure) return 
         =<< Y.decodeFileEither (_oConfig opts)
-      cmdLines <- readCmdLines
-      (_, _, w) <- runRWST (simpleRunREPL cmdLines) conf ReplState
+      (_, _, w) <- runRWST (simpleRunREPL testRequests) conf ReplState
         { _server = fst (minimum $ HM.toList (_ccEndpoints conf))
         , _batchCmd = "\"Hello Kadena\""
         , _requestId = i
@@ -101,7 +103,14 @@ runClientCommands args = do
         , _fmt = Table
         , _echo = False }
       putStrLn $ "Count of items in writer is: " ++ show (length w)
-      return $ fmap convertResult w
+      return $ convertResults w
+
+convertResults :: [ReplApiData] -> [TestResult]
+convertResults ys = foldr f [] ys where
+  --just for the moment taking only the responses and not matching the request ids...
+  f :: ReplApiData -> [TestResult] -> [TestResult]
+  f (ReplApiRequest{..}) acc = acc
+  f (ReplApiResponse{..}) acc = convertResult _apiResult : acc
 
 convertResult :: ApiResult -> TestResult
 convertResult ar = 
@@ -111,27 +120,29 @@ convertResult ar =
           Nothing -> False
           Just t -> t == "success" 
         _ -> False
-      
   in TestResult { resultSuccess = ok
                 , apiResultsStr = str } 
-  
+                
+data TestRequest = TestRequest 
+  { cmd :: String 
+  , eval :: TestResult -> Bool
+  , displayStr :: String }                
+
 data TestResult = TestResult
   { resultSuccess :: Bool
   , apiResultsStr :: String
   --more to come... 
-  } deriving Generic
+  } deriving (Eq, Generic)
 instance NFData TestResult
 
-simpleRunREPL :: [String] -> Repl ()
+simpleRunREPL :: [TestRequest] -> Repl ()
 simpleRunREPL [] = return ()
-simpleRunREPL (x:xs) =
-  case parseString parseCliCmd mempty x of 
+simpleRunREPL (x:xs) = do
+  let reqStr = cmd x
+  case parseString parseCliCmd mempty reqStr of 
     Failure (ErrInfo e _) -> do 
       flushStrLn $ "Parse failure (help for command help):\n" ++ show e
       return () 
     Success c -> do
-      handleCmd c 
+      handleCmd c reqStr 
       simpleRunREPL xs 
-
-readCmdLines :: IO [String]
-readCmdLines = fmap (filter (/= "") . lines) (readFile (testDir ++ "commands.txt")) 

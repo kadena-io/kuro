@@ -32,17 +32,23 @@ import Data.Serialize hiding (get, put)
 
 import Data.Thyme.Clock (UTCTime, getCurrentTime)
 
-import Kadena.Types hiding (debugPrint, ConsensusState(..), Config(..)
-  , Consensus, ConsensusSpec(..), nodeId, sendMessage, outboundGeneral
-  , term, Event(..), logService, publishMetric, heartbeatTimeout)
-import qualified Kadena.Types as KD
+import Kadena.Types.Message
+import Kadena.Types.Metric (Metric)
+import Kadena.Types.Config (GlobalConfigTMVar,Config(..),readCurrentConfig)
+import Kadena.Types.Spec (PublishedConsensus)
+import Kadena.Types.Dispatch (Dispatch(..))
+import Kadena.Types.Base
+import Kadena.Types.Log (LogEntries(..))
+import qualified Kadena.Types.Log as Log
+import qualified Kadena.Types.Dispatch as KD
+import Kadena.Types.Event (pprintBeat)
+import Kadena.Types.Comms
 
 import qualified Kadena.Types.Spec as Spec
 
 import Kadena.Log.Types (LogServiceChannel)
 import qualified Kadena.Log.Types as Log
-import Kadena.Evidence.Spec (PublishedEvidenceState)
-import qualified Kadena.Evidence.Spec as Ev
+import Kadena.Evidence.Types hiding (Heart)
 
 import Kadena.Sender.Types as X
 
@@ -71,13 +77,13 @@ getStateSnapshot conf' pcons' = do
   conf <- readCurrentConfig conf'
   st <- readMVar pcons'
   return $! StateSnapshot
-    { _snapNodeId = conf ^. KD.nodeId
+    { _snapNodeId = _nodeId conf
     , _snapNodeRole = st ^. Spec.pcRole
-    , _snapOtherNodes = conf ^. KD.otherNodes
+    , _snapOtherNodes = _otherNodes conf
     , _snapLeader = st ^. Spec.pcLeader
     , _snapTerm = st ^. Spec.pcTerm
-    , _snapPublicKey = conf ^. KD.myPublicKey
-    , _snapPrivateKey = conf ^. KD.myPrivateKey
+    , _snapPublicKey = _myPublicKey conf
+    , _snapPrivateKey = _myPrivateKey conf
     , _snapYesVotes = st ^. Spec.pcYesVotes
     }
 
@@ -86,26 +92,26 @@ runSenderService
   -> GlobalConfigTMVar
   -> (String -> IO ())
   -> (Metric -> IO ())
-  -> MVar Ev.PublishedEvidenceState
+  -> MVar PublishedEvidenceState
   -> MVar Spec.PublishedConsensus
   -> IO ()
 runSenderService dispatch gcm debugFn publishMetric' mPubEvState mPubCons = do
   conf <- readCurrentConfig gcm
   s <- return $ StateSnapshot
-    { _snapNodeId = conf ^. KD.nodeId
+    { _snapNodeId = _nodeId conf
     , _snapNodeRole = Follower
-    , _snapOtherNodes = conf ^. KD.otherNodes
+    , _snapOtherNodes = _otherNodes conf
     , _snapLeader = Nothing
     , _snapTerm = startTerm
-    , _snapPublicKey = conf ^. KD.myPublicKey
-    , _snapPrivateKey = conf ^. KD.myPrivateKey
+    , _snapPublicKey = _myPublicKey conf
+    , _snapPrivateKey = _myPrivateKey conf
     , _snapYesVotes = Set.empty
     }
   env <- return $ ServiceEnv
     { _debugPrint = debugFn
-    , _aeReplicationLogLimit = conf ^. KD.aeBatchSize
+    , _aeReplicationLogLimit = _aeBatchSize conf
     -- Comm Channels
-    , _serviceRequestChan = dispatch ^. senderService
+    , _serviceRequestChan = _senderService dispatch
     , _outboundGeneral = dispatch ^. KD.outboundGeneral
     -- Log Storage
     , _logService = dispatch ^. KD.logService
@@ -116,7 +122,7 @@ runSenderService dispatch gcm debugFn publishMetric' mPubEvState mPubCons = do
     }
   void $ liftIO $ runRWST serviceRequests env s
 
-snapshotStateExternal :: SenderService StateSnapshot ()  
+snapshotStateExternal :: SenderService StateSnapshot ()
 snapshotStateExternal = do
   mPubCons <- view pubCons
   conf <- view config
@@ -128,14 +134,14 @@ serviceRequests :: SenderService StateSnapshot ()
 serviceRequests = do
   rrc <- view serviceRequestChan
   debug "launch!"
-  forever $ do 
+  forever $ do
     sr <- liftIO $ readComm rrc
     case sr of
       SendAllAppendEntriesResponse{..} -> do
         snapshotStateExternal
         stTime <- liftIO $ getCurrentTime
         sendAllAppendEntriesResponse' (Just _srIssuedTime) stTime _srLastLogHash _srMaxIndex
-      
+
       ForwardCommandToLeader{..} -> do
         snapshotStateExternal
         s <- get
@@ -145,12 +151,12 @@ serviceRequests = do
           Just ldr' -> do
             debug $ "fowarding " ++ show (length $ _newCmd $ _srCommands) ++ "commands to leader"
             sendRPC ldr' $ NEW' _srCommands
-      (ServiceRequest' ss m) -> do 
+      (ServiceRequest' ss m) -> do
         put ss
         case m of
           BroadcastAE{..} -> do
             evState <- view getEvidenceState >>= liftIO
-            sendAllAppendEntries (evState ^. Ev.pesNodeStates) (evState ^. Ev.pesConvincedNodes) _srAeBoardcastControl
+            sendAllAppendEntries (_pesNodeStates evState) (_pesConvincedNodes evState) _srAeBoardcastControl
           EstablishDominance -> establishDominance
           SingleAER{..} -> sendAppendEntriesResponse _srFor _srSuccess _srConvinced
           BroadcastAER -> sendAllAppendEntriesResponse
@@ -210,8 +216,8 @@ sendAllAppendEntries nodeCurrentIndex' nodesThatFollow' sendIfOutOfSync = do
   startTime' <- liftIO $ getCurrentTime
   s <- get
   let ct = view snapTerm s
-  let myNodeId' = view snapNodeId s 
-  let yesVotes' = view snapYesVotes s 
+  let myNodeId' = view snapNodeId s
+  let yesVotes' = view snapYesVotes s
   let oNodes = view snapOtherNodes s
   limit' <- view aeReplicationLogLimit
   inSync' <- canBroadcastAE (length oNodes) nodeCurrentIndex' ct myNodeId' nodesThatFollow' sendIfOutOfSync
@@ -311,7 +317,7 @@ canBroadcastAE clusterSize' nodeCurrentIndex' ct myNodeId' vts broadcastControl 
       then return $ BackStreet inSyncRpc laggingFollowers
       else do
         s <- get
-        let oNodes' = view snapOtherNodes s 
+        let oNodes' = view snapOtherNodes s
         debug $ "non-believers exist, establishing dominance over " ++ show ((Set.size vts) - 1)
         return $ BackStreet inSyncRpc $ Set.union laggingFollowers (oNodes' Set.\\ vts)
 {-# INLINE canBroadcastAE #-}
@@ -325,7 +331,7 @@ sendAppendEntriesResponse :: NodeId -> Bool -> Bool -> SenderService StateSnapsh
 sendAppendEntriesResponse target success convinced = do
   s <- get
   let ct = view snapTerm s
-  let myNodeId' = view snapNodeId s 
+  let myNodeId' = view snapNodeId s
   mv <- queryLogs $ Set.fromList [Log.GetMaxIndex, Log.GetLastLogHash]
   maxIndex' <- return $ Log.hasQueryResult Log.MaxIndex mv
   lastLogHash' <- return $ Log.hasQueryResult Log.LastLogHash mv
@@ -367,7 +373,7 @@ pubRPC rpc = do
   s <- get
   let myNodeId' = view snapNodeId s
   let privKey = view snapPrivateKey s
-  let pubKey = view snapPublicKey s 
+  let pubKey = view snapPublicKey s
   sRpc <- return $ rpcToSignedRPC myNodeId' pubKey privKey rpc
   debug $ "broadcast msg sent: "
         ++ show (_digType $ _sigDigest sRpc)
@@ -384,7 +390,7 @@ sendRPC target rpc = do
   s <- get
   let myNodeId' = view snapNodeId s
   let privKey = view snapPrivateKey s
-  let pubKey = view snapPublicKey s 
+  let pubKey = view snapPublicKey s
   sRpc <- return $ rpcToSignedRPC myNodeId' pubKey privKey rpc
   debug $ "issuing direct msg: " ++ show (_digType $ _sigDigest sRpc) ++ " to " ++ show (unAlias $ _alias target)
   liftIO $! writeComm oChan $! directMsg [(target, encode $ sRpc)]

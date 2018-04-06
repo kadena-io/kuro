@@ -26,7 +26,6 @@ module Kadena.Consensus.Util
   , queryHistoryForExisting
   , queryHistoryForPriorApplication
   , now
-  , module X -- convenience for Handlers
   ) where
 
 import Control.Lens hiding (Index)
@@ -46,9 +45,10 @@ import qualified System.Random as R
 
 import Kadena.Types
 import qualified Kadena.Sender.Types as Sender
-import qualified Kadena.Log.Service as Log
+import qualified Kadena.Log.Types as Log
+import qualified Kadena.Types.Log as Log
 import qualified Kadena.History.Types as History
-import Kadena.Util.Util as X
+import Kadena.Util.Util
 
 getNewElectionTimeout :: Consensus Int
 getNewElectionTimeout = viewConfig electionTimeoutRange >>= randomRIO

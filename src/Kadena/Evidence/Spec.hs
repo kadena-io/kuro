@@ -18,7 +18,6 @@ module Kadena.Evidence.Spec
   , debugFn
   , publishMetric
   , getEvidenceQuorumSize
-  , module X
   ) where
 
 import Control.Lens hiding (Index)
@@ -32,12 +31,11 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Thyme.Clock
 
-import Kadena.Types.Base as X
-import Kadena.Types.Metric as X
-import Kadena.Types.Config as X
-import Kadena.Types.Message as X
-import Kadena.Types.Comms as X
-import Kadena.Evidence.Types as X
+import Kadena.Types.Base
+import Kadena.Types.Metric
+import Kadena.Types.Config
+import Kadena.Types.Message
+import Kadena.Evidence.Types
 import Kadena.Types.Event (ResetLeaderNoFollowersTimeout)
 import Kadena.Log.Types (LogServiceChannel)
 

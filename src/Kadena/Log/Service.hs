@@ -3,8 +3,7 @@
 {-# LANGUAGE CPP #-}
 
 module Kadena.Log.Service
-  ( runLogService
-  , module X)
+  ( runLogService)
   where
 
 import Control.Lens hiding (Index, (|>))
@@ -29,9 +28,10 @@ import Kadena.Types.Config
 import Kadena.Types.Command (CmdLatencyMetrics(..))
 import Kadena.Types.Metric
 import Kadena.Log.Persistence
-import Kadena.Log.Types as X
+import Kadena.Types.Log
+import Kadena.Log.Types
 import Kadena.Log.LogApi as X
-import qualified Kadena.Evidence.Spec as Ev
+import qualified Kadena.Evidence.Types as Ev
 import qualified Kadena.Types.Dispatch as Dispatch
 import qualified Kadena.Commit.Types as Commit
 import Kadena.Types (Dispatch)

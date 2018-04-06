@@ -13,8 +13,9 @@ import Control.Monad.Writer.Strict
 import Data.Set as Set
 
 import qualified Kadena.Sender.Service as Sender
-import qualified Kadena.Log.Service as Log
+import qualified Kadena.Types.Log as Log
 import qualified Kadena.Types as KD
+import Kadena.Util.Util
 
 import Kadena.Types hiding (nodeRole, term, cYesVotes)
 import Kadena.Consensus.Util

@@ -25,7 +25,6 @@ module Kadena.Log.Types
   , UpdateLogs(..)
   , QueryApi(..)
   -- ReExports
-  , module X
   , LogIndex(..)
   , KeySet(..)
   -- for tesing
@@ -48,7 +47,6 @@ import Kadena.Types.Base as X
 import Kadena.Types.Metric
 import Kadena.Types.Config (KeySet(..))
 import Kadena.Types.Log
-import qualified Kadena.Types.Log as X
 import Kadena.Types.Comms
 
 import Kadena.Types.Event (Beat,InternalEventChannel)

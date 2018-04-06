@@ -18,7 +18,7 @@ import qualified Data.Set as Set
 
 import Kadena.Types hiding (nodeRole, term, lazyVote, nodeId, otherNodes, myPrivateKey, myPublicKey)
 import qualified Kadena.Sender.Service as Sender
-import qualified Kadena.Log.Service as Log
+import qualified Kadena.Types.Log as Log
 import Kadena.Consensus.Util
 
 import qualified Kadena.Types as KD

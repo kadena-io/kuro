@@ -227,18 +227,27 @@ test-suite hspec
   main-is: hspec.hs
   hs-source-dirs: tests
   default-language: Haskell2010
-  build-depends:
-                base
-              , aeson
-              , bytestring
-              , cereal
-              , containers
-              , unordered-containers
-              , crypto-api
-              , parallel
-              , lens
-              , ed25519-donna
-              , pact
-              , hspec
-              , kadena
-              , text
+  other-modules: ConfigChangeSpec
+               , ConfigSpec 
+               , Util.TestRunner
+               , WireFormatSpec
+  build-depends: aeson
+               , base
+               , containers
+               , crypto-api
+               , data-default
+               , deepseq
+               , ed25519-donna
+               , extra
+               , hspec
+               , kadena
+               , mtl
+               , pact
+               , process
+               , safe-exceptions
+               , system-command
+               , text
+               , transformers
+               , trifecta
+               , unordered-containers
+               , yaml

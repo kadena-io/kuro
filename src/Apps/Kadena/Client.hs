@@ -10,13 +10,16 @@ module Apps.Kadena.Client
   ( main
   , ClientConfig(..), ccSecretKey, ccPublicKey, ccEndpoints
   , Node(..)
+  -- exported for testing
+  , CliCmd(..), ClientOpts(..), coptions, flushStrLn, Formatter(..), getServer, handleCmd
+  , initRequestId, parseCliCmd, Repl, ReplState(..), runREPL
   ) where
 
 import qualified Control.Exception as Exception
-import Control.Monad.State
 import Control.Monad.Reader
 import Control.Lens hiding (to,from)
 import Control.Monad.Catch
+import Control.Monad.Trans.RWS.Lazy
 import Control.Concurrent.Lifted (threadDelay)
 import Control.Concurrent.MVar
 import Control.Concurrent.Async
@@ -36,11 +39,11 @@ import Data.Function
 import qualified Data.Aeson as A
 import Data.Aeson hiding ((.=), Result(..), Value(..))
 import Data.Aeson.Lens
-import Data.Aeson.Types hiding ((.=),parse, Result(..))
+import Data.Aeson.Types hiding ((.=), Result(..))
 import Data.Aeson.Encode.Pretty
 import qualified Data.Yaml as Y
 
-import Text.Trifecta as TF hiding (err,render,rendered)
+import Text.Trifecta as TF hiding (err, rendered)
 
 import Data.Default
 import Data.Foldable
@@ -63,7 +66,6 @@ import Pact.Types.RPC
 import qualified Pact.Types.Command as Pact
 import qualified Pact.Types.Crypto as Pact
 import Pact.Types.Util
-
 import Pact.ApiReq
 
 
@@ -149,7 +151,7 @@ data ReplState = ReplState {
 }
 makeLenses ''ReplState
 
-type Repl a = ReaderT ClientConfig (StateT ReplState IO) a
+type Repl a = RWST ClientConfig [ApiResult] ReplState IO a 
 
 prompt :: String -> String
 prompt s = "\ESC[0;31m" ++ s ++ "> \ESC[0m"
@@ -210,7 +212,7 @@ handleBatchResp resp = do
         rk <- return $ head $ _rkRequestKeys resp
         showResult 10000 [rk] Nothing
 
-sendCmd :: Mode -> String -> Repl ()
+sendCmd :: Mode -> String -> Repl () 
 sendCmd m cmd = do
   j <- use cmdData
   e <- mkExec cmd j Nothing
@@ -303,7 +305,7 @@ parallelBatchTest totalNumCmds' cmdRate' sleep' = do
 load :: Mode -> FilePath -> Repl ()
 load m fp = do
   ((ApiReq {..},code,cdata,_),_) <- liftIO $ mkApiReqExec fp
-
+  
   keys .= _ylKeyPairs
   cmdData .= cdata
   sendCmd m code
@@ -325,17 +327,18 @@ showResult tdelay rks countm = loop (0 :: Int)
       resp <- postAPI "listen" (ListenerRequest $ last rks)
       case resp ^. responseBody of
         ApiFailure err -> flushStrLn $ "Error: no results received: " ++ show err
-        ApiSuccess ApiResult{..} ->
-                case countm of
-                  Nothing -> putJSON _arResult
-                  Just cnt -> case fromJSON <$>_arMetaData of
-                    Nothing -> flushStrLn "Success"
-                    Just (A.Success lats@CmdResultLatencyMetrics{..}) -> do
-                      pprintLatency lats
-                      case _rlmFinCommit of
-                        Nothing -> flushStrLn "Latency Measurement Unavailable"
-                        Just n -> flushStrLn $ intervalOfNumerous cnt n
-                    Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
+        ApiSuccess w@ApiResult{..} -> do
+          tell [w]
+          case countm of
+            Nothing -> putJSON _arResult
+            Just cnt -> case fromJSON <$>_arMetaData of
+              Nothing -> flushStrLn "Success"
+              Just (A.Success lats@CmdResultLatencyMetrics{..}) -> do
+                pprintLatency lats
+                case _rlmFinCommit of
+                  Nothing -> flushStrLn "Latency Measurement Unavailable"
+                  Just n -> flushStrLn $ intervalOfNumerous cnt n
+              Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
 
 pollForResult :: Bool -> RequestKey -> Repl ()
 pollForResult printMetrics rk = do
@@ -347,15 +350,14 @@ pollForResult printMetrics rk = do
       resp <- asJSON r
       case resp ^. responseBody of
         ApiFailure err -> flushStrLn $ "Error: no results received: " ++ show err
-        ApiSuccess (PollResponses prs) -> forM_ (HM.elems prs) $ \ApiResult{..} -> do
+        ApiSuccess (PollResponses prs) -> forM_ (HM.elems prs) $ \w@ApiResult{..} -> do
+          tell [w]
           putJSON _arResult
-          when printMetrics $ do
+          when printMetrics $
                 case fromJSON <$>_arMetaData of
                   Nothing -> flushStrLn "Metrics Unavailable"
-                  Just (A.Success lats@CmdResultLatencyMetrics{..}) -> do
-                    pprintLatency lats
+                  Just (A.Success lats@CmdResultLatencyMetrics{..}) -> pprintLatency lats
                   Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
-
 
 printLatTime :: (Num a, Ord a, Show a) => a -> String
 printLatTime s
@@ -473,8 +475,6 @@ parsePrivate = do
 parseCliCmd :: TF.Parser CliCmd
 parseCliCmd = foldl1 (<|>) (map (\(c,_,_,p) -> symbol c >> p) cliCmds)
 
-
-
 runREPL :: Repl ()
 runREPL = loop True
   where
@@ -582,17 +582,18 @@ main = do
   case getOpt Permute coptions as of
     (_,_,es@(_:_)) -> print es >> exitFailure
     (o,_,_) -> do
-         let opts = foldl (flip id) def o
-         i <- newMVar =<< initRequestId
-         (conf :: ClientConfig) <- either (\e -> print e >> exitFailure) return =<<
-           Y.decodeFileEither (_oConfig opts)
-         void $ runStateT (runReaderT runREPL conf) $ ReplState
-           {
-             _server = fst (minimum $ HM.toList (_ccEndpoints conf)),
-             _batchCmd = "\"Hello Kadena\"",
-             _requestId = i,
-             _cmdData = Null,
-             _keys = [KeyPair (_ccSecretKey conf) (_ccPublicKey conf)],
-             _fmt = Table,
-             _echo = False
-           }
+      let opts = foldl (flip id) def o
+      i <- newMVar =<< initRequestId
+      (conf :: ClientConfig) <- either (\e -> print e >> exitFailure) return =<<
+        Y.decodeFileEither (_oConfig opts)
+      _ <- runRWST runREPL conf ReplState
+        {
+          _server = fst (minimum $ HM.toList (_ccEndpoints conf)),
+          _batchCmd = "\"Hello Kadena\"",
+          _requestId = i,
+          _cmdData = Null,
+          _keys = [KeyPair (_ccSecretKey conf) (_ccPublicKey conf)],
+          _fmt = Table,
+          _echo = False
+        }
+      return ()

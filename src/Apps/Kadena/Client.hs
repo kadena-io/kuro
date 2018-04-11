@@ -298,7 +298,7 @@ processParBatchPerServer sleep' (sema, (Node{..}, batches)) = do
   putMVar sema ()
 
 calcBatchSize :: Int -> Int -> Int -> Int
-calcBatchSize cmdRate' sleep' clusterSize' = fromIntegral (ceiling $ cr * (sl/1000) / (cs) :: Int)
+calcBatchSize cmdRate' sleep' clusterSize' = fromIntegral (ceiling $ cr * (sl/1000) / cs :: Int)
   where
     cr, sl, cs :: Double
     cr = fromIntegral cmdRate'

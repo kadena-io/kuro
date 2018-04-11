@@ -113,8 +113,7 @@ clientArgs :: [String]
 clientArgs = words $ "-c " ++ testConfDir ++ "client.yaml"
 
 runClientCommands :: [String] ->  [TestRequest] -> IO [TestResult]
-runClientCommands args testRequests = do 
-  putStrLn $ "runClientCommand with args: " ++ unlines args
+runClientCommands args testRequests = 
   case getOpt Permute coptions args of
     (_,_,es@(_:_)) -> print es >> exitFailure
     (o,_,_) -> do
@@ -130,18 +129,13 @@ runClientCommands args testRequests = do
         , _keys = [KeyPair (_ccSecretKey conf) (_ccPublicKey conf)]
         , _fmt = Table
         , _echo = False }
-      putStrLn $ "Count of items in writer is: " ++ show (length w)
       buildResults testRequests w
 
 buildResults :: [TestRequest] -> [ReplApiData] -> IO [TestResult]
 buildResults testRequests ys = do
   let requests = filter isRequest ys
   let responses = filter (not . isRequest) ys
-  let results = foldr (matchResponses requests responses) [] testRequests
-  putStrLn $ "\nRequests: " ++ unlines (fmap show requests)  
-  putStrLn $ "\nResponses: " ++ unlines (fmap show responses) 
-  putStrLn $ "\nTestResults: " ++ unlines (fmap show results ) 
-  return results
+  return $ foldr (matchResponses requests responses) [] testRequests
 
 -- Fold function that matches a given TestRequest to:
 --   a corresponding ReplApiRequest (matching via. the full text of the command)

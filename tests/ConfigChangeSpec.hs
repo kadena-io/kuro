@@ -14,7 +14,7 @@ spec =
 
 checkResults :: [TestResult] -> IO Bool
 checkResults xs = 
-    foldr checkResult (return True) xs where
+    foldr checkResult (return True) (reverse xs) where
         checkResult :: TestResult -> IO Bool -> IO Bool
         checkResult result ok = do 
             let req = requestTr result 
@@ -30,15 +30,20 @@ checkResults xs =
                       then do 
                         failTest result "Eval function failed"
                         return False
-                      else return $ r && bOk
+                      else do
+                        passTest result
+                        return $ r && bOk
                     
 failTest :: TestResult -> String -> IO ()
 failTest tr addlInfo = do
     putStrLn $ "Test failure: " ++ cmd (requestTr tr) 
     putStrLn $ "(" ++ addlInfo ++ ")"
 
+passTest :: TestResult -> IO ()
+passTest tr = putStrLn $ "Test passed: " ++ cmd (requestTr tr)  
+
 testRequests :: [TestRequest]
-testRequests = [testReq1, testReq2, testReq3, testReq4, testReq5, testReq6]
+testRequests = [testReq1, testReq2, testReq3, testReq4, testReq5]
 
 testReq1 :: TestRequest
 testReq1 = TestRequest 
@@ -70,13 +75,6 @@ testReq4 = TestRequest
 
 testReq5 :: TestRequest
 testReq5 = TestRequest 
-  { cmd = "local (test.read-all-global)"
-  , matchCmd = "local (test.read-all-global)"
-  , eval = resultSuccess
-  , displayStr = "Reads the commited results" }  
-
-testReq6 :: TestRequest
-testReq6 = TestRequest 
   { cmd = "batch 4000"
   , matchCmd = "(test.transfer \"Acct1\" \"Acct2\" 1.00)"
   , eval = resultSuccess

@@ -52,7 +52,6 @@ instance Show TestRequest where
 data TestResponse = TestResponse
   { resultSuccess :: Bool
   , apiResultsStr :: String
-  --more to come...  
   } deriving (Eq, Generic)
 instance NFData TestResponse
 
@@ -139,8 +138,6 @@ buildResults testRequests ys = do
   let requests = filter isRequest ys
   let responses = filter (not . isRequest) ys
   let results = foldr (matchResponses requests responses) [] testRequests
-  -- putStrLn $ "Of " ++ show (length requests) ++ " requests, " ++ show (length responses)
-  --  ++ " responses, " ++ show (length results) ++ " matched results were formed."
   putStrLn $ "\nRequests: " ++ unlines (fmap show requests)  
   putStrLn $ "\nResponses: " ++ unlines (fmap show responses) 
   putStrLn $ "\nTestResults: " ++ unlines (fmap show results ) 

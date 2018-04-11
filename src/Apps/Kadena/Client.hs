@@ -68,11 +68,9 @@ import qualified Pact.Types.Crypto as Pact
 import Pact.Types.Util
 import Pact.ApiReq
 
-
 import Kadena.Types.Base hiding (printLatTime)
 import Kadena.Types.Entity (EntityName)
 import Kadena.Types.Command (CmdResultLatencyMetrics(..))
-
 
 data ClientOpts = ClientOpts {
       _oConfig :: FilePath
@@ -219,7 +217,6 @@ handleResp a r = do
 handleBatchResp :: RequestKeys -> Repl ()
 handleBatchResp resp = do
         rk <- return $ head $ _rkRequestKeys resp
-        -- flushStrLn $ "handleBatchResp -- request key (head): " ++ show rk
         showResult 10000 [rk] Nothing
 
 sendCmd :: Mode -> String -> String -> Repl () 
@@ -229,7 +226,6 @@ sendCmd m cmd replCmd = do
   case m of
     Transactional -> do
       resp <- postAPI "send" (SubmitBatch [e]) 
-      -- flushStrLn $ "X factor: " ++ concatMap show resp
       tellKeys resp replCmd
       handleResp handleBatchResp resp
     Local -> do
@@ -249,7 +245,6 @@ sendPrivate addy msg = do
   e <- mkExec msg j (Just addy)
   postAPI "private" (SubmitBatch [e]) >>= handleResp handleBatchResp
 
-
 putJSON :: ToJSON a => a -> Repl ()
 putJSON a = use fmt >>= \f -> flushStrLn $ case f of
   Raw -> BSL.unpack $ encode a
@@ -257,7 +252,6 @@ putJSON a = use fmt >>= \f -> flushStrLn $ case f of
   YAML -> doYaml
   Table -> fromMaybe doYaml $ pprintTable (toJSON a)
   where doYaml = BS8.unpack $ Y.encode a
-
 
 batchTest :: Int -> String -> Repl ()
 batchTest n cmd = do
@@ -345,7 +339,6 @@ showResult _ [] _ = return ()
 showResult tdelay rks countm = loop (0 :: Int)
   where
     loop c = do
-      -- flushStrLn $ "showResult -- resultKeys: " ++ concatMap show rks
       threadDelay tdelay
       when (c > 100) $ flushStrLn "Timeout"
       let lastRk = last rks
@@ -367,7 +360,6 @@ showResult tdelay rks countm = loop (0 :: Int)
 
 pollForResult :: Bool -> RequestKey -> Repl ()
 pollForResult printMetrics rk = do
-  -- flushStrLn $ "pollForResult - key: " ++ show rk
   s <- getServer
   eR <- liftIO $ Exception.try $ post ("http://" ++ s ++ "/api/v1/poll") (toJSON (Pact.Poll [rk]))
   case eR of

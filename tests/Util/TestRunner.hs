@@ -2,8 +2,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE RecordWildCards #-}
-
 
 module Util.TestRunner 
   ( delTempFiles
@@ -11,6 +9,7 @@ module Util.TestRunner
   , testDir
   , testConfDir
   , TestRequest(..)
+  , TestResponse(..)
   , TestResult(..)) where 
 
 import Apps.Kadena.Client   
@@ -21,6 +20,7 @@ import Control.Monad
 import Control.Monad.Trans.RWS.Lazy
 import Data.Aeson hiding (Success)
 import Data.Default
+import Data.List
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Text as T
 import qualified Data.Yaml as Y
@@ -35,6 +35,35 @@ import Text.Trifecta (ErrInfo(..), parseString, Result(..))
 testDir, testConfDir :: String
 testDir = "test-files/"
 testConfDir = "test-files/conf/"
+                
+data TestRequest = TestRequest 
+  { cmd :: String 
+  , matchCmd :: String -- used when the command as processed differs from the original command issued
+                       -- e.g., the command "load myFile.yaml" is processed as "myFile.yaml"
+                       -- FIXME: really need to find a better way to match these...
+  , eval :: TestResponse -> Bool 
+  , displayStr :: String 
+  } deriving Generic
+instance NFData TestRequest   
+
+instance Show TestRequest where
+  show tr = "cmd: " ++ cmd tr ++ "\nDisplay string: " ++ displayStr tr
+
+data TestResponse = TestResponse
+  { resultSuccess :: Bool
+  , apiResultsStr :: String
+  --more to come...  
+  } deriving (Eq, Generic)
+instance NFData TestResponse
+
+instance Show TestResponse where 
+  show tr = "resultSuccess: " ++ show (resultSuccess tr) ++ "\n" ++ take 100 (apiResultsStr tr) ++ "..."
+
+data TestResult = TestResult 
+  { requestTr :: TestRequest
+  , responseTr :: Maybe TestResponse 
+  } deriving (Generic, Show)
+instance NFData TestResult
 
 delTempFiles :: IO ()
 delTempFiles = do
@@ -103,37 +132,58 @@ runClientCommands args testRequests = do
         , _fmt = Table
         , _echo = False }
       putStrLn $ "Count of items in writer is: " ++ show (length w)
-      return $ convertResults w
+      buildResults testRequests w
 
-convertResults :: [ReplApiData] -> [TestResult]
-convertResults ys = foldr f [] ys where
-  --just for the moment taking only the responses and not matching the request ids...
-  f :: ReplApiData -> [TestResult] -> [TestResult]
-  f (ReplApiRequest{..}) acc = acc
-  f (ReplApiResponse{..}) acc = convertResult _apiResult : acc
+buildResults :: [TestRequest] -> [ReplApiData] -> IO [TestResult]
+buildResults testRequests ys = do
+  let requests = filter isRequest ys
+  let responses = filter (not . isRequest) ys
+  let results = foldr (matchResponses requests responses) [] testRequests
+  -- putStrLn $ "Of " ++ show (length requests) ++ " requests, " ++ show (length responses)
+  --  ++ " responses, " ++ show (length results) ++ " matched results were formed."
+  putStrLn $ "\nRequests: " ++ unlines (fmap show requests)  
+  putStrLn $ "\nResponses: " ++ unlines (fmap show responses) 
+  putStrLn $ "\nTestResults: " ++ unlines (fmap show results ) 
+  return results
 
-convertResult :: ApiResult -> TestResult
-convertResult ar = 
-  let str = show $ _arResult ar
-      ok = case _arResult ar of 
+-- Fold function that matches a given TestRequest to:
+--   a corresponding ReplApiRequest (matching via. the full text of the command)
+--   a corresponding ReplApiResponse (matching via. requestKey))
+-- and then builds a TestResult combining elements from both
+matchResponses :: [ReplApiData] -> [ReplApiData] -> TestRequest -> [TestResult] -> [TestResult]
+matchResponses [] _ _ acc = acc -- no requests
+matchResponses _ [] _ acc = acc -- no responses
+matchResponses requests@(ReplApiRequest _ _ : _)
+               responses@(ReplApiResponse _ _ : _)
+               testRequest acc = 
+  let theApiRequest = find (\req -> _replCmd req == matchCmd testRequest) requests
+      theApiResponse = case theApiRequest of 
+        Nothing -> Nothing
+        Just req -> find (\resp -> _apiResponseKey resp == _apiRequestKey req) responses
+      testResponse =  theApiResponse >>= convertResponse         
+  in case testResponse of
+    Just _ -> TestResult
+                { requestTr = testRequest
+                , responseTr = testResponse
+                } : acc
+    Nothing -> acc
+matchResponses _ _ _ acc = acc -- this shouldn't happen
+
+convertResponse :: ReplApiData -> Maybe TestResponse
+convertResponse (ReplApiResponse _ apiRslt) = 
+  let str = show apiRslt
+      ok = case _arResult apiRslt of 
         (Object ht) -> case HM.lookup (T.pack "status") ht of 
           Nothing -> False
           Just t -> t == "success" 
         _ -> False
-  in TestResult { resultSuccess = ok
-                , apiResultsStr = str } 
-                
-data TestRequest = TestRequest 
-  { cmd :: String 
-  , eval :: TestResult -> Bool
-  , displayStr :: String }                
+  in Just TestResponse { resultSuccess = ok
+                       , apiResultsStr = str } 
+convertResponse _ = Nothing  -- this shouldn't happen 
 
-data TestResult = TestResult
-  { resultSuccess :: Bool
-  , apiResultsStr :: String
-  --more to come... 
-  } deriving (Eq, Generic)
-instance NFData TestResult
+isRequest :: ReplApiData -> Bool
+isRequest (ReplApiRequest _ _) = True
+isRequest (ReplApiResponse _ _) = False
 
 simpleRunREPL :: [TestRequest] -> Repl ()
 simpleRunREPL [] = return ()

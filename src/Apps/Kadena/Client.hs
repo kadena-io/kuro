@@ -65,7 +65,6 @@ import qualified Pact.Types.API as Pact
 import Pact.Types.RPC
 import qualified Pact.Types.Command as Pact
 import qualified Pact.Types.Crypto as Pact
-import Pact.Types.Runtime (TxId)
 import Pact.Types.Util
 import Pact.ApiReq
 
@@ -156,11 +155,12 @@ type Repl a = RWST ClientConfig [ReplApiData] ReplState IO a
 
 data ReplApiData = 
     ReplApiRequest 
-      { _apiRequestId :: Int64
+      { _apiRequestKey :: RequestKey
       , _replCmd :: String }  
   | ReplApiResponse 
-      { _apiResponseId :: Maybe TxId
-      , _apiResult :: ApiResult }  
+      { _apiResponseKey ::  RequestKey
+      , _apiResult :: ApiResult 
+} deriving Show  
 
 prompt :: String -> String
 prompt s = "\ESC[0;31m" ++ s ++ "> \ESC[0m"
@@ -219,20 +219,30 @@ handleResp a r = do
 handleBatchResp :: RequestKeys -> Repl ()
 handleBatchResp resp = do
         rk <- return $ head $ _rkRequestKeys resp
+        -- flushStrLn $ "handleBatchResp -- request key (head): " ++ show rk
         showResult 10000 [rk] Nothing
 
 sendCmd :: Mode -> String -> String -> Repl () 
 sendCmd m cmd replCmd = do
   j <- use cmdData
   e <- mkExec cmd j Nothing
-  mvReqId <- use requestId
-  reqId <- liftIO $ readMVar mvReqId
-  tell [ReplApiRequest { _apiRequestId = reqId, _replCmd = replCmd }]
   case m of
-    Transactional -> postAPI "send" (SubmitBatch [e]) >>= handleResp handleBatchResp
-    Local -> postAPI "local" e >>=
-             handleResp (\(resp :: Value) -> putJSON resp)
+    Transactional -> do
+      resp <- postAPI "send" (SubmitBatch [e]) 
+      -- flushStrLn $ "X factor: " ++ concatMap show resp
+      tellKeys resp replCmd
+      handleResp handleBatchResp resp
+    Local -> do
+      y <- postAPI "local" e 
+      handleResp (\(resp :: Value) -> putJSON resp) y
 
+tellKeys :: Response (ApiResponse RequestKeys) -> String -> Repl ()
+tellKeys resp cmd =
+  case resp ^. responseBody of
+    ApiSuccess ks ->
+      tell $ fmap (\k -> ReplApiRequest { _apiRequestKey = k, _replCmd = cmd }) (_rkRequestKeys ks)
+    ApiFailure _ -> return () 
+    
 sendPrivate :: Pact.Address -> String -> Repl ()
 sendPrivate addy msg = do
   j <- use cmdData
@@ -261,6 +271,7 @@ batchTest n cmd = do
       flushStrLn $ "Failure: " ++ show _apiError
     ApiSuccess{..} -> do
       rk <- return $ last $ _rkRequestKeys _apiResponse
+      tell [ReplApiRequest {_apiRequestKey = rk, _replCmd = cmd}]
       flushStrLn $ "Polling for RequestKey: " ++ show rk
       showResult 10000 [rk] (Just (fromIntegral n))
 
@@ -334,13 +345,15 @@ showResult _ [] _ = return ()
 showResult tdelay rks countm = loop (0 :: Int)
   where
     loop c = do
+      -- flushStrLn $ "showResult -- resultKeys: " ++ concatMap show rks
       threadDelay tdelay
       when (c > 100) $ flushStrLn "Timeout"
-      resp <- postAPI "listen" (ListenerRequest $ last rks)
+      let lastRk = last rks
+      resp <- postAPI "listen" (ListenerRequest lastRk)
       case resp ^. responseBody of
         ApiFailure err -> flushStrLn $ "Error: no results received: " ++ show err
         ApiSuccess ar@ApiResult{..} -> do
-          tell [ReplApiResponse {_apiResponseId = _arTxId, _apiResult = ar}]
+          tell [ReplApiResponse {_apiResponseKey = lastRk, _apiResult = ar}]
           case countm of
             Nothing -> putJSON _arResult
             Just cnt -> case fromJSON <$>_arMetaData of
@@ -354,6 +367,7 @@ showResult tdelay rks countm = loop (0 :: Int)
 
 pollForResult :: Bool -> RequestKey -> Repl ()
 pollForResult printMetrics rk = do
+  -- flushStrLn $ "pollForResult - key: " ++ show rk
   s <- getServer
   eR <- liftIO $ Exception.try $ post ("http://" ++ s ++ "/api/v1/poll") (toJSON (Pact.Poll [rk]))
   case eR of
@@ -362,14 +376,15 @@ pollForResult printMetrics rk = do
       resp <- asJSON r
       case resp ^. responseBody of
         ApiFailure err -> flushStrLn $ "Error: no results received: " ++ show err
-        ApiSuccess (PollResponses prs) -> forM_ (HM.elems prs) $ \ar@ApiResult{..} -> do
-          tell [ReplApiResponse {_apiResponseId = _arTxId, _apiResult = ar}]
-          putJSON _arResult
-          when printMetrics $
-                case fromJSON <$>_arMetaData of
-                  Nothing -> flushStrLn "Metrics Unavailable"
-                  Just (A.Success lats@CmdResultLatencyMetrics{..}) -> pprintLatency lats
-                  Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
+        ApiSuccess (PollResponses prs) -> do 
+          tell (fmap (\(k, v) -> ReplApiResponse { _apiResponseKey = k, _apiResult = v }) (HM.toList prs) )
+          forM_ (HM.elems prs) $ \ApiResult{..} -> do
+            putJSON _arResult
+            when printMetrics $
+                  case fromJSON <$>_arMetaData of
+                    Nothing -> flushStrLn "Metrics Unavailable"
+                    Just (A.Success lats@CmdResultLatencyMetrics{..}) -> pprintLatency lats
+                    Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
 
 printLatTime :: (Num a, Ord a, Show a) => a -> String
 printLatTime s

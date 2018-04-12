@@ -8,6 +8,8 @@ module Util.TestRunner
   , runAll
   , testDir
   , testConfDir
+  , TestMetric(..)
+  , TestMetricResult(..)
   , TestRequest(..)
   , TestResponse(..)
   , TestResult(..)) where 
@@ -16,15 +18,21 @@ import Apps.Kadena.Client
 import Control.Concurrent
 import Control.DeepSeq
 import Control.Exception.Safe
+import Control.Lens
 import Control.Monad
 import Control.Monad.Trans.RWS.Lazy
 import Data.Aeson hiding (Success)
+import qualified Data.ByteString.Lazy.Char8 as C8
 import Data.Default
 import Data.List
+import Data.List.Extra
+import Data.Maybe
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Text as T
 import qualified Data.Yaml as Y
 import GHC.Generics (Generic)
+import Network.Wreq
+import qualified Network.Wreq as WR (get) 
 import Pact.ApiReq
 import Pact.Types.API
 import System.Command
@@ -52,6 +60,7 @@ instance Show TestRequest where
 data TestResponse = TestResponse
   { resultSuccess :: Bool
   , apiResultsStr :: String
+  -- more to come
   } deriving (Eq, Generic)
 instance NFData TestResponse
 
@@ -64,21 +73,36 @@ data TestResult = TestResult
   } deriving (Generic, Show)
 instance NFData TestResult
 
+data TestMetric = TestMetric
+  { metricNameTm :: String
+  , evalTm :: String -> Bool 
+  } deriving Generic
+instance NFData TestMetric
+instance Show TestMetric where
+  show tm = show $ metricNameTm tm 
+
+data TestMetricResult = TestMetricResult
+  { requestTmr :: TestMetric
+  , valueTmr :: Maybe String
+  } deriving (Generic, Show)
+instance NFData TestMetricResult  
+
 delTempFiles :: IO ()
 delTempFiles = do
     let p = shell $ testDir ++ "deleteFiles.sh"
     _ <- createProcess p
     return ()
 
-runAll :: [TestRequest] -> IO [TestResult]
-runAll testRequests = do
+runAll :: [TestRequest] -> [TestMetric]-> IO ([TestResult], [TestMetricResult])
+runAll testRequests testMetrics = do
   procHandles <- runServers 
-  putStrLn "Servers are running, sleeping for 3 seconds"
-  _ <- sleep 3
+  putStrLn "Servers are running, sleeping for 10 seconds (to allow for metrics)"
+  _ <- sleep 10
   catchAny (do 
               results <- runClientCommands clientArgs testRequests
-              results `deepseq` stopProcesses procHandles
-              return results)
+              metricResults <- gatherMetrics testMetrics 
+              metricResults `deepseq` results `deepseq` stopProcesses procHandles
+              return (results, metricResults))
            (\e -> do 
               stopProcesses procHandles
               throw e)
@@ -187,3 +211,26 @@ simpleRunREPL (x:xs) = do
     Success c -> do
       handleCmd c reqStr 
       simpleRunREPL xs 
+
+gatherMetrics :: [TestMetric] -> IO [TestMetricResult]
+gatherMetrics tms = do 
+  metrics <- getMetrics 
+  return $ fmap (\tm -> TestMetricResult 
+                  { requestTmr = tm
+                  , valueTmr = findMetric (metricNameTm tm) metrics }) tms
+
+getMetrics :: IO [String]
+getMetrics = do
+  rbs <- WR.get "http://127.0.0.1:10336/metrics"
+  let str = C8.unpack $ rbs ^. responseBody
+  return $ lines str
+
+findMetric :: String -> [String] -> Maybe String
+findMetric x xs = 
+  let matches = filter (\y -> x `isPrefixOf` y) xs
+  in case matches of
+    [] -> Nothing
+    m : _ -> Just $ trim $ fromMaybe m (stripPrefix x m)
+
+_filterKadenaMetrics :: [String] -> [String]
+_filterKadenaMetrics = filter ("kadena" `isPrefixOf`)

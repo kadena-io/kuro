@@ -1,21 +1,23 @@
 module ConfigChangeSpec (spec) where 
 
+import Safe
 import Test.Hspec
 import Util.TestRunner
 
 spec :: Spec
 spec = 
-    describe "testConfigConfigChange" $ 
-        it "tests configuration change" $ do
+    describe "testClusterCommands" $ 
+        it "tests commands send to a locally running cluster" $ do
             delTempFiles      
-            results <- runAll testRequests
+            (results, metrics) <- runAll testRequests testMetrics
             ok <- checkResults results 
             ok `shouldBe` True
+            metricsOk <- checkMetrics metrics
+            metricsOk `shouldBe` True
 
 checkResults :: [TestResult] -> IO Bool
 checkResults xs = 
     foldr checkResult (return True) (reverse xs) where
-        checkResult :: TestResult -> IO Bool -> IO Bool
         checkResult result ok = do 
             let req = requestTr result 
             let resp = responseTr result
@@ -33,7 +35,28 @@ checkResults xs =
                       else do
                         passTest result
                         return $ r && bOk
-                    
+ 
+checkMetrics :: [TestMetricResult] -> IO Bool
+checkMetrics xs =          
+    foldr checkMetric (return True) xs where
+        checkMetric result ok = do 
+            let req = requestTmr result 
+            let valueStr = valueTmr result
+            bOk <- ok
+            case valueStr of  
+                Nothing -> do 
+                    failMetric result "Metric is missing"
+                    return False
+                Just val -> do 
+                    let r = evalTm req val    
+                    if not r
+                      then do 
+                        failMetric result "Metric Eval function failed"
+                        return False
+                      else do
+                        passMetric result
+                        return $ r && bOk
+                        
 failTest :: TestResult -> String -> IO ()
 failTest tr addlInfo = do
     putStrLn $ "Test failure: " ++ cmd (requestTr tr) 
@@ -41,6 +64,14 @@ failTest tr addlInfo = do
 
 passTest :: TestResult -> IO ()
 passTest tr = putStrLn $ "Test passed: " ++ cmd (requestTr tr)  
+
+failMetric :: TestMetricResult -> String -> IO ()
+failMetric tmr addlInfo = do
+    putStrLn $ "Metric failure: " ++ metricNameTm (requestTmr tmr) 
+    putStrLn $ "(" ++ addlInfo ++ ")"
+
+passMetric :: TestMetricResult -> IO ()
+passMetric tmr = putStrLn $ "Metric test passed: " ++ metricNameTm (requestTmr tmr)  
 
 testRequests :: [TestRequest]
 testRequests = [testReq1, testReq2, testReq3, testReq4, testReq5]
@@ -79,3 +110,11 @@ testReq5 = TestRequest
   , matchCmd = "(test.transfer \"Acct1\" \"Acct2\" 1.00)"
   , eval = resultSuccess
   , displayStr = "Executes the function transferring 1.00 from Acct 1 to Acc2 4000 times" }  
+
+testMetrics :: [TestMetric]
+testMetrics = [testMetric1]
+
+testMetric1 :: TestMetric
+testMetric1 = TestMetric
+  { metricNameTm = "kadena_cluster_size"
+  , evalTm = (\s -> readDef (0.0 :: Float) s == 4.0) } 

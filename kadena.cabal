@@ -233,6 +233,7 @@ test-suite hspec
                , WireFormatSpec
   build-depends: aeson
                , base
+               , bytestring
                , containers
                , crypto-api
                , data-default
@@ -241,13 +242,16 @@ test-suite hspec
                , extra
                , hspec
                , kadena
+               , lens
                , mtl
                , pact
                , process
+               , safe 
                , safe-exceptions
                , system-command
                , text
                , transformers
                , trifecta
                , unordered-containers
+               , wreq
                , yaml

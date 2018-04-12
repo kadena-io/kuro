@@ -8,20 +8,31 @@ module Util.TestRunner
   , runAll
   , testDir
   , testConfDir
+  , TestMetric(..)
+  , TestMetricResult(..)
+  , TestRequest(..)
+  , TestResponse(..)
   , TestResult(..)) where 
 
 import Apps.Kadena.Client   
 import Control.Concurrent
 import Control.DeepSeq
 import Control.Exception.Safe
+import Control.Lens
 import Control.Monad
 import Control.Monad.Trans.RWS.Lazy
 import Data.Aeson hiding (Success)
+import qualified Data.ByteString.Lazy.Char8 as C8
 import Data.Default
+import Data.List
+import Data.List.Extra
+import Data.Maybe
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Text as T
 import qualified Data.Yaml as Y
 import GHC.Generics (Generic)
+import Network.Wreq
+import qualified Network.Wreq as WR (get) 
 import Pact.ApiReq
 import Pact.Types.API
 import System.Command
@@ -32,6 +43,49 @@ import Text.Trifecta (ErrInfo(..), parseString, Result(..))
 testDir, testConfDir :: String
 testDir = "test-files/"
 testConfDir = "test-files/conf/"
+                
+data TestRequest = TestRequest 
+  { cmd :: String 
+  , matchCmd :: String -- used when the command as processed differs from the original command issued
+                       -- e.g., the command "load myFile.yaml" is processed as "myFile.yaml"
+                       -- FIXME: really need to find a better way to match these...
+  , eval :: TestResponse -> Bool 
+  , displayStr :: String 
+  } deriving Generic
+instance NFData TestRequest   
+
+instance Show TestRequest where
+  show tr = "cmd: " ++ cmd tr ++ "\nDisplay string: " ++ displayStr tr
+
+data TestResponse = TestResponse
+  { resultSuccess :: Bool
+  , apiResultsStr :: String
+  -- more to come
+  } deriving (Eq, Generic)
+instance NFData TestResponse
+
+instance Show TestResponse where 
+  show tr = "resultSuccess: " ++ show (resultSuccess tr) ++ "\n" ++ take 100 (apiResultsStr tr) ++ "..."
+
+data TestResult = TestResult 
+  { requestTr :: TestRequest
+  , responseTr :: Maybe TestResponse 
+  } deriving (Generic, Show)
+instance NFData TestResult
+
+data TestMetric = TestMetric
+  { metricNameTm :: String
+  , evalTm :: String -> Bool 
+  } deriving Generic
+instance NFData TestMetric
+instance Show TestMetric where
+  show tm = show $ metricNameTm tm 
+
+data TestMetricResult = TestMetricResult
+  { requestTmr :: TestMetric
+  , valueTmr :: Maybe String
+  } deriving (Generic, Show)
+instance NFData TestMetricResult  
 
 delTempFiles :: IO ()
 delTempFiles = do
@@ -39,15 +93,16 @@ delTempFiles = do
     _ <- createProcess p
     return ()
 
-runAll :: IO [TestResult]
-runAll = do
+runAll :: [TestRequest] -> [TestMetric]-> IO ([TestResult], [TestMetricResult])
+runAll testRequests testMetrics = do
   procHandles <- runServers 
-  putStrLn "Servers are running, sleeping for 3 seconds"
-  _ <- sleep 3
+  putStrLn "Servers are running, sleeping for 10 seconds (to allow for metrics)"
+  _ <- sleep 10
   catchAny (do 
-              results <- runClientCommands clientArgs
-              results `deepseq` stopProcesses procHandles
-              return results)
+              results <- runClientCommands clientArgs testRequests
+              metricResults <- gatherMetrics testMetrics 
+              metricResults `deepseq` results `deepseq` stopProcesses procHandles
+              return (results, metricResults))
            (\e -> do 
               stopProcesses procHandles
               throw e)
@@ -81,9 +136,8 @@ serverArgs3 = "+RTS -N4 -RTS -c " ++ testConfDir ++ "10003-cluster.yaml"
 clientArgs :: [String]
 clientArgs = words $ "-c " ++ testConfDir ++ "client.yaml"
 
-runClientCommands :: [String] -> IO [TestResult]
-runClientCommands args = do 
-  putStrLn $ "runClientCommand with args: " ++ unlines args
+runClientCommands :: [String] ->  [TestRequest] -> IO [TestResult]
+runClientCommands args testRequests = 
   case getOpt Permute coptions args of
     (_,_,es@(_:_)) -> print es >> exitFailure
     (o,_,_) -> do
@@ -91,8 +145,7 @@ runClientCommands args = do
       i <- newMVar =<< initRequestId
       (conf :: ClientConfig) <- either (\e -> print e >> exitFailure) return 
         =<< Y.decodeFileEither (_oConfig opts)
-      cmdLines <- readCmdLines
-      (_, _, w) <- runRWST (simpleRunREPL cmdLines) conf ReplState
+      (_, _, w) <- runRWST (simpleRunREPL testRequests) conf ReplState
         { _server = fst (minimum $ HM.toList (_ccEndpoints conf))
         , _batchCmd = "\"Hello Kadena\""
         , _requestId = i
@@ -100,38 +153,84 @@ runClientCommands args = do
         , _keys = [KeyPair (_ccSecretKey conf) (_ccPublicKey conf)]
         , _fmt = Table
         , _echo = False }
-      putStrLn $ "Count of items in writer is: " ++ show (length w)
-      return $ fmap convertResult w
+      buildResults testRequests w
 
-convertResult :: ApiResult -> TestResult
-convertResult ar = 
-  let str = show $ _arResult ar
-      ok = case _arResult ar of 
+buildResults :: [TestRequest] -> [ReplApiData] -> IO [TestResult]
+buildResults testRequests ys = do
+  let requests = filter isRequest ys
+  let responses = filter (not . isRequest) ys
+  return $ foldr (matchResponses requests responses) [] testRequests
+
+-- Fold function that matches a given TestRequest to:
+--   a corresponding ReplApiRequest (matching via. the full text of the command)
+--   a corresponding ReplApiResponse (matching via. requestKey))
+-- and then builds a TestResult combining elements from both
+matchResponses :: [ReplApiData] -> [ReplApiData] -> TestRequest -> [TestResult] -> [TestResult]
+matchResponses [] _ _ acc = acc -- no requests
+matchResponses _ [] _ acc = acc -- no responses
+matchResponses requests@(ReplApiRequest _ _ : _)
+               responses@(ReplApiResponse _ _ : _)
+               testRequest acc = 
+  let theApiRequest = find (\req -> _replCmd req == matchCmd testRequest) requests
+      theApiResponse = case theApiRequest of 
+        Nothing -> Nothing
+        Just req -> find (\resp -> _apiResponseKey resp == _apiRequestKey req) responses
+      testResponse =  theApiResponse >>= convertResponse         
+  in case testResponse of
+    Just _ -> TestResult
+                { requestTr = testRequest
+                , responseTr = testResponse
+                } : acc
+    Nothing -> acc
+matchResponses _ _ _ acc = acc -- this shouldn't happen
+
+convertResponse :: ReplApiData -> Maybe TestResponse
+convertResponse (ReplApiResponse _ apiRslt) = 
+  let str = show apiRslt
+      ok = case _arResult apiRslt of 
         (Object ht) -> case HM.lookup (T.pack "status") ht of 
           Nothing -> False
           Just t -> t == "success" 
         _ -> False
-      
-  in TestResult { resultSuccess = ok
-                , apiResultsStr = str } 
-  
-data TestResult = TestResult
-  { resultSuccess :: Bool
-  , apiResultsStr :: String
-  --more to come... 
-  } deriving Generic
-instance NFData TestResult
+  in Just TestResponse { resultSuccess = ok
+                       , apiResultsStr = str } 
+convertResponse _ = Nothing  -- this shouldn't happen 
 
-simpleRunREPL :: [String] -> Repl ()
+isRequest :: ReplApiData -> Bool
+isRequest (ReplApiRequest _ _) = True
+isRequest (ReplApiResponse _ _) = False
+
+simpleRunREPL :: [TestRequest] -> Repl ()
 simpleRunREPL [] = return ()
-simpleRunREPL (x:xs) =
-  case parseString parseCliCmd mempty x of 
+simpleRunREPL (x:xs) = do
+  let reqStr = cmd x
+  case parseString parseCliCmd mempty reqStr of 
     Failure (ErrInfo e _) -> do 
       flushStrLn $ "Parse failure (help for command help):\n" ++ show e
       return () 
     Success c -> do
-      handleCmd c 
+      handleCmd c reqStr 
       simpleRunREPL xs 
 
-readCmdLines :: IO [String]
-readCmdLines = fmap (filter (/= "") . lines) (readFile (testDir ++ "commands.txt")) 
+gatherMetrics :: [TestMetric] -> IO [TestMetricResult]
+gatherMetrics tms = do 
+  metrics <- getMetrics 
+  return $ fmap (\tm -> TestMetricResult 
+                  { requestTmr = tm
+                  , valueTmr = findMetric (metricNameTm tm) metrics }) tms
+
+getMetrics :: IO [String]
+getMetrics = do
+  rbs <- WR.get "http://127.0.0.1:10336/metrics"
+  let str = C8.unpack $ rbs ^. responseBody
+  return $ lines str
+
+findMetric :: String -> [String] -> Maybe String
+findMetric x xs = 
+  let matches = filter (\y -> x `isPrefixOf` y) xs
+  in case matches of
+    [] -> Nothing
+    m : _ -> Just $ trim $ fromMaybe m (stripPrefix x m)
+
+_filterKadenaMetrics :: [String] -> [String]
+_filterKadenaMetrics = filter ("kadena" `isPrefixOf`)

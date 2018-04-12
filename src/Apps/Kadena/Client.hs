@@ -12,7 +12,7 @@ module Apps.Kadena.Client
   , Node(..)
   -- exported for testing
   , CliCmd(..), ClientOpts(..), coptions, flushStrLn, Formatter(..), getServer, handleCmd
-  , initRequestId, parseCliCmd, Repl, ReplState(..), runREPL
+  , initRequestId, parseCliCmd, Repl, ReplApiData(..), ReplState(..), runREPL
   ) where
 
 import qualified Control.Exception as Exception
@@ -68,11 +68,9 @@ import qualified Pact.Types.Crypto as Pact
 import Pact.Types.Util
 import Pact.ApiReq
 
-
 import Kadena.Types.Base hiding (printLatTime)
 import Kadena.Types.Entity (EntityName)
 import Kadena.Types.Command (CmdResultLatencyMetrics(..))
-
 
 data ClientOpts = ClientOpts {
       _oConfig :: FilePath
@@ -151,7 +149,16 @@ data ReplState = ReplState {
 }
 makeLenses ''ReplState
 
-type Repl a = RWST ClientConfig [ApiResult] ReplState IO a 
+type Repl a = RWST ClientConfig [ReplApiData] ReplState IO a 
+
+data ReplApiData = 
+    ReplApiRequest 
+      { _apiRequestKey :: RequestKey
+      , _replCmd :: String }  
+  | ReplApiResponse 
+      { _apiResponseKey ::  RequestKey
+      , _apiResult :: ApiResult 
+} deriving Show  
 
 prompt :: String -> String
 prompt s = "\ESC[0;31m" ++ s ++ "> \ESC[0m"
@@ -212,21 +219,31 @@ handleBatchResp resp = do
         rk <- return $ head $ _rkRequestKeys resp
         showResult 10000 [rk] Nothing
 
-sendCmd :: Mode -> String -> Repl () 
-sendCmd m cmd = do
+sendCmd :: Mode -> String -> String -> Repl () 
+sendCmd m cmd replCmd = do
   j <- use cmdData
   e <- mkExec cmd j Nothing
   case m of
-    Transactional -> postAPI "send" (SubmitBatch [e]) >>= handleResp handleBatchResp
-    Local -> postAPI "local" e >>=
-             handleResp (\(resp :: Value) -> putJSON resp)
+    Transactional -> do
+      resp <- postAPI "send" (SubmitBatch [e]) 
+      tellKeys resp replCmd
+      handleResp handleBatchResp resp
+    Local -> do
+      y <- postAPI "local" e 
+      handleResp (\(resp :: Value) -> putJSON resp) y
 
+tellKeys :: Response (ApiResponse RequestKeys) -> String -> Repl ()
+tellKeys resp cmd =
+  case resp ^. responseBody of
+    ApiSuccess ks ->
+      tell $ fmap (\k -> ReplApiRequest { _apiRequestKey = k, _replCmd = cmd }) (_rkRequestKeys ks)
+    ApiFailure _ -> return () 
+    
 sendPrivate :: Pact.Address -> String -> Repl ()
 sendPrivate addy msg = do
   j <- use cmdData
   e <- mkExec msg j (Just addy)
   postAPI "private" (SubmitBatch [e]) >>= handleResp handleBatchResp
-
 
 putJSON :: ToJSON a => a -> Repl ()
 putJSON a = use fmt >>= \f -> flushStrLn $ case f of
@@ -235,7 +252,6 @@ putJSON a = use fmt >>= \f -> flushStrLn $ case f of
   YAML -> doYaml
   Table -> fromMaybe doYaml $ pprintTable (toJSON a)
   where doYaml = BS8.unpack $ Y.encode a
-
 
 batchTest :: Int -> String -> Repl ()
 batchTest n cmd = do
@@ -249,6 +265,7 @@ batchTest n cmd = do
       flushStrLn $ "Failure: " ++ show _apiError
     ApiSuccess{..} -> do
       rk <- return $ last $ _rkRequestKeys _apiResponse
+      tell [ReplApiRequest {_apiRequestKey = rk, _replCmd = cmd}]
       flushStrLn $ "Polling for RequestKey: " ++ show rk
       showResult 10000 [rk] (Just (fromIntegral n))
 
@@ -281,7 +298,7 @@ processParBatchPerServer sleep' (sema, (Node{..}, batches)) = do
   putMVar sema ()
 
 calcBatchSize :: Int -> Int -> Int -> Int
-calcBatchSize cmdRate' sleep' clusterSize' = fromIntegral (ceiling $ cr * (sl/1000) / (cs) :: Int)
+calcBatchSize cmdRate' sleep' clusterSize' = fromIntegral (ceiling $ cr * (sl/1000) / cs :: Int)
   where
     cr, sl, cs :: Double
     cr = fromIntegral cmdRate'
@@ -308,7 +325,7 @@ load m fp = do
   
   keys .= _ylKeyPairs
   cmdData .= cdata
-  sendCmd m code
+  sendCmd m code fp
   -- re-parse yaml for batch command
   v :: Value <- either (\pe -> die $ "File load failed: " ++ show pe) return =<<
                 liftIO (Y.decodeFileEither fp)
@@ -324,11 +341,12 @@ showResult tdelay rks countm = loop (0 :: Int)
     loop c = do
       threadDelay tdelay
       when (c > 100) $ flushStrLn "Timeout"
-      resp <- postAPI "listen" (ListenerRequest $ last rks)
+      let lastRk = last rks
+      resp <- postAPI "listen" (ListenerRequest lastRk)
       case resp ^. responseBody of
         ApiFailure err -> flushStrLn $ "Error: no results received: " ++ show err
-        ApiSuccess w@ApiResult{..} -> do
-          tell [w]
+        ApiSuccess ar@ApiResult{..} -> do
+          tell [ReplApiResponse {_apiResponseKey = lastRk, _apiResult = ar}]
           case countm of
             Nothing -> putJSON _arResult
             Just cnt -> case fromJSON <$>_arMetaData of
@@ -350,14 +368,15 @@ pollForResult printMetrics rk = do
       resp <- asJSON r
       case resp ^. responseBody of
         ApiFailure err -> flushStrLn $ "Error: no results received: " ++ show err
-        ApiSuccess (PollResponses prs) -> forM_ (HM.elems prs) $ \w@ApiResult{..} -> do
-          tell [w]
-          putJSON _arResult
-          when printMetrics $
-                case fromJSON <$>_arMetaData of
-                  Nothing -> flushStrLn "Metrics Unavailable"
-                  Just (A.Success lats@CmdResultLatencyMetrics{..}) -> pprintLatency lats
-                  Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
+        ApiSuccess (PollResponses prs) -> do 
+          tell (fmap (\(k, v) -> ReplApiResponse { _apiResponseKey = k, _apiResult = v }) (HM.toList prs) )
+          forM_ (HM.elems prs) $ \ApiResult{..} -> do
+            putJSON _arResult
+            when printMetrics $
+                  case fromJSON <$>_arMetaData of
+                    Nothing -> flushStrLn "Metrics Unavailable"
+                    Just (A.Success lats@CmdResultLatencyMetrics{..}) -> pprintLatency lats
+                    Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
 
 printLatTime :: (Num a, Ord a, Show a) => a -> String
 printLatTime s
@@ -492,15 +511,15 @@ runREPL = loop True
             loop True
           Success c -> case c of
             Exit -> loop False
-            _ -> handleCmd c >> loop True
+            _ -> handleCmd c cmd >> loop True
 
-handleCmd :: CliCmd -> Repl ()
-handleCmd cmd = case cmd of
+handleCmd :: CliCmd -> String -> Repl ()
+handleCmd cmd reqStr = case cmd of
   Help -> help
   Sleep i -> threadDelay (i * 1000)
   Cmd Nothing -> use batchCmd >>= flushStrLn
   Cmd (Just c) -> batchCmd .= c
-  Send m c -> sendCmd m c
+  Send m c -> sendCmd m c reqStr
   Server Nothing -> do
     use server >>= \s -> flushStrLn $ "Current server: " ++ s
     flushStrLn "Servers:"

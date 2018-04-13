@@ -12,7 +12,7 @@ module Apps.Kadena.Client
   , Node(..)
   -- exported for testing
   , CliCmd(..), ClientOpts(..), coptions, flushStrLn, Formatter(..), getServer, handleCmd
-  , initRequestId, parseCliCmd, Repl, ReplApiData(..), ReplState(..), runREPL
+  , initRequestId, parseCliCmd, Repl, ReplApiData(..), ReplState(..), runREPL, calcInterval 
   ) where
 
 import qualified Control.Exception as Exception
@@ -158,6 +158,7 @@ data ReplApiData =
   | ReplApiResponse 
       { _apiResponseKey ::  RequestKey
       , _apiResult :: ApiResult 
+      , _batchCnt :: Maybe Int64
 } deriving Show  
 
 prompt :: String -> String
@@ -346,7 +347,7 @@ showResult tdelay rks countm = loop (0 :: Int)
       case resp ^. responseBody of
         ApiFailure err -> flushStrLn $ "Error: no results received: " ++ show err
         ApiSuccess ar@ApiResult{..} -> do
-          tell [ReplApiResponse {_apiResponseKey = lastRk, _apiResult = ar}]
+          tell [ReplApiResponse {_apiResponseKey = lastRk, _apiResult = ar, _batchCnt = countm}]
           case countm of
             Nothing -> putJSON _arResult
             Just cnt -> case fromJSON <$>_arMetaData of
@@ -369,7 +370,7 @@ pollForResult printMetrics rk = do
       case resp ^. responseBody of
         ApiFailure err -> flushStrLn $ "Error: no results received: " ++ show err
         ApiSuccess (PollResponses prs) -> do 
-          tell (fmap (\(k, v) -> ReplApiResponse { _apiResponseKey = k, _apiResult = v }) (HM.toList prs) )
+          tell (fmap (\(k, v) -> ReplApiResponse { _apiResponseKey = k, _apiResult = v, _batchCnt = Nothing }) (HM.toList prs) )
           forM_ (HM.elems prs) $ \ApiResult{..} -> do
             putJSON _arResult
             when printMetrics $
@@ -585,10 +586,15 @@ help = do
 
 intervalOfNumerous :: Int64 -> Int64 -> String
 intervalOfNumerous cnt mics = let
-  interval' = fromIntegral mics / 1000000
-  perSec = ceiling (fromIntegral cnt / interval')
+  (interval', perSec) = calcInterval cnt mics 
   in "Completed in " ++ show (interval' :: Double) ++
-     "sec (" ++ show (perSec::Integer) ++ " per sec)"
+     "sec (" ++ show perSec ++ " per sec)"
+
+calcInterval :: Int64 -> Int64 -> (Double, Integer)
+calcInterval cnt mics = 
+  let interval' = fromIntegral mics / 1000000
+      perSec = ceiling (fromIntegral cnt / interval')
+  in (interval', perSec) 
 
 initRequestId :: IO Int64
 initRequestId = do

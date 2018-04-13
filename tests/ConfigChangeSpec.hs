@@ -2,9 +2,11 @@
 
 module ConfigChangeSpec (spec) where 
 
+import Apps.Kadena.Client
 import Data.Aeson as AE
 import qualified Data.HashMap.Strict as HM
 import Data.Scientific
+import Kadena.Types.Command hiding (result)
 import Pact.Types.API
 import Safe
 import Test.Hspec
@@ -74,7 +76,21 @@ checkScientific sci tr =
   resultSuccess tr && case parseScientific $ _arResult $ apiResult tr of 
     Nothing -> False
     Just x  -> x == sci  
-        
+
+checkBatchPerSecond :: Integer -> TestResponse -> Bool
+checkBatchPerSecond minPerSec tr = 
+  let perSecOk = case perSecMay tr of 
+        Nothing -> False
+        Just perSec -> perSec >= minPerSec
+  in resultSuccess tr && perSecOk
+
+perSecMay :: TestResponse -> Maybe Integer 
+perSecMay tr = do 
+    count <- _batchCount tr 
+    (AE.Success lats) <- fromJSON <$> (_arMetaData (apiResult tr)) 
+    microSeconds <- _rlmFinCommit lats
+    return $ snd $ calcInterval count microSeconds
+
 parseStatus :: AE.Value -> Bool
 parseStatus (AE.Object o) = 
   case HM.lookup "status" o of 
@@ -141,7 +157,7 @@ testReq5 :: TestRequest
 testReq5 = TestRequest 
   { cmd = "batch 4000"
   , matchCmd = "(test.transfer \"Acct1\" \"Acct2\" 1.00)"
-  , eval = checkSuccess
+  , eval = checkBatchPerSecond 1000
   , displayStr = "Executes the function transferring 1.00 from Acct 1 to Acc2 4000 times" }  
 
 testMetrics :: [TestMetric]

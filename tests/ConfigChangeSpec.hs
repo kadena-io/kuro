@@ -1,5 +1,11 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module ConfigChangeSpec (spec) where 
 
+import Data.Aeson as AE
+import qualified Data.HashMap.Strict as HM
+import Data.Scientific
+import Pact.Types.API
 import Safe
 import Test.Hspec
 import Util.TestRunner
@@ -10,8 +16,10 @@ spec =
         it "tests commands send to a locally running cluster" $ do
             delTempFiles      
             (results, metrics) <- runAll testRequests testMetrics
+            putStrLn "\nCommand tests:"
             ok <- checkResults results 
             ok `shouldBe` True
+            putStrLn "\nMetric tests:"
             metricsOk <- checkMetrics metrics
             metricsOk `shouldBe` True
 
@@ -56,7 +64,32 @@ checkMetrics xs =
                       else do
                         passMetric result
                         return $ r && bOk
-                        
+
+checkSuccess :: TestResponse -> Bool
+checkSuccess tr = 
+  resultSuccess tr && parseStatus (_arResult $ apiResult tr)
+
+checkScientific :: Scientific -> TestResponse -> Bool                         
+checkScientific sci tr = 
+  resultSuccess tr && case parseScientific $ _arResult $ apiResult tr of 
+    Nothing -> False
+    Just x  -> x == sci  
+        
+parseStatus :: AE.Value -> Bool
+parseStatus (AE.Object o) = 
+  case HM.lookup "status" o of 
+    Nothing -> False
+    Just s  -> s == "success"
+parseStatus _ = False
+
+parseScientific :: AE.Value -> Maybe Scientific
+parseScientific (AE.Object o) = 
+  case HM.lookup "data" o of 
+    Nothing -> Nothing
+    Just (AE.Number sci) -> Just sci
+    Just _ -> Nothing         
+parseScientific _ = Nothing
+        
 failTest :: TestResult -> String -> IO ()
 failTest tr addlInfo = do
     putStrLn $ "Test failure: " ++ cmd (requestTr tr) 
@@ -80,35 +113,35 @@ testReq1 :: TestRequest
 testReq1 = TestRequest 
   { cmd = "exec (+ 1 1)"
   , matchCmd = "exec (+ 1 1)"
-  , eval = resultSuccess
-  , displayStr = "Executes 1 + 1 in Pact" } 
+  , eval = (\tr -> checkScientific (scientific 2 0) tr)
+  , displayStr = "Executes 1 + 1 in Pact and returns 2.0" } 
 
 testReq2 :: TestRequest
 testReq2 = TestRequest 
   { cmd = "load test-files/test.yaml"
   , matchCmd = "test-files/test.yaml"
-  , eval = resultSuccess
+  , eval = checkSuccess
   , displayStr = "Loads the Pact configuration file test.yaml" }        
   
 testReq3 :: TestRequest
 testReq3 = TestRequest 
   { cmd = "exec (test.create-global-accounts)"
   , matchCmd = "exec (test.create-global-accounts)"
-  , eval = resultSuccess
+  , eval = checkSuccess
   , displayStr = "Executes the create-global-accounts Pact function" }  
 
 testReq4 :: TestRequest
 testReq4 = TestRequest 
   { cmd = "exec (test.transfer \"Acct1\" \"Acct2\" 1.00)"
   , matchCmd = "exec (test.transfer \"Acct1\" \"Acct2\" 1.00)"
-  , eval = resultSuccess
+  , eval = checkSuccess
   , displayStr = "Executes a Pact function transferring 1.00 from Acct1 to Acct2" }  
 
 testReq5 :: TestRequest
 testReq5 = TestRequest 
   { cmd = "batch 4000"
   , matchCmd = "(test.transfer \"Acct1\" \"Acct2\" 1.00)"
-  , eval = resultSuccess
+  , eval = checkSuccess
   , displayStr = "Executes the function transferring 1.00 from Acct 1 to Acc2 4000 times" }  
 
 testMetrics :: [TestMetric]

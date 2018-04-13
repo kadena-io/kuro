@@ -248,10 +248,12 @@ test-suite hspec
                , process
                , safe 
                , safe-exceptions
+               , scientific
                , system-command
                , text
                , transformers
                , trifecta
                , unordered-containers
+               , vector
                , wreq
                , yaml

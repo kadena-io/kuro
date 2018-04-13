@@ -16,7 +16,6 @@ module Util.TestRunner
 
 import Apps.Kadena.Client   
 import Control.Concurrent
-import Control.DeepSeq
 import Control.Exception.Safe
 import Control.Lens
 import Control.Monad
@@ -51,41 +50,35 @@ data TestRequest = TestRequest
                        -- FIXME: really need to find a better way to match these...
   , eval :: TestResponse -> Bool 
   , displayStr :: String 
-  } deriving Generic
-instance NFData TestRequest   
+  }
 
 instance Show TestRequest where
   show tr = "cmd: " ++ cmd tr ++ "\nDisplay string: " ++ displayStr tr
 
 data TestResponse = TestResponse
   { resultSuccess :: Bool
-  , apiResultsStr :: String
-  -- more to come
+  , apiResult :: ApiResult
   } deriving (Eq, Generic)
-instance NFData TestResponse
 
 instance Show TestResponse where 
-  show tr = "resultSuccess: " ++ show (resultSuccess tr) ++ "\n" ++ take 100 (apiResultsStr tr) ++ "..."
+  show tr = "resultSuccess: " ++ show (resultSuccess tr) ++ "\n" ++ take 100 (show (apiResult tr)) ++ "..."
 
 data TestResult = TestResult 
   { requestTr :: TestRequest
   , responseTr :: Maybe TestResponse 
-  } deriving (Generic, Show)
-instance NFData TestResult
+  } deriving Show
 
 data TestMetric = TestMetric
   { metricNameTm :: String
   , evalTm :: String -> Bool 
-  } deriving Generic
-instance NFData TestMetric
+  }
 instance Show TestMetric where
   show tm = show $ metricNameTm tm 
 
 data TestMetricResult = TestMetricResult
   { requestTmr :: TestMetric
   , valueTmr :: Maybe String
-  } deriving (Generic, Show)
-instance NFData TestMetricResult  
+  } deriving Show
 
 delTempFiles :: IO ()
 delTempFiles = do
@@ -101,7 +94,7 @@ runAll testRequests testMetrics = do
   catchAny (do 
               results <- runClientCommands clientArgs testRequests
               metricResults <- gatherMetrics testMetrics 
-              metricResults `deepseq` results `deepseq` stopProcesses procHandles
+              metricResults `seq` results `seq` stopProcesses procHandles
               return (results, metricResults))
            (\e -> do 
               stopProcesses procHandles
@@ -159,6 +152,7 @@ buildResults :: [TestRequest] -> [ReplApiData] -> IO [TestResult]
 buildResults testRequests ys = do
   let requests = filter isRequest ys
   let responses = filter (not . isRequest) ys
+  --_printResponses responses
   return $ foldr (matchResponses requests responses) [] testRequests
 
 -- Fold function that matches a given TestRequest to:
@@ -186,15 +180,23 @@ matchResponses _ _ _ acc = acc -- this shouldn't happen
 
 convertResponse :: ReplApiData -> Maybe TestResponse
 convertResponse (ReplApiResponse _ apiRslt) = 
-  let str = show apiRslt
-      ok = case _arResult apiRslt of 
-        (Object ht) -> case HM.lookup (T.pack "status") ht of 
+  let ok = case _arResult apiRslt of 
+        Object h -> case HM.lookup (T.pack "status") h of 
           Nothing -> False
-          Just t -> t == "success" 
+          Just t -> t == "success"
         _ -> False
   in Just TestResponse { resultSuccess = ok
-                       , apiResultsStr = str } 
+                       , apiResult = apiRslt } 
 convertResponse _ = Nothing  -- this shouldn't happen 
+
+_printResponses :: [ReplApiData] -> IO ()
+_printResponses xs = 
+  forM_ xs printResponse where
+    printResponse :: ReplApiData -> IO ()
+    printResponse (ReplApiResponse _ apiRslt) = do
+      putStrLn "\n***** printResponse *****"
+      print $ _arResult apiRslt
+    printResponse _ = return ()
 
 isRequest :: ReplApiData -> Bool
 isRequest (ReplApiRequest _ _) = True

@@ -16,7 +16,6 @@ module Util.TestRunner
 
 import Apps.Kadena.Client   
 import Control.Concurrent
-import Control.DeepSeq
 import Control.Exception.Safe
 import Control.Lens
 import Control.Monad
@@ -24,6 +23,7 @@ import Control.Monad.Trans.RWS.Lazy
 import Data.Aeson hiding (Success)
 import qualified Data.ByteString.Lazy.Char8 as C8
 import Data.Default
+import Data.Int
 import Data.List
 import Data.List.Extra
 import Data.Maybe
@@ -51,41 +51,38 @@ data TestRequest = TestRequest
                        -- FIXME: really need to find a better way to match these...
   , eval :: TestResponse -> Bool 
   , displayStr :: String 
-  } deriving Generic
-instance NFData TestRequest   
+  }
 
 instance Show TestRequest where
   show tr = "cmd: " ++ cmd tr ++ "\nDisplay string: " ++ displayStr tr
 
 data TestResponse = TestResponse
   { resultSuccess :: Bool
-  , apiResultsStr :: String
-  -- more to come
+  , apiResult :: ApiResult
+  , _batchCount :: Maybe Int64
   } deriving (Eq, Generic)
-instance NFData TestResponse
 
 instance Show TestResponse where 
-  show tr = "resultSuccess: " ++ show (resultSuccess tr) ++ "\n" ++ take 100 (apiResultsStr tr) ++ "..."
+  show tr = "resultSuccess: " ++ show (resultSuccess tr) ++ "\n"
+    ++ "Batch count: " ++ show (_batchCount tr) ++ "\n"
+    ++ take 100 (show (apiResult tr)) ++ "..."
 
 data TestResult = TestResult 
   { requestTr :: TestRequest
   , responseTr :: Maybe TestResponse 
-  } deriving (Generic, Show)
-instance NFData TestResult
+  } deriving Show
 
 data TestMetric = TestMetric
   { metricNameTm :: String
   , evalTm :: String -> Bool 
-  } deriving Generic
-instance NFData TestMetric
+  }
 instance Show TestMetric where
   show tm = show $ metricNameTm tm 
 
 data TestMetricResult = TestMetricResult
   { requestTmr :: TestMetric
   , valueTmr :: Maybe String
-  } deriving (Generic, Show)
-instance NFData TestMetricResult  
+  } deriving Show
 
 delTempFiles :: IO ()
 delTempFiles = do
@@ -96,12 +93,12 @@ delTempFiles = do
 runAll :: [TestRequest] -> [TestMetric]-> IO ([TestResult], [TestMetricResult])
 runAll testRequests testMetrics = do
   procHandles <- runServers 
-  putStrLn "Servers are running, sleeping for 10 seconds (to allow for metrics)"
-  _ <- sleep 10
+  putStrLn "Servers are running, sleeping for 12 seconds (to allow for metrics)"
+  _ <- sleep 12
   catchAny (do 
               results <- runClientCommands clientArgs testRequests
               metricResults <- gatherMetrics testMetrics 
-              metricResults `deepseq` results `deepseq` stopProcesses procHandles
+              metricResults `seq` results `seq` stopProcesses procHandles
               return (results, metricResults))
            (\e -> do 
               stopProcesses procHandles
@@ -159,6 +156,7 @@ buildResults :: [TestRequest] -> [ReplApiData] -> IO [TestResult]
 buildResults testRequests ys = do
   let requests = filter isRequest ys
   let responses = filter (not . isRequest) ys
+  -- _printResponses responses
   return $ foldr (matchResponses requests responses) [] testRequests
 
 -- Fold function that matches a given TestRequest to:
@@ -169,7 +167,7 @@ matchResponses :: [ReplApiData] -> [ReplApiData] -> TestRequest -> [TestResult] 
 matchResponses [] _ _ acc = acc -- no requests
 matchResponses _ [] _ acc = acc -- no responses
 matchResponses requests@(ReplApiRequest _ _ : _)
-               responses@(ReplApiResponse _ _ : _)
+               responses@(ReplApiResponse _ _ _: _)
                testRequest acc = 
   let theApiRequest = find (\req -> _replCmd req == matchCmd testRequest) requests
       theApiResponse = case theApiRequest of 
@@ -185,20 +183,34 @@ matchResponses requests@(ReplApiRequest _ _ : _)
 matchResponses _ _ _ acc = acc -- this shouldn't happen
 
 convertResponse :: ReplApiData -> Maybe TestResponse
-convertResponse (ReplApiResponse _ apiRslt) = 
-  let str = show apiRslt
-      ok = case _arResult apiRslt of 
-        (Object ht) -> case HM.lookup (T.pack "status") ht of 
+convertResponse (ReplApiResponse _ apiRslt batchCnt) = 
+  let ok = case _arResult apiRslt of 
+        Object h -> case HM.lookup (T.pack "status") h of 
           Nothing -> False
-          Just t -> t == "success" 
+          Just t -> t == "success"
         _ -> False
   in Just TestResponse { resultSuccess = ok
-                       , apiResultsStr = str } 
+                       , apiResult = apiRslt
+                       , _batchCount = batchCnt } 
 convertResponse _ = Nothing  -- this shouldn't happen 
+
+_printResponses :: [ReplApiData] -> IO ()
+_printResponses xs = 
+  forM_ xs printResponse where
+    printResponse :: ReplApiData -> IO ()
+    printResponse (ReplApiResponse _ apiRslt batchCnt) = do
+      putStrLn $ "Batch count: " ++ show batchCnt
+      putStrLn "\n***** printResponse *****"
+      print $ _arResult apiRslt
+      case _arMetaData apiRslt of 
+        Nothing -> putStrLn "(No meta data)"
+        Just v -> putStrLn $ "Meta data: \n" ++ show v
+
+    printResponse _ = return ()
 
 isRequest :: ReplApiData -> Bool
 isRequest (ReplApiRequest _ _) = True
-isRequest (ReplApiResponse _ _) = False
+isRequest (ReplApiResponse _ _ _) = False
 
 simpleRunREPL :: [TestRequest] -> Repl ()
 simpleRunREPL [] = return ()

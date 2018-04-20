@@ -53,7 +53,7 @@ runLogService dispatch dbg publishMetric' rconf = do
       return Nothing
   env <- return LogEnv
     { _logQueryChannel = dispatch ^. Dispatch.logService
-    , _internalEvent = dispatch ^. Dispatch.internalEvent
+    , _consensusEvent = dispatch ^. Dispatch.consensusEvent
     , _execChannel = dispatch ^. Dispatch.execService
     , _evidence = dispatch ^. Dispatch.evidence
     , _senderChannel = dispatch ^. Dispatch.senderService

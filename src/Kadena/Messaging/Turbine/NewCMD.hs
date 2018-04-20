@@ -24,8 +24,8 @@ newCmdTurbine = do
   getCmds' <- view (dispatch.inboundCMD)
   prChan <- view (dispatch.processRequestChannel)
   let getCmds n = readComms getCmds' n
-  enqueueEvent' <- view (dispatch.internalEvent)
-  let enqueueEvent = writeComm enqueueEvent' . InternalEvent
+  enqueueEvent' <- view (dispatch.consensusEvent)
+  let enqueueEvent = writeComm enqueueEvent' . ConsensusEvent
   debug <- view debugPrint
   ks <- view keySet
   liftIO $ newCmdDynamicTurbine ks getCmds debug enqueueEvent prChan

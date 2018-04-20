@@ -139,7 +139,7 @@ runConsensusService renv gcm spec rstate timeCache' mPubConsensus' = do
   launchEvidenceService dispatch' dbgPrint' publishMetric' mEvState gcm mLeaderNoFollowers
   launchLogService dispatch' dbgPrint' publishMetric' rconf
   launchApiService dispatch' gcm dbgPrint' mPubConsensus' getTimestamp'
-  linkAsyncTrack "ConsensusHB" (foreverHeart (_internalEvent dispatch') 1000000 (InternalEvent . Heart))
+  linkAsyncTrack "ConsensusHB" (foreverHeart (_consensusEvent dispatch') 1000000 (ConsensusEvent . Heart))
   catchAndRethrow "ConsensusThread" $ runRWS_
     kadena
     (mkConsensusEnv gcm spec dispatch'

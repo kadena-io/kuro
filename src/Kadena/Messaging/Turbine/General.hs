@@ -25,8 +25,8 @@ generalTurbine = do
   gm' <- view (dispatch.inboundGeneral)
   prChan <- view (dispatch.processRequestChannel)
   let gm n = readComms gm' n
-  enqueueEvent' <- view (dispatch.internalEvent)
-  let enqueueEvent = writeComm enqueueEvent' . InternalEvent
+  enqueueEvent' <- view (dispatch.consensusEvent)
+  let enqueueEvent = writeComm enqueueEvent' . ConsensusEvent
   debug <- view debugPrint
   ks <- view keySet
   forever $ liftIO $ do

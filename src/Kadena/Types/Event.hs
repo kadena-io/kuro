@@ -11,8 +11,8 @@ module Kadena.Types.Event
   , createBeat
   , foreverHeart
   , foreverHeartDebugWriteDelay
-  , InternalEvent(..)
-  , InternalEventChannel(..)
+  , ConsensusEvent(..)
+  , ConsensusEventChannel(..)
   ) where
 
 
@@ -78,17 +78,17 @@ foreverHeartDebugWriteDelay debug' comm delay mkBeat = forever $ do
 
 
 
-newtype InternalEvent = InternalEvent { _unInternalEvent :: Event}
+newtype ConsensusEvent = ConsensusEvent { _unConsensusEvent :: Event}
   deriving (Show, Typeable)
 
 
-newtype InternalEventChannel = InternalEventChannel (BoundedChan InternalEvent)
+newtype ConsensusEventChannel = ConsensusEventChannel (BoundedChan ConsensusEvent)
 
 
-instance Comms InternalEvent InternalEventChannel where
-  initComms = InternalEventChannel <$> initCommsBounded
-  readComm (InternalEventChannel c) = readCommBounded c
-  writeComm (InternalEventChannel c) = writeCommBounded c
+instance Comms ConsensusEvent ConsensusEventChannel where
+  initComms = ConsensusEventChannel <$> initCommsBounded
+  readComm (ConsensusEventChannel c) = readCommBounded c
+  writeComm (ConsensusEventChannel c) = writeCommBounded c
   {-# INLINE initComms #-}
   {-# INLINE readComm #-}
   {-# INLINE writeComm #-}

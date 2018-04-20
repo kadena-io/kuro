@@ -162,8 +162,8 @@ mkConsensusEnv conf' rSpec dispatch timerTarget' timeCache' mEs mResetLeaderNoFo
     , _enqueueHistoryQuery = writeComm hs'
     , _rs = rSpec
     , _sendMessage = sendMsg g'
-    , _enqueue = writeComm ie' . InternalEvent
-    , _enqueueMultiple = mapM_ (writeComm ie' . InternalEvent)
+    , _enqueue = writeComm ie' . ConsensusEvent
+    , _enqueueMultiple = mapM_ (writeComm ie' . ConsensusEvent)
     , _enqueueLater = \t e -> do
         void $ tryTakeMVar timerTarget'
         -- We want to clear it the instance that we reset the timer.
@@ -175,7 +175,7 @@ mkConsensusEnv conf' rSpec dispatch timerTarget' timeCache' mEs mResetLeaderNoFo
           unless b (putStrLn "Failed to update timer MVar")
           -- TODO: what if it's already taken?
     , _killEnqueued = killThread
-    , _dequeue = _unInternalEvent <$> readComm ie'
+    , _dequeue = _unConsensusEvent <$> readComm ie'
     , _clientSendMsg = writeComm cog'
     , _evidenceState = readMVar mEs
     , _timeCache = timeCache'
@@ -188,7 +188,7 @@ mkConsensusEnv conf' rSpec dispatch timerTarget' timeCache' mEs mResetLeaderNoFo
     cog' = dispatch ^. outboundGeneral
     ls' = dispatch ^. logService
     hs' = dispatch ^. historyChannel
-    ie' = dispatch ^. internalEvent
+    ie' = dispatch ^. consensusEvent
     ev' = dispatch ^. evidence
 
 sendMsg :: SenderServiceChannel -> ServiceRequest' -> IO ()

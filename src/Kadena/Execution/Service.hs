@@ -4,10 +4,10 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Kadena.Commit.Service
-  ( initCommitEnv
-  , runCommitService
-  , module Kadena.Commit.Types
+module Kadena.Execution.Service
+  ( initExecutionEnv
+  , runExecutionService
+  , module Kadena.Execution.Types
   ) where
 
 import Control.Lens hiding (Index, (|>))
@@ -31,7 +31,7 @@ import Pact.Types.Logger (LogRules(..),initLoggers,doLog)
 import Kadena.Util.Util (linkAsyncTrack)
 import Kadena.Types.Config
 import Kadena.Types.Base
-import Kadena.Commit.Types
+import Kadena.Execution.Types
 import Kadena.Types.Metric
 import Kadena.Types.Command
 import Kadena.Types.Log
@@ -43,11 +43,11 @@ import Kadena.Types.Comms (Comms(..))
 import Kadena.Types.Event (pprintBeat)
 import Kadena.Private.Service (decrypt)
 import Kadena.Private.Types (PrivatePlaintext(..),PrivateResult(..))
-import Kadena.Commit.Pact
+import Kadena.Execution.Pact
 import Kadena.Consensus.Publish
 import Kadena.Types.Entity
 
-initCommitEnv
+initExecutionEnv
   :: Dispatch
   -> (String -> IO ())
   -> PactPersistConfig
@@ -56,14 +56,14 @@ initCommitEnv
   -> IO UTCTime
   -> GlobalConfigTMVar
   -> EntityConfig
-  -> CommitEnv
-initCommitEnv dispatch' debugPrint' persistConfig logRules' publishMetric' getTimestamp' gcm' ent = CommitEnv
-  { _commitChannel = dispatch' ^. D.commitService
+  -> ExecutionEnv
+initExecutionEnv dispatch' debugPrint' persistConfig logRules' publishMetric' getTimestamp' gcm' ent = ExecutionEnv
+  { _execChannel = dispatch' ^. D.execService
   , _historyChannel = dispatch' ^. D.historyChannel
   , _privateChannel = dispatch' ^. D.privateChannel
   , _pactPersistConfig = persistConfig
   , _debugPrint = debugPrint'
-  , _commitLoggers = initLoggers debugPrint' doLog logRules'
+  , _execLoggers = initLoggers debugPrint' doLog logRules'
   , _publishMetric = publishMetric'
   , _getTimestamp = getTimestamp'
   , _mConfig = gcm'
@@ -72,39 +72,39 @@ initCommitEnv dispatch' debugPrint' persistConfig logRules' publishMetric' getTi
 
 data ReplayStatus = ReplayFromDisk | FreshCommands deriving (Show, Eq)
 
-onUpdateConf :: CommitChannel -> Config -> IO ()
+onUpdateConf :: ExecutionChannel -> Config -> IO ()
 onUpdateConf oChan conf@Config{ _nodeId = nodeId' } = do
   writeComm oChan $ ChangeNodeId nodeId'
   writeComm oChan $ UpdateKeySet $ confToKeySet conf
 
 
-runCommitService :: CommitEnv -> Publish -> NodeId -> KeySet -> IO ()
-runCommitService env pub nodeId' keySet' = do
+runExecutionService :: ExecutionEnv -> Publish -> NodeId -> KeySet -> IO ()
+runExecutionService env pub nodeId' keySet' = do
   cmdExecInter <- initPactService env pub
-  initCommitState <- return $! CommitState {
+  initExecutionState <- return $! ExecutionState {
     _csNodeId = nodeId',
     _csKeySet = keySet',
     _csCommandExecInterface = cmdExecInter}
-  let cu = ConfigUpdater (env ^. debugPrint) "Service|Commit" (onUpdateConf (env ^. commitChannel))
-  linkAsyncTrack "CommitConfUpdater" $ runConfigUpdater cu (env ^. mConfig)
-  void $ runRWST handle env initCommitState
+  let cu = ConfigUpdater (env ^. debugPrint) "Service|Execution" (onUpdateConf (env ^. execChannel))
+  linkAsyncTrack "ExecutionConfUpdater" $ runConfigUpdater cu (env ^. mConfig)
+  void $ runRWST handle env initExecutionState
 
-debug :: String -> CommitService ()
+debug :: String -> ExecutionService ()
 debug s = do
   dbg <- view debugPrint
-  liftIO $! dbg $ "[Service|Commit] " ++ s
+  liftIO $! dbg $ "[Service|Execution] " ++ s
 
-now :: CommitService UTCTime
+now :: ExecutionService UTCTime
 now = view getTimestamp >>= liftIO
 
-logMetric :: Metric -> CommitService ()
+logMetric :: Metric -> ExecutionService ()
 logMetric m = do
   publishMetric' <- view publishMetric
   liftIO $! publishMetric' m
 
-handle :: CommitService ()
+handle :: ExecutionService ()
 handle = do
-  oChan <- view commitChannel
+  oChan <- view execChannel
   debug "Launch!"
   forever $ do
     q <- liftIO $ readComm oChan
@@ -120,7 +120,7 @@ handle = do
         unless (prevKeySet == newKeySet) $ do
           csKeySet .= newKeySet
           debug $ "Updated keyset"
-      CommitNewEntries{..} -> do
+      ExecuteNewEntries{..} -> do
         debug $ (show . Log.lesCnt $ logEntriesToApply)
               ++ " new log entries to apply, up to "
               ++ show (fromJust $ Log.lesMaxIndex logEntriesToApply)
@@ -132,7 +132,7 @@ handle = do
         applyLogEntries ReplayFromDisk logEntriesToApply
       ExecLocal{..} -> applyLocalCommand (localCmd,localResult)
 
-applyLogEntries :: ReplayStatus -> LogEntries -> CommitService ()
+applyLogEntries :: ReplayStatus -> LogEntries -> ExecutionService ()
 applyLogEntries rs les@(LogEntries leToApply) = do
   now' <- now
   (results :: [(RequestKey, CommandResult)]) <- mapM (applyCommand now') (Map.elems leToApply)
@@ -145,14 +145,14 @@ applyLogEntries rs les@(LogEntries leToApply) = do
       unless (rs == ReplayFromDisk) $ liftIO $! writeComm hChan (History.Update $ HashMap.fromList results)
     else debug "Applied log entries but did not send results?"
 
-logApplyLatency :: UTCTime -> LogEntry -> CommitService ()
+logApplyLatency :: UTCTime -> LogEntry -> ExecutionService ()
 logApplyLatency startTime LogEntry{..} = case _leCmdLatMetrics of
   Nothing -> return ()
   Just n -> do
     logMetric $ MetricApplyLatency $ fromIntegral $ interval (_lmFirstSeen n) startTime
 {-# INLINE logApplyLatency #-}
 
-getPendingPreProcSCC :: UTCTime -> MVar SCCPreProcResult -> CommitService SCCPreProcResult
+getPendingPreProcSCC :: UTCTime -> MVar SCCPreProcResult -> ExecutionService SCCPreProcResult
 getPendingPreProcSCC startTime mvResult = liftIO (tryReadMVar mvResult) >>= \case
   Just r -> return r
   Nothing -> do
@@ -161,7 +161,7 @@ getPendingPreProcSCC startTime mvResult = liftIO (tryReadMVar mvResult) >>= \cas
     debug $ "Blocked on Pending Pact PreProc for " ++ printInterval startTime endTime
     return r
 
-getPendingPreProcCCC :: UTCTime -> MVar CCCPreProcResult -> CommitService CCCPreProcResult
+getPendingPreProcCCC :: UTCTime -> MVar CCCPreProcResult -> ExecutionService CCCPreProcResult
 getPendingPreProcCCC startTime mvResult = liftIO (tryReadMVar mvResult) >>= \case
   Just r -> return r
   Nothing -> do
@@ -170,7 +170,7 @@ getPendingPreProcCCC startTime mvResult = liftIO (tryReadMVar mvResult) >>= \cas
     debug $ "Blocked on Consensus PreProc for " ++ printInterval startTime endTime
     return r
 
-applyCommand :: UTCTime -> LogEntry -> CommitService (RequestKey, CommandResult)
+applyCommand :: UTCTime -> LogEntry -> ExecutionService (RequestKey, CommandResult)
 applyCommand _tEnd le@LogEntry{..} = do
   apply <- Pact._ceiApplyPPCmd <$> use csCommandExecInterface
   startTime <- now
@@ -179,7 +179,7 @@ applyCommand _tEnd le@LogEntry{..} = do
       rkey = RequestKey chash
       stamp ppLat = do
         tEnd' <- now
-        return $ mkLatResults <$> updateCommitPreProc startTime tEnd' ppLat
+        return $ mkLatResults <$> updateExecutionPreProc startTime tEnd' ppLat
   case _leCommand of
     SmartContractCommand{..} -> do
       (pproc, ppLat) <- case _sccPreProc of
@@ -240,7 +240,7 @@ applyCommand _tEnd le@LogEntry{..} = do
             Left e -> finish $ PrivateFailure e
             Right cr -> finish $ PrivateSuccess cr
 
-applyPrivate :: LogEntry -> PrivatePlaintext -> CommitService (Either String (Pact.CommandResult))
+applyPrivate :: LogEntry -> PrivatePlaintext -> ExecutionService (Either String (Pact.CommandResult))
 applyPrivate LogEntry{..} PrivatePlaintext{..} = case decode _ppMessage of
   Left e -> return $ Left e
   Right cmd -> case Pact.verifyCommand cmd of
@@ -249,7 +249,7 @@ applyPrivate LogEntry{..} PrivatePlaintext{..} = case decode _ppMessage of
       apply <- Pact._ceiApplyPPCmd <$> use csCommandExecInterface
       Right <$> liftIO (apply (Transactional (fromIntegral _leLogIndex)) cmd p)
 
-applyLocalCommand :: (Pact.Command ByteString, MVar Value) -> CommitService ()
+applyLocalCommand :: (Pact.Command ByteString, MVar Value) -> ExecutionService ()
 applyLocalCommand (cmd, mv) = do
   applyLocal <- Pact._ceiApplyCmd <$> use csCommandExecInterface
   cr <- liftIO $ applyLocal Local cmd
@@ -262,9 +262,9 @@ updateLatPreProc hitPreProc finPreProc = fmap update'
                       ,_lmFinPreProc = finPreProc}
 {-# INLINE updateLatPreProc #-}
 
-updateCommitPreProc :: UTCTime -> UTCTime -> Maybe CmdLatencyMetrics -> Maybe CmdLatencyMetrics
-updateCommitPreProc hitCommit finCommit = fmap update'
+updateExecutionPreProc :: UTCTime -> UTCTime -> Maybe CmdLatencyMetrics -> Maybe CmdLatencyMetrics
+updateExecutionPreProc hitExecution finExecution = fmap update'
   where
-    update' cmd = cmd {_lmHitCommit = Just hitCommit
-                      ,_lmFinCommit = Just finCommit}
-{-# INLINE updateCommitPreProc #-}
+    update' cmd = cmd {_lmHitExecution = Just hitExecution
+                      ,_lmFinExecution = Just finExecution}
+{-# INLINE updateExecutionPreProc #-}

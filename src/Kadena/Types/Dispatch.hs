@@ -7,11 +7,11 @@ module Kadena.Types.Dispatch
   , inboundRVorRVR
   , inboundGeneral
   , outboundGeneral
-  , internalEvent
+  , consensusEvent
   , senderService
   , logService
   , evidence
-  , commitService
+  , execService
   , historyChannel
   , processRequestChannel
   , privateChannel
@@ -25,12 +25,12 @@ import Kadena.Types.Comms
 import Kadena.Sender.Types (SenderServiceChannel)
 import Kadena.Log.Types (LogServiceChannel)
 import Kadena.Evidence.Spec (EvidenceChannel)
-import Kadena.Commit.Types (CommitChannel)
+import Kadena.Execution.Types (ExecutionChannel)
 import Kadena.History.Types (HistoryChannel)
 import Kadena.PreProc.Types (ProcessRequestChannel)
 import Kadena.Private.Types (PrivateChannel)
 import Kadena.Types.Message (InboundCMDChannel,OutboundGeneralChannel)
-import Kadena.Types.Event (InternalEventChannel)
+import Kadena.Types.Event (ConsensusEventChannel)
 
 data Dispatch = Dispatch
   { _inboundAER      :: InboundAERChannel
@@ -38,11 +38,11 @@ data Dispatch = Dispatch
   , _inboundRVorRVR  :: InboundRVorRVRChannel
   , _inboundGeneral  :: InboundGeneralChannel
   , _outboundGeneral :: OutboundGeneralChannel
-  , _internalEvent   :: InternalEventChannel
+  , _consensusEvent   :: ConsensusEventChannel
   , _senderService   :: SenderServiceChannel
   , _logService   :: LogServiceChannel
   , _evidence   :: EvidenceChannel
-  , _commitService :: CommitChannel
+  , _execService :: ExecutionChannel
   , _historyChannel :: HistoryChannel
   , _processRequestChannel :: ProcessRequestChannel
   , _privateChannel :: PrivateChannel

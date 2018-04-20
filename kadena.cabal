@@ -31,9 +31,9 @@ flag pact-persistence
 library
   exposed-modules:     Apps.Kadena.Client
                      , Apps.Kadena.Server
-                     , Kadena.Commit.Pact
-                     , Kadena.Commit.Service
-                     , Kadena.Commit.Types
+                     , Kadena.Execution.Pact
+                     , Kadena.Execution.Service
+                     , Kadena.Execution.Types
                      , Kadena.Consensus.Handle
                      , Kadena.Consensus.Handle.AppendEntries
                      , Kadena.Consensus.Handle.Command

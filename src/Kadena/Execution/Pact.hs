@@ -1,7 +1,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
-module Kadena.Commit.Pact
+module Kadena.Execution.Pact
   (initPactService)
   where
 
@@ -36,7 +36,7 @@ import Pact.Server.PactService (jsonResult)
 import Pact.Types.Runtime
 
 
-import Kadena.Commit.Types
+import Kadena.Execution.Types
 import Kadena.Consensus.Publish
 import Kadena.Types.Config (PactPersistConfig(..),PactPersistBackend(..))
 import Kadena.Util.Util (linkAsyncTrack)
@@ -73,14 +73,14 @@ runPact e a = runReaderT a e
 logInit :: Logger -> String -> IO ()
 logInit l = logLog l "INIT"
 
-initPactService :: CommitEnv -> Publish -> IO (CommandExecInterface (PactRPC ParsedCode))
-initPactService CommitEnv{..} pub = do
+initPactService :: ExecutionEnv -> Publish -> IO (CommandExecInterface (PactRPC ParsedCode))
+initPactService ExecutionEnv{..} pub = do
   let PactPersistConfig{..} = _pactPersistConfig
-      logger = newLogger _commitLoggers "PactService"
-      initCI = initCommandInterface _entityConfig pub logger _commitLoggers
+      logger = newLogger _execLoggers "PactService"
+      initCI = initCommandInterface _entityConfig pub logger _execLoggers
       initWB p db = if _ppcWriteBehind
         then do
-          wb <- initPureCacheWB p db  _commitLoggers
+          wb <- initPureCacheWB p db  _execLoggers
           linkAsyncTrack "WriteBehindThread" (WB.runWBService wb)
           initCI WB.persister wb
         else initCI p db
@@ -92,10 +92,10 @@ initPactService CommitEnv{..} pub = do
       dbExists <- doesFileExist dbFile
       when dbExists $ logInit logger "Deleting Existing Pact DB File" >> removeFile dbFile
       logInit logger "Initializing SQLite"
-      initWB SQLite.persister =<< SQLite.initSQLite conf _commitLoggers
+      initWB SQLite.persister =<< SQLite.initSQLite conf _execLoggers
     PPBMSSQL conf connStr -> do
       logInit logger "Initializing MSSQL"
-      initWB MSSQL.persister =<< MSSQL.initMSSQL connStr conf _commitLoggers
+      initWB MSSQL.persister =<< MSSQL.initMSSQL connStr conf _execLoggers
 
 initCommandInterface :: EntityConfig -> Publish -> Logger -> Loggers -> Persister w -> w ->
                         IO (CommandExecInterface (PactRPC ParsedCode))

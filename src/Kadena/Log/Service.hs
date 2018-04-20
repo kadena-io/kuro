@@ -33,7 +33,7 @@ import Kadena.Log.Types
 import Kadena.Log.LogApi as X
 import qualified Kadena.Evidence.Types as Ev
 import qualified Kadena.Types.Dispatch as Dispatch
-import qualified Kadena.Commit.Types as Commit
+import qualified Kadena.Execution.Types as Exec
 import Kadena.Types (Dispatch)
 import Kadena.Types.Event (pprintBeat)
 
@@ -53,8 +53,8 @@ runLogService dispatch dbg publishMetric' rconf = do
       return Nothing
   env <- return LogEnv
     { _logQueryChannel = dispatch ^. Dispatch.logService
-    , _internalEvent = dispatch ^. Dispatch.internalEvent
-    , _commitChannel = dispatch ^. Dispatch.commitService
+    , _consensusEvent = dispatch ^. Dispatch.consensusEvent
+    , _execChannel = dispatch ^. Dispatch.execService
     , _evidence = dispatch ^. Dispatch.evidence
     , _senderChannel = dispatch ^. Dispatch.senderService
     , _debugPrint = dbg
@@ -63,7 +63,7 @@ runLogService dispatch dbg publishMetric' rconf = do
     , _publishMetric = publishMetric'
     }
   initLogState' <- case dbConn' of
-    Just conn' -> syncLogsFromDisk (env ^. persistedLogEntriesToKeepInMemory) (dispatch ^. Dispatch.commitService) conn'
+    Just conn' -> syncLogsFromDisk (env ^. persistedLogEntriesToKeepInMemory) (dispatch ^. Dispatch.execService) conn'
     Nothing -> return initLogState
   void $ runRWST handle env initLogState'
 
@@ -149,13 +149,13 @@ updateEvidenceCache' = do
   debug $ "Sent new evidence to cache for: " ++ show lli
 
 -- TODO: currently, when syncing from disk, we read everything into memory. This is bad
-syncLogsFromDisk :: Int -> Commit.CommitChannel -> Connection -> IO LogState
-syncLogsFromDisk keepInMem commitChannel' conn = do
+syncLogsFromDisk :: Int -> Exec.ExecutionChannel -> Connection -> IO LogState
+syncLogsFromDisk keepInMem execChannel' conn = do
   logs@(LogEntries logs') <- selectAllLogEntries conn
   lastLog' <- return $! lesMaxEntry logs
   case lastLog' of
     Just log' -> do
-      liftIO $ writeComm commitChannel' $ Commit.ReloadFromDisk logs
+      liftIO $ writeComm execChannel' $ Exec.ReloadFromDisk logs
       (Just maxIdx) <- return $ lesMaxIndex logs
       pLogs <- return $! (`plesAddNew` plesEmpty) $! LogEntries $! Map.filterWithKey (\k _ -> k > (maxIdx - fromIntegral keepInMem)) logs'
       return LogState
@@ -190,7 +190,7 @@ tellKadenaToApplyLogEntries aerTime = do
       lsLastApplied .= appliedIndex'
       logTime <- liftIO getCurrentTime
       ues' <- return $ populateConsensusLatency aerTime logTime unappliedEntries'
-      view commitChannel >>= liftIO . (`writeComm` Commit.CommitNewEntries ues')
+      view execChannel >>= liftIO . (`writeComm` Exec.ExecuteNewEntries ues')
       debug $ "informing Kadena to apply up to: " ++ show appliedIndex'
       publishMetric' <- view publishMetric
       liftIO $ publishMetric' $ MetricCommitIndex appliedIndex'

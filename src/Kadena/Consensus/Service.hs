@@ -17,7 +17,7 @@ import Kadena.Types.Entity
 
 import Kadena.Messaging.Turbine
 import qualified Kadena.Messaging.Turbine as Turbine
-import qualified Kadena.Commit.Service as Commit
+import qualified Kadena.Execution.Service as Exec
 import qualified Kadena.Sender.Service as Sender
 import qualified Kadena.Types.Log as Log
 import qualified Kadena.Log.Types as Log
@@ -70,7 +70,7 @@ launchEvidenceService dispatch' dbgPrint' publishMetric' mEvState rconf' mLeader
   linkAsyncTrack "EvidenceThread" (Ev.runEvidenceService $! Ev.initEvidenceEnv dispatch' dbgPrint' rconf' mEvState mLeaderNoFollowers publishMetric')
   linkAsyncTrack "EvidenceHB" $ foreverHeart (_evidence dispatch') 1000000 Ev.Heart
 
-launchCommitService :: Dispatch
+launchExecutionService :: Dispatch
   -> (String -> IO ())
   -> (Metric -> IO ())
   -> KeySet
@@ -80,14 +80,14 @@ launchCommitService :: Dispatch
   -> MVar PublishedConsensus
   -> EntityConfig
   -> IO ()
-launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' gcm' pubConsensus ent = do
+launchExecutionService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' gcm' pubConsensus ent = do
   rconf' <- readCurrentConfig gcm'
-  commitEnv <- return $! Commit.initCommitEnv
+  execEnv <- return $! Exec.initExecutionEnv
     dispatch' dbgPrint' (_pactPersist rconf')
       (_logRules rconf') publishMetric' getTimestamp' gcm' ent
   pub <- return $! Publish pubConsensus dispatch' getTimestamp' nodeId'
-  linkAsyncTrack "CommitThread" (Commit.runCommitService commitEnv pub nodeId' keySet')
-  linkAsyncTrack "CommitHB" $ foreverHeart (_commitService dispatch') 1000000 Commit.Heart
+  linkAsyncTrack "ExecutionThread" (Exec.runExecutionService execEnv pub nodeId' keySet')
+  linkAsyncTrack "ExecutionHB" $ foreverHeart (_execService dispatch') 1000000 Exec.Heart
 
 launchLogService :: Dispatch
   -> (String -> IO ())
@@ -135,7 +135,7 @@ runConsensusService renv gcm spec rstate timeCache' mPubConsensus' = do
   launchHistoryService dispatch' dbgPrint' getTimestamp' rconf
   launchPreProcService dispatch' dbgPrint' getTimestamp' rconf
   launchSenderService dispatch' dbgPrint' publishMetric' mEvState mPubConsensus' gcm
-  launchCommitService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' gcm mPubConsensus' (_entity rconf)
+  launchExecutionService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' gcm mPubConsensus' (_entity rconf)
   launchEvidenceService dispatch' dbgPrint' publishMetric' mEvState gcm mLeaderNoFollowers
   launchLogService dispatch' dbgPrint' publishMetric' rconf
   launchApiService dispatch' gcm dbgPrint' mPubConsensus' getTimestamp'

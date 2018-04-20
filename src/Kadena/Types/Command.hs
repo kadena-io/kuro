@@ -21,12 +21,12 @@ module Kadena.Types.Command
   , toRequestKey
   , CommandResult(..), scrResult, crHash, crLogIndex, crLatMetrics, ccrResult, cprResult
   , CmdLatencyMetrics(..), lmFirstSeen, lmHitTurbine, lmHitPreProc, lmAerConsensus, lmLogConsensus
-  , lmFinPreProc, lmHitCommit, lmFinCommit, lmHitConsensus, lmFinConsensus
+  , lmFinPreProc, lmHitExecution, lmFinExecution, lmHitConsensus, lmFinConsensus
   , initCmdLat, populateCmdLat
   , CmdLatASetter
   , CmdResultLatencyMetrics(..)
   , rlmFirstSeen, rlmHitTurbine, rlmHitConsensus, rlmFinConsensus, rlmAerConsensus, rlmLogConsensus
-  , rlmHitPreProc, rlmFinPreProc, rlmHitCommit, rlmFinCommit
+  , rlmHitPreProc, rlmFinPreProc, rlmHitExecution, rlmFinExecution
   , mkLatResults
   ) where
 
@@ -64,8 +64,8 @@ data CmdLatencyMetrics = CmdLatencyMetrics
   , _lmLogConsensus :: !(Maybe UTCTime)
   , _lmHitPreProc :: !(Maybe UTCTime)
   , _lmFinPreProc :: !(Maybe UTCTime)
-  , _lmHitCommit :: !(Maybe UTCTime)
-  , _lmFinCommit :: !(Maybe UTCTime)
+  , _lmHitExecution :: !(Maybe UTCTime)
+  , _lmFinExecution :: !(Maybe UTCTime)
   } deriving (Show, Eq, Ord, Generic)
 makeLenses ''CmdLatencyMetrics
 
@@ -85,8 +85,8 @@ initCmdLat (Just (ReceivedAt startTime)) = Just $ CmdLatencyMetrics
   , _lmLogConsensus = Nothing
   , _lmHitPreProc = Nothing
   , _lmFinPreProc = Nothing
-  , _lmHitCommit = Nothing
-  , _lmFinCommit = Nothing
+  , _lmHitExecution = Nothing
+  , _lmFinExecution = Nothing
   }
 
 type CmdLatASetter a = ASetter CmdLatencyMetrics CmdLatencyMetrics a (Maybe UTCTime)
@@ -332,8 +332,8 @@ data CmdResultLatencyMetrics = CmdResultLatencyMetrics
   , _rlmLogConsensus :: !(Maybe Int64)
   , _rlmHitPreProc :: !(Maybe Int64)
   , _rlmFinPreProc :: !(Maybe Int64)
-  , _rlmHitCommit :: !(Maybe Int64)
-  , _rlmFinCommit :: !(Maybe Int64)
+  , _rlmHitExecution :: !(Maybe Int64)
+  , _rlmFinExecution :: !(Maybe Int64)
   } deriving (Show, Eq, Ord, Generic)
 makeLenses ''CmdResultLatencyMetrics
 
@@ -352,8 +352,8 @@ mkLatResults CmdLatencyMetrics{..} = CmdResultLatencyMetrics
   , _rlmLogConsensus = interval _lmFirstSeen <$> _lmLogConsensus
   , _rlmHitPreProc = interval _lmFirstSeen <$> _lmHitPreProc
   , _rlmFinPreProc = interval _lmFirstSeen <$> _lmFinPreProc
-  , _rlmHitCommit = interval _lmFirstSeen <$> _lmHitCommit
-  , _rlmFinCommit = interval _lmFirstSeen <$> _lmFinCommit
+  , _rlmHitExecution = interval _lmFirstSeen <$> _lmHitExecution
+  , _rlmFinExecution = interval _lmFirstSeen <$> _lmFinExecution
   }
 
 data CommandResult =

@@ -17,7 +17,7 @@ module Kadena.Log.Types
   , lsLastPersisted, lsLastLogTerm, lsLastLogHash, lsLastInMemory
   , initLogState
   , LogEnv(..)
-  , logQueryChannel, commitChannel, internalEvent, senderChannel, debugPrint
+  , logQueryChannel, execChannel, internalEvent, senderChannel, debugPrint
   , dbConn, evidence, publishMetric
   , persistedLogEntriesToKeepInMemory
   , LogThread
@@ -52,7 +52,7 @@ import Kadena.Types.Comms
 import Kadena.Types.Event (Beat,InternalEventChannel)
 
 import Kadena.Evidence.Types (EvidenceChannel)
-import Kadena.Commit.Types (CommitChannel)
+import Kadena.Execution.Types (ExecutionChannel)
 import Kadena.Sender.Types (SenderServiceChannel)
 
 data QueryApi =
@@ -72,7 +72,7 @@ instance Comms QueryApi LogServiceChannel where
 data LogEnv = LogEnv
   { _logQueryChannel :: !LogServiceChannel
   , _internalEvent :: !InternalEventChannel
-  , _commitChannel :: !CommitChannel
+  , _execChannel :: !ExecutionChannel
   , _evidence :: !EvidenceChannel
   , _senderChannel :: !SenderServiceChannel
   , _persistedLogEntriesToKeepInMemory :: !Int

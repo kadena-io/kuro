@@ -88,7 +88,7 @@ perSecMay :: TestResponse -> Maybe Integer
 perSecMay tr = do 
     count <- _batchCount tr 
     (AE.Success lats) <- fromJSON <$> (_arMetaData (apiResult tr)) 
-    microSeconds <- _rlmFinCommit lats
+    microSeconds <- _rlmFinExecution lats
     return $ snd $ calcInterval count microSeconds
 
 parseStatus :: AE.Value -> Bool

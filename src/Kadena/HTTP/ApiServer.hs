@@ -54,7 +54,7 @@ import Kadena.Types.Entity
 import Kadena.History.Types ( History(..)
                             , PossiblyIncompleteResults(..))
 import qualified Kadena.History.Types as History
-import qualified Kadena.Commit.Types as Commit
+import qualified Kadena.Execution.Types as Exec
 import Kadena.Types.Dispatch
 import Kadena.Private.Service (encrypt)
 import Kadena.Private.Types (PrivatePlaintext(..),PrivateCiphertext(..),Labeled(..),PrivateResult(..))
@@ -114,8 +114,8 @@ sendLocal :: Api ()
 sendLocal = do
   (cmd :: Pact.Command BS.ByteString) <- fmap encodeUtf8 <$> readJSON
   mv <- liftIO newEmptyMVar
-  c <- view $ aiDispatch . commitService
-  liftIO $ writeComm c (Commit.ExecLocal cmd mv)
+  c <- view $ aiDispatch . execService
+  liftIO $ writeComm c (Exec.ExecLocal cmd mv)
   r <- liftIO $ takeMVar mv
   writeResponse $ ApiSuccess $ r
 

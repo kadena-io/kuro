@@ -2,18 +2,18 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
-module Kadena.Commit.Types
+module Kadena.Execution.Types
   ( ApplyFn
-  , Commit(..)
-  , CommitEnv(..)
-  , commitChannel, debugPrint, publishMetric
+  , Execution(..)
+  , ExecutionEnv(..)
+  , execChannel, debugPrint, publishMetric
   , getTimestamp, historyChannel, mConfig
-  , pactPersistConfig, commitLoggers, entityConfig
+  , pactPersistConfig, execLoggers, entityConfig
   , privateChannel
-  , CommitState(..)
+  , ExecutionState(..)
   , csNodeId,csKeySet,csCommandExecInterface
-  , CommitChannel(..)
-  , CommitService
+  , ExecutionChannel(..)
+  , ExecutionService
   ) where
 
 import Control.Lens hiding (Index)
@@ -46,10 +46,10 @@ import Kadena.Types.Entity (EntityConfig)
 
 type ApplyFn = LogEntry -> IO Pact.CommandResult
 
-data Commit =
+data Execution =
   ReloadFromDisk
     { logEntriesToApply :: !LogEntries } |
-  CommitNewEntries
+  ExecuteNewEntries
     { logEntriesToApply :: !LogEntries } |
   ChangeNodeId
     { newNodeId :: !NodeId } |
@@ -61,32 +61,32 @@ data Commit =
       localResult :: !(MVar Value) }
 
 
-newtype CommitChannel = CommitChannel (Chan Commit)
+newtype ExecutionChannel = ExecutionChannel (Chan Execution)
 
-instance Comms Commit CommitChannel where
-  initComms = CommitChannel <$> initCommsNormal
-  readComm (CommitChannel c) = readCommNormal c
-  writeComm (CommitChannel c) = writeCommNormal c
+instance Comms Execution ExecutionChannel where
+  initComms = ExecutionChannel <$> initCommsNormal
+  readComm (ExecutionChannel c) = readCommNormal c
+  writeComm (ExecutionChannel c) = writeCommNormal c
 
-data CommitEnv = CommitEnv
-  { _commitChannel :: !CommitChannel
+data ExecutionEnv = ExecutionEnv
+  { _execChannel :: !ExecutionChannel
   , _historyChannel :: !HistoryChannel
   , _privateChannel :: !PrivateChannel
   , _pactPersistConfig :: !PactPersistConfig
   , _debugPrint :: !(String -> IO ())
-  , _commitLoggers :: !Loggers
+  , _execLoggers :: !Loggers
   , _publishMetric :: !(Metric -> IO ())
   , _getTimestamp :: !(IO UTCTime)
   , _mConfig :: GlobalConfigTMVar
   , _entityConfig :: !EntityConfig
   }
-makeLenses ''CommitEnv
+makeLenses ''ExecutionEnv
 
-data CommitState = CommitState
+data ExecutionState = ExecutionState
   { _csNodeId :: !NodeId
   , _csKeySet :: !KeySet
   , _csCommandExecInterface :: !(CommandExecInterface (PactRPC ParsedCode))
   }
-makeLenses ''CommitState
+makeLenses ''ExecutionState
 
-type CommitService = RWST CommitEnv () CommitState IO
+type ExecutionService = RWST ExecutionEnv () ExecutionState IO

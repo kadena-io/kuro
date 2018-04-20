@@ -11,7 +11,7 @@ module Kadena.Types.Dispatch
   , senderService
   , logService
   , evidence
-  , commitService
+  , execService
   , historyChannel
   , processRequestChannel
   , privateChannel
@@ -25,7 +25,7 @@ import Kadena.Types.Comms
 import Kadena.Sender.Types (SenderServiceChannel)
 import Kadena.Log.Types (LogServiceChannel)
 import Kadena.Evidence.Spec (EvidenceChannel)
-import Kadena.Commit.Types (CommitChannel)
+import Kadena.Execution.Types (ExecutionChannel)
 import Kadena.History.Types (HistoryChannel)
 import Kadena.PreProc.Types (ProcessRequestChannel)
 import Kadena.Private.Types (PrivateChannel)
@@ -42,7 +42,7 @@ data Dispatch = Dispatch
   , _senderService   :: SenderServiceChannel
   , _logService   :: LogServiceChannel
   , _evidence   :: EvidenceChannel
-  , _commitService :: CommitChannel
+  , _execService :: ExecutionChannel
   , _historyChannel :: HistoryChannel
   , _processRequestChannel :: ProcessRequestChannel
   , _privateChannel :: PrivateChannel

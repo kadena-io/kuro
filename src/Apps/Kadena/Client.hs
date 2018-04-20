@@ -129,7 +129,8 @@ data CliCmd =
   Help |
   Keys (Maybe (T.Text,Maybe T.Text)) |
   Load FilePath Mode |
-  Poll String |
+  LoadConfigChange FilePath Mode | 
+  Poll String | 
   PollMetrics String |
   Send Mode String |
   Private EntityName [EntityName] String |
@@ -335,6 +336,9 @@ load m fp = do
     Just c -> flushStrLn ("Setting batch command to: " ++ show c) >> batchCmd .= (T.unpack c)
   cmdData .= Null
 
+_loadConfigChange :: Mode -> FilePath -> Repl ()
+_loadConfigChange _m _fp = undefined
+
 showResult :: Int -> [RequestKey] -> Maybe Int64 -> Repl ()
 showResult _ [] _ = return ()
 showResult tdelay rks countm = loop (0 :: Int)
@@ -354,7 +358,7 @@ showResult tdelay rks countm = loop (0 :: Int)
               Nothing -> flushStrLn "Success"
               Just (A.Success lats@CmdResultLatencyMetrics{..}) -> do
                 pprintLatency lats
-                case _rlmFinCommit of
+                case _rlmFinExecution of
                   Nothing -> flushStrLn "Latency Measurement Unavailable"
                   Just n -> flushStrLn $ intervalOfNumerous cnt n
               Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
@@ -408,13 +412,13 @@ pprintLatency CmdResultLatencyMetrics{..} = do
   mFlushStr "Entered Con Serv:   +" _rlmHitConsensus
   mFlushStr "Finished Con Serv:  +" _rlmFinConsensus
   mFlushStr "Came to Consensus:  +" _rlmAerConsensus
-  mFlushStr "Sent to Commit:     +" _rlmLogConsensus
+  mFlushStr "Sent to Execution:  +" _rlmLogConsensus
   mFlushStr "Started PreProc:    +" _rlmHitPreProc
   mFlushStr "Finished PreProc:   +" _rlmFinPreProc
   mFlushStr "Crypto took:         " (getLatDelta _rlmHitPreProc _rlmFinPreProc)
-  mFlushStr "Started Commit:     +" _rlmHitCommit
-  mFlushStr "Finished Commit:    +" _rlmFinCommit
-  mFlushStr "Pact exec took:      " (getLatDelta _rlmHitCommit _rlmFinCommit)
+  mFlushStr "Started Execution:  +" _rlmHitExecution
+  mFlushStr "Finished Execution: +" _rlmFinExecution
+  mFlushStr "Pact exec took:      " (getLatDelta _rlmHitExecution _rlmFinExecution)
 
 pprintTable :: Value -> Maybe String
 pprintTable val = do
@@ -480,7 +484,10 @@ cliCmds = [
                         (symbol "pretty" >> pure PrettyJSON) <|>
                         (symbol "table" >> pure Table))),
   ("private","TO [FROM1 FROM2...] CMD","Send private transactional command to server addressed with entity names",
-   parsePrivate)
+   parsePrivate),
+  ("loadConfigChange", "YAMLFILE", "Load and submit transactionaly a yaml configuration change file",
+   LoadConfigChange <$> some anyChar <*> pure 
+   Transactional) 
   ]
 
 parsePrivate :: TF.Parser CliCmd

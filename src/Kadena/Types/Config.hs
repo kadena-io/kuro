@@ -16,19 +16,13 @@ module Kadena.Types.Config
   , logDir, entity, nodeClass, adminKeys
   , aeBatchSize, preProcThreadCount, preProcUsePar
   , inMemTxCache, enablePersistence, logRules
+  , confUpdateJsonOptions, getMissingKeys
   , KeySet(..), ksCluster, confToKeySet
-  , ConfigUpdateCommand(..)
-  , ConfigUpdate(..), cuCmd, cuHash, cuSigs
-  , ProcessedConfigUpdate(..), processConfigUpdate
-  , ConfigUpdateResult(..)
-  , KeyPair(..), getNewKeyPair, execConfigUpdateCmd
+  , KeyPair(..), getNewKeyPair
   , GlobalConfigTMVar
   , GlobalConfig(..), gcVersion, gcConfig
-  , initGlobalConfigTMVar, mutateConfig, getConfigWhenNew
-  , ConfigUpdater(..), runConfigUpdater
+  , initGlobalConfigTMVar, getConfigWhenNew
   , readCurrentConfig
-  , NodesToDiff(..), DiffNodes(..), diffNodes
-  , updateNodeMap, updateNodeSet
   , PactPersistConfig(..),PactPersistBackend(..),PPBType(..)
   ) where
 
@@ -36,7 +30,6 @@ import Control.Concurrent.STM
 import Control.Lens (makeLenses)
 import Control.Monad
 
-import Data.ByteString (ByteString)
 import qualified Data.Text as Text
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -49,7 +42,6 @@ import Data.Aeson.Types
 import Data.Thyme.Clock
 import Data.Thyme.Time.Core ()
 import GHC.Generics hiding (from)
-import Data.Serialize
 import Data.Default
 import qualified Data.Yaml as Y
 
@@ -60,8 +52,6 @@ import Pact.Persist.MSSQL (MSSQLConfig(..))
 
 import Kadena.Types.Base
 import Kadena.Types.Entity (EntityConfig)
-
-
 
 data Config = Config
   { _otherNodes           :: !(Set NodeId)
@@ -87,7 +77,6 @@ data Config = Config
   , _logRules             :: !LogRules
   }
   deriving (Show, Generic)
-
 
 data PactPersistBackend =
   PPBInMemory |
@@ -118,10 +107,7 @@ data PactPersistConfig = PactPersistConfig {
 instance ToJSON PactPersistConfig where toJSON = lensyToJSON 4
 instance FromJSON PactPersistConfig where parseJSON = lensyParseJSON 4
 
-
 makeLenses ''Config
-
-
 
 instance ToJSON NominalDiffTime where
   toJSON = toJSON . show . toSeconds'
@@ -146,82 +132,6 @@ confToKeySet :: Config -> KeySet
 confToKeySet Config{..} = KeySet
   { _ksCluster = _publicKeys}
 
-data ConfigUpdateCommand =
-  AddNode
-    { _cucNodeId :: !NodeId
-    , _cucNodeClass :: !NodeClass
-    , _cucPublicKey :: !PublicKey } |
-  RemoveNode
-    { _cucNodeId :: !NodeId } |
-  NodeToPassive
-    { _cucNodeId :: !NodeId } |
-  NodeToActive
-    { _cucNodeId :: !NodeId } |
-  UpdateNodeKey
-    { _cucAlias :: !Alias
-    , _cucPublicKey :: !PublicKey
-    , _cucKeyPairPath :: !FilePath} |
-  AddAdminKey
-    { _cucAlias :: !Alias
-    , _cucPublicKey :: !PublicKey } |
-  UpdateAdminKey
-    { _cucAlias :: !Alias
-    , _cucPublicKey :: !PublicKey } |
-  RemoveAdminKey
-    { _cucAlias :: !Alias } |
-  RotateLeader
-    { _cucTerm :: !Term }
-  deriving (Show, Eq, Ord, Generic, Serialize)
-
-confUpdateJsonOptions :: Int -> Options
-confUpdateJsonOptions n = defaultOptions
-  { fieldLabelModifier = lensyConstructorToNiceJson n
-  , sumEncoding = ObjectWithSingleField }
-
-instance ToJSON ConfigUpdateCommand where
-  toJSON = genericToJSON (confUpdateJsonOptions 4)
-instance FromJSON ConfigUpdateCommand where
-  parseJSON = genericParseJSON (confUpdateJsonOptions 4)
-
-data ConfigUpdate a = ConfigUpdate
-  { _cuHash :: !Hash
-  , _cuSigs :: !(Map PublicKey Signature)
-  , _cuCmd :: !a
-  } deriving (Show, Eq, Ord, Generic, Serialize)
-makeLenses ''ConfigUpdate
-instance (ToJSON a) => ToJSON (ConfigUpdate a) where
-  toJSON = lensyToJSON 3
-instance (FromJSON a) => FromJSON (ConfigUpdate a) where
-  parseJSON = lensyParseJSON 3
-
-processConfigUpdate :: ConfigUpdate ByteString -> ProcessedConfigUpdate
-processConfigUpdate ConfigUpdate{..} =
-  let
-    hash' = hash _cuCmd
-    sigs = (\(k,s) -> (valid hash' k s,k,s)) <$> Map.toList _cuSigs
-    sigsValid :: Bool
-    sigsValid = all (\(v,_,_) -> v) sigs
-    invalidSigs = filter (\(v,_,_) -> not v) sigs
-  in if hash' /= _cuHash
-     then ProcessedConfigFailure $! "Hash Mismatch in ConfigUpdate: ours=" ++ show hash' ++ " theirs=" ++ show _cuHash
-     else if sigsValid
-          then case eitherDecodeStrict' _cuCmd of
-                 Left !err -> ProcessedConfigFailure err
-                 Right !v -> ProcessedConfigSuccess v (Map.keysSet _cuSigs)
-          else ProcessedConfigFailure $! "Sig(s) Invalid: " ++ show invalidSigs
-{-# INLINE processConfigUpdate #-}
-
-data ProcessedConfigUpdate =
-  ProcessedConfigFailure !String |
-  ProcessedConfigSuccess { _pcsRes :: !ConfigUpdateCommand
-                         , _pcsKeysUsed :: !(Set PublicKey)}
-  deriving (Show, Eq, Ord, Generic)
-
-data ConfigUpdateResult =
-  ConfigUpdateFailure !String
-  | ConfigUpdateSuccess
-  deriving (Show, Eq, Ord, Generic, ToJSON, FromJSON, Serialize)
-
 data KeyPair = KeyPair
   { _kpPublicKey :: PublicKey
   , _kpPrivateKey :: PrivateKey
@@ -231,60 +141,17 @@ instance ToJSON KeyPair where
 instance FromJSON KeyPair where
   parseJSON = genericParseJSON (confUpdateJsonOptions 3)
 
+confUpdateJsonOptions :: Int -> Options
+confUpdateJsonOptions n = defaultOptions
+  { fieldLabelModifier = lensyConstructorToNiceJson n
+  , sumEncoding = ObjectWithSingleField }
+
 getNewKeyPair :: FilePath -> IO KeyPair
 getNewKeyPair fp = do
   kp <- Y.decodeFileEither fp
   case kp of
     Left err -> error $ "Unable to find and decode new keypair at location: " ++ fp ++ "\n## Error ##\n" ++ show err
     Right kp' -> return kp'
-
-execConfigUpdateCmd :: Config -> ConfigUpdateCommand -> IO (Either String Config)
-execConfigUpdateCmd conf@Config{..} cuc = do
-  case cuc of
-    AddNode{..}
-      | _nodeId == _cucNodeId || Set.member _cucNodeId _otherNodes ->
-          return $ Left $ "Unable to add node, already present"
-      | _cucNodeClass == Passive ->
-          return $ Left $ "Passive mode is not currently supported"
-      | otherwise ->
-          return $ Right $! conf
-          { _otherNodes = Set.insert _cucNodeId _otherNodes
-          , _publicKeys = Map.insert (_alias _cucNodeId) _cucPublicKey _publicKeys }
-    RemoveNode{..}
-      | _nodeId == _cucNodeId || Set.member _cucNodeId _otherNodes ->
-          return $ Right $! conf
-            { _otherNodes = Set.delete _cucNodeId _otherNodes
-            , _publicKeys = Map.delete (_alias _cucNodeId) _publicKeys }
-      | otherwise ->
-          return $ Left $ "Unable to delete node, not found"
-    NodeToPassive{..} -> return $ Left $ "Passive mode is not currently supported"
-    NodeToActive{..} -> return $ Left $ "Active mode is the only mode currently supported"
-    UpdateNodeKey{..}
-      | _alias _nodeId == _cucAlias -> do
-          KeyPair{..} <- getNewKeyPair _cucKeyPairPath
-          return $ Right $! conf
-            { _myPublicKey = _kpPublicKey
-            , _myPrivateKey = _kpPrivateKey }
-      | Map.member _cucAlias _publicKeys -> return $ Right $! conf
-          { _publicKeys = Map.insert _cucAlias _cucPublicKey _publicKeys }
-      | otherwise -> return $ Left $ "Unable to delete node, not found"
-    AddAdminKey{..}
-      | Map.member _cucAlias _adminKeys ->
-          return $ Left $ "admin alias already present: " ++ show _cucAlias
-      | otherwise -> return $ Right $! conf
-          { _adminKeys = Map.insert _cucAlias _cucPublicKey _adminKeys }
-    UpdateAdminKey{..}
-      | Map.member _cucAlias _adminKeys -> return $ Right $! conf
-          { _adminKeys = Map.insert _cucAlias _cucPublicKey _adminKeys }
-      | otherwise ->
-          return $ Left $ "Unable to find admin alias: " ++ show _cucAlias
-    RemoveAdminKey{..}
-      | Map.member _cucAlias _adminKeys -> return $ Right $! conf
-          { _adminKeys = Map.delete _cucAlias _adminKeys }
-      | otherwise ->
-          return $ Left $ "Unable to find admin alias: " ++ show _cucAlias
-    RotateLeader{..} ->
-      return $ Left $ "Admin triggered leader rotation is not currently supported"
 
 data GlobalConfig = GlobalConfig
   { _gcVersion :: !ConfigVersion
@@ -297,25 +164,6 @@ type GlobalConfigTMVar = TMVar GlobalConfig
 initGlobalConfigTMVar :: Config -> IO GlobalConfigTMVar
 initGlobalConfigTMVar c = newTMVarIO $ GlobalConfig initialConfigVersion c
 
-mutateConfig :: GlobalConfigTMVar -> ProcessedConfigUpdate -> IO ConfigUpdateResult
-mutateConfig _ (ProcessedConfigFailure err) = return $ ConfigUpdateFailure err
-mutateConfig gc (ProcessedConfigSuccess cuc keysUsed) = do
-  origGc@GlobalConfig{..} <- atomically $ takeTMVar gc
-  missingKeys <- return $ getMissingKeys _gcConfig keysUsed
-  if null missingKeys
-  then do
-    res <- execConfigUpdateCmd _gcConfig cuc
-    case res of
-      Left err -> return $! ConfigUpdateFailure $ "Failure: " ++ err
-      Right conf' -> atomically $ do
-        putTMVar gc $ GlobalConfig { _gcVersion = ConfigVersion $ configVersion _gcVersion + 1
-                                  , _gcConfig = conf' }
-        return ConfigUpdateSuccess
-
-  else do
-    atomically $ putTMVar gc origGc
-    return $ ConfigUpdateFailure $ "Admin signatures missing from: " ++ show missingKeys
-
 getMissingKeys :: Config -> Set PublicKey -> [Alias]
 getMissingKeys Config{..} keysUsed = fst <$> (filter (\(_,k) -> not $ Set.member k keysUsed) $ Map.toList _adminKeys)
 
@@ -326,45 +174,6 @@ getConfigWhenNew cv gcm = do
   then return gc
   else retry
 
-data ConfigUpdater = ConfigUpdater
-  { _cuPrintFn :: !(String -> IO ())
-  , _cuThreadName :: !String
-  , _cuAction :: (Config -> IO())}
-
-runConfigUpdater :: ConfigUpdater -> GlobalConfigTMVar -> IO ()
-runConfigUpdater ConfigUpdater{..} gcm = go initialConfigVersion
-  where
-    go cv = do
-      GlobalConfig{..} <- atomically $ getConfigWhenNew cv gcm
-      _cuAction _gcConfig
-      _cuPrintFn $ "[" ++ _cuThreadName ++ "] config update fired for version: " ++ show _gcVersion
-      go _gcVersion
-
 readCurrentConfig :: GlobalConfigTMVar -> IO Config
 readCurrentConfig gcm = _gcConfig <$> (atomically $ readTMVar gcm)
 
-data NodesToDiff = NodesToDiff
-  { prevNodes :: !(Set NodeId)
-  , currentNodes :: !(Set NodeId)
-  } deriving (Show,Eq,Ord,Generic)
-
-data DiffNodes = DiffNodes
-  { nodesToAdd :: !(Set NodeId)
-  , nodesToRemove :: !(Set NodeId)
-  } deriving (Show,Eq,Ord,Generic)
-
-diffNodes :: NodesToDiff -> DiffNodes
-diffNodes NodesToDiff{..} = DiffNodes
-  { nodesToAdd = Set.difference currentNodes prevNodes
-  , nodesToRemove = Set.difference prevNodes currentNodes }
-
-updateNodeMap :: DiffNodes -> Map NodeId a -> (NodeId -> a) -> Map NodeId a
-updateNodeMap DiffNodes{..} m defaultVal =
-  let
-    removedNodes = Map.filterWithKey (\k _ -> Set.notMember k nodesToRemove) m
-  in Map.union removedNodes $ Map.fromSet defaultVal nodesToAdd
-
-updateNodeSet :: DiffNodes -> Set NodeId -> Set NodeId
-updateNodeSet DiffNodes{..} s =
-  let removedNodes = Set.filter (`Set.notMember` nodesToRemove) s
-  in Set.union removedNodes nodesToAdd

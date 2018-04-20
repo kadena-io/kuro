@@ -29,6 +29,8 @@ import Kadena.Types.Log as Log
 import Kadena.Types.Message
 import Kadena.Types.Base
 import Kadena.Types.Comms
+import Kadena.ConfigChange.Service
+import Kadena.ConfigChange.Types
 
 -- TODO: re-integrate EKG when Evidence Service is finished and hspec tests are written
 -- import Kadena.Types.Metric

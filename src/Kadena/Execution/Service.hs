@@ -46,6 +46,8 @@ import Kadena.Private.Types (PrivatePlaintext(..),PrivateResult(..))
 import Kadena.Execution.Pact
 import Kadena.Consensus.Publish
 import Kadena.Types.Entity
+import Kadena.ConfigChange.Service
+import Kadena.ConfigChange.Types
 
 initExecutionEnv
   :: Dispatch

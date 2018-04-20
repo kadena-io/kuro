@@ -46,8 +46,9 @@ import Data.Aeson
 import GHC.Generics
 import GHC.Int (Int64)
 
+import Kadena.ConfigChange.Service
+import Kadena.ConfigChange.Types
 import Kadena.Types.Base
-import Kadena.Types.Config
 import Kadena.Types.Message.Signed
 import Kadena.Private.Types (PrivateCiphertext,PrivateResult)
 

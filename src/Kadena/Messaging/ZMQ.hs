@@ -22,6 +22,8 @@ import qualified Data.Set as Set
 
 import Kadena.Types
 import Kadena.Util.Util (catchAndRethrow, linkAsyncTrack)
+import Kadena.ConfigChange.Service
+import Kadena.ConfigChange.Types
 
 data Shutdown = IsShutdown | IsPending
 data ReconfSub = ReconfSub

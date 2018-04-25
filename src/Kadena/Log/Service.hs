@@ -1,5 +1,4 @@
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE CPP #-}
 
 module Kadena.Log.Service
@@ -29,16 +28,17 @@ import Kadena.Types.Command (CmdLatencyMetrics(..))
 import Kadena.Types.Metric
 import Kadena.Log.Persistence
 import Kadena.Types.Log
+import Kadena.Log
 import Kadena.Log.Types
 import Kadena.Log.LogApi as X
 import qualified Kadena.Evidence.Types as Ev
 import qualified Kadena.Types.Dispatch as Dispatch
 import qualified Kadena.Execution.Types as Exec
 import Kadena.Types (Dispatch)
-import Kadena.Types.Event (pprintBeat)
+import Kadena.Event (pprintBeat)
 
 runLogService :: Dispatch
-              -> (String -> IO())
+              -> (String -> IO()) 
               -> (Metric -> IO())
               -> Config
               -> IO ()

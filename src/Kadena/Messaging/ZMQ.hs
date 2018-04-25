@@ -1,6 +1,5 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RecordWildCards    #-}
-{-# LANGUAGE DeriveAnyClass    #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes        #-}
 {-# LANGUAGE BangPatterns #-}
@@ -20,8 +19,10 @@ import Data.Serialize
 import Data.Set (Set)
 import qualified Data.Set as Set
 
+import Kadena.Message
 import Kadena.Types
 import Kadena.Util.Util (catchAndRethrow, linkAsyncTrack)
+import Kadena.ConfigChange.Service
 
 data Shutdown = IsShutdown | IsPending
 data ReconfSub = ReconfSub

@@ -1,5 +1,4 @@
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -38,14 +37,16 @@ import Kadena.Types.Log
 import Kadena.Types.Dispatch (Dispatch)
 import qualified Kadena.Types.Dispatch as D
 import qualified Kadena.History.Types as History
-import qualified Kadena.Types.Log as Log
+import qualified Kadena.Log as Log
 import Kadena.Types.Comms (Comms(..))
-import Kadena.Types.Event (pprintBeat)
+import Kadena.Command
+import Kadena.Event (pprintBeat)
 import Kadena.Private.Service (decrypt)
 import Kadena.Private.Types (PrivatePlaintext(..),PrivateResult(..))
 import Kadena.Execution.Pact
 import Kadena.Consensus.Publish
 import Kadena.Types.Entity
+import qualified Kadena.ConfigChange.Service as CfgChange
 
 initExecutionEnv
   :: Dispatch
@@ -86,7 +87,7 @@ runExecutionService env pub nodeId' keySet' = do
     _csKeySet = keySet',
     _csCommandExecInterface = cmdExecInter}
   let cu = ConfigUpdater (env ^. debugPrint) "Service|Execution" (onUpdateConf (env ^. execChannel))
-  linkAsyncTrack "ExecutionConfUpdater" $ runConfigUpdater cu (env ^. mConfig)
+  linkAsyncTrack "ExecutionConfUpdater" $ CfgChange.runConfigUpdater cu (env ^. mConfig)
   void $ runRWST handle env initExecutionState
 
 debug :: String -> ExecutionService ()
@@ -185,7 +186,7 @@ applyCommand _tEnd le@LogEntry{..} = do
       (pproc, ppLat) <- case _sccPreProc of
         Unprocessed -> do
           debug $ "WARNING: non-preproccessed command found for " ++ show _leLogIndex
-          case (History.verifyCommand _leCommand) of
+          case (verifyCommand _leCommand) of
             SmartContractCommand{..} -> return $! (result _sccPreProc, _leCmdLatMetrics)
             _ -> error "[applyCommand.1] unreachable exception... and yet reached"
         Pending{..} -> do
@@ -207,7 +208,7 @@ applyCommand _tEnd le@LogEntry{..} = do
       (pproc, ppLat) <- case _cccPreProc of
         Unprocessed -> do
           debug $ "WARNING: non-preproccessed config command found for " ++ show _leLogIndex
-          case (History.verifyCommand _leCommand) of
+          case (verifyCommand _leCommand) of
             ConsensusConfigCommand{..} -> return $! (result _cccPreProc, _leCmdLatMetrics)
             _ -> error "[applyCommand.conf.2] unreachable exception... and yet reached"
         Pending{..} -> do
@@ -217,7 +218,7 @@ applyCommand _tEnd le@LogEntry{..} = do
           debug $ "WARNING: fully resolved consensus command found for " ++ show _leLogIndex
           return $! (result, _leCmdLatMetrics)
       gcm <- view mConfig
-      result <- liftIO $ mutateConfig gcm pproc
+      result <- liftIO $ CfgChange.mutateConfig gcm pproc
       lm <- stamp ppLat
       return ( rkey
              , ConsensusConfigResult

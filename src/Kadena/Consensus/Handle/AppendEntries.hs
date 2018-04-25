@@ -23,12 +23,14 @@ import qualified Data.Set as Set
 import Data.Maybe (fromMaybe)
 import Data.Thyme.Clock
 
+import Kadena.Command
 import Kadena.Types hiding (term, currentLeader, ignoreLeader)
 import Kadena.Sender.Service (createAppendEntriesResponse')
 import Kadena.Consensus.Util
 import qualified Kadena.Types as KD
 
 import qualified Kadena.Sender.Service as Sender
+import qualified Kadena.Log as Log
 import qualified Kadena.Types.Log as Log
 import Kadena.Util.Util
 
@@ -154,7 +156,7 @@ appendLogEntries :: (MonadWriter [String] m, MonadReader AppendEntriesEnv m)
                  => LogIndex -> LogEntries -> m ValidResponse
 appendLogEntries pli newEs
   | Log.lesNull newEs = return DoNothing
-  | otherwise = case KD.toReplicateLogEntries pli newEs of
+  | otherwise = case Log.toReplicateLogEntries pli newEs of
       Left err -> do
           tell ["Failure to Append Logs: " ++ err]
           return SendFailureResponse

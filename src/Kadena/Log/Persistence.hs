@@ -27,6 +27,7 @@ import Database.SQLite.Simple.FromField
 
 import qualified Data.Aeson as Aeson
 
+import Kadena.Command
 import Kadena.Types
 
 -- These live here as orphans, and not in Types, because trying to Serialize these things should be a type level error

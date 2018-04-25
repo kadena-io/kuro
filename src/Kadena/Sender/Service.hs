@@ -32,6 +32,7 @@ import Data.Serialize hiding (get, put)
 
 import Data.Thyme.Clock (UTCTime, getCurrentTime)
 
+import Kadena.Message
 import Kadena.Types.Message
 import Kadena.Types.Metric (Metric)
 import Kadena.Types.Config (GlobalConfigTMVar,Config(..),readCurrentConfig)
@@ -41,7 +42,7 @@ import Kadena.Types.Base
 import Kadena.Types.Log (LogEntries(..))
 import qualified Kadena.Types.Log as Log
 import qualified Kadena.Types.Dispatch as KD
-import Kadena.Types.Event (pprintBeat)
+import Kadena.Event (pprintBeat)
 import Kadena.Types.Comms
 
 import qualified Kadena.Types.Spec as Spec

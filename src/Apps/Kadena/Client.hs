@@ -541,6 +541,7 @@ handleCmd cmd reqStr = case cmd of
    | sleepBetweenBatches < 250 -> void $ flushStrLn "Aborting: sleep between batches needs to be >= 250"
    | otherwise -> parallelBatchTest totalNumCmds cmdRate sleepBetweenBatches
   Load s m -> load m s
+  LoadConfigChange _ _ -> return () -- Not implemented yet 
   Poll s -> parseRK s >>= void . pollForResult False . RequestKey . Hash
   PollMetrics rk -> do
     s <- use server

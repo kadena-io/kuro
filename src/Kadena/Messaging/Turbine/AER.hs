@@ -1,4 +1,3 @@
-{-# LANGUAGE RecordWildCards #-}
 
 module Kadena.Messaging.Turbine.AER
   ( aerTurbine

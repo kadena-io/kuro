@@ -167,7 +167,7 @@ matchResponses :: [ReplApiData] -> [ReplApiData] -> TestRequest -> [TestResult] 
 matchResponses [] _ _ acc = acc -- no requests
 matchResponses _ [] _ acc = acc -- no responses
 matchResponses requests@(ReplApiRequest _ _ : _)
-               responses@(ReplApiResponse _ _ _: _)
+               responses@(ReplApiResponse{}: _)
                testRequest acc = 
   let theApiRequest = find (\req -> _replCmd req == matchCmd testRequest) requests
       theApiResponse = case theApiRequest of 
@@ -210,7 +210,7 @@ _printResponses xs =
 
 isRequest :: ReplApiData -> Bool
 isRequest (ReplApiRequest _ _) = True
-isRequest (ReplApiResponse _ _ _) = False
+isRequest (ReplApiResponse{}) = False
 
 simpleRunREPL :: [TestRequest] -> Repl ()
 simpleRunREPL [] = return ()

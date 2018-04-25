@@ -8,6 +8,7 @@ import Control.Lens hiding ((:>))
 import Control.Monad
 import Control.Monad.IO.Class
 
+import Kadena.Event
 import Kadena.Types
 import Kadena.Consensus.Util
 

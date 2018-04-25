@@ -29,6 +29,7 @@ import Kadena.Types.Base
 import Kadena.Types.Comms
 import Kadena.Types.Command (Command(..), CmdLatencyMetrics)
 import Kadena.Log.Types
+import Kadena.Log
 import Kadena.Types.Log
 import Kadena.Log.Persistence
 import Kadena.Sender.Types (ServiceRequest'(..))

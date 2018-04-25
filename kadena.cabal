@@ -51,6 +51,7 @@ library
                      , Kadena.Evidence.Service
                      , Kadena.Evidence.Spec
                      , Kadena.Evidence.Types
+                     , Kadena.Execuation.ConfigChange
                      , Kadena.HTTP.ApiServer
                      , Kadena.HTTP.Static
                      , Kadena.History.Persistence

@@ -12,6 +12,8 @@ import Data.Aeson
 import Data.Text (Text)
 import Data.Maybe
 
+import Kadena.Command
+import Kadena.Log
 import Kadena.Types
 import qualified Pact.Types.Command as Pact
 import Pact.Types.Crypto

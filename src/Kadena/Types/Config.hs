@@ -10,20 +10,32 @@
 {-# LANGUAGE LambdaCase #-}
 
 module Kadena.Types.Config
-  ( Config(..), otherNodes, nodeId, electionTimeoutRange, heartbeatTimeout
+  ( otherNodes, nodeId, electionTimeoutRange, heartbeatTimeout
   , enableDebug, publicKeys, myPrivateKey, pactPersist
   , myPublicKey, apiPort, hostStaticDir
   , logDir, entity, nodeClass, adminKeys
   , aeBatchSize, preProcThreadCount, preProcUsePar
   , inMemTxCache, enablePersistence, logRules
   , confUpdateJsonOptions, getMissingKeys
-  , KeySet(..), ksCluster, confToKeySet
-  , KeyPair(..), getNewKeyPair
-  , GlobalConfigTMVar
-  , GlobalConfig(..), gcVersion, gcConfig
+  , ksCluster, confToKeySet
   , initGlobalConfigTMVar, getConfigWhenNew
+  , getNewKeyPair, gcVersion, gcConfig
   , readCurrentConfig
-  , PactPersistConfig(..),PactPersistBackend(..),PPBType(..)
+  , Config(..)
+  , ConfigUpdate(..)   
+  , ConfigUpdateCommand(..)
+  , ConfigUpdater(..)
+  , ConfigUpdateResult(..)
+  , DiffNodes(..)
+  , GlobalConfig(..)
+  , GlobalConfigTMVar
+  , KeyPair(..)
+  , KeySet(..) 
+  , NodesToDiff(..)
+  , PactPersistBackend(..)
+  , PactPersistConfig(..)
+  , PPBType(..)
+  , ProcessedConfigUpdate(..)
   ) where
 
 import Control.Concurrent.STM
@@ -33,6 +45,7 @@ import Control.Monad
 import qualified Data.Text as Text
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Serialize
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Text.Read (readMaybe)
@@ -109,6 +122,81 @@ instance FromJSON PactPersistConfig where parseJSON = lensyParseJSON 4
 
 makeLenses ''Config
 
+data ProcessedConfigUpdate =
+  ProcessedConfigFailure !String |
+  ProcessedConfigSuccess { _pcsRes :: !ConfigUpdateCommand
+                         , _pcsKeysUsed :: !(Set PublicKey)}
+  deriving (Show, Eq, Ord, Generic)
+
+data ConfigUpdateCommand =
+    AddNode
+      { _cucNodeId :: !NodeId
+      , _cucNodeClass :: !NodeClass
+      , _cucPublicKey :: !PublicKey } |
+    RemoveNode
+      { _cucNodeId :: !NodeId } |
+    NodeToPassive
+      { _cucNodeId :: !NodeId } |
+    NodeToActive
+      { _cucNodeId :: !NodeId } |
+    UpdateNodeKey
+      { _cucAlias :: !Alias
+      , _cucPublicKey :: !PublicKey
+      , _cucKeyPairPath :: !FilePath} |
+    AddAdminKey
+      { _cucAlias :: !Alias
+      , _cucPublicKey :: !PublicKey } |
+    UpdateAdminKey
+      { _cucAlias :: !Alias
+      , _cucPublicKey :: !PublicKey } |
+    RemoveAdminKey
+      { _cucAlias :: !Alias } |
+    RotateLeader
+      { _cucTerm :: !Term }
+    deriving (Show, Eq, Ord, Generic, Serialize)
+
+data ConfigUpdate a = ConfigUpdate
+  { _cuHash :: !Hash
+  , _cuSigs :: !(Map PublicKey Signature)
+  , _cuCmd :: !a
+  } deriving (Show, Eq, Ord, Generic, Serialize)
+-- makeLenses ''ConfigUpdate
+
+confUpdateJsonOptions :: Int -> Options
+confUpdateJsonOptions n = defaultOptions
+  { fieldLabelModifier = lensyConstructorToNiceJson n
+  , sumEncoding = ObjectWithSingleField }
+
+instance ToJSON ConfigUpdateCommand where
+  toJSON = genericToJSON (confUpdateJsonOptions 4)
+instance FromJSON ConfigUpdateCommand where
+  parseJSON = genericParseJSON (confUpdateJsonOptions 4)
+
+instance (ToJSON a) => ToJSON (ConfigUpdate a) where
+  toJSON = lensyToJSON 3
+instance (FromJSON a) => FromJSON (ConfigUpdate a) where
+  parseJSON = lensyParseJSON 3
+
+data ConfigUpdater = ConfigUpdater
+  { _cuPrintFn :: !(String -> IO ())
+  , _cuThreadName :: !String
+  , _cuAction :: (Config -> IO())}
+
+data ConfigUpdateResult =
+  ConfigUpdateFailure !String
+  | ConfigUpdateSuccess
+  deriving (Show, Eq, Ord, Generic, ToJSON, FromJSON, Serialize)
+
+data NodesToDiff = NodesToDiff
+  { prevNodes :: !(Set NodeId)
+  , currentNodes :: !(Set NodeId)
+  } deriving (Show,Eq,Ord,Generic)
+
+data DiffNodes = DiffNodes
+  { nodesToAdd :: !(Set NodeId)
+  , nodesToRemove :: !(Set NodeId)
+  } deriving (Show,Eq,Ord,Generic)
+
 instance ToJSON NominalDiffTime where
   toJSON = toJSON . show . toSeconds'
 instance FromJSON NominalDiffTime where
@@ -140,11 +228,6 @@ instance ToJSON KeyPair where
   toJSON = genericToJSON (confUpdateJsonOptions 3)
 instance FromJSON KeyPair where
   parseJSON = genericParseJSON (confUpdateJsonOptions 3)
-
-confUpdateJsonOptions :: Int -> Options
-confUpdateJsonOptions n = defaultOptions
-  { fieldLabelModifier = lensyConstructorToNiceJson n
-  , sumEncoding = ObjectWithSingleField }
 
 getNewKeyPair :: FilePath -> IO KeyPair
 getNewKeyPair fp = do

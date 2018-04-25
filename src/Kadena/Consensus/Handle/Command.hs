@@ -21,9 +21,10 @@ import Data.Maybe (isJust)
 import Data.Thyme.Clock
 import Data.Either (partitionEithers)
 
+import Kadena.Command
 import Kadena.Types hiding (nodeRole, cmdBloomFilter)
 import Kadena.Consensus.Util
-import qualified Kadena.Types as KD
+import qualified Kadena.Types as KD 
 
 import qualified Kadena.Sender.Service as Sender
 import qualified Kadena.Evidence.Types as Ev
@@ -137,4 +138,4 @@ updateCmdLat hitCon finCon = fmap (\(mLat, cmd) -> (updateLat mLat, cmd))
     updateLat Nothing = Nothing
     updateLat (Just l) = Just $ l { _lmHitConsensus = Just hitCon
                                   , _lmFinConsensus = Just finCon}
-{-# INLINE updateCmdLat#-}
+{-# INLINE updateCmdLat #-}

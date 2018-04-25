@@ -20,7 +20,8 @@ import Data.Thyme.Clock
 
 import Kadena.Util.Util (linkAsyncTrack)
 import Kadena.Types.Dispatch (Dispatch)
-import Kadena.Types.Event (ResetLeaderNoFollowersTimeout(..),pprintBeat)
+import Kadena.Event (pprintBeat)
+import Kadena.Types.Event (ResetLeaderNoFollowersTimeout(..))
 import Kadena.Evidence.Spec as X
 import Kadena.Types.Metric (Metric)
 import Kadena.Types.Config
@@ -29,8 +30,7 @@ import Kadena.Types.Log as Log
 import Kadena.Types.Message
 import Kadena.Types.Base
 import Kadena.Types.Comms
-import Kadena.ConfigChange.Service
-import Kadena.ConfigChange.Types
+import qualified Kadena.ConfigChange.Service as CfgChange
 
 -- TODO: re-integrate EKG when Evidence Service is finished and hspec tests are written
 -- import Kadena.Types.Metric
@@ -73,11 +73,11 @@ handleConfUpdate = do
     return ()
   else do
     maxElectionTimeout' <- return $ snd $ _electionTimeoutRange
-    df@DiffNodes{..} <- return $ diffNodes NodesToDiff {prevNodes = _esOtherNodes, currentNodes = _otherNodes}
+    df@DiffNodes{..} <- return $ CfgChange.diffNodes NodesToDiff {prevNodes = _esOtherNodes, currentNodes = _otherNodes}
     put $ es
       { _esOtherNodes = _otherNodes
       , _esQuorumSize = getEvidenceQuorumSize $ Set.size _otherNodes
-      , _esNodeStates = updateNodeMap df _esNodeStates (const (startIndex, minBound))
+      , _esNodeStates = CfgChange.updateNodeMap df _esNodeStates (const (startIndex, minBound))
       , _esConvincedNodes = Set.difference _esConvincedNodes nodesToRemove
       , _esMismatchNodes = Set.difference _esMismatchNodes nodesToRemove
       , _esMaxElectionTimeout = maxElectionTimeout'
@@ -161,7 +161,7 @@ runEvidenceService ev = do
 
   putMVar (ev ^. mPubStateTo) $! PublishedEvidenceState (startingEs ^. esConvincedNodes) (startingEs ^. esNodeStates)
   let cu = ConfigUpdater (ev ^. debugFn) "Service|Evidence|Config" (const $ writeComm (ev ^. evidence) $ Bounce)
-  linkAsyncTrack "EvidenceConfUpdater" $ runConfigUpdater cu (ev ^. mConfig)
+  linkAsyncTrack "EvidenceConfUpdater" $ CfgChange.runConfigUpdater cu (ev ^. mConfig)
   _ <- runRWST (debug "Launch!" >> foreverRunProcessor) ev startingEs 
   return ()
 

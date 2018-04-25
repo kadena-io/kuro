@@ -36,6 +36,7 @@ library
                      , Kadena.Execution.Pact
                      , Kadena.Execution.Service
                      , Kadena.Execution.Types
+                     , Kadena.Command
                      , Kadena.Consensus.Handle
                      , Kadena.Consensus.Handle.AppendEntries
                      , Kadena.Consensus.Handle.Command
@@ -46,6 +47,7 @@ library
                      , Kadena.Consensus.Publish
                      , Kadena.Consensus.Service
                      , Kadena.Consensus.Util
+                     , Kadena.Event
                      , Kadena.Evidence.Service
                      , Kadena.Evidence.Spec
                      , Kadena.Evidence.Types
@@ -54,10 +56,12 @@ library
                      , Kadena.History.Persistence
                      , Kadena.History.Service
                      , Kadena.History.Types
+                     , Kadena.Log
                      , Kadena.Log.LogApi
                      , Kadena.Log.Persistence
                      , Kadena.Log.Service
                      , Kadena.Log.Types
+                     , Kadena.Message
                      , Kadena.Messaging.Turbine
                      , Kadena.Messaging.Turbine.AER
                      , Kadena.Messaging.Turbine.General

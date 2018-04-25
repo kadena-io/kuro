@@ -15,7 +15,7 @@ module Kadena.Log.Types
   ( LogState(..)
   , lsVolatileLogEntries, lsPersistedLogEntries, lsLastApplied, lsLastLogIndex, lsNextLogIndex, lsCommitIndex
   , lsLastPersisted, lsLastLogTerm, lsLastLogHash, lsLastInMemory
-  , initLogState
+  , initLogState, lesEmpty, plesEmpty
   , LogEnv(..)
   , logQueryChannel, execChannel, consensusEvent, senderChannel, debugPrint
   , dbConn, evidence, publishMetric
@@ -37,6 +37,7 @@ import Control.Concurrent.Chan (Chan)
 import Control.Monad.Trans.RWS.Strict
 
 import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import Data.Set (Set)
 
 import Database.SQLite.Simple (Connection(..))
@@ -108,5 +109,13 @@ initLogState = LogState
   , _lsLastInMemory = Nothing
   , _lsLastLogTerm = startTerm
   }
+
+lesEmpty :: LogEntries
+lesEmpty = LogEntries Map.empty
+{-# INLINE lesEmpty #-}
+
+plesEmpty :: PersistedLogEntries
+plesEmpty = PersistedLogEntries Map.empty
+{-# INLINE plesEmpty #-}
 
 type LogThread = RWST LogEnv () LogState IO

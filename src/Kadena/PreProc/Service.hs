@@ -23,10 +23,12 @@ import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import Data.Foldable
 
+import Kadena.Command
 import Kadena.PreProc.Types as X
 import Kadena.Types.Dispatch (Dispatch)
 import qualified Kadena.Types.Dispatch as D
-import Kadena.Types.Event (Beat, pprintBeat)
+import Kadena.Event
+import Kadena.Types.Event (Beat)
 
 initPreProcEnv
   :: Dispatch

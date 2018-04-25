@@ -5,7 +5,6 @@ module Kadena.ConfigChange.Service
   ( diffNodes
   , execConfigUpdateCmd  
   , mutateConfig  
-  , processConfigUpdate    
   , runConfigChangeService
   , runConfigUpdater
   , updateNodeMap
@@ -13,36 +12,22 @@ module Kadena.ConfigChange.Service
   ) where
  
 import Control.Concurrent.STM    
-import Data.Aeson    
-import Data.ByteString (ByteString)  
 import Data.Map (Map)
 import qualified Data.Map as Map 
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Kadena.ConfigChange.Types
 import Kadena.Types.Base
 import Kadena.Types.Config
+import Kadena.Types.Dispatch (Dispatch)
+import Kadena.Types.Metric
 
-runConfigChangeService :: ConfigChangeService ConfigChangeState ()
-runConfigChangeService = do 
-    return () 
-
-processConfigUpdate :: ConfigUpdate ByteString -> ProcessedConfigUpdate
-processConfigUpdate ConfigUpdate{..} =
-  let
-    hash' = hash _cuCmd
-    sigs = (\(k,s) -> (valid hash' k s,k,s)) <$> Map.toList _cuSigs
-    sigsValid :: Bool
-    sigsValid = all (\(v,_,_) -> v) sigs
-    invalidSigs = filter (\(v,_,_) -> not v) sigs
-  in if hash' /= _cuHash
-     then ProcessedConfigFailure $! "Hash Mismatch in ConfigUpdate: ours=" ++ show hash' ++ " theirs=" ++ show _cuHash
-     else if sigsValid
-          then case eitherDecodeStrict' _cuCmd of
-                 Left !err -> ProcessedConfigFailure err
-                 Right !v -> ProcessedConfigSuccess v (Map.keysSet _cuSigs)
-          else ProcessedConfigFailure $! "Sig(s) Invalid: " ++ show invalidSigs
-{-# INLINE processConfigUpdate #-}
+runConfigChangeService :: Dispatch
+              -> (String -> IO()) 
+              -> (Metric -> IO())
+              -> Config
+              -> IO ()
+--runConfigChangeService dispatch dbg publishMetric' rconf = return ()
+runConfigChangeService _ _ _ _ = return ()
 
 execConfigUpdateCmd :: Config -> ConfigUpdateCommand -> IO (Either String Config)
 execConfigUpdateCmd conf@Config{..} cuc = do

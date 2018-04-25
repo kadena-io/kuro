@@ -45,7 +45,6 @@ import Data.Thyme.Clock
 import GHC.Generics
 
 import Kadena.Types.Base
--- import Kadena.Command
 import Kadena.Types.Command
  
 -- TODO: add discrimination here, so we can get a better map construction

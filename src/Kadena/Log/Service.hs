@@ -1,5 +1,4 @@
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE CPP #-}
 
 module Kadena.Log.Service

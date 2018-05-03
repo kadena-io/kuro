@@ -6,37 +6,52 @@
 
 module Kadena.ConfigChange.Types
   ( ConfigChange (..)
-  , ConfigChangeChannel
+  , ConfigChangeEvent (..)
+  , ConfigChangeChannel (..)
+  , ConfigChangeEnv (..), cfgChangeChannel, config, debugPrint, publishMetric
   , ConfigChangeService
-  , ConfigChangeState(..)
+  , ConfigChangeState (..)
   ) where
 
 import Control.Concurrent.Chan (Chan)    
---import Control.Lens (makeLenses)
+import Control.Lens (makeLenses)
 import Control.Monad.Trans.RWS.Lazy
+import Data.Set (Set)
+import Kadena.Types.Base
 import Kadena.Types.Comms
+import Kadena.Types.Config
 import Kadena.Types.Event (Beat)
+import Kadena.Types.Metric
 
-data ConfigChange = 
-  Bounce | 
+data ConfigChangeEvent = 
+  CfgChange ConfigChange |
   Heart Beat 
   deriving Eq
 
-newtype ConfigChangeChannel = ConfigChangeChannel (Chan ConfigChange)
+data ConfigChange = ConfigChange 
+  { newNodeSet :: !(Set NodeId)
+  , consensusLists :: ![Set NodeId]
+  } deriving Eq
 
-instance Comms ConfigChange ConfigChangeChannel where
+newtype ConfigChangeChannel = ConfigChangeChannel (Chan ConfigChangeEvent)
+
+instance Comms ConfigChangeEvent ConfigChangeChannel where
   initComms = ConfigChangeChannel <$> initCommsNormal
   readComm (ConfigChangeChannel c) = readCommNormal c
   writeComm (ConfigChangeChannel c) = writeCommNormal c
 
 data ConfigChangeEnv = ConfigChangeEnv
-  { _cceTbd :: !Int
-  } deriving (Show, Eq)
--- makeLenses ''ConfigChangeEnv
+  { _cfgChangeChannel :: !ConfigChangeChannel
+  , _debugPrint :: !(String -> IO ())
+  , _publishMetric :: !(Metric -> IO ())
+  , _config :: Config      
+  }
+makeLenses ''ConfigChangeEnv
 
-type ConfigChangeService s = RWST ConfigChangeEnv () s IO
+type ConfigChangeService = RWST ConfigChangeEnv () ConfigChangeState IO
 
 data ConfigChangeState = ConfigChangeState
   { _cssTbd :: !Int
   } deriving (Show, Eq)
 -- makeLenses ''ConfigChangeState
+

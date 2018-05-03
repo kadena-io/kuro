@@ -10,26 +10,59 @@ module Kadena.ConfigChange.Service
   , updateNodeSet
   ) where
  
-import Control.Concurrent.STM    
+import Control.Concurrent.STM   
+import Control.Lens 
+import Control.Monad
+import Control.Monad.IO.Class 
+import Control.Monad.RWS.Lazy
 import Data.Map (Map)
 import qualified Data.Map as Map 
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Kadena.Types.Base
+import Kadena.ConfigChange.Types
+import Kadena.Event
+import Kadena.Types.Base 
+import Kadena.Types.Comms 
 import Kadena.Types.Config
 import Kadena.Types.Dispatch (Dispatch)
+import qualified Kadena.Types.Dispatch as D
 import Kadena.Types.Metric
 
 runConfigChangeService :: Dispatch
-              -> (String -> IO()) 
-              -> (Metric -> IO())
-              -> Config
-              -> IO ()
---runConfigChangeService dispatch dbg publishMetric' rconf = return ()
-runConfigChangeService _ _ _ _ = return ()
+                       -> (String -> IO()) 
+                       -> (Metric -> IO()) 
+                       -> Config
+                       -> IO ()
+runConfigChangeService dispatch dbg publishMetric' rconf =
+  let env = ConfigChangeEnv
+        { _cfgChangeChannel = dispatch ^. D.cfgChangeChannel
+        , _debugPrint = dbg 
+        , _publishMetric = publishMetric'
+        , _config = rconf
+        }
+      initCfgChangeState' = ConfigChangeState 
+        { _cssTbd = 0 
+        }
+  in void $ runRWST handle  env initCfgChangeState' 
+
+handle :: ConfigChangeService ()
+handle = do
+  newChg <- view cfgChangeChannel >>= liftIO . readComm
+  case newChg of 
+    CfgChange ConfigChange{..} -> do
+      -- let newNodes = newNodeSet 
+      -- let consenLists = consensusLists
+      -- TBD...
+      liftIO $ putStrLn "[Kadena.ConfigChange.Service] : TBD"  
+    Heart t -> liftIO (pprintBeat t) >>= debug
+
+debug :: String -> ConfigChangeService ()
+debug s = do
+  dbg <- view debugPrint
+  liftIO $! dbg $! "[Kadena.ConfigChange.Service]: " ++ s    
 
 execConfigUpdateCmd :: Config -> ConfigUpdateCommand -> IO (Either String Config)
-execConfigUpdateCmd conf@Config{..} cuc = do
+execConfigUpdateCmd conf@Config{..} cuc =
   case cuc of
     AddNode{..}
       | _nodeId == _cucNodeId || Set.member _cucNodeId _otherNodes ->

@@ -7,11 +7,11 @@ build:
 packages:
 - '.'
 - location:
-    git: https://bitbucket.org/stuart-kadena/pact.git
+    git: https://github.com/kadena-io/pact.git
     commit: d1f2892bc739c1f8fb26b59b4e7528a592d5d12d
   extra-dep: true
 - location:
-    git: https://bitbucket.org/stuart-kadena/pact-persist.git
+    git: https://github.com/kadena-io/pact-persist.git
     commit: b9c627663d402ec7d2fe9665872e9c01ab8de07a
   extra-dep: true
 - location:

@@ -23,3 +23,5 @@ data Metric
   | MetricClusterSize Int
   | MetricQuorumSize Int
   | MetricAvailableSize Int
+  | MetricChangeToClusterSize Int -- cluster size after config change
+  | MetricChangeToQuorumSize Int -- quorum size after config change

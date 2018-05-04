@@ -47,19 +47,14 @@ import Kadena.Types.Entity (EntityConfig)
 type ApplyFn = LogEntry -> IO Pact.CommandResult
 
 data Execution =
-  ReloadFromDisk
-    { logEntriesToApply :: !LogEntries } |
-  ExecuteNewEntries
-    { logEntriesToApply :: !LogEntries } |
-  ChangeNodeId
-    { newNodeId :: !NodeId } |
-  UpdateKeySet
-    { newKeySet :: !KeySet } |
+  ReloadFromDisk { logEntriesToApply :: !LogEntries } |
+  ExecuteNewEntries { logEntriesToApply :: !LogEntries } |
+  ChangeNodeId { newNodeId :: !NodeId } |
+  UpdateKeySet { newKeySet :: !KeySet } |
   Heart Beat |
-  ExecLocal
-    { localCmd :: !(Pact.Command ByteString),
-      localResult :: !(MVar Value) }
-
+  ExecLocal { localCmd :: !(Pact.Command ByteString),
+              localResult :: !(MVar Value) } |
+  ExecConfigChange { logEntriesToApply :: !LogEntries }
 
 newtype ExecutionChannel = ExecutionChannel (Chan Execution)
 
@@ -72,7 +67,7 @@ data ExecutionEnv = ExecutionEnv
   { _execChannel :: !ExecutionChannel
   , _historyChannel :: !HistoryChannel
   , _privateChannel :: !PrivateChannel
-  , _pactPersistConfig :: !PactPersistConfig
+  , _pactPersistConfig :: !PactPersistConfig 
   , _debugPrint :: !(String -> IO ())
   , _execLoggers :: !Loggers
   , _publishMetric :: !(Metric -> IO ())

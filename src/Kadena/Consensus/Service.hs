@@ -127,6 +127,8 @@ runConsensusService renv gcm spec rstate timeCache' mPubConsensus' = do
   rconf <- readCurrentConfig gcm
   let csize = 1 + Set.size (rconf ^. otherNodes)
       qsize = getQuorumSize csize
+      changeToSize = Set.size (rconf ^. changeToNodes)
+      changeToQuorum = getQuorumSize changeToSize
       publishMetric' = (spec ^. publishMetric)
       dispatch' = _dispatch renv
       dbgPrint' = Turbine._debugPrint renv
@@ -137,6 +139,8 @@ runConsensusService renv gcm spec rstate timeCache' mPubConsensus' = do
   publishMetric' $ MetricClusterSize csize
   publishMetric' $ MetricAvailableSize csize
   publishMetric' $ MetricQuorumSize qsize
+  publishMetric' $ MetricChangeToClusterSize changeToSize
+  publishMetric' $ MetricChangeToQuorumSize changeToQuorum
   linkAsyncTrack "ReceiverThread" $ runMessageReceiver renv
 
   timerTarget' <- return $ (rstate ^. timerTarget)

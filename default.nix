@@ -38,23 +38,21 @@ in
               sha256 = "1p7rc5m70rkm1ma8gnihfwyxysr0n3wxk8ijhp6qjnqp5zwifhhn";
             }) {});
 
-            # Old version because the kadena stack.yaml hasn't been updated in awhile
-            # TODO Get rid of doJailbreak and dontCheck
             pact = self.callCabal2nix "pact" (pkgs.fetchFromGitHub {
               owner = "kadena-io";
               repo = "pact";
-              rev = "b5e5719d8baef1100d56c102dd4e676ea72c8d90";
-              sha256 = "1gw2c6myqa6wga2glkyb47kkmiq5165i4m627b8rnmyjxd39y10h";
+              rev = "242410f98c0be90cb8c8eb13e6615349bcd9c9d0";
+              sha256 = "0a8qghdj7cxlm0v2i07f3l5n4x80my4jifswvxih0av0fqb225bg";
             }) {};
 
-            pact-persist = pkgs.haskell.lib.doJailbreak (self.callCabal2nix "pact-persist" (builtins.fetchGit {
-              name = "pact-persist";
-              url = ssh://git@github.com/kadena-io/pact-persist.git;
-              rev = "2a4b1d333dea669038f10f30ab9b64aab2afd6b0";
-            }) {});
+            pact-persist = self.callCabal2nix "pact-persist" (builtins.fetchGit {
+              url = "ssh://git@github.com/kadena-io/pact-persist.git";
+              ref = "pact-2.3.8-upgrade";
+              # This rev must be on the above branch ref
+              rev = "96f4b110a177cb1876632852a498c20bc8a3878c";
+            }) {};
 
             # dontCheck is here because a couple tests were failing
-            # TODO open issues for these test failures
             statistics = pkgs.haskell.lib.dontCheck (self.callCabal2nix "statistics" (pkgs.fetchFromGitHub {
               owner = "bos";
               repo = "statistics";

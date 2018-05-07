@@ -151,7 +151,7 @@ library
                      , mtl
                      , mtl-compat
                      , network
-                     , pact == 2.3.7
+                     , pact >= 2.3.8 && < 2.3.9
                      , pact-persist == 1.0.*
                      , parallel
                      , parsers

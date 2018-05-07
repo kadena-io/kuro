@@ -33,6 +33,7 @@ import Pact.Types.Server (throwCmdEx,userSigsToPactKeySet)
 import Pact.PersistPactDb (initDbEnv,pactdb)
 import Pact.Persist (Persister)
 import Pact.Server.PactService (jsonResult)
+import Pact.Types.Hash
 import Pact.Types.Runtime
 
 
@@ -144,7 +145,7 @@ applyExec (ExecMsg parsedCode edata) ks = do
   PactState{..} <- liftIO $ readMVar _peState
   let sigs = userSigsToPactKeySet ks
       evalEnv = setupEvalEnv _peDbEnv (Just (_elName $ _ecLocal $ _peEntity)) _peMode
-                (MsgData sigs edata Nothing) _psRefStore
+                (MsgData sigs edata Nothing initialHash) _psRefStore
   EvalResult{..} <- liftIO $ evalExec evalEnv parsedCode
   mp <- join <$> mapM (handleYield erInput sigs) erExec
   let newState = PactState erRefStore $ case mp of
@@ -199,7 +200,7 @@ applyContinuation cm@ContMsg{..} = do
           when (_cmStep < 0 || _cmStep >= _pStepCount) $ throwCmdEx $ "Invalid step value: " ++ show _cmStep
           res <- mapM decodeResume _cmResume
           let evalEnv = setupEvalEnv _peDbEnv (Just (_elName $ _ecLocal $ _peEntity)) _peMode
-                (MsgData _pSigs Null (Just $ PactStep _cmStep _cmRollback (fromString $ show $ _cmTxId) res))
+                (MsgData _pSigs Null (Just $ PactStep _cmStep _cmRollback (fromString $ show $ _cmTxId) res) initialHash)
                 _psRefStore
           tryAny (liftIO $ evalContinuation evalEnv _pContinuation) >>=
             either (handleContFailure tid pe cm ps) (handleContSuccess tid pe cm ps pact)

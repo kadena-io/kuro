@@ -61,6 +61,9 @@ startMonitoring config = do
   clusterSizeGauge <- getGauge "kadena.cluster.size" ekg
   quorumSizeGauge <- getGauge "kadena.cluster.quorum_size" ekg
   availableSizeGauge <- getGauge "kadena.cluster.available_size" ekg
+  -- Cluster configuration change
+  changeToClusterSizeGauge <- getGauge "kadena.cluster.change_to_size" ekg
+  changeToQuorumSizeGauge <- getGauge "kadena.cluster.change_to_quorum_size" ekg
 
   return $ \case
     -- Consensus
@@ -98,7 +101,11 @@ startMonitoring config = do
       Gauge.set quorumSizeGauge $ fromIntegral size
     MetricAvailableSize size ->
       Gauge.set availableSizeGauge $ fromIntegral size
-
+    -- Cluster configuration change
+    MetricChangeToClusterSize size -> 
+      Gauge.set changeToClusterSizeGauge $ fromIntegral size
+    MetricChangeToQuorumSize size -> 
+      Gauge.set changeToQuorumSizeGauge $ fromIntegral size
   where
     nodeDescription :: NodeId -> T.Text
     nodeDescription (NodeId host port _ _) = T.pack $ host ++ ":" ++ show port

@@ -90,7 +90,7 @@ handleAppendEntries ae@AppendEntries{..} = do
       if not plmatch
         then return $ AppendEntriesOut nlo $ ValidLeaderAndTerm _leaderId SendFailureResponse
         else AppendEntriesOut nlo . ValidLeaderAndTerm _leaderId <$> appendLogEntries _prevLogIndex _aeEntries
-          {-|
+          {-
           if (not (Seq.null _aeEntries))
             -- only broadcast when there are new entries
             -- this has the downside that recovering nodes won't update

@@ -63,7 +63,7 @@ makeLenses ''PublishedConsensus
 
 data ConsensusSpec = ConsensusSpec
   {
-    -- ^ Function to log a debug message (no newline).
+    -- | Function to log a debug message (no newline).
     _debugPrint       :: !(String -> IO ())
 
   , _publishMetric    :: !(Metric -> IO ())

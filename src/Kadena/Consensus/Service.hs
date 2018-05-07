@@ -28,8 +28,8 @@ import qualified Kadena.Evidence.Service as Ev
 import qualified Kadena.PreProc.Service as PreProc
 import qualified Kadena.History.Service as History
 import qualified Kadena.HTTP.ApiServer as ApiServer
-import qualified Kadena.ConfigChange.Service as CfgChange
-import qualified Kadena.ConfigChange.Types as CfgChangeTypes
+import qualified Kadena.ConfigChange.Service as CC
+import qualified Kadena.ConfigChange.Types as CC
 import Kadena.Consensus.Publish
 import Kadena.Util.Util
 
@@ -101,20 +101,20 @@ launchLogService dispatch' dbgPrint' publishMetric' rconf = do
   linkAsyncTrack "LogThread" (Log.runLogService dispatch' dbgPrint' publishMetric' rconf)
   linkAsyncTrack "LogHB" $ (foreverHeart (_logService dispatch') 1000000 Log.Heart)
 
-launchConfigChangeService :: Dispatch
+launchConfigChangeService :: Dispatch 
   -> (String -> IO ())
   -> (Metric -> IO ())
   -> Config
   -> IO ()
 launchConfigChangeService dispatch' dbgPrint' publishMetric' rconf = do
-  linkAsyncTrack "ConfigChangeThread" (CfgChange.runConfigChangeService dispatch' dbgPrint' publishMetric' rconf)
-  linkAsyncTrack "ConfigChangeHB" $ (foreverHeart (_cfgChangeService dispatch') 1000000 CfgChangeTypes.Heart)
+  linkAsyncTrack "ConfigChangeThread" (CC.runConfigChangeService dispatch' dbgPrint' publishMetric' rconf)
+  linkAsyncTrack "ConfigChangeHB" $ (foreverHeart (_cfgChangeChannel dispatch') 1000000 CC.Heart)
 
-launchSenderService :: Dispatch
-  -> (String -> IO ())
+launchSenderService :: Dispatch 
+  -> (String -> IO ()) 
   -> (Metric -> IO ())
   -> MVar Ev.PublishedEvidenceState
-  -> MVar PublishedConsensus
+  -> MVar PublishedConsensus 
   -> GlobalConfigTMVar
   -> IO ()
 launchSenderService dispatch' dbgPrint' publishMetric' mEvState mPubCons rconf = do
@@ -127,6 +127,8 @@ runConsensusService renv gcm spec rstate timeCache' mPubConsensus' = do
   rconf <- readCurrentConfig gcm
   let csize = 1 + Set.size (rconf ^. otherNodes)
       qsize = getQuorumSize csize
+      changeToSize = Set.size (rconf ^. changeToNodes)
+      changeToQuorum = getQuorumSize changeToSize
       publishMetric' = (spec ^. publishMetric)
       dispatch' = _dispatch renv
       dbgPrint' = Turbine._debugPrint renv
@@ -137,6 +139,8 @@ runConsensusService renv gcm spec rstate timeCache' mPubConsensus' = do
   publishMetric' $ MetricClusterSize csize
   publishMetric' $ MetricAvailableSize csize
   publishMetric' $ MetricQuorumSize qsize
+  publishMetric' $ MetricChangeToClusterSize changeToSize
+  publishMetric' $ MetricChangeToQuorumSize changeToQuorum
   linkAsyncTrack "ReceiverThread" $ runMessageReceiver renv
 
   timerTarget' <- return $ (rstate ^. timerTarget)

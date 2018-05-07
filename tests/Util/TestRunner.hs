@@ -103,7 +103,7 @@ runAll testRequests testMetrics = do
            (\e -> do 
               stopProcesses procHandles
               throw e)
-  
+              
 runServers :: IO [ProcessHandle]
 runServers = 
   foldM f [] serverArgs where

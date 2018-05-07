@@ -13,6 +13,7 @@ publicKeys:
 aeBatchSize: 20000
 heartbeatTimeout: 1000000
 logDir: ./log
+changeToNodes: []
 apiPort: 8003
 logRules:
   PactService:

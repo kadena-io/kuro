@@ -10,13 +10,13 @@
 {-# LANGUAGE LambdaCase #-}
 
 module Kadena.Types.Config
-  ( otherNodes, nodeId, electionTimeoutRange, heartbeatTimeout
+  ( otherNodes, changeToNodes, nodeId, electionTimeoutRange, heartbeatTimeout
   , enableDebug, publicKeys, myPrivateKey, pactPersist
   , myPublicKey, apiPort, hostStaticDir
   , logDir, entity, nodeClass, adminKeys
   , aeBatchSize, preProcThreadCount, preProcUsePar
   , inMemTxCache, enablePersistence, logRules
-  , confUpdateJsonOptions, getMissingKeys
+  , confUpdateJsonOptions, getMissingKeys 
   , ksCluster, confToKeySet
   , initGlobalConfigTMVar, getConfigWhenNew
   , getNewKeyPair, gcVersion, gcConfig
@@ -66,8 +66,23 @@ import Pact.Persist.MSSQL (MSSQLConfig(..))
 import Kadena.Types.Base
 import Kadena.Types.Entity (EntityConfig)
 
+data PactPersistBackend =
+  PPBInMemory |
+  PPBSQLite { _ppbSqliteConfig :: SQLiteConfig } |
+  PPBMSSQL { _ppbMssqlConfig :: Maybe MSSQLConfig,
+             _ppbMssqlConnStr :: String }
+  deriving (Show,Generic)
+
+data PactPersistConfig = PactPersistConfig {
+  _ppcWriteBehind :: Bool,
+  _ppcBackend :: PactPersistBackend
+  } deriving (Show,Generic)
+instance ToJSON PactPersistConfig where toJSON = lensyToJSON 4
+instance FromJSON PactPersistConfig where parseJSON = lensyParseJSON 4
+
 data Config = Config
   { _otherNodes           :: !(Set NodeId)
+  , _changeToNodes        :: !(Set NodeId) -- new set of nodes due to config change request
   , _nodeId               :: !NodeId
   , _publicKeys           :: !(Map Alias PublicKey)
   , _adminKeys            :: !(Map Alias PublicKey)
@@ -91,13 +106,6 @@ data Config = Config
   }
   deriving (Show, Generic)
 
-data PactPersistBackend =
-  PPBInMemory |
-  PPBSQLite { _ppbSqliteConfig :: SQLiteConfig } |
-  PPBMSSQL { _ppbMssqlConfig :: Maybe MSSQLConfig,
-             _ppbMssqlConnStr :: String }
-  deriving (Show,Generic)
-
 data PPBType = SQLITE|MSSQL|INMEM deriving (Eq,Show,Read,Generic,FromJSON,ToJSON)
 
 instance FromJSON PactPersistBackend where
@@ -112,13 +120,6 @@ instance ToJSON PactPersistBackend where
     PPBInMemory -> [ "type" .= INMEM ]
     PPBSQLite {..} -> [ "type" .= SQLITE, "config" .= _ppbSqliteConfig ]
     PPBMSSQL {..} -> [ "type" .= MSSQL, "config" .= _ppbMssqlConfig, "connStr" .= _ppbMssqlConnStr ]
-
-data PactPersistConfig = PactPersistConfig {
-  _ppcWriteBehind :: Bool,
-  _ppcBackend :: PactPersistBackend
-  } deriving (Show,Generic)
-instance ToJSON PactPersistConfig where toJSON = lensyToJSON 4
-instance FromJSON PactPersistConfig where parseJSON = lensyParseJSON 4
 
 makeLenses ''Config
 

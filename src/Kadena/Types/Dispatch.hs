@@ -7,7 +7,7 @@ module Kadena.Types.Dispatch
   , inboundRVorRVR
   , inboundGeneral
   , outboundGeneral
-  , cfgChangeService
+  , cfgChangeChannel
   , consensusEvent
   , senderService
   , logService
@@ -40,7 +40,7 @@ data Dispatch = Dispatch
   , _inboundRVorRVR  :: InboundRVorRVRChannel
   , _inboundGeneral  :: InboundGeneralChannel
   , _outboundGeneral :: OutboundGeneralChannel
-  , _cfgChangeService :: ConfigChangeChannel
+  , _cfgChangeChannel :: ConfigChangeChannel
   , _consensusEvent   :: ConsensusEventChannel
   , _senderService   :: SenderServiceChannel
   , _logService   :: LogServiceChannel

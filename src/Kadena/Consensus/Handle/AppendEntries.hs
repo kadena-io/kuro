@@ -36,12 +36,13 @@ import Kadena.Util.Util
 
 data AppendEntriesEnv = AppendEntriesEnv {
 -- Old Constructors
-    _term             :: Term
-  , _currentLeader    :: Maybe NodeId
-  , _ignoreLeader     :: Bool
+    _term              :: Term
+  , _currentLeader     :: Maybe NodeId
+  , _ignoreLeader      :: Bool
   , _logEntryAtPrevIdx :: Maybe LogEntry
 -- New Constructors
-  , _quorumSize       :: Int
+  , _quorumSize        :: Int  -- not used in voting during config change
+  , _aeeGlobalConfig   :: GlobalConfigTMVar
   }
 makeLenses ''AppendEntriesEnv
 
@@ -76,7 +77,8 @@ data ValidResponse =
     DoNothing
 
 -- THREAD: SERVER MAIN. updates state
-handleAppendEntries :: (MonadWriter [String] m, MonadReader AppendEntriesEnv m) => AppendEntries -> m AppendEntriesOut
+handleAppendEntries :: (MonadWriter [String] m, MonadReader AppendEntriesEnv m, MonadIO m) => 
+                        AppendEntries -> m AppendEntriesOut
 handleAppendEntries ae@AppendEntries{..} = do
   tell ["received appendEntries: " ++ show _prevLogIndex ]
   nlo <- checkForNewLeader ae
@@ -111,7 +113,8 @@ handleAppendEntries ae@AppendEntries{..} = do
       return $ AppendEntriesOut nlo $ SendUnconvincedResponse _leaderId
     _ -> return $ AppendEntriesOut nlo Ignore
 
-checkForNewLeader :: (MonadWriter [String] m, MonadReader AppendEntriesEnv m) => AppendEntries -> m CheckForNewLeaderOut
+checkForNewLeader :: (MonadWriter [String] m, MonadReader AppendEntriesEnv m, MonadIO m) => 
+                      AppendEntries -> m CheckForNewLeaderOut
 checkForNewLeader AppendEntries{..} = do
   term' <- view term
   currentLeader' <- view currentLeader
@@ -131,17 +134,40 @@ checkForNewLeader AppendEntries{..} = do
           Follower
      else return LeaderUnchanged
 
-confirmElection :: (MonadWriter [String] m, MonadReader AppendEntriesEnv m) => NodeId -> Term -> Set RequestVoteResponse -> m Bool
+confirmElection :: (MonadWriter [String] m, MonadReader AppendEntriesEnv m, MonadIO m) => 
+                    NodeId -> Term -> Set RequestVoteResponse -> m Bool
 confirmElection leader' term' votes = do
-  quorumSize' <- view quorumSize
   tell ["confirming election of a new leader"]
-  if Set.size votes >= quorumSize'
+  globalConfigVar <- view aeeGlobalConfig 
+  config <- liftIO $ readCurrentConfig globalConfigVar
+  let newNodes = _changeToNodes config
+  quorumOk <- if not (Set.null newNodes) 
+                then return $ cfgChangeConfirmElection config votes
+                else do
+                  quorumSize' <- view quorumSize
+                  return ((Set.size votes) >= quorumSize')
+  if quorumOk                
     then return $ all (validateVote leader' term') votes
     else return False
 
+-- Confirm election during the config change process.  There must be consensus with respect to both
+-- the exisiting set of nodes and the new configuration's set of nodes
+cfgChangeConfirmElection :: Config -> Set RequestVoteResponse -> Bool
+cfgChangeConfirmElection config votes =
+  let curNodes = Set.insert (config^.nodeId) (config^.otherNodes)
+      newNodes = config^.changeToNodes
+      voteIds = Set.map _rvrNodeId votes
+  in checkQuorum voteIds curNodes && checkQuorum voteIds newNodes
+
+checkQuorum :: Set NodeId -> Set NodeId -> Bool
+checkQuorum voteIds nodes = 
+  let votes = Set.filter ((flip Set.member) nodes) voteIds
+      numVotes = Set.size votes
+      quorum = getQuorumSize numVotes
+  in numVotes >= quorum 
+
 validateVote :: NodeId -> Term -> RequestVoteResponse -> Bool
 validateVote leader' term' RequestVoteResponse{..} = _rvrCandidateId == leader' && _rvrTerm == term'
-
 
 prevLogEntryMatches :: MonadReader AppendEntriesEnv m => LogIndex -> Term -> m Bool
 prevLogEntryMatches pli plt = do
@@ -185,12 +211,14 @@ handle ae = do
   quorumSize' <- (getQuorumSize . Set.size) <$> viewConfig KD.otherNodes
   mv <- queryLogs $ Set.fromList [Log.GetSomeEntry (_prevLogIndex ae),Log.GetCommitIndex]
   logAtAEsLastLogIdx <- return $ Log.hasQueryResult (Log.SomeEntry $ _prevLogIndex ae) mv
+  config <- view cfg
   let ape = AppendEntriesEnv
-              (KD._term s)
+              (KD._term s) 
               (KD._currentLeader s)
               (KD._ignoreLeader s)
               logAtAEsLastLogIdx
               quorumSize'
+              config
   (AppendEntriesOut{..}, l) <- runReaderT (runWriterT (handleAppendEntries ae)) ape
   mapM_ debug l
   applyNewLeader _newLeaderAction

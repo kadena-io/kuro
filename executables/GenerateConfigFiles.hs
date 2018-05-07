@@ -283,6 +283,7 @@ createClusterConfig :: ConfigParams -> (Map Alias PublicKey) -> (Map NodeId Priv
                        (Map NodeId EntityConfig) -> Int -> NodeId -> Config
 createClusterConfig cp@ConfigParams{..} adminKeys' (privMap, pubMap) entMap apiP nid = Config
   { _otherNodes           = Set.delete nid $ M.keysSet pubMap
+  , _changeToNodes        = Set.empty
   , _nodeId               = nid
   , _publicKeys           = toAliasMap $ pubMap
   , _adminKeys            = adminKeys'

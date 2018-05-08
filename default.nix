@@ -41,8 +41,8 @@ in
             pact = self.callCabal2nix "pact" (pkgs.fetchFromGitHub {
               owner = "kadena-io";
               repo = "pact";
-              rev = "242410f98c0be90cb8c8eb13e6615349bcd9c9d0";
-              sha256 = "0a8qghdj7cxlm0v2i07f3l5n4x80my4jifswvxih0av0fqb225bg";
+              rev = "a85363e915af37d06bec777814b4fcdba90779df";
+              sha256 = "07n6hb41lpj99r33712kqyvj610wk3n7n1404mmnh8g7l3wvsgjc";
             }) {};
 
             pact-persist = self.callCabal2nix "pact-persist" (builtins.fetchGit {

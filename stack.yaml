@@ -8,7 +8,7 @@ packages:
 - '.'
 - location:
     git: https://github.com/kadena-io/pact.git
-    commit: 242410f98c0be90cb8c8eb13e6615349bcd9c9d0
+    commit: a85363e915af37d06bec777814b4fcdba90779df
   extra-dep: true
 - location:
     git: https://github.com/kadena-io/pact-persist.git

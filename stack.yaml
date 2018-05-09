@@ -11,7 +11,7 @@ packages:
     commit: a85363e915af37d06bec777814b4fcdba90779df
   extra-dep: true
 - location:
-    git: https://github.com/kadena-io/pact-persist.git
+    git: git@github.com:kadena-io/pact-persist.git
     commit: 96f4b110a177cb1876632852a498c20bc8a3878c
   extra-dep: true
 - location:

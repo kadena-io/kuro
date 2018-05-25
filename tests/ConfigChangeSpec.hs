@@ -12,6 +12,7 @@ import Safe
 import Test.Hspec
 import Util.TestRunner
 
+-- MLN: TODO - Create test for partialEvidence as per Stuart's PR comment
 spec :: Spec
 spec =
     describe "testClusterCommands" $

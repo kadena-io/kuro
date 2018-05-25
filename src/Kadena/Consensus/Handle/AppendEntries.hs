@@ -77,7 +77,7 @@ data ValidResponse =
     DoNothing
 
 -- THREAD: SERVER MAIN. updates state
-handleAppendEntries :: (MonadWriter [String] m, MonadReader AppendEntriesEnv m, MonadIO m) => 
+handleAppendEntries :: (MonadWriter [String] m, MonadReader AppendEntriesEnv m, MonadIO m) =>
                         AppendEntries -> m AppendEntriesOut
 handleAppendEntries ae@AppendEntries{..} = do
   tell ["received appendEntries: " ++ show _prevLogIndex ]
@@ -113,7 +113,7 @@ handleAppendEntries ae@AppendEntries{..} = do
       return $ AppendEntriesOut nlo $ SendUnconvincedResponse _leaderId
     _ -> return $ AppendEntriesOut nlo Ignore
 
-checkForNewLeader :: (MonadWriter [String] m, MonadReader AppendEntriesEnv m, MonadIO m) => 
+checkForNewLeader :: (MonadWriter [String] m, MonadReader AppendEntriesEnv m, MonadIO m) =>
                       AppendEntries -> m CheckForNewLeaderOut
 checkForNewLeader AppendEntries{..} = do
   term' <- view term
@@ -134,19 +134,19 @@ checkForNewLeader AppendEntries{..} = do
           Follower
      else return LeaderUnchanged
 
-confirmElection :: (MonadWriter [String] m, MonadReader AppendEntriesEnv m, MonadIO m) => 
+confirmElection :: (MonadWriter [String] m, MonadReader AppendEntriesEnv m, MonadIO m) =>
                     NodeId -> Term -> Set RequestVoteResponse -> m Bool
 confirmElection leader' term' votes = do
   tell ["confirming election of a new leader"]
-  globalConfigVar <- view aeeGlobalConfig 
+  globalConfigVar <- view aeeGlobalConfig
   config <- liftIO $ readCurrentConfig globalConfigVar
   let newNodes = _changeToNodes config
-  quorumOk <- if not (Set.null newNodes) 
+  quorumOk <- if not (Set.null newNodes)
                 then return $ cfgChangeConfirmElection config votes
                 else do
                   quorumSize' <- view quorumSize
                   return ((Set.size votes) >= quorumSize')
-  if quorumOk                
+  if quorumOk
     then return $ all (validateVote leader' term') votes
     else return False
 
@@ -154,17 +154,17 @@ confirmElection leader' term' votes = do
 -- the exisiting set of nodes and the new configuration's set of nodes
 cfgChangeConfirmElection :: Config -> Set RequestVoteResponse -> Bool
 cfgChangeConfirmElection config votes =
-  let curNodes = Set.insert (config^.nodeId) (config^.otherNodes)
+  let curNodes = getCurrentNodes config
       newNodes = config^.changeToNodes
       voteIds = Set.map _rvrNodeId votes
   in checkQuorum voteIds curNodes && checkQuorum voteIds newNodes
 
 checkQuorum :: Set NodeId -> Set NodeId -> Bool
-checkQuorum voteIds nodes = 
+checkQuorum voteIds nodes =
   let votes = Set.filter ((flip Set.member) nodes) voteIds
       numVotes = Set.size votes
       quorum = getQuorumSize numVotes
-  in numVotes >= quorum 
+  in numVotes >= quorum
 
 validateVote :: NodeId -> Term -> RequestVoteResponse -> Bool
 validateVote leader' term' RequestVoteResponse{..} = _rvrCandidateId == leader' && _rvrTerm == term'
@@ -213,7 +213,7 @@ handle ae = do
   logAtAEsLastLogIdx <- return $ Log.hasQueryResult (Log.SomeEntry $ _prevLogIndex ae) mv
   config <- view cfg
   let ape = AppendEntriesEnv
-              (KD._term s) 
+              (KD._term s)
               (KD._currentLeader s)
               (KD._ignoreLeader s)
               logAtAEsLastLogIdx

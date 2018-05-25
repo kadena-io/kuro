@@ -3,15 +3,16 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Kadena.Util.Util
-  ( seqIndex
-  , getQuorumSize
-  , getQuorumSizeOthers
+  ( TrackedError(..)
   , awsDashVar
+  , catchAndRethrow
   , fromMaybeM
   , foreverRetry
-  , TrackedError(..)
-  , catchAndRethrow
+  , getCurrentNodes
+  , getQuorumSize
+  , getQuorumSizeOthers
   , linkAsyncTrack
+  , seqIndex
   ) where
 
 import Control.Concurrent (forkFinally, putMVar, takeMVar, newEmptyMVar, forkIO)
@@ -27,6 +28,7 @@ import qualified Data.Set as Set
 import System.Process (system)
 
 import Kadena.Types.Base
+import Kadena.Types.Config
 
 --TODO: this is pretty ghetto, there has to be a better/cleaner way
 foreverRetry :: (String -> IO ()) -> String -> IO () -> IO ()
@@ -90,3 +92,9 @@ catchAndRethrow loc fn = fn `catches` [Handler (\(e@TrackedError{..} :: TrackedE
 --   where to look after it's thrown.
 linkAsyncTrack :: String -> IO a -> IO ()
 linkAsyncTrack loc fn = link =<< (async $ catchAndRethrow loc fn)
+
+getCurrentNodes :: Config -> Set NodeId
+getCurrentNodes theConfig =
+  let myId = _nodeId theConfig
+      others = _otherNodes theConfig
+  in myId `Set.insert` others

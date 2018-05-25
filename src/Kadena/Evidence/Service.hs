@@ -67,16 +67,21 @@ handleConfUpdate :: EvidenceService EvidenceState ()
 handleConfUpdate = do
   es@EvidenceState{..} <- get
   Config{..} <- view mConfig >>= liftIO . readCurrentConfig
+  -- if there are no transitional config-change nodes AND there are no changes to the current nodes configuration
   if null _changeToNodes && _esOtherNodes == _otherNodes && (snd _electionTimeoutRange) == _esMaxElectionTimeout
   then do
     debug "Config update received but no action required"
     return ()
   else do
     maxElectionTimeout' <- return $ snd $ _electionTimeoutRange
+    -- df === nodes to add/remove when adopting the env's config, which is now different from what is
+    --        stored in the state
     let df = CfgChange.diffNodes _esOtherNodes _otherNodes
+    -- update the map of nodes -> (LogIndex, UTCTime) accordingly
     let updatedMap = CfgChange.updateNodeMap df _esNodeStates (const (startIndex, minBound))
-    -- also add any transitional nodes to the map:
+    -- df' === nodes to add/remove when moving to the transitional config-change nodes
     let df' = CfgChange.diffNodes _esOtherNodes _changeToNodes
+    -- update (again) the map of nodes -> (LogIndex, UTCTime) accordingly
     let updatedMap' = CfgChange.updateNodeMap df' updatedMap (const (startIndex, minBound))
     put $ es
       { _esOtherNodes = _otherNodes

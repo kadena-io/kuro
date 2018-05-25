@@ -45,7 +45,6 @@ import Kadena.Types.Log (LogEntries(..))
 import qualified Kadena.Types.Log as Log
 import Kadena.Types.Message
 import Kadena.Types.Metric (Metric)
---import Kadena.Types.Spec (Consensus, PublishedConsensus, viewConfig)
 import qualified Kadena.Types.Spec as Spec
 import Kadena.Util.Util
 
@@ -320,8 +319,7 @@ checkVoteQuorum :: Cfg.GlobalConfigTMVar -> Set NodeId -> IO Bool
 checkVoteQuorum globalCfg votes = do
   theConfig <- readCurrentConfig globalCfg
   let myId = _nodeId theConfig
-  let others = _otherNodes theConfig
-  let currentNodes = myId `Set.insert` others
+  let currentNodes = getCurrentNodes theConfig
   let currentQuorum = getQuorumSize $ Set.size currentNodes
   let currentVotes = Set.size $ Set.filter (\x -> x `elem` currentNodes) votes
   let newNodes = _changeToNodes theConfig

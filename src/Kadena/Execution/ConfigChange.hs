@@ -1,32 +1,37 @@
-{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module Kadena.Execution.ConfigChange
-( processConfigUpdate  
+( processClusterChange
 ) where
 
-import Data.Aeson
-import Data.ByteString (ByteString)   
-import qualified Data.Map as Map 
+import qualified Crypto.Ed25519.Pure as Ed (PublicKey, Signature(..), importPublic)
+import qualified Data.Serialize as S
+import Data.String.Conv
 
+import Pact.Types.Command(UserSig(..))
+import Pact.Types.Util(Hash(..))
 import Kadena.Types.Config
+import Pact.Types.Crypto (valid)
+import Pact.Types.Hash (hash)
 
-import Pact.Types.Crypto
-import Pact.Types.Hash
-
-processConfigUpdate :: ConfigUpdate ByteString -> ProcessedConfigUpdate
-processConfigUpdate ConfigUpdate{..} =
+processClusterChange :: ClusterChangeCommand -> ProcessedClusterChg
+processClusterChange cmd@ClusterChangeCommand{..} =
   let
-    hash' = hash _cuCmd
-    sigs = (\(k,s) -> (valid hash' k s,k,s)) <$> Map.toList _cuSigs
-    sigsValid :: Bool
-    sigsValid = all (\(v,_,_) -> v) sigs
-    invalidSigs = filter (\(v,_,_) -> not v) sigs
-  in if hash' /= _cuHash
-     then ProcessedConfigFailure $! "Hash Mismatch in ConfigUpdate: ours=" ++ show hash' ++ " theirs=" ++ show _cuHash
+    hash' = hash $ S.encode _cccPayload
+    boolSigs = fmap (validateSigs hash') _cccSigs
+    sigsValid = all (\(v,_,_) -> v) boolSigs :: Bool
+    invalidSigs = filter (\(v,_,_) -> not v) boolSigs
+  in if hash' /= _cccHash
+     then ProcClusterChgFail $! "Hash Mismatch in cluster change: ours=" ++ show hash' ++ " theirs=" ++ show _cccHash
      else if sigsValid
-          then case eitherDecodeStrict' _cuCmd of
-                 Left !err -> ProcessedConfigFailure err
-                 Right !v -> ProcessedConfigSuccess v (Map.keysSet _cuSigs)
-          else ProcessedConfigFailure $! "Sig(s) Invalid: " ++ show invalidSigs
-{-# INLINE processConfigUpdate #-}
+      then ProcClusterChgSucc cmd
+      else ProcClusterChgFail $! "Sig(s) Invalid: " ++ show invalidSigs
+{-# INLINE processClusterChange #-}
+
+validateSigs :: Hash -> UserSig -> (Bool, Maybe Ed.PublicKey, Ed.Signature)
+validateSigs h UserSig{..} =
+  let keyMay = Ed.importPublic $ toS _usPubKey
+      sig = Ed.Sig $ toS _usSig
+      b = maybe False (\k -> valid h k sig) keyMay
+  in (b, keyMay, sig)
+

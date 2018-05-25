@@ -9,17 +9,17 @@ import Control.Concurrent (MVar, newEmptyMVar, takeMVar, swapMVar, tryPutMVar, p
 import Control.Lens hiding (Index)
 import Control.Monad
 import Control.Monad.IO.Class
-import Control.Monad.Trans.State.Strict hiding (put, get)
 import Control.Monad.RWS.Lazy
-
+import Data.Either
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Thyme.Clock
+import Safe
 
 import Kadena.Util.Util (linkAsyncTrack)
-import Kadena.Types.Dispatch (Dispatch) 
+import Kadena.Types.Dispatch (Dispatch)
 import Kadena.Event (pprintBeat)
 import Kadena.Types.Event (ResetLeaderNoFollowersTimeout(..))
 import Kadena.Evidence.Spec as X
@@ -60,26 +60,32 @@ initializeState ev = do
   maxElectionTimeout' <- return $ snd $ _electionTimeoutRange
   mv <- queryLogs ev $ Set.singleton Log.GetCommitIndex
   commitIndex' <- return $ Log.hasQueryResult Log.CommitIndex mv
-  return $! initEvidenceState _otherNodes commitIndex' maxElectionTimeout'
+  return $! initEvidenceState _otherNodes _changeToNodes commitIndex' maxElectionTimeout'
 
 -- | This handles initialization and config updates
 handleConfUpdate :: EvidenceService EvidenceState ()
 handleConfUpdate = do
   es@EvidenceState{..} <- get
   Config{..} <- view mConfig >>= liftIO . readCurrentConfig
-  if _esOtherNodes == _otherNodes && (snd _electionTimeoutRange) == _esMaxElectionTimeout
+  if null _changeToNodes && _esOtherNodes == _otherNodes && (snd _electionTimeoutRange) == _esMaxElectionTimeout
   then do
     debug "Config update received but no action required"
     return ()
   else do
     maxElectionTimeout' <- return $ snd $ _electionTimeoutRange
-    df@DiffNodes{..} <- return $ CfgChange.diffNodes NodesToDiff {prevNodes = _esOtherNodes, currentNodes = _otherNodes}
+    let df = CfgChange.diffNodes _esOtherNodes _otherNodes
+    let updatedMap = CfgChange.updateNodeMap df _esNodeStates (const (startIndex, minBound))
+    -- also add any transitional nodes to the map:
+    let df' = CfgChange.diffNodes _esOtherNodes _changeToNodes
+    let updatedMap' = CfgChange.updateNodeMap df' updatedMap (const (startIndex, minBound))
     put $ es
       { _esOtherNodes = _otherNodes
+      , _esChangeToNodes = _changeToNodes
       , _esQuorumSize = getEvidenceQuorumSize $ Set.size _otherNodes
-      , _esNodeStates = CfgChange.updateNodeMap df _esNodeStates (const (startIndex, minBound))
-      , _esConvincedNodes = Set.difference _esConvincedNodes nodesToRemove
-      , _esMismatchNodes = Set.difference _esMismatchNodes nodesToRemove
+      , _esChangeToQuorumSize = getEvidenceQuorumSize $ Set.size _changeToNodes
+      , _esNodeStates = updatedMap'
+      , _esConvincedNodes = Set.difference _esConvincedNodes $ nodesToRemove df
+      , _esMismatchNodes = Set.difference _esMismatchNodes $nodesToRemove df
       , _esMaxElectionTimeout = maxElectionTimeout'
       }
     publishEvidence
@@ -91,10 +97,10 @@ publishEvidence = do
   es <- get
   esPub <- view mPubStateTo
   liftIO $ void $ swapMVar esPub $ PublishedEvidenceState (es ^. esConvincedNodes) (es ^. esNodeStates)
-  --debug $ "Published Evidence" ++ show (es ^. esNodeStates)
 
 runEvidenceProcessor :: EvidenceService EvidenceState ()
 runEvidenceProcessor = do
+  env <- ask
   es <- get
   newEv <- view evidence >>= liftIO . readComm
   case newEv of
@@ -102,11 +108,11 @@ runEvidenceProcessor = do
       -- every time we process evidence, we want to tick the 'alert consensus that they aren't talking to a wall'...
       let es' = es {_esResetLeaderNoFollowers = False}
       -- ... variable to False
-      (res, newEs) <- return $! if Set.null $ _esCacheMissAers es'
-                                then runState (processEvidence aers) es'
-                                else let es'' = es' { _esCacheMissAers = Set.empty }
-                                         aers' = aers ++ (Set.toList $ _esCacheMissAers es')
-                                     in runState (processEvidence aers') es''
+      (res, newEs, _) <- liftIO $! if Set.null $ _esCacheMissAers es'
+                                    then runRWST (processEvidence aers) env es'
+                                    else let es'' = es' { _esCacheMissAers = Set.empty }
+                                             aers' = aers ++ (Set.toList $ _esCacheMissAers es')
+                                         in runRWST (processEvidence aers') env es''
       put newEs
       publishEvidence
       when (newEs ^. esResetLeaderNoFollowers) tellKadenaToResetLeaderNoFollowersTimeout
@@ -138,11 +144,17 @@ processCommitCkResult (SteadyState ci) = do
 processCommitCkResult (StrangeResultInProcessor ci) = do
   debug $ "CommitIndex still: " ++ show ci
   debug $ "checkForNewCommitIndex is in a funny state likely because the cluster is under load, we'll see if it resolves itself: " ++ show ci
-processCommitCkResult (NeedMoreEvidence i) = do
+processCommitCkResult (NeedMoreEvidence i i') = do
   newEs <- get
-  when (Set.null $ newEs ^. esCacheMissAers) $
-    debug $ "evidence is still required (" ++ (show i) ++ " of " ++ show (1 + _esQuorumSize newEs) ++ ")"
+  case Set.null $ newEs ^. esCacheMissAers of
+    True | i /= 0 ->
+      debug $ "evidence is still required (" ++ (show i) ++ " of " ++ show (1 + _esQuorumSize newEs) ++ ")"
+    True | i' /= 0 ->
+      debug $ "evidence is still required for the incoming confiuration change consensus list ("
+              ++ (show i') ++ " of " ++ show (1 + _esChangeToQuorumSize newEs) ++ ")"
+    _ -> return ()
   updateCache
+
 processCommitCkResult(NewCommitIndex ci) = do
   now' <- liftIO $ getCurrentTime
   updateLogs $ Log.ULCommitIdx $ Log.UpdateCommitIndex ci now'
@@ -158,11 +170,10 @@ updateCache = do
 runEvidenceService :: EvidenceEnv -> IO ()
 runEvidenceService ev = do
   startingEs <- initializeState ev
-
   putMVar (ev ^. mPubStateTo) $! PublishedEvidenceState (startingEs ^. esConvincedNodes) (startingEs ^. esNodeStates)
   let cu = ConfigUpdater (ev ^. debugFn) "Service|Evidence|Config" (const $ writeComm (ev ^. evidence) $ Bounce)
   linkAsyncTrack "EvidenceConfUpdater" $ CfgChange.runConfigUpdater cu (ev ^. mConfig)
-  _ <- runRWST (debug "Launch!" >> foreverRunProcessor) ev startingEs 
+  _ <- runRWST (debug "Launch!" >> foreverRunProcessor) ev startingEs
   return ()
 
 foreverRunProcessor :: (EvidenceService EvidenceState) ()
@@ -195,51 +206,79 @@ garbageCollectCache es =
      then es {_esEvidenceCache = Map.fromAscList $ drop dropCnt $ Map.toAscList $ _esEvidenceCache es}
      else es
 
-checkPartialEvidence :: Int -> Map LogIndex Int -> Either Int LogIndex
-checkPartialEvidence evidenceNeeded partialEvidence = go (Map.toDescList partialEvidence) evidenceNeeded
+checkPartialEvidence :: Int -> Int -> Map LogIndex (Set NodeId) -> EvidenceService EvidenceState (Either [Int] LogIndex)
+checkPartialEvidence evidenceNeeded changeToEvNeeded partialEvidence = do
+  es <- get
+  let nodes = _esOtherNodes es
+  let chgToNodes = _esChangeToNodes es
+
+  -- | fold the (Map LogIndex (Set NodeId)) into [Map LogIndex Int]
+  --   where the Ints represent the count of votes at a particular index
+  --   the first list item is built from log entries whose nodeId is part of the current config
+  --   the second list item is built from log entries whose nodeId is part of the transitional config
+  let emptyMap = Map.empty :: Map LogIndex Int
+  let (nodeMap, changeToNodeMap) =
+        Map.foldrWithKey f (emptyMap, emptyMap) partialEvidence where
+          f :: LogIndex -> (Set NodeId)-> (Map LogIndex Int, Map LogIndex Int) -> (Map LogIndex Int, Map LogIndex Int)
+          f k x (r1, r2) = do
+            let inNodeSet = Set.filter (\nId -> nId `elem` nodes ) x
+            let inChangeToNodeSet = Set.filter (\nId -> nId `elem` chgToNodes) x
+            (Map.insert k (length inNodeSet) r1, Map.insert k (length inChangeToNodeSet) r2)
+  if null changeToNodeMap
+    then return $ go (Map.toDescList nodeMap) evidenceNeeded
+    else do
+      let eithers = ( go (Map.toDescList nodeMap) evidenceNeeded
+                    , go (Map.toDescList changeToNodeMap) changeToEvNeeded)
+      let eithersList = fst eithers : [snd eithers] :: [Either [Int] LogIndex]
+      case concat $ lefts eithersList of -- concat since they are both lists of one element at most
+        [] -> return $ Right $ headDef 0 $ rights eithersList -- only use the main consensus list for the log index
+        ls -> return $ Left ls
   where
-    go [] eStillNeeded = Left eStillNeeded
-    go ((li, cnt):pes) en
+    go :: [(LogIndex, Int)] -> Int -> Either [Int] LogIndex
+    go [] eStillNeeded = Left [eStillNeeded]
+    go ((li, cnt) : pes) en
       | en - cnt <= 0 = Right li
       | otherwise     = go pes (en - cnt)
+
 {-# INLINE checkPartialEvidence #-}
 
-checkForNewCommitIndex :: EvidenceProcessor CommitCheckResult
+checkForNewCommitIndex :: EvidenceService EvidenceState CommitCheckResult
 checkForNewCommitIndex = do
   partialEvidence <- use esPartialEvidence
   commitIndex' <- use esCommitIndex
   if Map.null partialEvidence
-  -- Only populated when we see aerLogIndex > commitIndex. If it's empty, then nothings happening
-  then return $ SteadyState commitIndex'
-  else do
-    quorumSize' <- use esQuorumSize
-    case checkPartialEvidence quorumSize' partialEvidence of
-      Left i -> return $ NeedMoreEvidence i
-      Right ci | ci > commitIndex' -> do
-        esEvidenceCache' <- use esEvidenceCache
-        case Map.lookup ci esEvidenceCache' of
-          Nothing -> do
--- TODO: this tripped a bug in prod (64 node cluster, par-batch 200k 2k/s 500ms) in June... not sure what happened
---              es <- get
---              error $ "deep invariant error: checkForNewCommitIndex found a new commit index "
---                    ++ show ci ++ " but the hash was not in the Evidence Cache\n### STATE DUMP ###\n"
---                    ++ show es
-            return $ StrangeResultInProcessor ci
-          Just newHash -> do
-            esHashAtCommitIndex .= newHash
-            esCommitIndex .= ci
-            -- though the code in `processResult Successful` should be enough to keep everything in sync
-            -- we're going to make doubly sure that we don't double count
-            esPartialEvidence %= Map.filterWithKey (\k _ -> k > ci)
-            return $ NewCommitIndex ci
-                  | otherwise         -> return $ SteadyState commitIndex'
---        es <- get
---        error $ "Deep invariant error: Calculated a new commit index lower than our current one: "
---              ++ show ci ++ " <= " ++ show commitIndex'
---              ++ "\n### STATE DUMP ###\n" ++ show es
+    -- Only populated when we see aerLogIndex > commitIndex. If it's empty, then nothings happening
+    then return $ SteadyState commitIndex'
+    else do
+      qSize <- use esQuorumSize
+      changeToQSize <- use esChangeToQuorumSize
+      checkResult <- checkPartialEvidence qSize changeToQSize partialEvidence
+      case checkResult of
+        Left ns -> return $ NeedMoreEvidence
+          { _ccrEvRequired = headDef 0 ns
+          , _ccrChangeToEvRequired = head $ tailDef [0] ns }
+        Right ci
+          | ci > commitIndex' -> do
+              esEvidenceCache' <- use esEvidenceCache
+              case Map.lookup ci esEvidenceCache' of
+                -- TODO: this tripped a bug in prod (64 node cluster, par-batch 200k 2k/s 500ms) in June... not sure what happened
+                --  es <- get
+                --  error $ "deep invariant error: checkForNewCommitIndex found a new commit index "
+                --          ++ show ci ++ " but the hash was not in the Evidence Cache\n### STATE DUMP ###\n"
+                --          ++ show es
+                Nothing -> return $ StrangeResultInProcessor ci
+                Just newHash -> do
+                  esHashAtCommitIndex .= newHash
+                  esCommitIndex .= ci
+                  -- though the code in `processResult Successful` should be enough to keep everything in sync
+                  -- we're going to make doubly sure that we don't double count
+                  esPartialEvidence %= Map.filterWithKey (\k _ -> k > ci)
+                  return $ NewCommitIndex ci
+          | otherwise -> return $ SteadyState commitIndex'
 
 processCacheMisses :: EvidenceService EvidenceState ()
 processCacheMisses = do
+  env <- ask
   es <- get
   (aerCacheMisses, futureAers) <- return $ Set.partition (\a -> _aerIndex a <= _esMaxCachedIndex es) (es ^. esCacheMissAers)
   if Set.null aerCacheMisses
@@ -255,7 +294,7 @@ processCacheMisses = do
     updatedEs <- return $ es
       { _esEvidenceCache = Map.union newCacheEv $ _esEvidenceCache es
       , _esCacheMissAers = futureAers}
-    (res, newEs) <- return $! runState (processEvidence $ Set.toList aerCacheMisses) updatedEs
+    (res, newEs, _) <- liftIO $! runRWST (processEvidence $ Set.toList aerCacheMisses) env updatedEs
     put newEs
     if (newEs == updatedEs)
     -- the cached evidence may not have changed anything, doubtful but could happen
@@ -265,9 +304,14 @@ processCacheMisses = do
       when (newEs ^. esResetLeaderNoFollowers) tellKadenaToResetLeaderNoFollowersTimeout
       case res of
         SteadyState _ -> return ()
-        NeedMoreEvidence i -> do
-          debug $ "even after processing cache misses, evidence still required (" ++ (show i) ++ " of " ++ show (1 + _esQuorumSize newEs) ++ ")"
-          return ()
+        NeedMoreEvidence i i' ->
+          case (i, i') of
+            (x, _) | x /= 0 ->
+              debug $ "even after processing cache misses, evidence still required (" ++ (show i) ++ " of " ++ show (1 + _esQuorumSize newEs) ++ ")"
+            (_, y) | y /= 0 ->
+              debug $ "even after processing cache misses, evidence still required for the incoming confiuration change consensus list ("
+                      ++ (show i') ++ " of " ++ show (1 + _esChangeToQuorumSize newEs) ++ ")"
+            _ -> return ()
         StrangeResultInProcessor ci -> do
           debug $ "checkForNewCommitIndex is in a funny state likely because the cluster is under load, we'll see if it resolves itself: " ++ show ci
           return ()
@@ -277,7 +321,7 @@ processCacheMisses = do
           debug $ "after processing cache misses, new CommitIndex: " ++ (show ci)
           return ()
 
-processEvidence :: [AppendEntriesResponse] -> EvidenceProcessor CommitCheckResult
+processEvidence :: [AppendEntriesResponse] -> EvidenceService EvidenceState CommitCheckResult
 processEvidence aers = do
   es <- get
   mapM_ processResult (checkEvidence es <$> aers)

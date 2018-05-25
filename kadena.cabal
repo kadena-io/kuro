@@ -94,6 +94,8 @@ library
                      , Kadena.Types.Message
                      , Kadena.Types.Message.AE
                      , Kadena.Types.Message.AER
+                     , Kadena.Types.Message.CC
+                     , Kadena.Types.Message.CCR
                      , Kadena.Types.Message.NewCMD
                      , Kadena.Types.Message.RV
                      , Kadena.Types.Message.RVR
@@ -160,12 +162,14 @@ library
                      , process
                      , random
                      , ridley
+                     , safe
                      , safe-exceptions >= 0.1.4.0
                      , semigroups
                      , snap-core
                      , snap-server
                      , sqlite-simple
                      , stm
+                     , string-conv
                      , text >= 1.2.0.0 && < 1.3
                      , thyme
                      , time
@@ -233,9 +237,10 @@ test-suite hspec
   type: exitcode-stdio-1.0
   main-is: hspec.hs
   hs-source-dirs: tests
+  ghc-options:      -Wall
   default-language: Haskell2010
   other-modules: ConfigChangeSpec
-               , ConfigSpec 
+               , ConfigSpec
                , Util.TestRunner
                , WireFormatSpec
   build-depends: aeson
@@ -253,7 +258,7 @@ test-suite hspec
                , mtl
                , pact
                , process
-               , safe 
+               , safe
                , safe-exceptions
                , scientific
                , system-command

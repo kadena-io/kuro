@@ -5,13 +5,13 @@ module Kadena.Command
   ( encodeCommand, decodeCommand, decodeCommandEither
   , {- decodeCommandIO, -} decodeCommandEitherIO
   , verifyCommand, verifyCommandIfNotPending
-  , prepPreprocCommand 
-  , runPreproc, runPreprocPure 
+  , prepPreprocCommand
+  , runPreproc, runPreprocPure
   , finishPreProc
   , toRequestKey
   , initCmdLat, populateCmdLat
   , mkLatResults
-  ) where 
+  ) where
 
 import Control.Exception
 import Control.Lens
@@ -58,7 +58,7 @@ runPreprocPure RunSCCPreProc{..} =
   let !res = Pact.verifyCommand _rpSccRaw
   in res `seq` FinishedPreProcSCC res _rpSccMVar
 runPreprocPure RunCCCPreProc{..} =
-  let !res = processConfigUpdate _rpCccRaw
+  let !res = processClusterChange _rpCccRaw
   in res `seq` FinishedPreProcCCC res _rpCccMVar
 {-# INLINE runPreprocPure #-}
 
@@ -78,7 +78,7 @@ runPreproc hitPreProc RunSCCPreProc{..} = do
   succPut <- tryPutMVar _rpSccMVar $! PendingResult res (Just hitPreProc) (Just finishedPreProc)
   unless succPut $ putStrLn $ "Preprocessor encountered a duplicate: " ++ show _rpSccRaw
 runPreproc hitPreProc RunCCCPreProc{..} = do
-  res <- return $! processConfigUpdate _rpCccRaw
+  res <- return $! processClusterChange _rpCccRaw
   finishedPreProc <- getCurrentTime
   succPut <- tryPutMVar _rpCccMVar $! PendingResult res (Just hitPreProc) (Just finishedPreProc)
   unless succPut $ putStrLn $ "Preprocessor encountered a duplicate: " ++ show _rpCccRaw
@@ -86,7 +86,7 @@ runPreproc hitPreProc RunCCCPreProc{..} = do
 
 encodeCommand :: Command -> CMDWire
 encodeCommand SmartContractCommand{..} = SCCWire $! S.encode _sccCmd
-encodeCommand ConsensusConfigCommand{..} = CCCWire $! S.encode _cccCmd
+encodeCommand ConsensusChangeCommand{..} = CCCWire $! S.encode _cccCmd
 encodeCommand PrivateCommand{..} = PCWire $! S.encode _pcCmd
 {-# INLINE encodeCommand #-}
 
@@ -104,7 +104,7 @@ decodeCommand (CCCWire !b) =
     !cmd = case S.decode b of
       Left err -> throw $ DeserializationError $ err ++ "\n### for ###\n" ++ show b
       Right v -> v
-    !res = ConsensusConfigCommand cmd Unprocessed
+    !res = ConsensusChangeCommand cmd Unprocessed
   in res `seq` res
 decodeCommand (PCWire !b) =
   let
@@ -121,24 +121,11 @@ decodeCommandEither (SCCWire !b) = case S.decode b of
   Right !cmd -> Right $! (SmartContractCommand cmd Unprocessed)
 decodeCommandEither (CCCWire !b) = case S.decode b of
   Left !err -> Left $! err ++ "\n### for ###\n" ++ show b
-  Right !cmd -> Right $! (ConsensusConfigCommand cmd Unprocessed)
+  Right !cmd -> Right $! (ConsensusChangeCommand cmd Unprocessed)
 decodeCommandEither (PCWire !b) = case S.decode b of
   Left !err -> Left $! err ++ "\n### for ###\n" ++ show b
   Right !cmd -> Right $! (PrivateCommand cmd)
 {-# INLINE decodeCommandEither #-}
-
-{-
-decodeCommandIO :: CMDWire -> IO (Command, RunPreProc)
-decodeCommandIO cmd = case decodeCommand cmd of
-  r@SmartContractCommand{..} -> do
-    mv <- newEmptyMVar
-    let rpp = RunSCCPreProc _sccCmd mv
-    return $! (r { _sccPreProc = Pending mv }, rpp)
-  r@ConsensusConfigCommand{..} -> do
-    mv <- newEmptyMVar
-    let rpp = RunCCCPreProc _cccCmd mv
-    return $! (r { _cccPreProc = Pending mv }, rpp)
--}
 
 decodeCommandEitherIO :: CMDWire -> IO (Either String (Command, Maybe RunPreProc))
 decodeCommandEitherIO cmd = case decodeCommandEither cmd of
@@ -148,7 +135,7 @@ decodeCommandEitherIO cmd = case decodeCommandEither cmd of
       mv <- newEmptyMVar
       let rpp = RunSCCPreProc _sccCmd mv
       return $ Right $! (r { _sccPreProc = Pending mv }, Just rpp)
-    r@ConsensusConfigCommand{..} -> do
+    r@ConsensusChangeCommand{..} -> do
       mv <- newEmptyMVar
       let rpp = RunCCCPreProc _cccCmd mv
       return $! Right $! (r { _cccPreProc = Pending mv }, Just rpp)
@@ -161,7 +148,7 @@ prepPreprocCommand cmd@SmartContractCommand{..} = do
       mv <- newEmptyMVar
       return $ (cmd { _sccPreProc = Pending mv}, Just $ RunSCCPreProc _sccCmd mv)
     err -> error $ "Invariant Error: cmd has already been preped: " ++ show err ++ "\n### for ###\n" ++ show _sccCmd
-prepPreprocCommand cmd@ConsensusConfigCommand{..} = do
+prepPreprocCommand cmd@ConsensusChangeCommand{..} = do
   case _cccPreProc of
     Unprocessed -> do
       mv <- newEmptyMVar
@@ -176,7 +163,7 @@ verifyCommandIfNotPending cmd@SmartContractCommand{..} =
               Pending{} -> cmd
               Result{} -> cmd
   in res `seq` res
-verifyCommandIfNotPending cmd@ConsensusConfigCommand{..} =
+verifyCommandIfNotPending cmd@ConsensusChangeCommand{..} =
   let res = case _cccPreProc of
               Unprocessed -> verifyCommand cmd
               Pending{} -> cmd
@@ -189,8 +176,8 @@ verifyCommand :: Command -> Command
 verifyCommand cmd@SmartContractCommand{..} =
   let !res = Result $! Pact.verifyCommand _sccCmd
   in res `seq` cmd { _sccPreProc = res }
-verifyCommand cmd@ConsensusConfigCommand{..} = 
-  let !res = Result $! processConfigUpdate _cccCmd
+verifyCommand cmd@ConsensusChangeCommand{..} =
+  let !res = Result $! processClusterChange _cccCmd
   in res `seq` cmd { _cccPreProc = res }
 verifyCommand cmd@PrivateCommand{} = cmd
 {-# INLINE verifyCommand #-}

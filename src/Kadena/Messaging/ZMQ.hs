@@ -104,7 +104,7 @@ runMsgServer dispatch me addrList debug gcm = forever $ do
               Just _ -> putMVar shutdownSubMV IsShutdown
           Just (ReconfSub (Just newNodeList) _) -> do
             connectedNodeIds <- liftIO $ takeMVar connectedNodeIdsMV
-            DiffNodes{..} <- return $ diffNodes NodesToDiff { prevNodes = connectedNodeIds, currentNodes = newNodeList }
+            DiffNodes{..} <- return $ diffNodes connectedNodeIds newNodeList
             void $ forM_ nodesToAdd $ \addr -> do
                 _ <- connect subSocket $ nodeIdToZmqAddr $ addr
                 liftIO $ debug $ zmqSub ++ "connected to: " ++ (show $ nodeIdToZmqAddr addr)

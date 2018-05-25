@@ -178,10 +178,10 @@ scrToAr :: CommandResult -> ApiResult
 scrToAr cr = case cr of
   SmartContractResult{..} ->
     ApiResult (toJSON (Pact._crResult _scrResult)) (Pact._crTxId _scrResult) metaData'
-  ConsensusConfigResult{..} ->
-    ApiResult (toJSON _ccrResult) tidFromLid metaData'
+  ConsensusChangeResult{..} ->
+    ApiResult (toJSON _concrResult) tidFromLid metaData'
   PrivateCommandResult{..} ->
-    ApiResult (handlePR _cprResult) tidFromLid metaData'
+    ApiResult (handlePR _pcrResult) tidFromLid metaData'
   where metaData' = Just $ toJSON $ _crLatMetrics $ cr
         tidFromLid = Just $ Pact.TxId $ fromIntegral $ _crLogIndex $ cr
         handlePR (PrivateFailure e) = toJSON $ "ERROR: " ++ show e

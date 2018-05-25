@@ -54,8 +54,12 @@ handle = do
       -- let newNodes = newNodeSet
       -- let consenLists = consensusLists
       -- TBD...
-      debug "[Kadena.ConfigChange.Service]: **** TBD: Restart Now *****"
-      liftIO $ putStrLn "TBD: Restart Now"
+      let s = "[Kadena.ConfigChange.Service]: \n"
+           ++ "newNodeSet: " ++ show newNodeSet ++ "\n"
+           ++ "consensusLists: " ++ concat (fmap show consensusLists)
+           ++ "[Kadena.ConfigChange.Service]: **** TBD: Restart Now *****"
+      liftIO $ putStrLn s
+      debug s
     Heart t -> do
       liftIO (pprintBeat t) >>= debug
       handle

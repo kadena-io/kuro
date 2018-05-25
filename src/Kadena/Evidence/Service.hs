@@ -3,6 +3,8 @@
 module Kadena.Evidence.Service
   ( runEvidenceService
   , initEvidenceEnv
+  -- exported for testing
+  , checkPartialEvidence'
   ) where
 
 import Control.Concurrent (MVar, newEmptyMVar, takeMVar, swapMVar, tryPutMVar, putMVar)
@@ -10,7 +12,6 @@ import Control.Lens hiding (Index)
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.RWS.Lazy
-import Data.Either
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
@@ -216,36 +217,38 @@ checkPartialEvidence evidenceNeeded changeToEvNeeded partialEvidence = do
   es <- get
   let nodes = _esOtherNodes es
   let chgToNodes = _esChangeToNodes es
+  return $ checkPartialEvidence' nodes chgToNodes evidenceNeeded changeToEvNeeded partialEvidence
+{-# INLINE checkPartialEvidence #-}
 
+checkPartialEvidence' :: (Set NodeId) -> (Set NodeId) -> Int -> Int -> Map LogIndex (Set NodeId) -> Either [Int] LogIndex
+checkPartialEvidence' nodes chgToNodes evidenceNeeded changeToEvNeeded partialEvidence =
   -- | fold the (Map LogIndex (Set NodeId)) into [Map LogIndex Int]
   --   where the Ints represent the count of votes at a particular index
   --   the first list item is built from log entries whose nodeId is part of the current config
   --   the second list item is built from log entries whose nodeId is part of the transitional config
   let emptyMap = Map.empty :: Map LogIndex Int
-  let (nodeMap, changeToNodeMap) =
+      (nodeMap, changeToNodeMap) =
         Map.foldrWithKey f (emptyMap, emptyMap) partialEvidence where
           f :: LogIndex -> (Set NodeId)-> (Map LogIndex Int, Map LogIndex Int) -> (Map LogIndex Int, Map LogIndex Int)
-          f k x (r1, r2) = do
+          f k x (r1, r2) =
             let inNodeSet = Set.filter (\nId -> nId `elem` nodes ) x
-            let inChangeToNodeSet = Set.filter (\nId -> nId `elem` chgToNodes) x
-            (Map.insert k (length inNodeSet) r1, Map.insert k (length inChangeToNodeSet) r2)
-  if null changeToNodeMap
-    then return $ go (Map.toDescList nodeMap) evidenceNeeded
-    else do
-      let eithers = ( go (Map.toDescList nodeMap) evidenceNeeded
-                    , go (Map.toDescList changeToNodeMap) changeToEvNeeded)
-      let eithersList = fst eithers : [snd eithers] :: [Either [Int] LogIndex]
-      case concat $ lefts eithersList of -- concat since they are both lists of one element at most
-        [] -> return $ Right $ headDef 0 $ rights eithersList -- only use the main consensus list for the log index
-        ls -> return $ Left ls
+                inChangeToNodeSet = Set.filter (\nId -> nId `elem` chgToNodes) x
+            in (Map.insert k (length inNodeSet) r1, Map.insert k (length inChangeToNodeSet) r2)
+  in if null changeToNodeMap
+      then go (Map.toDescList nodeMap) evidenceNeeded
+      else case ( go (Map.toDescList nodeMap) evidenceNeeded
+                , go (Map.toDescList changeToNodeMap) changeToEvNeeded) of
+              (Left l1, Left l2)   -> Left (l1 ++ l2) -- missing regular and transitional evidence
+              (Left l, Right _)    -> Left (l ++ [0])   -- missing only regular evidence
+              (Right _, Left l)    -> Left (0 : l)   -- missing only transitional evidence
+              (Right r1, Right _) ->  Right r1 -- Ok, only use the main consensus list for the log index
   where
     go :: [(LogIndex, Int)] -> Int -> Either [Int] LogIndex
     go [] eStillNeeded = Left [eStillNeeded]
     go ((li, cnt) : pes) en
       | en - cnt <= 0 = Right li
       | otherwise     = go pes (en - cnt)
-
-{-# INLINE checkPartialEvidence #-}
+{-# INLINE checkPartialEvidence' #-}
 
 checkForNewCommitIndex :: EvidenceService EvidenceState CommitCheckResult
 checkForNewCommitIndex = do

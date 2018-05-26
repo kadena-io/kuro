@@ -132,6 +132,7 @@ handle = do
               ++ show (fromJust $ Log.lesMaxIndex logEntriesToApply)
         applyLogEntries ReplayFromDisk logEntriesToApply
       ExecLocal{..} -> applyLocalCommand (localCmd,localResult)
+      ExecConfigChange{..} -> applyConfigChange(logEntriesToApply)
 
 applyLogEntries :: ReplayStatus -> LogEntries -> ExecutionService ()
 applyLogEntries rs les@(LogEntries leToApply) = do
@@ -204,12 +205,12 @@ applyCommand _tEnd le@LogEntry{..} = do
                , _crLogIndex = _leLogIndex
                , _crLatMetrics = lm
                })
-    ConsensusConfigCommand{..} -> do
+    ConsensusChangeCommand{..} -> do
       (pproc, ppLat) <- case _cccPreProc of
         Unprocessed -> do
           debug $ "WARNING: non-preproccessed config command found for " ++ show _leLogIndex
           case (verifyCommand _leCommand) of
-            ConsensusConfigCommand{..} -> return $! (result _cccPreProc, _leCmdLatMetrics)
+            ConsensusChangeCommand{..} -> return $! (result _cccPreProc, _leCmdLatMetrics)
             _ -> error "[applyCommand.conf.2] unreachable exception... and yet reached"
         Pending{..} -> do
           PendingResult{..} <- getPendingPreProcCCC startTime pending
@@ -218,12 +219,12 @@ applyCommand _tEnd le@LogEntry{..} = do
           debug $ "WARNING: fully resolved consensus command found for " ++ show _leLogIndex
           return $! (result, _leCmdLatMetrics)
       gcm <- view mConfig
-      result <- liftIO $ CfgChange.mutateConfig gcm pproc
+      result <- liftIO $ CfgChange.mutateCluster gcm pproc
       lm <- stamp ppLat
       return ( rkey
-             , ConsensusConfigResult
+             , ConsensusChangeResult
                { _crHash = chash
-               , _ccrResult = result
+               , _concrResult = result
                , _crLogIndex = _leLogIndex
                , _crLatMetrics = lm
                })
@@ -255,6 +256,9 @@ applyLocalCommand (cmd, mv) = do
   applyLocal <- Pact._ceiApplyCmd <$> use csCommandExecInterface
   cr <- liftIO $ applyLocal Local cmd
   liftIO $ putMVar mv (Pact._crResult cr)
+
+applyConfigChange :: LogEntries -> ExecutionService ()
+applyConfigChange _ = debug "[Execution service]: applyConfigChange - not implemented"
 
 updateLatPreProc :: Maybe UTCTime -> Maybe UTCTime -> Maybe CmdLatencyMetrics -> Maybe CmdLatencyMetrics
 updateLatPreProc hitPreProc finPreProc = fmap update'

@@ -14,7 +14,8 @@ module Kadena.Types.Command
   , PendingResult(..)
   , SCCPreProcResult, CCCPreProcResult
   , CMDWire(..)
-  , CommandResult(..), scrResult, crHash, crLogIndex, crLatMetrics, ccrResult, cprResult
+  , CommandResult(..), crHash, crLogIndex, crLatMetrics
+  , scrResult, concrResult, pcrResult
   , CmdLatencyMetrics(..), rlmFirstSeen, rlmHitTurbine, rlmHitConsensus, rlmFinConsensus, rlmAerConsensus, rlmLogConsensus
   , rlmHitPreProc, rlmFinPreProc, rlmHitExecution, rlmFinExecution
   , lmFirstSeen, lmHitTurbine, lmHitPreProc, lmAerConsensus, lmLogConsensus
@@ -81,14 +82,14 @@ instance (Show a) => Show (Preprocessed a) where
   show (Result a) = "Result {unResult = " ++ show a ++ "}"
 
 type SCCPreProcResult = PendingResult (Pact.ProcessedCommand (Pact.PactRPC Pact.ParsedCode))
-type CCCPreProcResult = PendingResult ProcessedConfigUpdate
+type CCCPreProcResult = PendingResult ProcessedClusterChg
 
 data RunPreProc =
   RunSCCPreProc
     { _rpSccRaw :: !(Pact.Command ByteString)
     , _rpSccMVar :: !(MVar SCCPreProcResult) } |
   RunCCCPreProc
-    { _rpCccRaw :: !(ConfigUpdate ByteString)
+    { _rpCccRaw :: !ClusterChangeCommand
     , _rpCccMVar :: !(MVar CCCPreProcResult) }
 
 data FinishedPreProc =
@@ -96,7 +97,7 @@ data FinishedPreProc =
     { _fppSccRes :: !(Pact.ProcessedCommand (Pact.PactRPC Pact.ParsedCode))
     , _fppSccMVar :: !(MVar SCCPreProcResult)} |
   FinishedPreProcCCC
-    { _fppCccRes :: !ProcessedConfigUpdate
+    { _fppCccRes :: !ProcessedClusterChg
     , _fppCccMVar :: !(MVar CCCPreProcResult)}
 
 instance NFData FinishedPreProc where
@@ -104,8 +105,8 @@ instance NFData FinishedPreProc where
     Pact.ProcSucc s -> rnf s
     Pact.ProcFail e -> rnf e
   rnf FinishedPreProcCCC{..} = case _fppCccRes of
-    ProcessedConfigSuccess s _ -> s `seq` ()
-    ProcessedConfigFailure e -> rnf e
+    ProcClusterChgSucc cmd -> rnf cmd
+    ProcClusterChgFail e -> rnf e
 
 data Hashed a = Hashed
   { _hValue :: !a
@@ -118,9 +119,9 @@ data Command =
   SmartContractCommand
   { _sccCmd :: !(Pact.Command ByteString)
   , _sccPreProc :: !(Preprocessed (Pact.ProcessedCommand (Pact.PactRPC Pact.ParsedCode))) } |
-  ConsensusConfigCommand
-  { _cccCmd :: !(ConfigUpdate ByteString)
-  , _cccPreProc :: !(Preprocessed ProcessedConfigUpdate)} |
+  ConsensusChangeCommand
+  { _cccCmd :: !ClusterChangeCommand
+  , _cccPreProc :: !(Preprocessed ProcessedClusterChg)} |
   PrivateCommand
   { _pcCmd :: !(Hashed PrivateCiphertext)
   }
@@ -132,7 +133,7 @@ instance Ord Command where
 
 getCmdBodyHash :: Command -> Hash
 getCmdBodyHash SmartContractCommand{ _sccCmd = Pact.Command{..}} = _cmdHash
-getCmdBodyHash ConsensusConfigCommand{ _cccCmd = ConfigUpdate{..}} = _cuHash
+getCmdBodyHash ConsensusChangeCommand{ _cccCmd = ClusterChangeCommand{..}} = _cccHash
 getCmdBodyHash PrivateCommand { _pcCmd = Hashed{..}} = _hHash
 
 data CMDWire =
@@ -167,14 +168,14 @@ data CommandResult =
     , _scrResult :: !Pact.CommandResult
     , _crLogIndex :: !LogIndex
     , _crLatMetrics :: !(Maybe CmdResultLatencyMetrics) } |
-  ConsensusConfigResult
+   ConsensusChangeResult
     { _crHash :: !Hash
-    , _ccrResult :: !ConfigUpdateResult
+    , _concrResult :: !ClusterChangeResult
     , _crLogIndex :: !LogIndex
     , _crLatMetrics :: !(Maybe CmdResultLatencyMetrics) } |
   PrivateCommandResult
     { _crHash :: !Hash
-    , _cprResult :: !(PrivateResult Pact.CommandResult)
+    , _pcrResult :: !(PrivateResult Pact.CommandResult)
     , _crLogIndex :: !LogIndex
     , _crLatMetrics :: !(Maybe CmdResultLatencyMetrics) }
   deriving (Show, Eq, Generic)

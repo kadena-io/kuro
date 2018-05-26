@@ -1,6 +1,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Kadena.Evidence.Spec
   ( EvidenceService
@@ -10,10 +11,10 @@ module Kadena.Evidence.Spec
   , EvidenceEnv(..)
   , logService, evidence, mConfig, mPubStateTo, mResetLeaderNoFollowers
   , EvidenceState(..), initEvidenceState
-  , esQuorumSize, esNodeStates, esConvincedNodes, esPartialEvidence
+  , esQuorumSize, esChangeToQuorumSize, esNodeStates, esConvincedNodes, esPartialEvidence
   , esCommitIndex, esCacheMissAers, esMismatchNodes, esResetLeaderNoFollowers
   , esHashAtCommitIndex, esEvidenceCache, esMaxCachedIndex, esMaxElectionTimeout
-  , esOtherNodes
+  , esOtherNodes, esChangeToNodes
   , EvidenceProcessor
   , debugFn
   , publishMetric
@@ -54,10 +55,12 @@ type EvidenceService s = RWST EvidenceEnv () s IO
 
 data EvidenceState = EvidenceState
   { _esOtherNodes :: !(Set NodeId)
+  , _esChangeToNodes :: !(Set NodeId)
   , _esQuorumSize :: !Int
+  , _esChangeToQuorumSize :: !Int
   , _esNodeStates :: !(Map NodeId (LogIndex, UTCTime))
   , _esConvincedNodes :: !(Set NodeId)
-  , _esPartialEvidence :: !(Map LogIndex Int)
+  , _esPartialEvidence :: !(Map LogIndex (Set NodeId))
   , _esCommitIndex :: !LogIndex
   , _esMaxCachedIndex :: !LogIndex
   , _esCacheMissAers :: !(Set AppendEntriesResponse)
@@ -74,12 +77,15 @@ makeLenses ''EvidenceState
 -- the entry. As such, getting a match that is counted when checking evidence implies that count is already +1
 -- This note is here because we used to process our own evidence, which was stupid.
 getEvidenceQuorumSize :: Int -> Int
+getEvidenceQuorumSize 0 = 0
 getEvidenceQuorumSize n = 1 + floor (fromIntegral n / 2 :: Float)
 
-initEvidenceState :: Set NodeId -> LogIndex -> Int -> EvidenceState
-initEvidenceState otherNodes' commidIndex' maxElectionTimeout' = EvidenceState
+initEvidenceState :: Set NodeId -> Set NodeId -> LogIndex -> Int -> EvidenceState
+initEvidenceState otherNodes' changeToNodes' commidIndex' maxElectionTimeout' = EvidenceState
   { _esOtherNodes = otherNodes'
+  , _esChangeToNodes = changeToNodes'
   , _esQuorumSize = getEvidenceQuorumSize $ Set.size otherNodes'
+  , _esChangeToQuorumSize = getEvidenceQuorumSize $ Set.size changeToNodes'
   , _esNodeStates = Map.fromSet (\_ -> (commidIndex',minBound)) otherNodes'
   , _esConvincedNodes = Set.empty
   , _esPartialEvidence = Map.empty
@@ -122,7 +128,8 @@ checkEvidence es aer@(AppendEntriesResponse{..}) = case Map.lookup _aerNodeId $ 
       -- and prune all of their uncommitted logs.
 {-# INLINE checkEvidence #-}
 
-processResult :: Result -> EvidenceProcessor ()
+
+processResult :: MonadState EvidenceState m => Result -> m ()
 processResult Unconvinced{..} = do
   esConvincedNodes %= Set.delete _rNodeId
   esNodeStates %= Map.insert _rNodeId (_rLogIndex, _rReceivedAt)
@@ -137,24 +144,21 @@ processResult Successful{..} = do
   lastIdx <- Map.lookup _rNodeId <$> use esNodeStates
   -- this bit is important, we don't want to double count any node's evidence so we need to
   -- decrement the old evidence (if any) and increment the new
+  -- Add the updated evidence
+  esPartialEvidence %= Map.insertWith Set.union _rLogIndex (Set.singleton _rNodeId)
+  esNodeStates %= Map.insert _rNodeId (_rLogIndex, _rReceivedAt)
   case lastIdx of
-    Nothing -> do
-      esNodeStates %= Map.insert _rNodeId (_rLogIndex, _rReceivedAt)
-      -- Adding it here is fine because esNodeState's values only are nothing if we've never heard from
-      -- that node OR we've reset this service (aka membership event) and the esPartialEvidence will also
-      -- be reset
-      esPartialEvidence %= Map.insertWith (+) _rLogIndex 1
-    Just (i,_) | i < _rLogIndex -> do
-      esNodeStates %= Map.insert _rNodeId (_rLogIndex, _rReceivedAt)
-      -- Add the updated evidence
-      esPartialEvidence %= Map.insertWith (+) _rLogIndex 1
-      -- Remove the previous evidence, removing the key if count == 0
-      esPartialEvidence %= Map.alter (maybe Nothing (\cnt -> if cnt - 1 <= 0
-                                                      then Nothing
-                                                      else Just (cnt - 1))
-                                    ) i
-           | otherwise -> return ()
-      -- this one is interesting, we have an old but successful message... I think we just drop it
+    Just (i,_) | i < _rLogIndex ->
+      -- Remove the previous evidence (i.e. removing the nodeId from the Set corresponding to lastIdx,
+      -- and removing the key if the resulting Set is empty)
+      esPartialEvidence %= Map.alter (maybe Nothing f) i where
+        f :: Set NodeId -> Maybe (Set NodeId)
+        f s = let deleted = Set.delete _rNodeId s
+              in if null s then Nothing else Just deleted
+    Just _ -> return ()
+    Nothing -> return ()
+
+-- this one is interesting, we have an old but successful message... I think we just drop it
 processResult SuccessfulSteadyState{..} = do
   -- basically, nothings going on and these are just heartbeats
   esConvincedNodes %= Set.insert _rNodeId

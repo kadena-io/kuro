@@ -38,7 +38,7 @@ data Evidence =
   -- We will have misses -- if nodes are out of sync they may get different batches but overall this should
   -- function fine.
   CacheNewHash { _cLogIndex :: LogIndex , _cHash :: Hash } |
-  Bounce | -- TODO: change how config changes are handled so we don't use bounce
+  Bounce |
   Heart Beat
   deriving (Show, Eq, Typeable)
 
@@ -100,7 +100,7 @@ data Result =
 
 data CommitCheckResult =
   SteadyState {_ccrCommitIndex :: !LogIndex}|
-  NeedMoreEvidence {_ccrEvRequired :: Int} |
+  NeedMoreEvidence {_ccrEvRequired :: Int, _ccrChangeToEvRequired :: Int} |
   StrangeResultInProcessor {_ccrCommitIndex :: !LogIndex} |
   NewCommitIndex {_ccrCommitIndex :: !LogIndex}
   deriving (Show)

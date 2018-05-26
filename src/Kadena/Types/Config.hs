@@ -3,65 +3,64 @@
 {-# LANGUAGE BangPatterns #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE DeriveFoldable #-}
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 module Kadena.Types.Config
-  ( otherNodes, changeToNodes, nodeId, electionTimeoutRange, heartbeatTimeout
-  , enableDebug, publicKeys, myPrivateKey, pactPersist
-  , myPublicKey, apiPort, hostStaticDir
-  , logDir, entity, nodeClass, adminKeys
-  , aeBatchSize, preProcThreadCount, preProcUsePar
-  , inMemTxCache, enablePersistence, logRules
-  , confUpdateJsonOptions, getMissingKeys 
-  , ksCluster, confToKeySet
-  , initGlobalConfigTMVar, getConfigWhenNew
-  , getNewKeyPair, gcVersion, gcConfig
-  , readCurrentConfig
-  , Config(..)
-  , ConfigUpdate(..)   
-  , ConfigUpdateCommand(..)
-  , ConfigUpdater(..)
-  , ConfigUpdateResult(..)
+  ( CCState (..)
+  , ClusterChangeCommand (..), cccPayload, cccSigs, cccHash
+  , ClusterChangeInfo (..), cciNewNodeList, cciAddedNodes, cciRemovedNodes, cciState
+  , ClusterChangeResult (..)
+  , Config(..), otherNodes, changeToNodes, nodeId, publicKeys, adminKeys, myPrivateKey, myPublicKey
+  , electionTimeoutRange, heartbeatTimeout, enableDebug, apiPort, entity, logDir, enablePersistence
+  , pactPersist, aeBatchSize, preProcThreadCount, preProcUsePar, inMemTxCache, hostStaticDir
+  , nodeClass, logRules
+  , ConfigUpdater (..)
   , DiffNodes(..)
-  , GlobalConfig(..)
+  , GlobalConfig(..),  gcVersion, gcConfig
   , GlobalConfigTMVar
   , KeyPair(..)
-  , KeySet(..) 
-  , NodesToDiff(..)
+  , KeySet(..), ksCluster
   , PactPersistBackend(..)
   , PactPersistConfig(..)
   , PPBType(..)
-  , ProcessedConfigUpdate(..)
+  , ProcessedClusterChg (..)
+  , confToKeySet
+  , getConfigWhenNew
+  , getMissingKeys
+  , getNewKeyPair
+  , initGlobalConfigTMVar
+  , mkClusterChangeCommand
+  , readCurrentConfig
   ) where
 
 import Control.Concurrent.STM
+import Control.DeepSeq
 import Control.Lens (makeLenses)
-import Control.Monad
-
-import qualified Data.Text as Text
+import Data.Aeson
+import Data.Aeson.Types
+import Data.Default
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Serialize
 import Data.Set (Set)
-import qualified Data.Set as Set
-import Text.Read (readMaybe)
-
-import Data.Aeson
-import Data.Aeson.Types
-import Data.Thyme.Clock
+import Data.String.Conv
 import Data.Thyme.Time.Core ()
-import GHC.Generics hiding (from)
-import Data.Default
 import qualified Data.Yaml as Y
+import GHC.Generics hiding (from)
 
-import Pact.Types.Util
-import Pact.Types.Logger (LogRules)
-import Pact.Types.SQLite (SQLiteConfig)
 import Pact.Persist.MSSQL (MSSQLConfig(..))
+import Pact.Types.Command (UserSig(..))
+import Pact.Types.Logger (LogRules)
+import Pact.Types.Util
+import Pact.Types.SQLite (SQLiteConfig)
 
 import Kadena.Types.Base
 import Kadena.Types.Entity (EntityConfig)
@@ -122,93 +121,78 @@ instance ToJSON PactPersistBackend where
     PPBMSSQL {..} -> [ "type" .= MSSQL, "config" .= _ppbMssqlConfig, "connStr" .= _ppbMssqlConnStr ]
 
 makeLenses ''Config
+instance ToJSON Config where
+  toJSON = lensyToJSON 1
+instance FromJSON Config where
+  parseJSON = lensyParseJSON 1
 
-data ProcessedConfigUpdate =
-  ProcessedConfigFailure !String |
-  ProcessedConfigSuccess { _pcsRes :: !ConfigUpdateCommand
-                         , _pcsKeysUsed :: !(Set PublicKey)}
-  deriving (Show, Eq, Ord, Generic)
 
-data ConfigUpdateCommand =
-    AddNode
-      { _cucNodeId :: !NodeId
-      , _cucNodeClass :: !NodeClass
-      , _cucPublicKey :: !PublicKey } |
-    RemoveNode
-      { _cucNodeId :: !NodeId } |
-    NodeToPassive
-      { _cucNodeId :: !NodeId } |
-    NodeToActive
-      { _cucNodeId :: !NodeId } |
-    UpdateNodeKey
-      { _cucAlias :: !Alias
-      , _cucPublicKey :: !PublicKey
-      , _cucKeyPairPath :: !FilePath} |
-    AddAdminKey
-      { _cucAlias :: !Alias
-      , _cucPublicKey :: !PublicKey } |
-    UpdateAdminKey
-      { _cucAlias :: !Alias
-      , _cucPublicKey :: !PublicKey } |
-    RemoveAdminKey
-      { _cucAlias :: !Alias } |
-    RotateLeader
-      { _cucTerm :: !Term }
-    deriving (Show, Eq, Ord, Generic, Serialize)
+data CCState =
+  Transitional |
+  Final
+  deriving (Show, Eq, Ord, Generic, Serialize)
+instance ToJSON CCState where
+instance FromJSON CCState where
+instance NFData CCState
 
-data ConfigUpdate a = ConfigUpdate
-  { _cuHash :: !Hash
-  , _cuSigs :: !(Map PublicKey Signature)
-  , _cuCmd :: !a
-  } deriving (Show, Eq, Ord, Generic, Serialize)
--- makeLenses ''ConfigUpdate
+data ClusterChangeInfo = ClusterChangeInfo
+  { _cciNewNodeList :: ![NodeId]
+  , _cciAddedNodes :: ![NodeId]
+  , _cciRemovedNodes :: ![NodeId]
+  , _cciState :: CCState }
+  deriving (Show, Eq, Generic, Serialize)
+makeLenses ''ClusterChangeInfo
+instance NFData ClusterChangeInfo
 
-confUpdateJsonOptions :: Int -> Options
-confUpdateJsonOptions n = defaultOptions
-  { fieldLabelModifier = lensyConstructorToNiceJson n
-  , sumEncoding = ObjectWithSingleField }
+data ClusterChangeCommand = ClusterChangeCommand
+  { _cccPayload :: !ClusterChangeInfo
+  , _cccSigs :: ![UserSig]
+  , _cccHash :: !Hash
+  } deriving (Eq, Show, Generic, Serialize)
+makeLenses ''ClusterChangeCommand
+instance NFData ClusterChangeCommand
 
-instance ToJSON ConfigUpdateCommand where
-  toJSON = genericToJSON (confUpdateJsonOptions 4)
-instance FromJSON ConfigUpdateCommand where
-  parseJSON = genericParseJSON (confUpdateJsonOptions 4)
+data ProcessedClusterChg =
+  ProcClusterChgSucc
+    !ClusterChangeCommand |
+    -- !(Set PublicKey) |
+  ProcClusterChgFail !String
+  deriving (Show, Eq, Generic, Serialize)
 
-instance (ToJSON a) => ToJSON (ConfigUpdate a) where
-  toJSON = lensyToJSON 3
-instance (FromJSON a) => FromJSON (ConfigUpdate a) where
-  parseJSON = lensyParseJSON 3
+data ClusterChangeResult =
+  ClusterChangeFailure !String
+  | ClusterChangeSuccess
+  deriving (Show, Eq, Ord, Generic, ToJSON, FromJSON, Serialize)
 
 data ConfigUpdater = ConfigUpdater
   { _cuPrintFn :: !(String -> IO ())
   , _cuThreadName :: !String
-  , _cuAction :: (Config -> IO())}
-
-data ConfigUpdateResult =
-  ConfigUpdateFailure !String
-  | ConfigUpdateSuccess
-  deriving (Show, Eq, Ord, Generic, ToJSON, FromJSON, Serialize)
-
-data NodesToDiff = NodesToDiff
-  { prevNodes :: !(Set NodeId)
-  , currentNodes :: !(Set NodeId)
-  } deriving (Show,Eq,Ord,Generic)
+  , _cuAction :: (Config -> IO()) }
 
 data DiffNodes = DiffNodes
   { nodesToAdd :: !(Set NodeId)
   , nodesToRemove :: !(Set NodeId)
   } deriving (Show,Eq,Ord,Generic)
 
-instance ToJSON NominalDiffTime where
-  toJSON = toJSON . show . toSeconds'
-instance FromJSON NominalDiffTime where
-  parseJSON (String s) = case readMaybe $ Text.unpack s of
-    Just s' -> return $ fromSeconds' s'
-    Nothing -> mzero
-  parseJSON _ = mzero
-instance ToJSON Config where
-  toJSON = lensyToJSON 1
-instance FromJSON Config where
-  parseJSON = lensyParseJSON 1
+-- | Similar to mkCommand in the Pact.Types.Command module
+--   TODO: add keys, signature:
+mkClusterChangeCommand :: ClusterChangeInfo -> ClusterChangeCommand
+mkClusterChangeCommand = undefined
+
+singleFieldJsonOptions :: Int -> Options
+singleFieldJsonOptions n = defaultOptions
+  { fieldLabelModifier = lensyConstructorToNiceJson n
+  , sumEncoding = ObjectWithSingleField }
+
+instance ToJSON ClusterChangeCommand where
+  toJSON = lensyToJSON 4
+instance FromJSON ClusterChangeCommand where
+  parseJSON = lensyParseJSON 4
+
+instance ToJSON ClusterChangeInfo where
+  toJSON = lensyToJSON 4
+instance FromJSON ClusterChangeInfo where
+  parseJSON = lensyParseJSON 4
 
 data KeySet = KeySet
   { _ksCluster :: !(Map Alias PublicKey)
@@ -226,9 +210,9 @@ data KeyPair = KeyPair
   , _kpPrivateKey :: PrivateKey
   } deriving (Show, Eq, Generic)
 instance ToJSON KeyPair where
-  toJSON = genericToJSON (confUpdateJsonOptions 3)
+  toJSON = genericToJSON (singleFieldJsonOptions 3)
 instance FromJSON KeyPair where
-  parseJSON = genericParseJSON (confUpdateJsonOptions 3)
+  parseJSON = genericParseJSON (singleFieldJsonOptions 3)
 
 getNewKeyPair :: FilePath -> IO KeyPair
 getNewKeyPair fp = do
@@ -248,8 +232,12 @@ type GlobalConfigTMVar = TMVar GlobalConfig
 initGlobalConfigTMVar :: Config -> IO GlobalConfigTMVar
 initGlobalConfigTMVar c = newTMVarIO $ GlobalConfig initialConfigVersion c
 
-getMissingKeys :: Config -> Set PublicKey -> [Alias]
-getMissingKeys Config{..} keysUsed = fst <$> (filter (\(_,k) -> not $ Set.member k keysUsed) $ Map.toList _adminKeys)
+getMissingKeys :: Config -> [UserSig]-> [Alias]
+getMissingKeys cfg sigs =
+  let keys = fmap _usPubKey sigs
+      filtered = filter f (Map.toList (_adminKeys cfg)) where
+        f (_, k) = not $ toS (show k) `elem` keys
+  in fmap fst filtered
 
 getConfigWhenNew :: ConfigVersion -> GlobalConfigTMVar -> STM GlobalConfig
 getConfigWhenNew cv gcm = do
@@ -261,3 +249,32 @@ getConfigWhenNew cv gcm = do
 readCurrentConfig :: GlobalConfigTMVar -> IO Config
 readCurrentConfig gcm = _gcConfig <$> (atomically $ readTMVar gcm)
 
+-- | Not implemented
+data NodeUpdateCommand =
+  NodeToPassive
+    { _nucNodeId :: !NodeId } |
+  NodeToActive
+    { _nucNodeId :: !NodeId } |
+  UpdateNodeKey
+    { _nucAlias :: !Alias
+    , _nucPublicKey :: !PublicKey
+    , _nucKeyPairPath :: !FilePath }
+  deriving (Show, Eq, Ord, Generic, Serialize)
+
+-- | Not implemented
+data AdminUpdateCommand =
+  AddAdminKey
+    { _aucAlias :: !Alias
+    , _cucPublicKey :: !PublicKey } |
+  UpdateAdminKey
+    { _aucAlias :: !Alias
+    , _cucPublicKey :: !PublicKey } |
+  RemoveAdminKey
+    { _aucAlias :: !Alias }
+  deriving (Show, Eq, Ord, Generic, Serialize)
+
+  -- | Not implemented
+data AdminCommand =
+  RotateLeader
+    { _cucTerm :: !Term }
+  deriving (Show, Eq, Ord, Generic, Serialize)

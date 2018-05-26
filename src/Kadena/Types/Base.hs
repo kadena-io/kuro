@@ -23,6 +23,7 @@ module Kadena.Types.Base
   , ConfigVersion(..), initialConfigVersion
   ) where
 
+import Control.DeepSeq
 import Control.Lens
 import Control.Monad (mzero)
 import Data.ByteString (ByteString)
@@ -50,6 +51,7 @@ import Pact.Types.Hash
 newtype Alias = Alias { unAlias :: ByteString }
   deriving (Eq, Ord, Generic, Serialize, ToJSON, ToJSONKey, FromJSON, FromJSONKey)
 instance IsString Alias where fromString s = Alias $ BSC.pack s
+instance NFData Alias
 
 instance Show Alias where
   show (Alias a) = BSC.unpack a
@@ -64,6 +66,7 @@ instance ToJSON NodeId where
   toJSON = genericToJSON defaultOptions { fieldLabelModifier = drop 1 }
 instance FromJSON NodeId where
   parseJSON = genericParseJSON defaultOptions { fieldLabelModifier = drop 1 }
+instance NFData NodeId
 
 newtype Term = Term Int
   deriving (Show, Read, Eq, Enum, Num, Ord, Generic, Serialize, ToJSON, FromJSON)

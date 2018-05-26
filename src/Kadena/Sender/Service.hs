@@ -11,47 +11,42 @@ module Kadena.Sender.Service
   , ServiceEnv(..), debugPrint, serviceRequestChan, outboundGeneral
   , logService, getEvidenceState, publishMetric, aeReplicationLogLimit
   , runSenderService
+  , checkVoteQuorum
   , createAppendEntriesResponse' -- we need this for AER Evidence
   , willBroadcastAE
   , module X --re-export the types to make things straight forward
   ) where
 
-import Control.Lens
 import Control.Concurrent
-import Control.Parallel.Strategies
-
+import Control.Lens
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.RWS.Lazy
-
+import Control.Parallel.Strategies
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Serialize hiding (get, put)
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Data.Serialize hiding (get, put)
-
 import Data.Thyme.Clock (UTCTime, getCurrentTime)
 
-import Kadena.Message
-import Kadena.Types.Message
-import Kadena.Types.Metric (Metric)
-import Kadena.Types.Config (GlobalConfigTMVar,Config(..),readCurrentConfig)
-import Kadena.Types.Spec (PublishedConsensus)
-import Kadena.Types.Dispatch (Dispatch(..))
-import Kadena.Types.Base
-import Kadena.Types.Log (LogEntries(..))
-import qualified Kadena.Types.Log as Log
-import qualified Kadena.Types.Dispatch as KD
+import Kadena.Evidence.Types hiding (Heart)
 import Kadena.Event (pprintBeat)
-import Kadena.Types.Comms
-
-import qualified Kadena.Types.Spec as Spec
-
 import Kadena.Log.Types (LogServiceChannel)
 import qualified Kadena.Log.Types as Log
-import Kadena.Evidence.Types hiding (Heart)
-
+import Kadena.Message
 import Kadena.Sender.Types as X
+import Kadena.Types.Base
+import Kadena.Types.Config as Cfg
+import Kadena.Types.Comms
+import Kadena.Types.Dispatch (Dispatch(..))
+import qualified Kadena.Types.Dispatch as KD
+import Kadena.Types.Log (LogEntries(..))
+import qualified Kadena.Types.Log as Log
+import Kadena.Types.Message
+import Kadena.Types.Metric (Metric)
+import qualified Kadena.Types.Spec as Spec
+import Kadena.Util.Util
 
 data ServiceEnv = ServiceEnv
   { _debugPrint :: !(String -> IO ())
@@ -64,7 +59,7 @@ data ServiceEnv = ServiceEnv
   -- Evidence Thread's Published State
   , _getEvidenceState :: !(IO PublishedEvidenceState)
   , _publishMetric :: !(Metric -> IO ())
-  , _config :: !GlobalConfigTMVar
+  , _config :: !Cfg.GlobalConfigTMVar
   , _pubCons :: !(MVar Spec.PublishedConsensus)
   }
 makeLenses ''ServiceEnv
@@ -73,44 +68,44 @@ type SenderService s = RWST ServiceEnv () s IO
 
 -- TODO use configUpdater to populate an MVar local to the RWST
 -- vs hitting the TVar every time we need to send something (or have SenderService do this internally)
-getStateSnapshot :: GlobalConfigTMVar -> MVar PublishedConsensus -> IO StateSnapshot
+getStateSnapshot :: Cfg.GlobalConfigTMVar -> MVar Spec.PublishedConsensus -> IO StateSnapshot
 getStateSnapshot conf' pcons' = do
-  conf <- readCurrentConfig conf'
+  conf <- Cfg.readCurrentConfig conf'
   st <- readMVar pcons'
   return $! StateSnapshot
-    { _snapNodeId = _nodeId conf
+    { _snapNodeId = Cfg._nodeId conf
     , _snapNodeRole = st ^. Spec.pcRole
-    , _snapOtherNodes = _otherNodes conf
+    , _snapOtherNodes = Cfg._otherNodes conf
     , _snapLeader = st ^. Spec.pcLeader
     , _snapTerm = st ^. Spec.pcTerm
-    , _snapPublicKey = _myPublicKey conf
-    , _snapPrivateKey = _myPrivateKey conf
+    , _snapPublicKey = Cfg._myPublicKey conf
+    , _snapPrivateKey = Cfg._myPrivateKey conf
     , _snapYesVotes = st ^. Spec.pcYesVotes
     }
 
 runSenderService
   :: Dispatch
-  -> GlobalConfigTMVar
+  -> Cfg.GlobalConfigTMVar
   -> (String -> IO ())
   -> (Metric -> IO ())
   -> MVar PublishedEvidenceState
   -> MVar Spec.PublishedConsensus
   -> IO ()
 runSenderService dispatch gcm debugFn publishMetric' mPubEvState mPubCons = do
-  conf <- readCurrentConfig gcm
+  conf <- Cfg.readCurrentConfig gcm
   s <- return $ StateSnapshot
-    { _snapNodeId = _nodeId conf
+    { _snapNodeId = Cfg._nodeId conf
     , _snapNodeRole = Follower
-    , _snapOtherNodes = _otherNodes conf
+    , _snapOtherNodes = Cfg._otherNodes conf
     , _snapLeader = Nothing
     , _snapTerm = startTerm
-    , _snapPublicKey = _myPublicKey conf
-    , _snapPrivateKey = _myPrivateKey conf
+    , _snapPublicKey = Cfg._myPublicKey conf
+    , _snapPrivateKey = Cfg._myPrivateKey conf
     , _snapYesVotes = Set.empty
     }
   env <- return $ ServiceEnv
     { _debugPrint = debugFn
-    , _aeReplicationLogLimit = _aeBatchSize conf
+    , _aeReplicationLogLimit = Cfg._aeBatchSize conf
     -- Comm Channels
     , _serviceRequestChan = _senderService dispatch
     , _outboundGeneral = dispatch ^. KD.outboundGeneral
@@ -221,7 +216,9 @@ sendAllAppendEntries nodeCurrentIndex' nodesThatFollow' sendIfOutOfSync = do
   let yesVotes' = view snapYesVotes s
   let oNodes = view snapOtherNodes s
   limit' <- view aeReplicationLogLimit
-  inSync' <- canBroadcastAE (length oNodes) nodeCurrentIndex' ct myNodeId' nodesThatFollow' sendIfOutOfSync
+  gConfig <- view config
+  quorumOk <- liftIO $ checkVoteQuorum gConfig oNodes
+  inSync' <- canBroadcastAE quorumOk nodeCurrentIndex' ct myNodeId' nodesThatFollow' sendIfOutOfSync
   synTime' <- liftIO $ getCurrentTime
   case inSync' of
     BackStreet{..} -> do
@@ -264,36 +261,31 @@ data InSync =
     , laggingFollowers :: !(Set NodeId) }
   deriving (Show, Eq)
 
-willBroadcastAE :: Int
-                -> Map NodeId (LogIndex, UTCTime)
-                -> Set NodeId
-                -> Bool
-willBroadcastAE clusterSize' nodeCurrentIndex' vts =
+willBroadcastAE :: Bool -> Map NodeId (LogIndex, UTCTime) -> Bool
+willBroadcastAE everyoneBelieves nodeIndexMap =
   -- we only want to do this if we know that every node is in sync with us (the leader)
   let
-    everyoneBelieves = Set.size vts == clusterSize'
-    mniList = fst <$> Map.elems nodeCurrentIndex' -- get a list of where everyone is
-    mniSet = Set.fromList $ mniList -- condense every Followers LI into a set
-    inSync = 1 == Set.size mniSet && clusterSize' == length mniList -- if each LI is the same, then the set is a signleton
+    indexList = fst <$> Map.elems nodeIndexMap -- get a list of where everyone is
+    indexSet = Set.fromList $ indexList -- condense every Followers LI into a set
+    inSync = 1 == Set.size indexSet
   in
     everyoneBelieves && inSync
 
-canBroadcastAE :: Int
+canBroadcastAE :: Bool
                -> Map NodeId (LogIndex, UTCTime)
                -> Term
                -> NodeId
                -> Set NodeId
                -> AEBroadcastControl
                -> SenderService StateSnapshot InSync
-canBroadcastAE clusterSize' nodeCurrentIndex' ct myNodeId' vts broadcastControl =
+canBroadcastAE everyoneBelieves nodeIndexMap ct myNodeId' vts broadcastControl =
   -- we only want to do this if we know that every node is in sync with us (the leader)
   let
-    everyoneBelieves = Set.size vts == clusterSize'
-    mniList = fst <$> Map.elems nodeCurrentIndex' -- get a list of where everyone is
+    mniList = fst <$> Map.elems nodeIndexMap -- get a list of where everyone is
     mniSet = Set.fromList $ mniList -- condense every Followers LI into a set
     latestFollower = head $ Set.toDescList mniSet
-    laggingFollowers = Map.keysSet $ Map.filter ((/=) latestFollower . fst) nodeCurrentIndex'
-    inSync = 1 == Set.size mniSet && clusterSize' == length mniList -- if each LI is the same, then the set is a signleton
+    laggingFollowers = Map.keysSet $ Map.filter ((/=) latestFollower . fst) nodeIndexMap
+    inSync = 1 == Set.size mniSet -- if each LI is the same, then the set is a signleton
     mni = head $ Set.elems mniSet -- totally unsafe but we only call it if we are going to broadcast
   in
     if everyoneBelieves && inSync
@@ -322,6 +314,18 @@ canBroadcastAE clusterSize' nodeCurrentIndex' ct myNodeId' vts broadcastControl 
         debug $ "non-believers exist, establishing dominance over " ++ show ((Set.size vts) - 1)
         return $ BackStreet inSyncRpc $ Set.union laggingFollowers (oNodes' Set.\\ vts)
 {-# INLINE canBroadcastAE #-}
+
+checkVoteQuorum :: Cfg.GlobalConfigTMVar -> Set NodeId -> IO Bool
+checkVoteQuorum globalCfg votes = do
+  theConfig <- readCurrentConfig globalCfg
+  let myId = _nodeId theConfig
+  let currentNodes = getCurrentNodes theConfig
+  let currentQuorum = getQuorumSize $ Set.size currentNodes
+  let currentVotes = Set.size $ Set.filter (\x -> x `elem` currentNodes) votes
+  let newNodes = _changeToNodes theConfig
+  let changeToQuorum = getQuorumSizeOthers newNodes myId
+  let changeToVotes = Set.size $ Set.filter (\x -> x `elem` newNodes) votes
+  return $ currentVotes >= currentQuorum && changeToVotes >= changeToQuorum
 
 createAppendEntriesResponse' :: Bool -> Bool -> Term -> NodeId -> LogIndex -> Hash -> RPC
 createAppendEntriesResponse' success convinced ct myNodeId' lindex lhash =

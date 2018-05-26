@@ -11,10 +11,7 @@ import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer
 import Control.Parallel.Strategies
-
 import qualified Data.HashSet as HashSet
-
-import qualified Data.Set as Set
 import Data.BloomFilter (Bloom)
 import qualified Data.BloomFilter as Bloom
 import Data.Maybe (isJust)
@@ -24,11 +21,10 @@ import Data.Either (partitionEithers)
 import Kadena.Command
 import Kadena.Types hiding (nodeRole, cmdBloomFilter)
 import Kadena.Consensus.Util
-import qualified Kadena.Types as KD 
+import qualified Kadena.Types as KD
 
 import qualified Kadena.Sender.Service as Sender
 import qualified Kadena.Evidence.Types as Ev
-import Kadena.Util.Util
 
 data CommandEnv = CommandEnv
   { _nodeRole :: Role
@@ -107,9 +103,10 @@ handleBatch cmdbBatch = do
         sendHistoryNewKeys $ HashSet.union falsePositive $ HashSet.fromList $ toRequestKey . snd <$> _unBPAlreadySeen alreadySeen
       -- the false positives we already collisions so no need to add them
       KD.cmdBloomFilter .= updateBloom newEntries (KD._cmdBloomFilter s)
-      quorumSize' <- (getQuorumSize . Set.size) <$> viewConfig KD.otherNodes
       es <- view KD.evidenceState >>= liftIO
-      when (Sender.willBroadcastAE quorumSize' (es ^. Ev.pesNodeStates) (es ^. Ev.pesConvincedNodes)) resetHeartbeatTimer
+      gConfig <- view cfg
+      quorumOk <- liftIO $ Sender.checkVoteQuorum gConfig (es ^. Ev.pesConvincedNodes)
+      when (Sender.willBroadcastAE quorumOk (es ^. Ev.pesNodeStates)) resetHeartbeatTimer
     IAmFollower BatchProcessing{..} -> do
       when (isJust lid) $ do
         enqueueRequest' $ Sender.ForwardCommandToLeader $ NewCmdRPC (encodeCommand . snd <$> _unBPNewEntries newEntries) NewMsg

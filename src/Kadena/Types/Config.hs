@@ -14,11 +14,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 
 module Kadena.Types.Config
-  ( CCState (..)
-  , ClusterChangeCommand (..), cccPayload, cccSigs, cccHash
-  , ClusterChangeInfo (..), cciNewNodeList, cciAddedNodes, cciRemovedNodes, cciState
-  , ClusterChangeResult (..)
-  , Config(..), otherNodes, changeToNodes, nodeId, publicKeys, adminKeys, myPrivateKey, myPublicKey
+  ( Config(..), otherNodes, changeToNodes, nodeId, publicKeys, adminKeys, myPrivateKey, myPublicKey
   , electionTimeoutRange, heartbeatTimeout, enableDebug, apiPort, entity, logDir, enablePersistence
   , pactPersist, aeBatchSize, preProcThreadCount, preProcUsePar, inMemTxCache, hostStaticDir
   , nodeClass, logRules
@@ -27,11 +23,9 @@ module Kadena.Types.Config
   , GlobalConfig(..),  gcVersion, gcConfig
   , GlobalConfigTMVar
   , KeyPair(..)
-  , KeySet(..), ksCluster
   , PactPersistBackend(..)
   , PactPersistConfig(..)
   , PPBType(..)
-  , ProcessedClusterChg (..)
   , confToKeySet
   , getConfigWhenNew
   , getMissingKeys
@@ -42,16 +36,18 @@ module Kadena.Types.Config
   ) where
 
 import Control.Concurrent.STM
-import Control.DeepSeq
 import Control.Lens (makeLenses)
-import Data.Aeson
-import Data.Aeson.Types
-import Data.Default
+import Data.Aeson (ToJSON, FromJSON, (.:), (.:?), (.=))
+import qualified Data.Aeson as A
+import qualified Data.Aeson.Types as A
+import Data.ByteString (ByteString)
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Serialize
+import Data.Serialize (Serialize)
+import qualified Data.Serialize as S
 import Data.Set (Set)
 import Data.String.Conv
+import Data.Text (Text)
 import Data.Thyme.Time.Core ()
 import qualified Data.Yaml as Y
 import GHC.Generics hiding (from)
@@ -63,7 +59,9 @@ import Pact.Types.Util
 import Pact.Types.SQLite (SQLiteConfig)
 
 import Kadena.Types.Base
+import Kadena.Types.Command (CCPayload(..), ClusterChangeCommand(..), ClusterChangeInfo(..))
 import Kadena.Types.Entity (EntityConfig)
+import Kadena.Types.KeySet
 
 data PactPersistBackend =
   PPBInMemory |
@@ -108,14 +106,14 @@ data Config = Config
 data PPBType = SQLITE|MSSQL|INMEM deriving (Eq,Show,Read,Generic,FromJSON,ToJSON)
 
 instance FromJSON PactPersistBackend where
-  parseJSON = withObject "PactPersistBackend" $ \o -> do
+  parseJSON = A.withObject "PactPersistBackend" $ \o -> do
     ty <- o .: "type"
     case ty of
       SQLITE -> PPBSQLite <$> o .: "config"
       MSSQL -> PPBMSSQL <$> o .:? "config" <*> o .: "connStr"
       INMEM -> return PPBInMemory
 instance ToJSON PactPersistBackend where
-  toJSON p = object $ case p of
+  toJSON p = A.object $ case p of
     PPBInMemory -> [ "type" .= INMEM ]
     PPBSQLite {..} -> [ "type" .= SQLITE, "config" .= _ppbSqliteConfig ]
     PPBMSSQL {..} -> [ "type" .= MSSQL, "config" .= _ppbMssqlConfig, "connStr" .= _ppbMssqlConnStr ]
@@ -125,44 +123,6 @@ instance ToJSON Config where
   toJSON = lensyToJSON 1
 instance FromJSON Config where
   parseJSON = lensyParseJSON 1
-
-
-data CCState =
-  Transitional |
-  Final
-  deriving (Show, Eq, Ord, Generic, Serialize)
-instance ToJSON CCState where
-instance FromJSON CCState where
-instance NFData CCState
-
-data ClusterChangeInfo = ClusterChangeInfo
-  { _cciNewNodeList :: ![NodeId]
-  , _cciAddedNodes :: ![NodeId]
-  , _cciRemovedNodes :: ![NodeId]
-  , _cciState :: CCState }
-  deriving (Show, Eq, Generic, Serialize)
-makeLenses ''ClusterChangeInfo
-instance NFData ClusterChangeInfo
-
-data ClusterChangeCommand = ClusterChangeCommand
-  { _cccPayload :: !ClusterChangeInfo
-  , _cccSigs :: ![UserSig]
-  , _cccHash :: !Hash
-  } deriving (Eq, Show, Generic, Serialize)
-makeLenses ''ClusterChangeCommand
-instance NFData ClusterChangeCommand
-
-data ProcessedClusterChg =
-  ProcClusterChgSucc
-    !ClusterChangeCommand |
-    -- !(Set PublicKey) |
-  ProcClusterChgFail !String
-  deriving (Show, Eq, Generic, Serialize)
-
-data ClusterChangeResult =
-  ClusterChangeFailure !String
-  | ClusterChangeSuccess
-  deriving (Show, Eq, Ord, Generic, ToJSON, FromJSON, Serialize)
 
 data ConfigUpdater = ConfigUpdater
   { _cuPrintFn :: !(String -> IO ())
@@ -175,31 +135,19 @@ data DiffNodes = DiffNodes
   } deriving (Show,Eq,Ord,Generic)
 
 -- | Similar to mkCommand in the Pact.Types.Command module
---   TODO: add keys, signature:
-mkClusterChangeCommand :: ClusterChangeInfo -> ClusterChangeCommand
-mkClusterChangeCommand = undefined
+mkClusterChangeCommand :: [UserSig] -> Text -> ClusterChangeInfo -> ClusterChangeCommand ByteString
+mkClusterChangeCommand sigs nonce info =
+  mkClusterChangeCommand' sigs $ S.encode (CCPayload info nonce)
 
-singleFieldJsonOptions :: Int -> Options
-singleFieldJsonOptions n = defaultOptions
-  { fieldLabelModifier = lensyConstructorToNiceJson n
-  , sumEncoding = ObjectWithSingleField }
+mkClusterChangeCommand' :: [UserSig] -> ByteString -> ClusterChangeCommand ByteString
+mkClusterChangeCommand' sigs payload = ClusterChangeCommand payload sigs hsh
+  where
+    hsh = hash payload
 
-instance ToJSON ClusterChangeCommand where
-  toJSON = lensyToJSON 4
-instance FromJSON ClusterChangeCommand where
-  parseJSON = lensyParseJSON 4
-
-instance ToJSON ClusterChangeInfo where
-  toJSON = lensyToJSON 4
-instance FromJSON ClusterChangeInfo where
-  parseJSON = lensyParseJSON 4
-
-data KeySet = KeySet
-  { _ksCluster :: !(Map Alias PublicKey)
-  } deriving (Show, Eq, Ord)
-makeLenses ''KeySet
-instance Default KeySet where
-  def = KeySet Map.empty
+singleFieldJsonOptions :: Int -> A.Options
+singleFieldJsonOptions n = A.defaultOptions
+  { A.fieldLabelModifier = lensyConstructorToNiceJson n
+  , A.sumEncoding = A.ObjectWithSingleField }
 
 confToKeySet :: Config -> KeySet
 confToKeySet Config{..} = KeySet
@@ -210,9 +158,9 @@ data KeyPair = KeyPair
   , _kpPrivateKey :: PrivateKey
   } deriving (Show, Eq, Generic)
 instance ToJSON KeyPair where
-  toJSON = genericToJSON (singleFieldJsonOptions 3)
+  toJSON = A.genericToJSON (singleFieldJsonOptions 3)
 instance FromJSON KeyPair where
-  parseJSON = genericParseJSON (singleFieldJsonOptions 3)
+  parseJSON = A.genericParseJSON (singleFieldJsonOptions 3)
 
 getNewKeyPair :: FilePath -> IO KeyPair
 getNewKeyPair fp = do

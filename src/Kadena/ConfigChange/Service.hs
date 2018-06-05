@@ -22,6 +22,7 @@ import qualified Data.Set as Set
 import Kadena.ConfigChange.Types
 import Kadena.Event
 import Kadena.Types.Base
+import Kadena.Types.Command
 import Kadena.Types.Comms
 import Kadena.Types.Config
 import Kadena.Types.Dispatch (Dispatch)
@@ -69,7 +70,7 @@ debug s = do
   dbg <- view debugPrint
   liftIO $! dbg $! "[Kadena.ConfigChange.Service]: " ++ s
 
-mutateCluster :: GlobalConfigTMVar -> ProcessedClusterChg -> IO ClusterChangeResult
+mutateCluster :: GlobalConfigTMVar -> ProcessedClusterChg CCPayload -> IO ClusterChangeResult
 mutateCluster _ (ProcClusterChgFail err) = return $ ClusterChangeFailure err
 mutateCluster gc (ProcClusterChgSucc cmd) = do
   origGc@GlobalConfig{..} <- atomically $ takeTMVar gc
@@ -85,9 +86,9 @@ mutateCluster gc (ProcClusterChgSucc cmd) = do
     atomically $ putTMVar gc origGc
     return $ ClusterChangeFailure $ "Admin signatures missing from: " ++ show missingKeys
 
-execClusterChangeCmd :: Config -> ClusterChangeCommand -> IO Config
-execClusterChangeCmd cfg ccc = do
-  let changeInfo = _cccPayload ccc
+execClusterChangeCmd :: Config -> ClusterChangeCommand CCPayload -> IO Config
+execClusterChangeCmd cfg ClusterChangeCommand{..} = do
+  let changeInfo = _ccpInfo _cccPayload
   case _cciState changeInfo of
     Transitional -> return $ cfg { _changeToNodes = Set.fromList $ _cciNewNodeList changeInfo }
     Final -> do

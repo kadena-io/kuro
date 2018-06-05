@@ -15,6 +15,7 @@ import Kadena.Consensus.Util
 import Kadena.Event (foreverHeart)
 import Kadena.Types
 import Kadena.Types.Entity
+import Kadena.Types.KeySet
 
 import Kadena.Messaging.Turbine
 import qualified Kadena.Messaging.Turbine as Turbine
@@ -101,7 +102,7 @@ launchLogService dispatch' dbgPrint' publishMetric' rconf = do
   linkAsyncTrack "LogThread" (Log.runLogService dispatch' dbgPrint' publishMetric' rconf)
   linkAsyncTrack "LogHB" $ (foreverHeart (_logService dispatch') 1000000 Log.Heart)
 
-launchConfigChangeService :: Dispatch 
+launchConfigChangeService :: Dispatch
   -> (String -> IO ())
   -> (Metric -> IO ())
   -> Config
@@ -110,11 +111,11 @@ launchConfigChangeService dispatch' dbgPrint' publishMetric' rconf = do
   linkAsyncTrack "ConfigChangeThread" (CC.runConfigChangeService dispatch' dbgPrint' publishMetric' rconf)
   linkAsyncTrack "ConfigChangeHB" $ (foreverHeart (_cfgChangeChannel dispatch') 1000000 CC.Heart)
 
-launchSenderService :: Dispatch 
-  -> (String -> IO ()) 
+launchSenderService :: Dispatch
+  -> (String -> IO ())
   -> (Metric -> IO ())
   -> MVar Ev.PublishedEvidenceState
-  -> MVar PublishedConsensus 
+  -> MVar PublishedConsensus
   -> GlobalConfigTMVar
   -> IO ()
 launchSenderService dispatch' dbgPrint' publishMetric' mEvState mPubCons rconf = do

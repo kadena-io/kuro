@@ -90,6 +90,7 @@ library
                      , Kadena.Types.Dispatch
                      , Kadena.Types.Entity
                      , Kadena.Types.Event
+                     , Kadena.Types.KeySet
                      , Kadena.Types.Log
                      , Kadena.Types.Message
                      , Kadena.Types.Message.AE
@@ -241,6 +242,7 @@ test-suite hspec
   default-language: Haskell2010
   other-modules: ConfigChangeSpec
                , ConfigSpec
+               , EvidenceSpec
                , Util.TestRunner
                , WireFormatSpec
   build-depends: aeson

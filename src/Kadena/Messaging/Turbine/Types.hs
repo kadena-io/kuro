@@ -16,12 +16,13 @@ import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 
 import Kadena.Message
-import Kadena.Types hiding (debugPrint, nodeId)
+import Kadena.Types hiding (debugPrint)
+import Kadena.Types.KeySet
 
 data ReceiverEnv = ReceiverEnv
   { _dispatch :: Dispatch
   , _keySet :: KeySet
-  , _debugPrint :: String -> IO () 
+  , _debugPrint :: String -> IO ()
   , _restartTurbo :: MVar String
   }
 makeLenses ''ReceiverEnv

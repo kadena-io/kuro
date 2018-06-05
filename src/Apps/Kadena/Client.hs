@@ -62,9 +62,8 @@ import Text.Trifecta as TF hiding (err, rendered)
 
 import Kadena.Types.Base hiding (printLatTime)
 import Kadena.Types.Entity (EntityName)
-import Kadena.Types.Command (CmdResultLatencyMetrics(..), CCPayload(..))
-import Kadena.Types.Command (ClusterChangeInfo(..), ClusterChangeCommand(..))
-
+import Kadena.Types.Command ( CmdResultLatencyMetrics(..), CCPayload(..)
+                            , ClusterChangeInfo(..), ClusterChangeCommand(..) )
 import Pact.Types.API hiding (Poll)
 import qualified Pact.Types.API as Pact
 import qualified Pact.Types.Command as Pact

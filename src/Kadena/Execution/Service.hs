@@ -9,7 +9,7 @@ module Kadena.Execution.Service
   , module Kadena.Execution.Types
   ) where
 
-import Control.Lens hiding (Index, (|>))
+import Control.Lens hiding (Index)
 import Control.Concurrent
 import Control.Monad
 import Control.Monad.IO.Class

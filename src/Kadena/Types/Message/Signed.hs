@@ -15,7 +15,7 @@ module Kadena.Types.Message.Signed
   ) where
 
 import Control.Exception
-import Control.Lens hiding (Index, (|>))
+import Control.Lens hiding (Index)
 import Control.Parallel.Strategies
 import Data.Typeable
 
@@ -23,7 +23,7 @@ import qualified Data.Map as Map
 import Data.ByteString (ByteString)
 import Data.Serialize (Serialize)
 import Data.Thyme.Time.Core ()
-import GHC.Generics hiding (from)
+import GHC.Generics
 
 import Kadena.Types.Base
 import Kadena.Types.KeySet

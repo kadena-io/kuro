@@ -57,7 +57,7 @@ handle = do
       -- TBD...
       let s = "[Kadena.ConfigChange.Service]: \n"
            ++ "newNodeSet: " ++ show newNodeSet ++ "\n"
-           ++ "consensusLists: " ++ concat (fmap show consensusLists)
+           ++ "consensusLists: " ++ concatMap show consensusLists
            ++ "[Kadena.ConfigChange.Service]: **** TBD: Restart Now *****"
       liftIO $ putStrLn s
       debug s

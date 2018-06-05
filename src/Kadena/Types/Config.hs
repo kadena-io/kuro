@@ -50,7 +50,7 @@ import Data.String.Conv
 import Data.Text (Text)
 import Data.Thyme.Time.Core ()
 import qualified Data.Yaml as Y
-import GHC.Generics hiding (from)
+import GHC.Generics
 
 import Pact.Persist.MSSQL (MSSQLConfig(..))
 import Pact.Types.Command (UserSig(..))
@@ -184,7 +184,7 @@ getMissingKeys :: Config -> [UserSig]-> [Alias]
 getMissingKeys cfg sigs =
   let keys = fmap _usPubKey sigs
       filtered = filter f (Map.toList (_adminKeys cfg)) where
-        f (_, k) = not $ toS (show k) `elem` keys
+        f (_, k) = notElem (toS (show k)) keys
   in fmap fst filtered
 
 getConfigWhenNew :: ConfigVersion -> GlobalConfigTMVar -> STM GlobalConfig

@@ -240,7 +240,8 @@ test-suite hspec
   hs-source-dirs: tests
   ghc-options:      -Wall
   default-language: Haskell2010
-  other-modules: ConfigChangeSpec
+  other-modules: ConfigChangeFileSpec
+               , ConfigChangeSpec
                , ConfigSpec
                , EvidenceSpec
                , Util.TestRunner
@@ -253,6 +254,7 @@ test-suite hspec
                , data-default
                , deepseq
                , ed25519-donna
+               , exceptions
                , extra
                , hspec
                , kadena

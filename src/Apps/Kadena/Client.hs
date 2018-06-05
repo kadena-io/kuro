@@ -41,10 +41,8 @@ import qualified Data.HashMap.Strict as HM
 import Data.Int
 import Data.Maybe
 import Data.List
-import qualified Data.Serialize as S
 import qualified Data.Set as S
 import Data.String
-import Data.String.Conv
 import qualified Data.Text as T
 import Data.Text.Encoding (decodeUtf8)
 import Data.Thyme.Clock
@@ -60,15 +58,14 @@ import System.Exit hiding (die)
 import System.IO
 import Text.Trifecta as TF hiding (err, rendered)
 
+import Kadena.ConfigChange.Service (mkConfigChangeApiReq)
 import Kadena.Types.Base hiding (printLatTime)
 import Kadena.Types.Entity (EntityName)
-import Kadena.Types.Command ( CmdResultLatencyMetrics(..), CCPayload(..)
-                            , ClusterChangeInfo(..), ClusterChangeCommand(..) )
+import Kadena.Types.Command ( CmdResultLatencyMetrics(..), ClusterChangeCommand(..) )
 import Pact.Types.API hiding (Poll)
 import qualified Pact.Types.API as Pact
 import qualified Pact.Types.Command as Pact
 import qualified Pact.Types.Crypto as Pact
-import Pact.Types.Hash (hash)
 import Pact.Types.RPC
 import Pact.Types.Util
 import Pact.ApiReq
@@ -347,36 +344,6 @@ loadConfigChange :: FilePath -> Repl ()
 loadConfigChange fp = do
   cmd <- liftIO $ mkConfigChangeApiReq fp
   sendConfigChangeCmd cmd fp
-
-yamlErr :: String -> IO a
-yamlErr errMsg = throwM  . userError $ "Failure reading yaml: " ++ errMsg
-
--- MLN: move this to the correct module:
-mkConfigChangeApiReq :: FilePath -> IO (ClusterChangeCommand B.ByteString)
-mkConfigChangeApiReq fp = do
-  ConfigChangeApiReq{..} <- either (yamlErr . show) return =<<
-                            liftIO (Y.decodeFileEither fp)
-  rid <- maybe (show <$> getCurrentTime) return _ylccNonce
-  let ccPayload = CCPayload
-                   { _ccpInfo = _ylccInfo
-                   , _ccpNonce = toS rid }
-  let ccPayloadBS = S.encode ccPayload
-  let theHash = hash ccPayloadBS
-  let clusterChgCmdBS =  ClusterChangeCommand
-                          { _cccPayload = ccPayloadBS
-                          , _cccSigs = _ylccKeyPairs
-                          , _cccHash = theHash }   -- :: ClusterChangeCommand ByteString
-
-  return clusterChgCmdBS
-
--- MLN: move this to the correct module:
-data ConfigChangeApiReq = ConfigChangeApiReq
-  { _ylccInfo :: ClusterChangeInfo
-  , _ylccKeyPairs :: ![Pact.UserSig]
-  , _ylccNonce :: Maybe String
-  } deriving (Eq,Show,Generic)
-instance ToJSON ConfigChangeApiReq where toJSON = lensyToJSON 5
-instance FromJSON ConfigChangeApiReq where parseJSON = lensyParseJSON 5
 
 showResult :: Int -> [RequestKey] -> Maybe Int64 -> Repl ()
 showResult _ [] _ = return ()

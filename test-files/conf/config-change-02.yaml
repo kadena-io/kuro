@@ -1,0 +1,30 @@
+info:
+  newNodeList:
+  - alias: node0
+    fullAddr: tcp://127.0.0.1:10000
+    host: '127.0.0.1'
+    port: 10000
+  - alias: node1
+    fullAddr: tcp://127.0.0.1:10001
+    host: '127.0.0.1'
+    port: 10001
+  - alias: node2
+    fullAddr: tcp://127.0.0.1:10002
+    host: '127.0.0.1'
+    port: 10002
+  addedNodes:
+  - alias: node2
+    fullAddr: tcp://127.0.0.1:10002
+    host: '127.0.0.1'
+    port: 10002
+  removedNodes:
+  - alias: node3
+    fullAddr: tcp://127.0.0.1:10003
+    host: '127.0.0.1'
+    port: 10003
+  state: Transitional
+keyPairs:
+  - scheme: ED25519
+    pubKey: 06c9c56daa8a068e1f19f5578cdf1797b047252e1ef0eb4a1809aa3c2226f61e
+    sig: 7ce4bae38fccfe33b6344b8c260bffa21df085cf033b3dc99b4781b550e1e922
+nonce:

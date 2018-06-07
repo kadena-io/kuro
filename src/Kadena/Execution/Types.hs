@@ -33,8 +33,9 @@ import Pact.Types.RPC (PactRPC)
 
 
 import Kadena.Types.Base (NodeId)
-import Kadena.Types.Config (PactPersistConfig,GlobalConfigTMVar,KeySet)
+import Kadena.Types.Config (PactPersistConfig,GlobalConfigTMVar)
 import Kadena.Types.Comms (Comms(..),initCommsNormal,readCommNormal,writeCommNormal)
+import Kadena.Types.KeySet
 import Kadena.Types.Metric (Metric)
 import Kadena.Types.Log (LogEntry,LogEntries)
 
@@ -67,7 +68,7 @@ data ExecutionEnv = ExecutionEnv
   { _execChannel :: !ExecutionChannel
   , _historyChannel :: !HistoryChannel
   , _privateChannel :: !PrivateChannel
-  , _pactPersistConfig :: !PactPersistConfig 
+  , _pactPersistConfig :: !PactPersistConfig
   , _debugPrint :: !(String -> IO ())
   , _execLoggers :: !Loggers
   , _publishMetric :: !(Metric -> IO ())

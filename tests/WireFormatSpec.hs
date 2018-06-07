@@ -15,6 +15,7 @@ import Data.Maybe
 import Kadena.Command
 import Kadena.Log
 import Kadena.Types
+import Kadena.Types.KeySet
 import qualified Pact.Types.Command as Pact
 import Pact.Types.Crypto
 import Pact.Types.RPC

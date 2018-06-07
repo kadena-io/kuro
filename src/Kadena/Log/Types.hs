@@ -46,7 +46,7 @@ import GHC.Generics
 
 import Kadena.Types.Base as X
 import Kadena.Types.Metric
-import Kadena.Types.Config (KeySet(..))
+import Kadena.Types.KeySet
 import Kadena.Types.Log
 import Kadena.Types.Comms
 

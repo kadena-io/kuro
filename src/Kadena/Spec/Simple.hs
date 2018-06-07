@@ -38,6 +38,7 @@ import Kadena.Types.Config
 import Kadena.Types.Spec hiding (timeCache)
 import Kadena.Types.Metric
 import Kadena.Types.Dispatch
+import Kadena.Types.KeySet
 import Kadena.Util.Util (awsDashVar, linkAsyncTrack)
 import Kadena.Messaging.ZMQ
 import Kadena.Monitoring.Server (startMonitoring)

@@ -15,7 +15,7 @@ module Kadena.Types.Message.Signed
   ) where
 
 import Control.Exception
-import Control.Lens hiding (Index, (|>))
+import Control.Lens hiding (Index)
 import Control.Parallel.Strategies
 import Data.Typeable
 
@@ -23,10 +23,10 @@ import qualified Data.Map as Map
 import Data.ByteString (ByteString)
 import Data.Serialize (Serialize)
 import Data.Thyme.Time.Core ()
-import GHC.Generics hiding (from)
+import GHC.Generics
 
 import Kadena.Types.Base
-import Kadena.Types.Config
+import Kadena.Types.KeySet
 
 -- | One way or another we need a way to figure our what set of public keys to use for verification of signatures.
 -- By placing the message type in the digest, we can make the WireFormat implementation easier as well. CMD and REV

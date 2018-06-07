@@ -4,10 +4,11 @@
 {-# LANGUAGE RecordWildCards #-}
 
 module Kadena.Consensus.Handle.AppendEntries
-  (handle
-  ,createAppendEntriesResponse
-  ,clearLazyVoteAndInformCandidates)
-where
+  ( createAppendEntriesResponse
+  , clearLazyVoteAndInformCandidates
+  , handle
+  , handleCC
+  ) where
 
 import Control.Lens hiding (Index)
 import Control.Monad.Reader
@@ -203,6 +204,9 @@ applyNewLeader NewLeaderConfirmed{..} = do
 logHashChange :: Hash -> KD.Consensus ()
 logHashChange (Hash mLastHash) = do
   logMetric $ KD.MetricHash mLastHash
+
+handleCC :: ClusterChangeMsg -> KD.Consensus ()
+handleCC (ClusterChangeMsg _ ae) = handle ae
 
 handle :: AppendEntries -> KD.Consensus ()
 handle ae = do

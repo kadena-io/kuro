@@ -1,17 +1,25 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module Kadena.Types.Command
-  ( Command(..), sccCmd, sccPreProc, cccCmd, cccPreProc, pcCmd
+  ( CCPayload (..)
+  , CCState (..)
+  , ClusterChangeCommand (..), cccPayload, cccSigs, cccHash
+  , ClusterChangeInfo (..), cciNewNodeList, cciAddedNodes, cciRemovedNodes, cciState
+  , ClusterChangeResult (..)
+  , Command(..), sccCmd, sccPreProc, cccCmd, cccPreProc, pcCmd
   , Hashed(..)
   , Preprocessed(..)
   , RunPreProc(..)
   , FinishedPreProc(..)
   , PendingResult(..)
+  , ProcessedClusterChg (..)
   , SCCPreProcResult, CCCPreProcResult
   , CMDWire(..)
   , CommandResult(..), crHash, crLogIndex, crLatMetrics
@@ -25,12 +33,12 @@ module Kadena.Types.Command
   , getCmdBodyHash
   ) where
 
-import Control.Lens
+import Control.Lens (ASetter, makeLenses)
 import Control.Concurrent
 import Control.DeepSeq
 import Data.Serialize (Serialize)
 import Data.ByteString (ByteString)
-
+import Data.Text (Text)
 import Data.Thyme.Clock
 import Data.Thyme.Time.Core ()
 import Data.Aeson
@@ -38,7 +46,6 @@ import GHC.Generics
 import GHC.Int (Int64)
 
 import Kadena.Types.Base
-import Kadena.Types.Config
 import Kadena.Private.Types (PrivateCiphertext,PrivateResult)
 
 import qualified Pact.Types.Command as Pact
@@ -81,15 +88,75 @@ instance (Show a) => Show (Preprocessed a) where
   show Pending{} = "Pending {unPending = <MVar>}"
   show (Result a) = "Result {unResult = " ++ show a ++ "}"
 
+data CCState =
+  Transitional |
+  Final
+  deriving (Show, Eq, Ord, Generic, Serialize)
+instance ToJSON CCState where
+instance FromJSON CCState where
+instance NFData CCState
+
+data ClusterChangeInfo = ClusterChangeInfo
+  { _cciNewNodeList :: ![NodeId]
+  , _cciAddedNodes :: ![NodeId]
+  , _cciRemovedNodes :: ![NodeId]
+  , _cciState :: CCState }
+  deriving (Show, Eq, Generic, Serialize)
+makeLenses ''ClusterChangeInfo
+instance NFData ClusterChangeInfo
+instance ToJSON ClusterChangeInfo where
+  toJSON = lensyToJSON 4
+instance FromJSON ClusterChangeInfo where
+  parseJSON = lensyParseJSON 4
+
+data CCPayload = CCPayload
+  { _ccpInfo :: !ClusterChangeInfo
+  , _ccpNonce :: !Text
+  } deriving (Show, Eq, Generic, Serialize)
+
+instance NFData CCPayload
+instance ToJSON CCPayload where toJSON = lensyToJSON 4
+instance FromJSON CCPayload where parseJSON = lensyParseJSON 4
+
+data ClusterChangeCommand a = ClusterChangeCommand
+  { _cccPayload :: !a
+  , _cccSigs :: ![Pact.UserSig]
+  , _cccHash :: !Hash
+  } deriving (Eq, Show, Generic)
+makeLenses ''ClusterChangeCommand
+
+instance (Serialize a) => Serialize (ClusterChangeCommand a)
+instance (ToJSON a) => ToJSON (ClusterChangeCommand a) where
+    toJSON (ClusterChangeCommand payload uSigs hsh) =
+        object [ "cmd" .= payload
+               , "sigs" .= toJSON uSigs
+               , "hash" .= hsh
+               ]
+instance (FromJSON a) => FromJSON (ClusterChangeCommand a) where
+    parseJSON = withObject "Command" $ \o ->
+      ClusterChangeCommand <$> (o .: "cmd")
+                           <*> (o .: "sigs" >>= parseJSON)
+                           <*> (o .: "hash")
+    {-# INLINE parseJSON #-}
+
+instance NFData a => NFData (ClusterChangeCommand a)
+
+data ProcessedClusterChg a =
+  ProcClusterChgSucc
+    !(ClusterChangeCommand a) |
+  ProcClusterChgFail !String
+  deriving (Show, Eq, Generic, Serialize)
+instance NFData a => NFData (ProcessedClusterChg a)
+
 type SCCPreProcResult = PendingResult (Pact.ProcessedCommand (Pact.PactRPC Pact.ParsedCode))
-type CCCPreProcResult = PendingResult ProcessedClusterChg
+type CCCPreProcResult = PendingResult (ProcessedClusterChg CCPayload)
 
 data RunPreProc =
   RunSCCPreProc
     { _rpSccRaw :: !(Pact.Command ByteString)
     , _rpSccMVar :: !(MVar SCCPreProcResult) } |
   RunCCCPreProc
-    { _rpCccRaw :: !ClusterChangeCommand
+    { _rpCccRaw :: !(ClusterChangeCommand ByteString)
     , _rpCccMVar :: !(MVar CCCPreProcResult) }
 
 data FinishedPreProc =
@@ -97,7 +164,7 @@ data FinishedPreProc =
     { _fppSccRes :: !(Pact.ProcessedCommand (Pact.PactRPC Pact.ParsedCode))
     , _fppSccMVar :: !(MVar SCCPreProcResult)} |
   FinishedPreProcCCC
-    { _fppCccRes :: !ProcessedClusterChg
+    { _fppCccRes :: !(ProcessedClusterChg CCPayload)
     , _fppCccMVar :: !(MVar CCCPreProcResult)}
 
 instance NFData FinishedPreProc where
@@ -120,8 +187,8 @@ data Command =
   { _sccCmd :: !(Pact.Command ByteString)
   , _sccPreProc :: !(Preprocessed (Pact.ProcessedCommand (Pact.PactRPC Pact.ParsedCode))) } |
   ConsensusChangeCommand
-  { _cccCmd :: !ClusterChangeCommand
-  , _cccPreProc :: !(Preprocessed ProcessedClusterChg)} |
+  { _cccCmd :: !(ClusterChangeCommand ByteString)
+  , _cccPreProc :: !(Preprocessed (ProcessedClusterChg CCPayload))} |
   PrivateCommand
   { _pcCmd :: !(Hashed PrivateCiphertext)
   }
@@ -130,6 +197,11 @@ makeLenses ''Command
 
 instance Ord Command where
   compare a b = compare (getCmdBodyHash a) (getCmdBodyHash b)
+
+data ClusterChangeResult =
+  ClusterChangeFailure !String
+  | ClusterChangeSuccess
+  deriving (Show, Eq, Ord, Generic, ToJSON, FromJSON, Serialize)
 
 getCmdBodyHash :: Command -> Hash
 getCmdBodyHash SmartContractCommand{ _sccCmd = Pact.Command{..}} = _cmdHash

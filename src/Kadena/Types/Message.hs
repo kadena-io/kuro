@@ -24,6 +24,8 @@ import Kadena.Types.Comms
 
 import Kadena.Types.Message.AE as X
 import Kadena.Types.Message.AER as X
+import Kadena.Types.Message.CC as X
+import Kadena.Types.Message.CCR as X
 import Kadena.Types.Message.NewCMD as X
 import Kadena.Types.Message.RV as X
 import Kadena.Types.Message.RVR as X
@@ -39,6 +41,8 @@ data RPC = AE'   AppendEntries
          | RV'   RequestVote
          | RVR'  RequestVoteResponse
          | NEW'  NewCmdRPC -- NB: this should never go in ERPC as an internal event, use NewCmd
+         | CC'   ClusterChangeMsg
+         | CCR'  ClusterChangeResponse
   deriving (Show, Eq, Generic)
 
 data InboundCMD =

@@ -9,7 +9,7 @@ module Kadena.Execution.Service
   , module Kadena.Execution.Types
   ) where
 
-import Control.Lens hiding (Index, (|>))
+import Control.Lens hiding (Index)
 import Control.Concurrent
 import Control.Monad
 import Control.Monad.IO.Class
@@ -33,6 +33,7 @@ import Kadena.Types.Base
 import Kadena.Execution.Types
 import Kadena.Types.Metric
 import Kadena.Types.Command
+import Kadena.Types.KeySet
 import Kadena.Types.Log
 import Kadena.Types.Dispatch (Dispatch)
 import qualified Kadena.Types.Dispatch as D
@@ -257,6 +258,7 @@ applyLocalCommand (cmd, mv) = do
   cr <- liftIO $ applyLocal Local cmd
   liftIO $ putMVar mv (Pact._crResult cr)
 
+-- MLN: TBD
 applyConfigChange :: LogEntries -> ExecutionService ()
 applyConfigChange _ = debug "[Execution service]: applyConfigChange - not implemented"
 

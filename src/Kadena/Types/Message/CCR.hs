@@ -19,7 +19,7 @@ import Data.Thyme.Time.Core ()
 import GHC.Generics
 
 import Kadena.Types.Base
-import Kadena.Types.Config
+import Kadena.Types.KeySet
 import Kadena.Types.Message.Signed
 
 data ClusterChangeResponse = ClusterChangeResponse

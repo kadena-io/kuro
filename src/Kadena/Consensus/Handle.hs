@@ -42,3 +42,5 @@ handleRPC rpc = case rpc of
   RV' rv          -> PureRequestVote.handle rv
   RVR' rvr        -> PureRequestVoteResponse.handle rvr
   NEW' _          -> error "Invariant Error: new commands should never be `RPC (NEW' _) :: Event`, use `NewCmd :: Event` instead"
+  CC' cc          -> PureAppendEntries.handleCC cc
+  CCR' ccr        -> error $ "Invariant Error: CCR received by Consensus Service" ++ show ccr

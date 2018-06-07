@@ -17,7 +17,7 @@ import qualified Data.Serialize as S
 import GHC.Generics
 
 import Kadena.Types.Base
-import Kadena.Types.Config
+import Kadena.Types.KeySet
 import Kadena.Types.Message.Signed
 
 -- TODO: perhaps add leaderId into the AER's to protect against a possible attack vector of dual leaders where followers still come to consensus

@@ -3,6 +3,7 @@
 module Kadena.ConfigChange.Service
   ( diffNodes
   , execClusterChangeCmd
+  , mkConfigChangeApiReq
   , mutateCluster
   , runConfigChangeService
   , runConfigUpdater
@@ -15,13 +16,21 @@ import Control.Lens
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.RWS.Lazy
+import Control.Monad.Catch hiding (handle)
+import Data.Thyme.Clock
+import qualified Data.ByteString as B
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Serialize as S
 import Data.Set (Set)
 import qualified Data.Set as Set
+import Data.String.Conv
+import qualified Data.Yaml as Y
+
 import Kadena.ConfigChange.Types
 import Kadena.Event
 import Kadena.Types.Base
+import Kadena.Types.Command
 import Kadena.Types.Comms
 import Kadena.Types.Config
 import Kadena.Types.Dispatch (Dispatch)
@@ -56,7 +65,7 @@ handle = do
       -- TBD...
       let s = "[Kadena.ConfigChange.Service]: \n"
            ++ "newNodeSet: " ++ show newNodeSet ++ "\n"
-           ++ "consensusLists: " ++ concat (fmap show consensusLists)
+           ++ "consensusLists: " ++ concatMap show consensusLists
            ++ "[Kadena.ConfigChange.Service]: **** TBD: Restart Now *****"
       liftIO $ putStrLn s
       debug s
@@ -69,7 +78,7 @@ debug s = do
   dbg <- view debugPrint
   liftIO $! dbg $! "[Kadena.ConfigChange.Service]: " ++ s
 
-mutateCluster :: GlobalConfigTMVar -> ProcessedClusterChg -> IO ClusterChangeResult
+mutateCluster :: GlobalConfigTMVar -> ProcessedClusterChg CCPayload -> IO ClusterChangeResult
 mutateCluster _ (ProcClusterChgFail err) = return $ ClusterChangeFailure err
 mutateCluster gc (ProcClusterChgSucc cmd) = do
   origGc@GlobalConfig{..} <- atomically $ takeTMVar gc
@@ -85,9 +94,9 @@ mutateCluster gc (ProcClusterChgSucc cmd) = do
     atomically $ putTMVar gc origGc
     return $ ClusterChangeFailure $ "Admin signatures missing from: " ++ show missingKeys
 
-execClusterChangeCmd :: Config -> ClusterChangeCommand -> IO Config
-execClusterChangeCmd cfg ccc = do
-  let changeInfo = _cccPayload ccc
+execClusterChangeCmd :: Config -> ClusterChangeCommand CCPayload -> IO Config
+execClusterChangeCmd cfg ClusterChangeCommand{..} = do
+  let changeInfo = _ccpInfo _cccPayload
   case _cciState changeInfo of
     Transitional -> return $ cfg { _changeToNodes = Set.fromList $ _cciNewNodeList changeInfo }
     Final -> do
@@ -123,3 +132,22 @@ diffNodes :: Set NodeId -> Set NodeId -> DiffNodes
 diffNodes prevNodes newNodes = DiffNodes
   { nodesToAdd = Set.difference newNodes prevNodes
   , nodesToRemove = Set.difference prevNodes newNodes }
+
+mkConfigChangeApiReq :: FilePath -> IO (ClusterChangeCommand B.ByteString)
+mkConfigChangeApiReq fp = do
+  ConfigChangeApiReq{..} <- either (yamlErr . show) return =<<
+                            liftIO (Y.decodeFileEither fp)
+  rid <- maybe (show <$> getCurrentTime) return _ylccNonce
+  let ccPayload = CCPayload
+                   { _ccpInfo = _ylccInfo
+                   , _ccpNonce = toS rid }
+  let ccPayloadBS = S.encode ccPayload
+  let theHash = hash ccPayloadBS
+  let clusterChgCmdBS =  ClusterChangeCommand
+                          { _cccPayload = ccPayloadBS
+                          , _cccSigs = _ylccKeyPairs
+                          , _cccHash = theHash }   -- :: ClusterChangeCommand ByteString
+  return clusterChgCmdBS
+
+yamlErr :: String -> IO a
+yamlErr errMsg = throwM  . userError $ "Failure reading yaml: " ++ errMsg

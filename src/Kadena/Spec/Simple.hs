@@ -140,7 +140,7 @@ _resetAwsEnv awsEnabled = do
 runServer :: IO ()
 runServer = do
   setLineBuffering
-  T.putStrLn $! "Kadena LLC (c) (2016-2017)"
+  T.putStrLn $! "Kadena LLC (c) (2016-2018)"
   rconf <- getConfig
   gcm <- initGlobalConfigTMVar rconf
 #if WITH_KILL_SWITCH

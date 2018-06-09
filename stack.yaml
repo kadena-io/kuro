@@ -8,11 +8,11 @@ packages:
 - '.'
 - location:
     git: https://github.com/kadena-io/pact.git
-    commit: d1f2892bc739c1f8fb26b59b4e7528a592d5d12d
+    commit: 9635c9472ad0ea79437cd780b655c195ce101d7e
   extra-dep: true
 - location:
     git: https://github.com/kadena-io/pact-persist.git
-    commit: b9c627663d402ec7d2fe9665872e9c01ab8de07a
+    commit: eae74f1b153b14c1818054786cc2d3eb4cfbdfeb
   extra-dep: true
 - location:
     git: https://github.com/abbradar/hdbc-odbc.git
@@ -22,6 +22,11 @@ packages:
     git: https://github.com/kadena-io/thyme.git
     commit: 6ee9fcb026ebdb49b810802a981d166680d867c9
   extra-dep: true
+- location:
+    git: https://github.com/LeventErkok/sbv.git
+    commit: dbbdd396d069dc8235f5c8cf58209886318f6525 # with symbolic string support
+  extra-dep: true
+
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)
 extra-deps:
@@ -38,6 +43,7 @@ extra-deps:
 - ekg-prometheus-adapter-0.1.0.3
 - prometheus-0.4.2
 - system-command-0.0.10
+- monad-gen-0.3.0.1
 
 # Override default flag values for local packages and extra-deps
 flags: {}

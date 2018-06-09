@@ -1,5 +1,5 @@
 name:                kadena
-version:             1.1.1.1
+version:             1.1.2.0
 synopsis:            A high performance private blockchain.
 description:         An implementation of ScalableBFT running Pact as the Smart Contract Language
 homepage:            https://github.com/buckie/kadena
@@ -154,7 +154,7 @@ library
                      , mtl
                      , mtl-compat
                      , network
-                     , pact == 2.3.7
+                     , pact == 2.4.*
                      , pact-persist == 1.0.*
                      , parallel
                      , parsers

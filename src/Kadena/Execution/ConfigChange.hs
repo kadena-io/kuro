@@ -5,12 +5,15 @@ module Kadena.Execution.ConfigChange
 ( processClusterChange
 ) where
 
+import Control.Exception
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Base16 as B16
 import qualified Data.Aeson as A
 import Data.String.Conv
 import qualified Crypto.Ed25519.Pure as Ed (PublicKey, Signature(..), importPublic)
 
+import Kadena.Types.Message.Signed (DeserializationError(..))
+  
 import Pact.Types.Command(UserSig(..))
 import Pact.Types.Util(Hash(..))
 import Kadena.Types.Command(CCPayload(..), ClusterChangeCommand(..), ProcessedClusterChg (..))
@@ -37,7 +40,7 @@ decodeCCPayload :: ClusterChangeCommand ByteString -> ClusterChangeCommand CCPay
 decodeCCPayload bsCmd =
   let decoded = A.eitherDecodeStrict' (_cccPayload bsCmd) :: Either String CCPayload
   in case decoded of
-    Left e -> error $ "JSON payload decode failed: " ++ show e
+    Left err -> throw $ DeserializationError $ err ++ "\n### for ###\n" ++ show (_cccPayload bsCmd)
     Right ccpl -> ClusterChangeCommand
                     { _cccPayload = ccpl
                     , _cccSigs = _cccSigs bsCmd

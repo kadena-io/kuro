@@ -199,7 +199,7 @@ mkExec code mdata addy = do
     (T.pack $ show rid)
     (Exec (ExecMsg (T.pack code) mdata))
 
-postAPI :: (Show req, ToJSON req,FromJSON resp) => String -> req -> Repl (Response resp)
+postAPI :: (ToJSON req,FromJSON resp) => String -> req -> Repl (Response resp)
 postAPI ep rq = do
   use echo >>= \e -> when e $ putJSON rq
   s <- getServer
@@ -260,7 +260,7 @@ sendPrivate addy msg = do
   e <- mkExec msg j (Just addy)
   postAPI "private" (SubmitBatch [e]) >>= handleResp handleBatchResp
 
-putJSON :: (Show a, ToJSON a) => a -> Repl ()
+putJSON :: (ToJSON a) => a -> Repl ()
 putJSON a =
   use fmt >>= \f -> flushStrLn $ case f of
     Raw -> BSL.unpack $ encode a

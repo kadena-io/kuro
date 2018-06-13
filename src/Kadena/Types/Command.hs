@@ -214,11 +214,6 @@ data ClusterChangeResult =
   | ClusterChangeSuccess
   deriving (Show, Eq, Ord, Generic, ToJSON, FromJSON, Serialize)
 
--- MLN: add this back or remove
--- instance ToJSON ClusterChangeResult where
---    toJSON _ = object [ "status" .= ("success" :: String)
---                    , "data" .= ("Cluster change successful" :: String) ]
-
 getCmdBodyHash :: Command -> Hash
 getCmdBodyHash SmartContractCommand{ _sccCmd = Pact.Command{..}} = _cmdHash
 getCmdBodyHash ConsensusChangeCommand{ _cccCmd = ClusterChangeCommand{..}} = _cccHash

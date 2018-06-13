@@ -31,7 +31,6 @@ import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Set as Set
 import qualified Data.Serialize as SZ
-import Data.Text (Text)
 import qualified Debug.Trace as Debug
 
 import Snap.Core
@@ -138,13 +137,6 @@ sendClusterChange = do
   let rpcs = [buildCCCmdRpc ccCmd]
   queueRpcs rpcs
 
--- MLN: move this to the correct module:
--- TODO: can Pact's buildCmdRpc be replaced with something that works with the more general
--- Command data type defined in Kadena.Types.Command (i.e., work for Config change as well as for
--- Pact commands)? For now, a separate buildCCCmdRpc:
-buildCCCmdRpc :: ClusterChangeCommand Text -> (RequestKey, CMDWire)
-buildCCCmdRpc c@ClusterChangeCommand {..} = (RequestKey _cccHash, clusterChgTextToCMDWire c)
-
 queueRpcs :: [(RequestKey,CMDWire)] -> Api ()
 queueRpcs rpcs = do
   p <- view aiPublish
@@ -233,7 +225,7 @@ tryParseJSON
      BSL.ByteString -> Api (BS.ByteString, t)
 tryParseJSON b = case eitherDecode b of
     Right v -> return (toStrict b,v)
-    Left e -> Debug.trace ("Tried to parse: " ++ show b) die ("Ziz one!: " ++ e)
+    Left e -> Debug.trace ("Tried to parse: " ++ show b) die e
 
 setJSON :: Api ()
 setJSON = modifyResponse $ setHeader "Content-Type" "application/json"

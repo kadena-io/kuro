@@ -2,6 +2,7 @@
 {-# LANGUAGE RecordWildCards #-}
 module Kadena.Consensus.Publish
   ( Publish(..), publish, buildCmdRpc, buildCmdRpcBS
+  , buildCCCmdRpc
   , pactBSToCMDWire, pactTextToCMDWire
   , clusterChgBSToCMDWire, clusterChgTextToCMDWire
   ) where
@@ -60,6 +61,12 @@ buildCmdRpc c@Pact.Command{..} = (RequestKey _cmdHash, pactTextToCMDWire c)
 
 buildCmdRpcBS :: Pact.Command ByteString -> (RequestKey,CMDWire)
 buildCmdRpcBS c@Pact.Command{..} = (RequestKey _cmdHash, pactBSToCMDWire c)
+
+-- TODO: can Pact's buildCmdRpc be replaced with something that works with the more general
+-- Command data type defined in Kadena.Types.Command (i.e., work for Config change as well as for
+-- Pact commands)? For now, a separate buildCCCmdRpc:
+buildCCCmdRpc :: ClusterChangeCommand Text -> (RequestKey, CMDWire)
+buildCCCmdRpc c@ClusterChangeCommand {..} = (RequestKey _cccHash, clusterChgTextToCMDWire c)
 
 clusterChgTextToCMDWire :: ClusterChangeCommand Text -> CMDWire
 clusterChgTextToCMDWire cmd = clusterChgBSToCMDWire (encodeUtf8 <$> cmd)

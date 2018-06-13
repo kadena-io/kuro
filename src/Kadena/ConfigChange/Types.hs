@@ -6,7 +6,6 @@
 
 module Kadena.ConfigChange.Types
   ( ConfigChange (..)
-  , ConfigChangeApiReq (..)
   , ConfigChangeEvent (..)
   , ConfigChangeChannel (..)
   , ConfigChangeEnv (..), cfgChangeChannel, config, debugPrint, publishMetric
@@ -17,17 +16,12 @@ module Kadena.ConfigChange.Types
 import Control.Concurrent.Chan (Chan)
 import Control.Lens (makeLenses)
 import Control.Monad.Trans.RWS.Lazy
-import Data.Aeson
-import GHC.Generics (Generic)
 import Data.Set (Set)
 import Kadena.Types.Base
-import Kadena.Types.Command (ClusterChangeInfo)
 import Kadena.Types.Comms
 import Kadena.Types.Config
 import Kadena.Types.Event (Beat)
 import Kadena.Types.Metric
-import qualified Pact.Types.Command as Pact
-import qualified Pact.Types.Util as Pact
 
 data ConfigChangeEvent =
   CfgChange ConfigChange |
@@ -59,11 +53,3 @@ type ConfigChangeService = RWST ConfigChangeEnv () ConfigChangeState IO
 data ConfigChangeState = ConfigChangeState
   { _cssTbd :: !Int
   } deriving (Show, Eq)
-
-data ConfigChangeApiReq = ConfigChangeApiReq
-  { _ylccInfo :: ClusterChangeInfo
-  , _ylccKeyPairs :: ![Pact.UserSig]
-  , _ylccNonce :: Maybe String
-  } deriving (Eq,Show,Generic)
-instance ToJSON ConfigChangeApiReq where toJSON = Pact.lensyToJSON 5
-instance FromJSON ConfigChangeApiReq where parseJSON = Pact.lensyParseJSON 5

@@ -43,6 +43,7 @@ import Data.Maybe
 import Data.List
 import qualified Data.Set as S
 import Data.String
+import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding (decodeUtf8)
 import Data.Thyme.Clock
@@ -51,17 +52,18 @@ import qualified Data.Vector as V
 import qualified Data.Yaml as Y
 
 import GHC.Generics (Generic)
-import Network.Wreq hiding (Raw)
+import Network.Wreq hiding (Raw, get)
 import System.Console.GetOpt
 import System.Environment
 import System.Exit hiding (die)
 import System.IO
 import Text.Trifecta as TF hiding (err, rendered)
 
+import Kadena.Command (mkClusterChangeCommand, SubmitCC(..))
 import Kadena.ConfigChange.Service (mkConfigChangeApiReq)
 import Kadena.Types.Base hiding (printLatTime)
 import Kadena.Types.Entity (EntityName)
-import Kadena.Types.Command ( CmdResultLatencyMetrics(..), ClusterChangeCommand(..) )
+import Kadena.Types.Command
 import Pact.Types.API hiding (Poll)
 import qualified Pact.Types.API as Pact
 import qualified Pact.Types.Command as Pact
@@ -127,7 +129,7 @@ data CliCmd =
   Help |
   Keys (Maybe (T.Text,Maybe T.Text)) |
   Load FilePath Mode |
-  LoadConfigChange FilePath Mode |
+  ConfigChange FilePath |
   Poll String |
   PollMetrics String |
   Send Mode String |
@@ -197,7 +199,7 @@ mkExec code mdata addy = do
     (T.pack $ show rid)
     (Exec (ExecMsg (T.pack code) mdata))
 
-postAPI :: (ToJSON req,FromJSON resp) => String -> req -> Repl (Response resp)
+postAPI :: (Show req, ToJSON req,FromJSON resp) => String -> req -> Repl (Response resp)
 postAPI ep rq = do
   use echo >>= \e -> when e $ putJSON rq
   s <- getServer
@@ -205,13 +207,14 @@ postAPI ep rq = do
 
 postSpecifyServerAPI :: (ToJSON req,FromJSON resp) => String -> String -> req -> IO (Response resp)
 postSpecifyServerAPI ep server' rq = do
-  r <- liftIO $ post ("http://" ++ server' ++ "/api/v1/" ++ ep) (toJSON rq)
+  let url = "http://" ++ server' ++ "/api/v1/" ++ ep
+  r <- liftIO $ post url (toJSON rq)
   asJSON r
 
 handleResp :: (t -> Repl ()) -> Response (ApiResponse t) -> Repl ()
 handleResp a r = do
         case r ^. responseBody of
-          ApiFailure{..} -> flushStrLn $ "Failure in API Send: " ++ show _apiError
+          ApiFailure{..} -> flushStrLn $ "Apps.Kadena.Client.handleResp - failure in API Send: " ++ show _apiError
           ApiSuccess{..} -> a _apiResponse
 
 handleBatchResp :: RequestKeys -> Repl ()
@@ -232,11 +235,17 @@ sendCmd m cmd replCmd = do
       y <- postAPI "local" e
       handleResp (\(resp :: Value) -> putJSON resp) y
 
-sendConfigChangeCmd :: ClusterChangeCommand B.ByteString -> String -> Repl ()
-sendConfigChangeCmd ccc@ClusterChangeCommand{..} fileName = do
-  resp <- postAPI "send" ccc
+sendConfigChangeCmd :: ConfigChangeApiReq -> String -> Repl ()
+sendConfigChangeCmd ccApiReq@ConfigChangeApiReq{..} fileName = do
+  e <- mkConfigChangeExec ccApiReq
+  resp <- postAPI "config" (SubmitCC e)
   tellKeys resp fileName
   handleResp handleBatchResp resp
+
+mkConfigChangeExec :: ConfigChangeApiReq -> Repl (ClusterChangeCommand Text)
+mkConfigChangeExec ccApiReq = do
+  ccCmd <- liftIO $ mkClusterChangeCommand ccApiReq
+  return $ fmap decodeUtf8 ccCmd
 
 tellKeys :: Response (ApiResponse RequestKeys) -> String -> Repl ()
 tellKeys resp cmd =
@@ -251,12 +260,13 @@ sendPrivate addy msg = do
   e <- mkExec msg j (Just addy)
   postAPI "private" (SubmitBatch [e]) >>= handleResp handleBatchResp
 
-putJSON :: ToJSON a => a -> Repl ()
-putJSON a = use fmt >>= \f -> flushStrLn $ case f of
-  Raw -> BSL.unpack $ encode a
-  PrettyJSON -> BSL.unpack $ encodePretty a
-  YAML -> doYaml
-  Table -> fromMaybe doYaml $ pprintTable (toJSON a)
+putJSON :: (Show a, ToJSON a) => a -> Repl ()
+putJSON a =
+  use fmt >>= \f -> flushStrLn $ case f of
+    Raw -> BSL.unpack $ encode a
+    PrettyJSON -> BSL.unpack $ encodePretty a
+    YAML -> doYaml
+    Table -> fromMaybe doYaml $ pprintTable (toJSON a)
   where doYaml = BS8.unpack $ Y.encode a
 
 batchTest :: Int -> String -> Repl ()
@@ -342,8 +352,8 @@ load m fp = do
 
 loadConfigChange :: FilePath -> Repl ()
 loadConfigChange fp = do
-  cmd <- liftIO $ mkConfigChangeApiReq fp
-  sendConfigChangeCmd cmd fp
+  ccApiReq <- liftIO $ mkConfigChangeApiReq fp
+  sendConfigChangeCmd ccApiReq fp
 
 showResult :: Int -> [RequestKey] -> Maybe Int64 -> Repl ()
 showResult _ [] _ = return ()
@@ -491,9 +501,8 @@ cliCmds = [
                         (symbol "table" >> pure Table))),
   ("private","TO [FROM1 FROM2...] CMD","Send private transactional command to server addressed with entity names",
    parsePrivate),
-  ("loadConfigChange", "YAMLFILE", "Load and submit transactionaly a yaml configuration change file",
-   LoadConfigChange <$> some anyChar <*> pure
-   Transactional)
+  ("configChange", "YAMLFILE", "Load and submit transactionaly a yaml configuration change file",
+   ConfigChange <$> some anyChar)
   ]
 
 parsePrivate :: TF.Parser CliCmd
@@ -547,7 +556,7 @@ handleCmd cmd reqStr = case cmd of
    | sleepBetweenBatches < 250 -> void $ flushStrLn "Aborting: sleep between batches needs to be >= 250"
    | otherwise -> parallelBatchTest totalNumCmds cmdRate sleepBetweenBatches
   Load s m -> load m s
-  LoadConfigChange fp _ -> loadConfigChange fp
+  ConfigChange fp -> loadConfigChange fp
   Poll s -> parseRK s >>= void . pollForResult False . RequestKey . Hash
   PollMetrics rk -> do
     s <- use server

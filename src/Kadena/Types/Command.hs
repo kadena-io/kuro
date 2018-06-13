@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -14,6 +15,7 @@ module Kadena.Types.Command
   , ClusterChangeInfo (..), cciNewNodeList, cciAddedNodes, cciRemovedNodes, cciState
   , ClusterChangeResult (..)
   , Command(..), sccCmd, sccPreProc, cccCmd, cccPreProc, pcCmd
+  , ConfigChangeApiReq(..)
   , Hashed(..)
   , Preprocessed(..)
   , RunPreProc(..)
@@ -48,6 +50,7 @@ import GHC.Int (Int64)
 import Kadena.Types.Base
 import Kadena.Private.Types (PrivateCiphertext,PrivateResult)
 
+import qualified Pact.ApiReq as Pact
 import qualified Pact.Types.Command as Pact
 import qualified Pact.Types.RPC as Pact
 import Pact.Types.Util
@@ -96,6 +99,14 @@ instance ToJSON CCState where
 instance FromJSON CCState where
 instance NFData CCState
 
+data ConfigChangeApiReq = ConfigChangeApiReq
+  { _ylccInfo :: ClusterChangeInfo
+  , _ylccKeyPairs :: ![Pact.KeyPair]
+  , _ylccNonce :: Maybe String
+  } deriving (Eq,Show,Generic)
+instance ToJSON ConfigChangeApiReq where toJSON = lensyToJSON 5
+instance FromJSON ConfigChangeApiReq where parseJSON = lensyParseJSON 5
+
 data ClusterChangeInfo = ClusterChangeInfo
   { _cciNewNodeList :: ![NodeId]
   , _cciAddedNodes :: ![NodeId]
@@ -122,7 +133,7 @@ data ClusterChangeCommand a = ClusterChangeCommand
   { _cccPayload :: !a
   , _cccSigs :: ![Pact.UserSig]
   , _cccHash :: !Hash
-  } deriving (Eq, Show, Generic)
+  } deriving (Eq,Show,Ord,Generic,Functor)
 makeLenses ''ClusterChangeCommand
 
 instance (Serialize a) => Serialize (ClusterChangeCommand a)
@@ -202,6 +213,11 @@ data ClusterChangeResult =
   ClusterChangeFailure !String
   | ClusterChangeSuccess
   deriving (Show, Eq, Ord, Generic, ToJSON, FromJSON, Serialize)
+
+-- MLN: add this back or remove
+-- instance ToJSON ClusterChangeResult where
+--    toJSON _ = object [ "status" .= ("success" :: String)
+--                    , "data" .= ("Cluster change successful" :: String) ]
 
 getCmdBodyHash :: Command -> Hash
 getCmdBodyHash SmartContractCommand{ _sccCmd = Pact.Command{..}} = _cmdHash

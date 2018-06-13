@@ -1,8 +1,10 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
 module Kadena.Consensus.Publish
-  (Publish(..),publish,pactTextToCMDWire,buildCmdRpc,buildCmdRpcBS,pactBSToCMDWire)
-  where
+  ( Publish(..), publish, buildCmdRpc, buildCmdRpcBS
+  , pactBSToCMDWire, pactTextToCMDWire
+  , clusterChgBSToCMDWire, clusterChgTextToCMDWire
+  ) where
 
 import Control.Concurrent
 import Data.Thyme (UTCTime)
@@ -58,3 +60,9 @@ buildCmdRpc c@Pact.Command{..} = (RequestKey _cmdHash, pactTextToCMDWire c)
 
 buildCmdRpcBS :: Pact.Command ByteString -> (RequestKey,CMDWire)
 buildCmdRpcBS c@Pact.Command{..} = (RequestKey _cmdHash, pactBSToCMDWire c)
+
+clusterChgTextToCMDWire :: ClusterChangeCommand Text -> CMDWire
+clusterChgTextToCMDWire cmd = clusterChgBSToCMDWire (encodeUtf8 <$> cmd)
+
+clusterChgBSToCMDWire :: ClusterChangeCommand ByteString -> CMDWire
+clusterChgBSToCMDWire = CCCWire . SZ.encode

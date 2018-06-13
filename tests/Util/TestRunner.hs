@@ -184,9 +184,9 @@ matchResponses _ _ _ acc = acc -- this shouldn't happen
 convertResponse :: ReplApiData -> Maybe TestResponse
 convertResponse (ReplApiResponse _ apiRslt batchCnt) =
   let ok = case _arResult apiRslt of
-        Object h -> case HM.lookup (T.pack "status") h of
-          Nothing -> False
-          Just t -> t == "success"
+        Object h | HM.lookup (T.pack "status") h == Just "success" -> True
+                 | HM.lookup (T.pack "tag") h == Just "ClusterChangeSuccess" -> True
+                 | otherwise -> False
         _ -> False
   in Just TestResponse { resultSuccess = ok
                        , apiResult = apiRslt

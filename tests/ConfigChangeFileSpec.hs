@@ -8,11 +8,11 @@ import Control.Monad.IO.Class
 import qualified Data.Yaml as Y
 import Test.Hspec
 
-import Kadena.ConfigChange.Types
 import Kadena.Types.Base
 import Kadena.Types.Command
+import Kadena.Util.Util (asPrivate, asPublic)
 
-import qualified Pact.Types.Command as Pact
+import qualified Pact.ApiReq as Pact
 import qualified Pact.Types.Crypto as Pact
 
 spec :: Spec
@@ -40,10 +40,10 @@ yamlExample1 :: (FilePath, ConfigChangeApiReq)
 yamlExample1 =
   ( "config-change-01.yaml"
   , ConfigChangeApiReq
-    { _ylccInfo = clusterChangeInfo1
-      , _ylccKeyPairs = testSigs
+      { _ylccInfo = clusterChangeInfo1
+      , _ylccKeyPairs = keyPairs
       , _ylccNonce = Nothing
-    }
+      }
   )
 
 yamlExample2 :: (FilePath, ConfigChangeApiReq)
@@ -51,7 +51,7 @@ yamlExample2 =
   ( "config-change-02.yaml"
   , ConfigChangeApiReq
     { _ylccInfo = clusterChangeInfo2
-      , _ylccKeyPairs = testSigs
+      , _ylccKeyPairs = keyPairs
       , _ylccNonce = Nothing
     }
   )
@@ -60,21 +60,24 @@ yamlExample3 :: (FilePath, ConfigChangeApiReq)
 yamlExample3 =
   ( "config-change-03.yaml"
   , ConfigChangeApiReq
-    { _ylccInfo = clusterChangeInfo3
-    , _ylccKeyPairs = testSigs
-    , _ylccNonce = Nothing
-    }
-  )
+      { _ylccInfo = clusterChangeInfo3
+      , _ylccKeyPairs = keyPairs
+      , _ylccNonce = Nothing } )
 
-testSigs :: [Pact.UserSig]
-testSigs = [sig1]
+keyPairs :: [Pact.KeyPair]
+keyPairs = foldr f [] keyPairs' where
+    f :: (Maybe Pact.PublicKey, Maybe Pact.PrivateKey) -> [Pact.KeyPair] -> [Pact.KeyPair]
+    f (Nothing, _) r = r
+    f (_, Nothing) r = r
+    f (Just pk, Just sk) r = Pact.KeyPair {Pact._kpPublic = pk, Pact._kpSecret = sk} : r
 
-sig1 :: Pact.UserSig
-sig1 = Pact.UserSig
-  { Pact._usScheme = Pact.ED25519
-  , Pact._usPubKey = "06c9c56daa8a068e1f19f5578cdf1797b047252e1ef0eb4a1809aa3c2226f61e"
-  , Pact._usSig = "7ce4bae38fccfe33b6344b8c260bffa21df085cf033b3dc99b4781b550e1e922"
-  }
+keyPairs' :: [(Maybe Pact.PublicKey, Maybe Pact.PrivateKey)]
+keyPairs' = [keyPair1]
+
+keyPair1 :: (Maybe Pact.PublicKey, Maybe Pact.PrivateKey)
+keyPair1 =
+  ( asPublic  "31736b5c851176e5dff830df44bf0c88fb0da5522a9d9e3ac10ff0c433528c7d"
+  , asPrivate "b737c6b7d950b9ecbd7e2e187d05b07fc8f3ec2dab8220f19f7b4b68ae6d9319" )
 
 clusterChangeInfo1, clusterChangeInfo2, clusterChangeInfo3 :: ClusterChangeInfo
 clusterChangeInfo1 = ClusterChangeInfo

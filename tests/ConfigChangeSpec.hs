@@ -76,6 +76,10 @@ checkSuccess :: TestResponse -> Bool
 checkSuccess tr =
   resultSuccess tr && parseStatus (_arResult $ apiResult tr)
 
+checkCCSuccess :: TestResponse -> Bool
+checkCCSuccess tr =
+  resultSuccess tr && parseCCStatus (_arResult $ apiResult tr)
+
 checkScientific :: Scientific -> TestResponse -> Bool
 checkScientific sci tr =
   resultSuccess tr && case parseScientific $ _arResult $ apiResult tr of
@@ -103,6 +107,13 @@ parseStatus (AE.Object o) =
     Just s  -> s == "success"
 parseStatus _ = False
 
+parseCCStatus :: AE.Value -> Bool
+parseCCStatus (AE.Object o) =
+  case HM.lookup "tag" o of
+    Nothing -> False
+    Just s -> s == "ClusterChangeSuccess"
+parseCCStatus _ = False
+
 parseScientific :: AE.Value -> Maybe Scientific
 parseScientific (AE.Object o) =
   case HM.lookup "data" o of
@@ -128,7 +139,7 @@ passMetric :: TestMetricResult -> IO ()
 passMetric tmr = putStrLn $ "Metric test passed: " ++ metricNameTm (requestTmr tmr)
 
 testRequests :: [TestRequest]
-testRequests = [testReq1, testReq2, testReq3, testReq4, testReq5]
+testRequests = [testReq1, testReq2, testReq3, testReq4, testReq5, testCfgChange1]
 
 testReq1 :: TestRequest
 testReq1 = TestRequest
@@ -164,6 +175,13 @@ testReq5 = TestRequest
   , matchCmd = "(test.transfer \"Acct1\" \"Acct2\" 1.00)"
   , eval = checkBatchPerSecond 1000
   , displayStr = "Executes the function transferring 1.00 from Acct 1 to Acc2 4000 times" }
+
+testCfgChange1 :: TestRequest
+testCfgChange1 = TestRequest
+  { cmd = "configChange test-files/conf/config-change-01.yaml"
+  , matchCmd = "test-files/conf/config-change-01.yaml"
+  , eval = checkCCSuccess
+  , displayStr = "Removes node2 from the cluster" }
 
 testMetrics :: [TestMetric]
 testMetrics = [testMetric1]

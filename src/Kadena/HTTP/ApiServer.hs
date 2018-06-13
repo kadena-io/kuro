@@ -30,8 +30,8 @@ import qualified Data.HashSet as HashSet
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Set as Set
-
 import qualified Data.Serialize as SZ
+import qualified Debug.Trace as Debug
 
 import Snap.Core
 import Snap.Http.Server as Snap
@@ -45,6 +45,7 @@ import qualified Pact.Types.Command as Pact
 import Pact.Types.RPC (PactRPC)
 import Pact.Types.API
 
+import Kadena.Command (SubmitCC(..))
 import Kadena.Types.Command
 import Kadena.Types.Base
 import Kadena.Types.Comms
@@ -108,6 +109,7 @@ api = route [
       ,("listen",registerListener)
       ,("local",sendLocal)
       ,("private",sendPrivateBatch)
+      ,("config", sendClusterChange)
       ]
 
 sendLocal :: Api ()
@@ -127,6 +129,13 @@ sendPublicBatch = do
   rpcs <- return $ buildCmdRpc <$> cmds
   queueRpcs rpcs
 
+sendClusterChange :: Api ()
+sendClusterChange = do
+  SubmitCC ccCmd <- readJSON
+  log $ "public: received cluster configuration change command"
+
+  let rpcs = [buildCCCmdRpc ccCmd]
+  queueRpcs rpcs
 
 queueRpcs :: [(RequestKey,CMDWire)] -> Api ()
 queueRpcs rpcs = do
@@ -203,20 +212,20 @@ die res = do
   _ <- getResponse -- chuck what we've done so far
   setJSON
   log res
-  writeLBS $ encode $ (ApiFailure res :: ApiResponse ())
+  writeLBS $ encode $ (ApiFailure ("Kadena.HTTP.ApiServer" ++ res) :: ApiResponse ())
   finishWith =<< getResponse
 
-readJSON :: FromJSON t => Api t
+readJSON :: (Show t, FromJSON t) => Api t
 readJSON = do
   b <- readRequestBody 1000000000
   snd <$> tryParseJSON b
 
 tryParseJSON
-  :: FromJSON t =>
+  :: (Show t, FromJSON t) =>
      BSL.ByteString -> Api (BS.ByteString, t)
 tryParseJSON b = case eitherDecode b of
     Right v -> return (toStrict b,v)
-    Left e -> die e
+    Left e -> Debug.trace ("Tried to parse: " ++ show b) die e
 
 setJSON :: Api ()
 setJSON = modifyResponse $ setHeader "Content-Type" "application/json"

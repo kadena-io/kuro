@@ -28,10 +28,8 @@ module Kadena.Types.Config
   , PPBType(..)
   , confToKeySet
   , getConfigWhenNew
-  , getMissingKeys
   , getNewKeyPair
   , initGlobalConfigTMVar
-  , mkClusterChangeCommand
   , readCurrentConfig
   ) where
 
@@ -39,27 +37,19 @@ import Control.Concurrent.STM
 import Control.Lens (makeLenses)
 import Data.Aeson (ToJSON, FromJSON, (.:), (.:?), (.=))
 import qualified Data.Aeson as A
-import qualified Data.Aeson.Types as A
-import Data.ByteString (ByteString)
 import Data.Map (Map)
-import qualified Data.Map as Map
 import Data.Serialize (Serialize)
-import qualified Data.Serialize as S
 import Data.Set (Set)
-import Data.String.Conv
-import Data.Text (Text)
 import Data.Thyme.Time.Core ()
 import qualified Data.Yaml as Y
 import GHC.Generics
 
 import Pact.Persist.MSSQL (MSSQLConfig(..))
-import Pact.Types.Command (UserSig(..))
 import Pact.Types.Logger (LogRules)
 import Pact.Types.Util
 import Pact.Types.SQLite (SQLiteConfig)
 
 import Kadena.Types.Base
-import Kadena.Types.Command (CCPayload(..), ClusterChangeCommand(..), ClusterChangeInfo(..))
 import Kadena.Types.Entity (EntityConfig)
 import Kadena.Types.KeySet
 
@@ -134,21 +124,6 @@ data DiffNodes = DiffNodes
   , nodesToRemove :: !(Set NodeId)
   } deriving (Show,Eq,Ord,Generic)
 
--- | Similar to mkCommand in the Pact.Types.Command module
-mkClusterChangeCommand :: [UserSig] -> Text -> ClusterChangeInfo -> ClusterChangeCommand ByteString
-mkClusterChangeCommand sigs nonce info =
-  mkClusterChangeCommand' sigs $ S.encode (CCPayload info nonce)
-
-mkClusterChangeCommand' :: [UserSig] -> ByteString -> ClusterChangeCommand ByteString
-mkClusterChangeCommand' sigs payload = ClusterChangeCommand payload sigs hsh
-  where
-    hsh = hash payload
-
-singleFieldJsonOptions :: Int -> A.Options
-singleFieldJsonOptions n = A.defaultOptions
-  { A.fieldLabelModifier = lensyConstructorToNiceJson n
-  , A.sumEncoding = A.ObjectWithSingleField }
-
 confToKeySet :: Config -> KeySet
 confToKeySet Config{..} = KeySet
   { _ksCluster = _publicKeys}
@@ -158,9 +133,9 @@ data KeyPair = KeyPair
   , _kpPrivateKey :: PrivateKey
   } deriving (Show, Eq, Generic)
 instance ToJSON KeyPair where
-  toJSON = A.genericToJSON (singleFieldJsonOptions 3)
+  toJSON = lensyToJSON 3
 instance FromJSON KeyPair where
-  parseJSON = A.genericParseJSON (singleFieldJsonOptions 3)
+  parseJSON = lensyParseJSON 3
 
 getNewKeyPair :: FilePath -> IO KeyPair
 getNewKeyPair fp = do
@@ -179,13 +154,6 @@ type GlobalConfigTMVar = TMVar GlobalConfig
 
 initGlobalConfigTMVar :: Config -> IO GlobalConfigTMVar
 initGlobalConfigTMVar c = newTMVarIO $ GlobalConfig initialConfigVersion c
-
-getMissingKeys :: Config -> [UserSig]-> [Alias]
-getMissingKeys cfg sigs =
-  let keys = fmap _usPubKey sigs
-      filtered = filter f (Map.toList (_adminKeys cfg)) where
-        f (_, k) = notElem (toS (show k)) keys
-  in fmap fst filtered
 
 getConfigWhenNew :: ConfigVersion -> GlobalConfigTMVar -> STM GlobalConfig
 getConfigWhenNew cv gcm = do

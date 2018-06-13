@@ -258,7 +258,8 @@ applyLocalCommand (cmd, mv) = do
   cr <- liftIO $ applyLocal Local cmd
   liftIO $ putMVar mv (Pact._crResult cr)
 
--- MLN: TBD
+-- | This may be used in the future for configuration changes other than cluster membership changes.
+--   Cluster membership changes are implemented via applyCommand
 applyConfigChange :: LogEntries -> ExecutionService ()
 applyConfigChange _ = debug "[Execution service]: applyConfigChange - not implemented"
 

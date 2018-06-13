@@ -17,17 +17,14 @@ import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.RWS.Lazy
 import Control.Monad.Catch hiding (handle)
-import Data.Thyme.Clock
-import qualified Data.ByteString as B
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Serialize as S
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Data.String.Conv
 import qualified Data.Yaml as Y
 
 import Kadena.ConfigChange.Types
+import Kadena.ConfigChange.Util
 import Kadena.Event
 import Kadena.Types.Base
 import Kadena.Types.Command
@@ -133,21 +130,9 @@ diffNodes prevNodes newNodes = DiffNodes
   { nodesToAdd = Set.difference newNodes prevNodes
   , nodesToRemove = Set.difference prevNodes newNodes }
 
-mkConfigChangeApiReq :: FilePath -> IO (ClusterChangeCommand B.ByteString)
-mkConfigChangeApiReq fp = do
-  ConfigChangeApiReq{..} <- either (yamlErr . show) return =<<
-                            liftIO (Y.decodeFileEither fp)
-  rid <- maybe (show <$> getCurrentTime) return _ylccNonce
-  let ccPayload = CCPayload
-                   { _ccpInfo = _ylccInfo
-                   , _ccpNonce = toS rid }
-  let ccPayloadBS = S.encode ccPayload
-  let theHash = hash ccPayloadBS
-  let clusterChgCmdBS =  ClusterChangeCommand
-                          { _cccPayload = ccPayloadBS
-                          , _cccSigs = _ylccKeyPairs
-                          , _cccHash = theHash }   -- :: ClusterChangeCommand ByteString
-  return clusterChgCmdBS
+mkConfigChangeApiReq :: FilePath -> IO ConfigChangeApiReq
+mkConfigChangeApiReq fp =
+  either (yamlErr . show) return =<< liftIO (Y.decodeFileEither fp)
 
 yamlErr :: String -> IO a
 yamlErr errMsg = throwM  . userError $ "Failure reading yaml: " ++ errMsg

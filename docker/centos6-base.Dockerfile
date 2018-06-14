@@ -3,7 +3,7 @@ MAINTAINER Will <will@kadena.io>
 
 RUN yum -y upgrade && \
     find / -iname gmp && \
-    yum -y install wget which curl make uuid-devel pkgconfig libtool gcc-c++ glibc* perl make automake gcc gmp-devel libffi zlib xz tar git gnupg zlib-devel&& \
+    yum -y install wget which curl make uuid-devel pkgconfig libtool gcc-c++ glibc* perl make automake gcc gmp-devel libffi zlib xz tar git gnupg zlib-devel ncurses-term ncurses ncurses-devel && \
     yum -y groupinstall "development tools"
 
 RUN mkdir -p /tmp && \

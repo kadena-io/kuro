@@ -62,9 +62,8 @@ buildCmdRpc c@Pact.Command{..} = (RequestKey _cmdHash, pactTextToCMDWire c)
 buildCmdRpcBS :: Pact.Command ByteString -> (RequestKey,CMDWire)
 buildCmdRpcBS c@Pact.Command{..} = (RequestKey _cmdHash, pactBSToCMDWire c)
 
--- TODO: can Pact's buildCmdRpc be replaced with something that works with the more general
--- Command data type defined in Kadena.Types.Command (i.e., work for Config change as well as for
--- Pact commands)? For now, a separate buildCCCmdRpc:
+-- TODO: Try to implment ClusterChangeCommand as Pact.Command ClusterChangeCommand.  If possible,
+-- this can be removed in favor of using Pact's buildCmdRpc
 buildCCCmdRpc :: ClusterChangeCommand Text -> (RequestKey, CMDWire)
 buildCCCmdRpc c@ClusterChangeCommand {..} = (RequestKey _cccHash, clusterChgTextToCMDWire c)
 

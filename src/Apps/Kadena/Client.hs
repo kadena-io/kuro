@@ -501,7 +501,7 @@ cliCmds = [
                         (symbol "table" >> pure Table))),
   ("private","TO [FROM1 FROM2...] CMD","Send private transactional command to server addressed with entity names",
    parsePrivate),
-  ("configChange", "YAMLFILE", "Load and submit transactionaly a yaml configuration change file",
+  ("configChange", "YAMLFILE", "Load and submit transactionally a yaml configuration change file",
    ConfigChange <$> some anyChar)
   ]
 

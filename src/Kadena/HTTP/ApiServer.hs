@@ -31,7 +31,6 @@ import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Set as Set
 import qualified Data.Serialize as SZ
-import qualified Debug.Trace as Debug
 
 import Snap.Core
 import Snap.Http.Server as Snap
@@ -225,7 +224,7 @@ tryParseJSON
      BSL.ByteString -> Api (BS.ByteString, t)
 tryParseJSON b = case eitherDecode b of
     Right v -> return (toStrict b,v)
-    Left e -> Debug.trace ("Tried to parse: " ++ show b) die e
+    Left e -> die e
 
 setJSON :: Api ()
 setJSON = modifyResponse $ setHeader "Content-Type" "application/json"

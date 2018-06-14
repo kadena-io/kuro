@@ -4,8 +4,6 @@
 
 module Kadena.Util.Util
   ( TrackedError(..)
-  , asPrivate
-  , asPublic
   , awsDashVar
   , catchAndRethrow
   , fromMaybeM
@@ -17,8 +15,6 @@ module Kadena.Util.Util
   , seqIndex
   ) where
 
-import Data.ByteString (ByteString)
-import qualified Data.ByteString.Base16 as B16
 import Control.Concurrent (forkFinally, putMVar, takeMVar, newEmptyMVar, forkIO)
 import Control.Concurrent.Async
 import Control.Monad
@@ -29,14 +25,10 @@ import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Data.String.Conv
-import Data.Text (Text)
 import System.Process (system)
 
 import Kadena.Types.Base
 import Kadena.Types.Config
-
-import qualified Pact.Types.Crypto as Pact
 
 --TODO: this is pretty ghetto, there has to be a better/cleaner way
 foreverRetry :: (String -> IO ()) -> String -> IO () -> IO ()
@@ -106,15 +98,3 @@ getCurrentNodes theConfig =
   let myId = _nodeId theConfig
       others = _otherNodes theConfig
   in myId `Set.insert` others
-
--- | Convert public key stored as Text into a PublicKey
-asPublic :: Text -> Maybe Pact.PublicKey
-asPublic txt =
-  let bs = toS txt :: ByteString
-  in importPublic $ fst $ B16.decode bs
-
-  -- | Convert private key stored as Text into a PublicKey
-asPrivate :: Text -> Maybe Pact.PrivateKey
-asPrivate txt =
-  let bs = toS txt :: ByteString
-  in importPrivate $ fst $ B16.decode bs

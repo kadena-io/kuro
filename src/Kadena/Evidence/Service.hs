@@ -19,6 +19,7 @@ import qualified Data.Set as Set
 import Data.Thyme.Clock
 import Safe
 
+import Kadena.ConfigChange as CC
 import Kadena.Util.Util (linkAsyncTrack)
 import Kadena.Types.Dispatch (Dispatch)
 import Kadena.Event (pprintBeat)
@@ -31,7 +32,6 @@ import Kadena.Types.Log as Log
 import Kadena.Types.Message
 import Kadena.Types.Base
 import Kadena.Types.Comms
-import qualified Kadena.ConfigChange.Service as CfgChange
 
 -- TODO: re-integrate EKG when Evidence Service is finished and hspec tests are written
 -- import Kadena.Types.Metric
@@ -77,13 +77,13 @@ handleConfUpdate = do
     maxElectionTimeout' <- return $ snd $ _electionTimeoutRange
     -- df === nodes to add/remove when adopting the env's config, which is now different from what is
     --        stored in the state
-    let df = CfgChange.diffNodes _esOtherNodes _otherNodes
+    let df = CC.diffNodes _esOtherNodes _otherNodes
     -- update the map of nodes -> (LogIndex, UTCTime) accordingly
-    let updatedMap = CfgChange.updateNodeMap df _esNodeStates (const (startIndex, minBound))
+    let updatedMap = CC.updateNodeMap df _esNodeStates (const (startIndex, minBound))
     -- df' === nodes to add/remove when moving to the transitional config-change nodes
-    let df' = CfgChange.diffNodes _esOtherNodes _changeToNodes
+    let df' = CC.diffNodes _esOtherNodes _changeToNodes
     -- update (again) the map of nodes -> (LogIndex, UTCTime) accordingly
-    let updatedMap' = CfgChange.updateNodeMap df' updatedMap (const (startIndex, minBound))
+    let updatedMap' = CC.updateNodeMap df' updatedMap (const (startIndex, minBound))
     put $ es
       { _esOtherNodes = _otherNodes
       , _esChangeToNodes = _changeToNodes
@@ -129,8 +129,10 @@ runEvidenceProcessor = do
       put $ garbageCollectCache es
       runEvidenceProcessor
     Bounce -> do
-      put $ garbageCollectCache es
-      return ()
+      -- error "Boing!"
+      -- put $ garbageCollectCache es
+      liftIO $ CC.runWithNewConfig
+      runEvidenceProcessor
     ClearConvincedNodes -> do
       debug "clearing convinced nodes"
       put $ es {_esConvincedNodes = Set.empty}
@@ -178,7 +180,7 @@ runEvidenceService ev = do
   startingEs <- initializeState ev
   putMVar (ev ^. mPubStateTo) $! PublishedEvidenceState (startingEs ^. esConvincedNodes) (startingEs ^. esNodeStates)
   let cu = ConfigUpdater (ev ^. debugFn) "Service|Evidence|Config" (const $ writeComm (ev ^. evidence) $ Bounce)
-  linkAsyncTrack "EvidenceConfUpdater" $ CfgChange.runConfigUpdater cu (ev ^. mConfig)
+  linkAsyncTrack "EvidenceConfUpdater" $ CC.runConfigUpdater cu (ev ^. mConfig)
   _ <- runRWST (debug "Launch!" >> foreverRunProcessor) ev startingEs
   return ()
 

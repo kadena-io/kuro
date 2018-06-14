@@ -31,7 +31,7 @@ flag pact-persistence
 library
   exposed-modules:     Apps.Kadena.Client
                      , Apps.Kadena.Server
-                     , Kadena.ConfigChange.Service
+                     , Kadena.ConfigChange
                      , Kadena.ConfigChange.Types
                      , Kadena.ConfigChange.Util
                      , Kadena.Execution.Pact

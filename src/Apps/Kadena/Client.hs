@@ -60,7 +60,7 @@ import System.IO
 import Text.Trifecta as TF hiding (err, rendered)
 
 import Kadena.Command (mkClusterChangeCommand, SubmitCC(..))
-import Kadena.ConfigChange.Service (mkConfigChangeApiReq)
+import Kadena.ConfigChange (mkConfigChangeApiReq)
 import Kadena.Types.Base hiding (printLatTime)
 import Kadena.Types.Entity (EntityName)
 import Kadena.Types.Command

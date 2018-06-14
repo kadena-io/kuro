@@ -29,8 +29,6 @@ import qualified Kadena.Evidence.Service as Ev
 import qualified Kadena.PreProc.Service as PreProc
 import qualified Kadena.History.Service as History
 import qualified Kadena.HTTP.ApiServer as ApiServer
-import qualified Kadena.ConfigChange.Service as CC
-import qualified Kadena.ConfigChange.Types as CC
 import Kadena.Consensus.Publish
 import Kadena.Util.Util
 
@@ -102,15 +100,6 @@ launchLogService dispatch' dbgPrint' publishMetric' rconf = do
   linkAsyncTrack "LogThread" (Log.runLogService dispatch' dbgPrint' publishMetric' rconf)
   linkAsyncTrack "LogHB" $ (foreverHeart (_logService dispatch') 1000000 Log.Heart)
 
-launchConfigChangeService :: Dispatch
-  -> (String -> IO ())
-  -> (Metric -> IO ())
-  -> Config
-  -> IO ()
-launchConfigChangeService dispatch' dbgPrint' publishMetric' rconf = do
-  linkAsyncTrack "ConfigChangeThread" (CC.runConfigChangeService dispatch' dbgPrint' publishMetric' rconf)
-  linkAsyncTrack "ConfigChangeHB" $ (foreverHeart (_cfgChangeChannel dispatch') 1000000 CC.Heart)
-
 launchSenderService :: Dispatch
   -> (String -> IO ())
   -> (Metric -> IO ())
@@ -156,7 +145,6 @@ runConsensusService renv gcm spec rstate timeCache' mPubConsensus' = do
   launchEvidenceService dispatch' dbgPrint' publishMetric' mEvState gcm mLeaderNoFollowers
   launchLogService dispatch' dbgPrint' publishMetric' rconf
   launchApiService dispatch' gcm dbgPrint' mPubConsensus' getTimestamp'
-  launchConfigChangeService dispatch' dbgPrint' publishMetric' rconf
   linkAsyncTrack "ConsensusHB" (foreverHeart (_consensusEvent dispatch') 1000000 (ConsensusEvent . Heart))
   catchAndRethrow "ConsensusThread" $ runRWS_
     kadena

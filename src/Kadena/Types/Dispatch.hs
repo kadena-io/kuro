@@ -7,7 +7,6 @@ module Kadena.Types.Dispatch
   , inboundRVorRVR
   , inboundGeneral
   , outboundGeneral
-  , cfgChangeChannel
   , consensusEvent
   , senderService
   , logService
@@ -32,7 +31,6 @@ import Kadena.PreProc.Types (ProcessRequestChannel)
 import Kadena.Private.Types (PrivateChannel)
 import Kadena.Types.Message (InboundCMDChannel,OutboundGeneralChannel)
 import Kadena.Types.Event (ConsensusEventChannel)
-import Kadena.ConfigChange.Types(ConfigChangeChannel)
 
 data Dispatch = Dispatch
   { _inboundAER      :: InboundAERChannel
@@ -40,7 +38,6 @@ data Dispatch = Dispatch
   , _inboundRVorRVR  :: InboundRVorRVRChannel
   , _inboundGeneral  :: InboundGeneralChannel
   , _outboundGeneral :: OutboundGeneralChannel
-  , _cfgChangeChannel :: ConfigChangeChannel
   , _consensusEvent   :: ConsensusEventChannel
   , _senderService   :: SenderServiceChannel
   , _logService   :: LogServiceChannel
@@ -54,7 +51,6 @@ data Dispatch = Dispatch
 initDispatch :: IO Dispatch
 initDispatch = Dispatch
   <$> initComms
-  <*> initComms
   <*> initComms
   <*> initComms
   <*> initComms

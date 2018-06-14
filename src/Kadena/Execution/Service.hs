@@ -47,7 +47,7 @@ import Kadena.Private.Types (PrivatePlaintext(..),PrivateResult(..))
 import Kadena.Execution.Pact
 import Kadena.Consensus.Publish
 import Kadena.Types.Entity
-import qualified Kadena.ConfigChange.Service as CfgChange
+import qualified Kadena.ConfigChange as CfgChange
 
 initExecutionEnv
   :: Dispatch
@@ -220,7 +220,7 @@ applyCommand _tEnd le@LogEntry{..} = do
           debug $ "WARNING: fully resolved consensus command found for " ++ show _leLogIndex
           return $! (result, _leCmdLatMetrics)
       gcm <- view mConfig
-      result <- liftIO $ CfgChange.mutateCluster gcm pproc
+      result <- liftIO $ CfgChange.mutateGlobalConfig gcm pproc
       lm <- stamp ppLat
       return ( rkey
              , ConsensusChangeResult

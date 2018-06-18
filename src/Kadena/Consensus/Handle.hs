@@ -21,7 +21,7 @@ import qualified Kadena.Consensus.Handle.RequestVoteResponse as PureRequestVoteR
 
 handleEvents :: Consensus ()
 handleEvents = forever $ do
-  timerTarget' <- use timerTarget
+  timerTarget' <- use csTimerTarget
   -- we use the MVar to preempt a backlog of messages when under load. This happens during a large 'many test'
   tFired <- liftIO $ tryTakeMVar timerTarget'
   e <- case tFired of

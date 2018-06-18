@@ -14,7 +14,7 @@ module Kadena.Evidence.Spec
   , esQuorumSize, esChangeToQuorumSize, esNodeStates, esConvincedNodes, esPartialEvidence
   , esCommitIndex, esCacheMissAers, esMismatchNodes, esResetLeaderNoFollowers
   , esHashAtCommitIndex, esEvidenceCache, esMaxCachedIndex, esMaxElectionTimeout
-  , esOtherNodes, esChangeToNodes
+  , esClusterMembers
   , EvidenceProcessor
   , debugFn
   , publishMetric
@@ -54,8 +54,7 @@ makeLenses ''EvidenceEnv
 type EvidenceService s = RWST EvidenceEnv () s IO
 
 data EvidenceState = EvidenceState
-  { _esOtherNodes :: !(Set NodeId)
-  , _esChangeToNodes :: !(Set NodeId)
+  { _esClusterMembers :: ! ClusterMembership
   , _esQuorumSize :: !Int
   , _esChangeToQuorumSize :: !Int
   , _esNodeStates :: !(Map NodeId (LogIndex, UTCTime))
@@ -80,13 +79,12 @@ getEvidenceQuorumSize :: Int -> Int
 getEvidenceQuorumSize 0 = 0
 getEvidenceQuorumSize n = 1 + floor (fromIntegral n / 2 :: Float)
 
-initEvidenceState :: Set NodeId -> Set NodeId -> LogIndex -> Int -> EvidenceState
-initEvidenceState otherNodes' changeToNodes' commidIndex' maxElectionTimeout' = EvidenceState
-  { _esOtherNodes = otherNodes'
-  , _esChangeToNodes = changeToNodes'
-  , _esQuorumSize = getEvidenceQuorumSize $ Set.size otherNodes'
-  , _esChangeToQuorumSize = getEvidenceQuorumSize $ Set.size changeToNodes'
-  , _esNodeStates = Map.fromSet (\_ -> (commidIndex',minBound)) otherNodes'
+initEvidenceState :: ClusterMembership -> LogIndex -> Int -> EvidenceState
+initEvidenceState clusterMembers' commidIndex' maxElectionTimeout' = EvidenceState
+  { _esClusterMembers = clusterMembers'
+  , _esQuorumSize = getEvidenceQuorumSize $ Set.size $ _cmOtherNodes clusterMembers'
+  , _esChangeToQuorumSize = getEvidenceQuorumSize $ Set.size $ _cmChangeToNodes clusterMembers'
+  , _esNodeStates = Map.fromSet (\_ -> (commidIndex',minBound)) (_cmOtherNodes clusterMembers')
   , _esConvincedNodes = Set.empty
   , _esPartialEvidence = Map.empty
   , _esCommitIndex = commidIndex'

@@ -164,4 +164,4 @@ confUpdater reconfMV shutdownPubMV shutdownSubMV Config{..} = do
     putMVar shutdownSubMV IsPending
     putMVar reconfMV $ ReconfSub Nothing $ Just shutdownSubMV
   else do
-    putMVar reconfMV $ ReconfSub (Just _otherNodes) Nothing
+    putMVar reconfMV $ ReconfSub (Just (_cmOtherNodes _clusterMembers)) Nothing

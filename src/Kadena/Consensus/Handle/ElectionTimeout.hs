@@ -16,7 +16,7 @@ import Control.Monad.Writer
 import Data.Set (Set)
 import qualified Data.Set as Set
 
-import Kadena.Types hiding (nodeRole, term, lazyVote, nodeId, otherNodes, myPrivateKey, myPublicKey)
+import Kadena.Types hiding (nodeId, myPrivateKey, myPublicKey)
 import qualified Kadena.Sender.Service as Sender
 import qualified Kadena.Types.Log as Log
 import Kadena.Consensus.Util
@@ -28,7 +28,7 @@ data ElectionTimeoutEnv = ElectionTimeoutEnv {
     , _term :: Term
     , _lazyVote :: Maybe LazyVote
     , _nodeId :: NodeId
-    , _otherNodes :: Set.Set NodeId
+    , _eteClusterMembers :: ClusterMembership
     , _leaderWithoutFollowers :: Bool
     , _myPrivateKey :: PrivateKey
     , _myPublicKey :: PublicKey
@@ -84,7 +84,7 @@ becomeCandidate = do
   me <- view nodeId
   selfVote <- return $ createRequestVoteResponse me me newTerm True
   provenance <- selfVoteProvenance selfVote
-  potentials <- view otherNodes
+  potentials <- view (eteClusterMembers . cmOtherNodes)
   return $ BecomeCandidate
     { _newTerm = newTerm
     , _newRole = Candidate
@@ -108,11 +108,11 @@ handle msg = do
   leaderWithoutFollowers' <- hasElectionTimerLeaderFired
   (out,l) <- runReaderT (runWriterT (handleElectionTimeout msg)) $
              ElectionTimeoutEnv
-             (KD._nodeRole s)
-             (KD._term s)
-             (KD._lazyVote s)
+             (_csNodeRole s)
+             (_csTerm s)
+             (_csLazyVote s)
              (KD._nodeId c)
-             (KD._otherNodes c)
+             (KD._clusterMembers c)
              leaderWithoutFollowers'
              (KD._myPrivateKey c)
              (KD._myPublicKey c)
@@ -127,10 +127,10 @@ handle msg = do
       setRole _newRole
       setTerm _newTerm
       setVotedFor (Just _myNodeId)
-      KD.cYesVotes .= _yesVotes
-      KD.cPotentialVotes.= _potentialVotes
+      csYesVotes .= _yesVotes
+      csPotentialVotes.= _potentialVotes
       (sigForRV, rv) <- createRequestVote _newTerm _myNodeId (KD._myPublicKey c) (KD._myPrivateKey c)
-      KD.invalidCandidateResults .= Just (InvalidCandidateResults sigForRV Set.empty)
+      csInvalidCandidateResults .= Just (InvalidCandidateResults sigForRV Set.empty)
       enqueueRequest $ Sender.BroadcastRV rv
       view KD.informEvidenceServiceOfElection >>= liftIO
       resetElectionTimer
@@ -139,8 +139,8 @@ castLazyVote :: Term -> NodeId -> KD.Consensus ()
 castLazyVote lazyTerm' lazyCandidate' = do
   setTerm lazyTerm'
   setVotedFor (Just lazyCandidate')
-  KD.lazyVote .= Nothing
-  KD.ignoreLeader .= False
+  csLazyVote .= Nothing
+  csIgnoreLeader .= False
   setCurrentLeader Nothing
   enqueueRequest $ Sender.BroadcastRVR lazyCandidate' Nothing True
   -- TODO: we need to verify that this is correct. It seems that a RVR (so a vote) is sent every time an election timeout fires.
@@ -150,7 +150,7 @@ castLazyVote lazyTerm' lazyCandidate' = do
 -- THREAD: SERVER MAIN. updates state
 setVotedFor :: Maybe NodeId -> KD.Consensus ()
 setVotedFor mvote = do
-  KD.votedFor .= mvote
+  csVotedFor .= mvote
 
 createRequestVoteResponse :: NodeId -> NodeId -> Term -> Bool -> RequestVoteResponse
 createRequestVoteResponse me' target' term' vote =

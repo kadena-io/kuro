@@ -14,11 +14,12 @@
 {-# LANGUAGE FlexibleInstances #-}
 
 module Kadena.Types.Config
-  ( Config(..), otherNodes, changeToNodes, nodeId, publicKeys, adminKeys, myPrivateKey, myPublicKey
+  ( Config(..), clusterMembers, nodeId, publicKeys, adminKeys, myPrivateKey, myPublicKey
   , electionTimeoutRange, heartbeatTimeout, enableDebug, apiPort, entity, logDir, enablePersistence
   , pactPersist, aeBatchSize, preProcThreadCount, preProcUsePar, inMemTxCache, hostStaticDir
   , nodeClass, logRules
-  , ConfigUpdater (..)
+  , ClusterMembership(..), cmOtherNodes, cmChangeToNodes
+  , ConfigUpdater(..)
   , DiffNodes(..)
   , GlobalConfig(..),  gcVersion, gcConfig
   , GlobalConfigTMVar
@@ -68,8 +69,7 @@ instance ToJSON PactPersistConfig where toJSON = lensyToJSON 4
 instance FromJSON PactPersistConfig where parseJSON = lensyParseJSON 4
 
 data Config = Config
-  { _otherNodes           :: !(Set NodeId)
-  , _changeToNodes        :: !(Set NodeId) -- new set of nodes due to config change request
+  { _clusterMembers       :: !ClusterMembership
   , _nodeId               :: !NodeId
   , _publicKeys           :: !(Map Alias PublicKey)
   , _adminKeys            :: !(Map Alias PublicKey)
@@ -92,6 +92,16 @@ data Config = Config
   , _logRules             :: !LogRules
   }
   deriving (Show, Generic)
+
+data ClusterMembership = ClusterMembership
+  { _cmOtherNodes :: !(Set NodeId)
+  , _cmChangeToNodes :: !(Set NodeId)
+  } deriving (Show, Eq, Generic)
+makeLenses ''ClusterMembership
+instance ToJSON ClusterMembership where
+  toJSON = lensyToJSON 3
+instance FromJSON ClusterMembership where
+  parseJSON = lensyParseJSON 3
 
 data PPBType = SQLITE|MSSQL|INMEM deriving (Eq,Show,Read,Generic,FromJSON,ToJSON)
 

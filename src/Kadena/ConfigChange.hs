@@ -29,6 +29,7 @@ runWithNewConfig :: IO ()
 runWithNewConfig =
   putStrLn "whatever"
 
+
 mutateGlobalConfig :: GlobalConfigTMVar -> ProcessedClusterChg CCPayload -> IO ClusterChangeResult
 mutateGlobalConfig _ (ProcClusterChgFail err) = return $ ClusterChangeFailure err
 mutateGlobalConfig gc (ProcClusterChgSucc cmd) = do
@@ -49,15 +50,19 @@ execClusterChangeCmd :: Config -> ClusterChangeCommand CCPayload -> IO Config
 execClusterChangeCmd cfg ClusterChangeCommand{..} = do
   let changeInfo = _ccpInfo _cccPayload
   case _cciState changeInfo of
+  {-
     Transitional -> return $ cfg { _changeToNodes = Set.fromList $ _cciNewNodeList changeInfo }
+  -}
+    Transitional -> do
+      let theMembers = _clusterMembers cfg
+      return $ cfg { _clusterMembers = theMembers { _cmChangeToNodes = Set.fromList $ _cciNewNodeList changeInfo } }
     Final -> do
       let others = Set.fromList $ _cciNewNodeList changeInfo
-      -- remove the current node from the new list of "otherNodes" (it may also
+      -- remove the current node from the new list of "other nodes" (it may also
       -- not be in the new configuration at all, in which case delete does nothing)
       let others' = Set.delete (_nodeId cfg) others
-      return cfg { _otherNodes = others'
-                 , _changeToNodes = Set.empty
-                 }
+      return cfg { _clusterMembers = ClusterMembership { _cmOtherNodes = others'
+                                                       , _cmChangeToNodes = Set.empty } }
 
 runConfigUpdater :: ConfigUpdater -> GlobalConfigTMVar -> IO ()
 runConfigUpdater ConfigUpdater{..} gcm = go initialConfigVersion

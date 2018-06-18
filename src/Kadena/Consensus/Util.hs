@@ -63,11 +63,15 @@ resetElectionTimer = do
 hasElectionTimerLeaderFired :: Consensus Bool
 hasElectionTimerLeaderFired = do
   maxTimeout <- ((*2) . snd) <$> viewConfig electionTimeoutRange
-  timeSinceLastAER' <- use timeSinceLastAER
+  timeSinceLastAER' <- use csTimeSinceLastAER
+
+  -- let h1 = maxTimeout `asTypeOf` _
+  -- let h2 = timeSinceLastAER' `asTypeOf` _
+
   return $ timeSinceLastAER' >= maxTimeout
 
 resetElectionTimerLeader :: Consensus ()
-resetElectionTimerLeader = timeSinceLastAER .= 0
+resetElectionTimerLeader = csTimeSinceLastAER .= 0
 
 resetHeartbeatTimer :: Consensus ()
 resetHeartbeatTimer = do
@@ -77,17 +81,17 @@ resetHeartbeatTimer = do
 
 cancelTimer :: Consensus ()
 cancelTimer = do
-  tmr <- use timerThread
+  tmr <- use csTimerThread
   case tmr of
     Nothing -> return ()
     Just t -> view killEnqueued >>= \f -> liftIO $ f t
-  timerThread .= Nothing
+  csTimerThread .= Nothing
 
 setTimedEvent :: Event -> Int -> Consensus ()
 setTimedEvent e t = do
   cancelTimer
   tmr <- enqueueEventLater t e -- forks, no state
-  timerThread .= Just tmr
+  csTimerThread .= Just tmr
 
 becomeFollower :: Consensus ()
 becomeFollower = do
@@ -110,7 +114,7 @@ updateLogs q = do
 debug :: String -> Consensus ()
 debug s = do
   dbg <- view (rs.debugPrint)
-  role' <- use nodeRole
+  role' <- use csNodeRole
   case role' of
     Leader -> liftIO $! dbg $! "[Kadena|\ESC[0;34mLEADER\ESC[0m]: " ++ s
     Follower -> liftIO $! dbg $! "[Kadena|\ESC[0;32mFOLLOWER\ESC[0m]: " ++ s
@@ -128,13 +132,13 @@ enqueueRequest s = do
   st <- get
   ss <- return $! Sender.StateSnapshot
     { Sender._snapNodeId = conf ^. nodeId
-    , Sender._snapNodeRole = st ^. nodeRole
-    , Sender._snapOtherNodes = conf ^. otherNodes
-    , Sender._snapLeader = st ^. currentLeader
-    , Sender._snapTerm = st ^. term
+    , Sender._snapNodeRole = st ^. csNodeRole
+    , Sender._snapClusterMembers = conf ^. clusterMembers
+    , Sender._snapLeader = st ^. csCurrentLeader
+    , Sender._snapTerm = st ^. csTerm
     , Sender._snapPublicKey = conf ^. myPublicKey
     , Sender._snapPrivateKey = conf ^. myPrivateKey
-    , Sender._snapYesVotes = st ^. cYesVotes
+    , Sender._snapYesVotes = st ^. csYesVotes
     }
   liftIO $! sendMsg $! Sender.ServiceRequest' ss s
 
@@ -161,16 +165,16 @@ logStaticMetrics :: Consensus ()
 logStaticMetrics = do
   Config{..} <- readConfig
   logMetric . MetricNodeId =<< viewConfig nodeId
-  logMetric $ MetricClusterSize (1 + Set.size _otherNodes)
-  logMetric . MetricQuorumSize $ getQuorumSize (Set.size _otherNodes)
+  logMetric $ MetricClusterSize (1 + Set.size (_cmOtherNodes _clusterMembers))
+  logMetric . MetricQuorumSize $ getQuorumSize (Set.size (_cmOtherNodes _clusterMembers))
 
 -- NB: Yes, the strictness here is probably overkill, but this used to leak the bloom filter
 publishConsensus :: Consensus ()
 publishConsensus = do
-  !currentLeader' <- use currentLeader
-  !nodeRole' <- use nodeRole
-  !term' <- use term
-  !cYesVotes' <- use cYesVotes
+  !currentLeader' <- use csCurrentLeader
+  !nodeRole' <- use csNodeRole
+  !term' <- use csTerm
+  !cYesVotes' <- use csYesVotes
   p <- view mPubConsensus
   newPubCons <- return $! PublishedConsensus currentLeader' nodeRole' term' cYesVotes'
   _ <- liftIO $! takeMVar p
@@ -178,19 +182,19 @@ publishConsensus = do
 
 setTerm :: Term -> Consensus ()
 setTerm t = do
-  term .= t
+  csTerm .= t
   publishConsensus
   logMetric $! MetricTerm t
 
 setRole :: Role -> Consensus ()
 setRole newRole = do
-  nodeRole .= newRole
+  csNodeRole .= newRole
   publishConsensus
   logMetric $! MetricRole newRole
 
 setCurrentLeader :: Maybe NodeId -> Consensus ()
 setCurrentLeader mNode = do
-  currentLeader .= mNode
+  csCurrentLeader .= mNode
   publishConsensus
   logMetric $! MetricCurrentLeader mNode
 

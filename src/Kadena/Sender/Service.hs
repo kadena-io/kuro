@@ -75,7 +75,7 @@ getStateSnapshot conf' pcons' = do
   return $! StateSnapshot
     { _snapNodeId = Cfg._nodeId conf
     , _snapNodeRole = st ^. Spec.pcRole
-    , _snapOtherNodes = Cfg._otherNodes conf
+    , _snapClusterMembers = Cfg._clusterMembers conf
     , _snapLeader = st ^. Spec.pcLeader
     , _snapTerm = st ^. Spec.pcTerm
     , _snapPublicKey = Cfg._myPublicKey conf
@@ -96,7 +96,7 @@ runSenderService dispatch gcm debugFn publishMetric' mPubEvState mPubCons = do
   s <- return $ StateSnapshot
     { _snapNodeId = Cfg._nodeId conf
     , _snapNodeRole = Follower
-    , _snapOtherNodes = Cfg._otherNodes conf
+    , _snapClusterMembers = Cfg._clusterMembers conf
     , _snapLeader = Nothing
     , _snapTerm = startTerm
     , _snapPublicKey = Cfg._myPublicKey conf
@@ -214,7 +214,8 @@ sendAllAppendEntries nodeCurrentIndex' nodesThatFollow' sendIfOutOfSync = do
   let ct = view snapTerm s
   let myNodeId' = view snapNodeId s
   let yesVotes' = view snapYesVotes s
-  let oNodes = view snapOtherNodes s
+  let oNodes = _cmOtherNodes (_snapClusterMembers s)
+
   limit' <- view aeReplicationLogLimit
   gConfig <- view config
   quorumOk <- liftIO $ checkVoteQuorum gConfig oNodes
@@ -310,7 +311,7 @@ canBroadcastAE everyoneBelieves nodeIndexMap ct myNodeId' vts broadcastControl =
       then return $ BackStreet inSyncRpc laggingFollowers
       else do
         s <- get
-        let oNodes' = view snapOtherNodes s
+        let oNodes' = _cmOtherNodes (_snapClusterMembers s)
         debug $ "non-believers exist, establishing dominance over " ++ show ((Set.size vts) - 1)
         return $ BackStreet inSyncRpc $ Set.union laggingFollowers (oNodes' Set.\\ vts)
 {-# INLINE canBroadcastAE #-}
@@ -322,7 +323,7 @@ checkVoteQuorum globalCfg votes = do
   let currentNodes = getCurrentNodes theConfig
   let currentQuorum = getQuorumSize $ Set.size currentNodes
   let currentVotes = Set.size $ Set.filter (\x -> x `elem` currentNodes) votes
-  let newNodes = _changeToNodes theConfig
+  let newNodes = _cmChangeToNodes $ _clusterMembers theConfig
   let changeToQuorum = getQuorumSizeOthers newNodes myId
   let changeToVotes = Set.size $ Set.filter (\x -> x `elem` newNodes) votes
   return $ currentVotes >= currentQuorum && changeToVotes >= changeToQuorum

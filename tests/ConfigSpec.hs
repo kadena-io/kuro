@@ -43,9 +43,10 @@ dummyConfig = do
       bRemote = EntityRemote "B" (toPub $ bStatic)
 
   return $ Config
-    { _otherNodes           = S.fromList [NodeId "hostB" 8001 "hostB:8001" "B",
-                                          NodeId "hostC" 8002 "hostB:8002" "C"]
-    , _changeToNodes        = S.empty
+    { _clusterMembers = ClusterMembership
+        { _cmOtherNodes           = S.fromList [NodeId "hostB" 8001 "hostB:8001" "B",
+                                                NodeId "hostC" 8002 "hostB:8002" "C"]
+        , _cmChangeToNodes        = S.empty }
     , _nodeId               = NodeId "hostA" 8000 "hostA:8000" "A"
     , _publicKeys           = M.fromList [("hostB",bp),("hostC",cp)]
     , _adminKeys            = M.fromList [("hostA",ap),("hostC",cp)]

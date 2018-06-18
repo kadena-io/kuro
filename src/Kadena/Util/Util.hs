@@ -96,5 +96,5 @@ linkAsyncTrack loc fn = link =<< (async $ catchAndRethrow loc fn)
 getCurrentNodes :: Config -> Set NodeId
 getCurrentNodes theConfig =
   let myId = _nodeId theConfig
-      others = _otherNodes theConfig
+      others = _cmOtherNodes (_clusterMembers theConfig)
   in myId `Set.insert` others

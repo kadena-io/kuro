@@ -8,15 +8,15 @@ module Kadena.Types.Spec
   ( Consensus
   , ConsensusSpec(..)
   , debugPrint, publishMetric, getTimestamp, random
-  , viewConfig, readConfig, timerTarget, evidenceState, timeCache
+  , viewConfig, readConfig, csTimerTarget, evidenceState, timeCache
   , ConsensusEnv(..), cfg, enqueueLogQuery, rs
   , enqueue, enqueueMultiple, dequeue, enqueueLater, killEnqueued
   , sendMessage, clientSendMsg, mResetLeaderNoFollowers, mPubConsensus
   , informEvidenceServiceOfElection, enqueueHistoryQuery
   , ConsensusState(..), initialConsensusState
-  , nodeRole, term, votedFor, lazyVote, currentLeader, ignoreLeader
-  , timerThread, cYesVotes, cPotentialVotes, lastCommitTime
-  , timeSinceLastAER, cmdBloomFilter, invalidCandidateResults
+  , csNodeRole, csTerm, csVotedFor, csLazyVote, csCurrentLeader, csIgnoreLeader
+  , csTimerThread, csYesVotes, csPotentialVotes, csLastCommitTime
+  , csTimeSinceLastAER, csCmdBloomFilter, csInvalidCandidateResults
   , Event(..)
   , mkConsensusEnv
   , PublishedConsensus(..),pcLeader,pcRole,pcTerm,pcYesVotes
@@ -88,22 +88,22 @@ data LazyVote = LazyVote
 makeLenses ''LazyVote
 
 data ConsensusState = ConsensusState
-  { _nodeRole         :: !Role
-  , _term             :: !Term
-  , _votedFor         :: !(Maybe NodeId)
-  , _lazyVote         :: !(Maybe LazyVote)
-  , _currentLeader    :: !(Maybe NodeId)
-  , _ignoreLeader     :: !Bool
-  , _timerThread      :: !(Maybe ThreadId)
-  , _timerTarget      :: !(MVar Event)
-  , _cmdBloomFilter   :: !(Bloom RequestKey)
-  , _cYesVotes        :: !(Set RequestVoteResponse)
-  , _cPotentialVotes  :: !(Set NodeId)
-  , _timeSinceLastAER :: !Int
+  { _csNodeRole         :: !Role
+  , _csTerm             :: !Term
+  , _csVotedFor         :: !(Maybe NodeId)
+  , _csLazyVote         :: !(Maybe LazyVote)
+  , _csCurrentLeader    :: !(Maybe NodeId)
+  , _csIgnoreLeader     :: !Bool
+  , _csTimerThread      :: !(Maybe ThreadId)
+  , _csTimerTarget      :: !(MVar Event)
+  , _csCmdBloomFilter   :: !(Bloom RequestKey)
+  , _csYesVotes        :: !(Set RequestVoteResponse)
+  , _csPotentialVotes  :: !(Set NodeId)
+  , _csTimeSinceLastAER :: !Int
   -- used for metrics
-  , _lastCommitTime   :: !(Maybe UTCTime)
+  , _csLastCommitTime   :: !(Maybe UTCTime)
   -- used only during Candidate State
-  , _invalidCandidateResults :: !(Maybe InvalidCandidateResults)
+  , _csInvalidCandidateResults :: !(Maybe InvalidCandidateResults)
   }
 makeLenses ''ConsensusState
 

@@ -282,8 +282,9 @@ toAliasMap = M.fromList . map (first _alias) . M.toList
 createClusterConfig :: ConfigParams -> (Map Alias PublicKey) -> (Map NodeId PrivateKey, Map NodeId PublicKey) ->
                        (Map NodeId EntityConfig) -> Int -> NodeId -> Config
 createClusterConfig cp@ConfigParams{..} adminKeys' (privMap, pubMap) entMap apiP nid = Config
-  { _otherNodes           = Set.delete nid $ M.keysSet pubMap
-  , _changeToNodes        = Set.empty
+  { _clusterMembers = ClusterMembership
+      { _cmOtherNodes = Set.delete nid $ M.keysSet pubMap
+      , _cmChangeToNodes = Set.empty }
   , _nodeId               = nid
   , _publicKeys           = toAliasMap $ pubMap
   , _adminKeys            = adminKeys'

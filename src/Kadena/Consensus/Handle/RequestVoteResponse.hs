@@ -17,7 +17,7 @@ import qualified Kadena.Types.Log as Log
 import qualified Kadena.Types as KD
 import Kadena.Util.Util
 
-import Kadena.Types hiding (nodeRole, term, cYesVotes)
+import Kadena.Types
 import Kadena.Consensus.Util
 
 data RequestVoteResponseEnv = RequestVoteResponseEnv {
@@ -102,19 +102,19 @@ handle m = do
   (o,l) <- runReaderT (runWriterT (handleRequestVoteResponse m))
            (RequestVoteResponseEnv
             (KD._nodeId conf)
-            (KD._nodeRole s)
-            (KD._term s)
-            (KD._cYesVotes s)
-            (getQuorumSize $ Set.size $ KD._otherNodes conf)
-            (KD._invalidCandidateResults s))
+            (_csNodeRole s)
+            (_csTerm s)
+            (_csYesVotes s)
+            (getQuorumSize $ Set.size $ KD._cmOtherNodes (KD._clusterMembers conf))
+            (_csInvalidCandidateResults s))
   mapM_ debug l
   case o of
     BecomeLeader vs -> do
-             KD.cYesVotes .= vs
+             csYesVotes .= vs
              becomeLeader
-    UpdateYesVotes vs -> KD.cYesVotes .= vs
-    UpdateInvalidCandidateResults icr' -> KD.invalidCandidateResults .= Just icr'
-    DeletePotentialVote n -> KD.cPotentialVotes %= Set.delete n
+    UpdateYesVotes vs -> csYesVotes .= vs
+    UpdateInvalidCandidateResults icr' -> csInvalidCandidateResults .= Just icr'
+    DeletePotentialVote n -> csPotentialVotes %= Set.delete n
     NoAction -> return ()
     RevertToFollower -> revertToLastQuorumState
 
@@ -133,12 +133,12 @@ revertToLastQuorumState :: KD.Consensus ()
 revertToLastQuorumState = do
   setRole Follower
   setCurrentLeader Nothing
-  KD.ignoreLeader .= False
-  KD.invalidCandidateResults .= Nothing
+  csIgnoreLeader .= False
+  csInvalidCandidateResults .= Nothing
   lastEntry' <- Log.hasQueryResult Log.LastEntry <$> queryLogs (Set.singleton Log.GetLastEntry)
   setTerm . maybe KD.startTerm KD._leTerm $ lastEntry'
-  KD.votedFor .= Nothing
-  KD.cYesVotes .= Set.empty
-  KD.cPotentialVotes .= Set.empty
+  csVotedFor .= Nothing
+  csYesVotes .= Set.empty
+  csPotentialVotes .= Set.empty
   view KD.informEvidenceServiceOfElection >>= liftIO
   resetElectionTimer

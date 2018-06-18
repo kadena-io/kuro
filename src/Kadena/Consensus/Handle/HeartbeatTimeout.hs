@@ -12,7 +12,7 @@ import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer
 
-import Kadena.Types hiding (nodeRole)
+import Kadena.Types
 import Kadena.Consensus.Handle.AppendEntries (clearLazyVoteAndInformCandidates)
 import qualified Kadena.Sender.Service as Sender
 import Kadena.Consensus.Util
@@ -43,7 +43,7 @@ handle msg = do
   leaderWithoutFollowers' <- hasElectionTimerLeaderFired
   (out,l) <- runReaderT (runWriterT (handleHeartbeatTimeout msg)) $
              HeartbeatTimeoutEnv
-             (KD._nodeRole s)
+             (_csNodeRole s)
              leaderWithoutFollowers'
   mapM_ debug l
   case out of
@@ -55,9 +55,9 @@ handle msg = do
       hbMicrosecs <- KD.viewConfig KD.heartbeatTimeout
       r <- view KD.mResetLeaderNoFollowers >>= liftIO . tryTakeMVar
       case r of
-        Nothing -> KD.timeSinceLastAER %= (+ hbMicrosecs)
-        Just KD.ResetLeaderNoFollowersTimeout -> KD.timeSinceLastAER .= 0
-    NotLeader -> KD.timeSinceLastAER .= 0 -- probably overkill, but nice to know this gets set to 0 if not leader
+        Nothing -> csTimeSinceLastAER %= (+ hbMicrosecs)
+        Just KD.ResetLeaderNoFollowersTimeout -> csTimeSinceLastAER .= 0
+    NotLeader -> csTimeSinceLastAER .= 0 -- probably overkill, but nice to know this gets set to 0 if not leader
     NoFollowers -> do
-      timeout' <- return $ KD._timeSinceLastAER s
+      timeout' <- return $ _csTimeSinceLastAER s
       enqueueEvent $ ElectionTimeout $ "Leader has not hear from followers in: " ++ show (timeout' `div` 1000) ++ "ms"

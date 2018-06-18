@@ -115,9 +115,11 @@ runConsensusService :: ReceiverEnv -> GlobalConfigTMVar -> ConsensusSpec -> Cons
                             IO UTCTime -> MVar PublishedConsensus -> IO ()
 runConsensusService renv gcm spec rstate timeCache' mPubConsensus' = do
   rconf <- readCurrentConfig gcm
-  let csize = 1 + Set.size (rconf ^. otherNodes)
+  --let csize = 1 + Set.size (rconf ^. otherNodes)
+  let members = rconf ^. clusterMembers
+      csize = 1 + Set.size (_cmOtherNodes members)
       qsize = getQuorumSize csize
-      changeToSize = Set.size (rconf ^. changeToNodes)
+      changeToSize = Set.size (_cmChangeToNodes members)
       changeToQuorum = getQuorumSize changeToSize
       publishMetric' = (spec ^. publishMetric)
       dispatch' = _dispatch renv
@@ -133,7 +135,7 @@ runConsensusService renv gcm spec rstate timeCache' mPubConsensus' = do
   publishMetric' $ MetricChangeToQuorumSize changeToQuorum
   linkAsyncTrack "ReceiverThread" $ runMessageReceiver renv
 
-  timerTarget' <- return $ (rstate ^. timerTarget)
+  timerTarget' <- return $ (rstate ^. csTimerTarget)
   -- EvidenceService Environment
   mEvState <- newEmptyMVar
   mLeaderNoFollowers <- newEmptyMVar

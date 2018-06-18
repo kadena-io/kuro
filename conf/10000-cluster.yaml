@@ -13,7 +13,6 @@ publicKeys:
 aeBatchSize: 20000
 heartbeatTimeout: 1000000
 logDir: ./log
-changeToNodes: []
 apiPort: 8000
 logRules:
   PactService:
@@ -21,24 +20,26 @@ logRules:
     enable: null
     exclude:
     - DEBUG
+clusterMembers:
+  changeToNodes: []
+  otherNodes:
+  - alias: node1
+    fullAddr: tcp://127.0.0.1:10001
+    host: '127.0.0.1'
+    port: 10001
+  - alias: node2
+    fullAddr: tcp://127.0.0.1:10002
+    host: '127.0.0.1'
+    port: 10002
+  - alias: node3
+    fullAddr: tcp://127.0.0.1:10003
+    host: '127.0.0.1'
+    port: 10003
 preProcThreadCount: 10
 hostStaticDir: true
 electionTimeoutRange:
 - 3000000
 - 6000000
-otherNodes:
-- alias: node1
-  fullAddr: tcp://127.0.0.1:10001
-  host: '127.0.0.1'
-  port: 10001
-- alias: node2
-  fullAddr: tcp://127.0.0.1:10002
-  host: '127.0.0.1'
-  port: 10002
-- alias: node3
-  fullAddr: tcp://127.0.0.1:10003
-  host: '127.0.0.1'
-  port: 10003
 inMemTxCache: 200000
 myPublicKey: 9679fc966039bc2f0720d7b14e9bfd0afe9ea46125ee57c625be6706e4cce411
 nodeId:

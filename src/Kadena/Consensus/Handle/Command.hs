@@ -19,7 +19,7 @@ import Data.Thyme.Clock
 import Data.Either (partitionEithers)
 
 import Kadena.Command
-import Kadena.Types hiding (nodeRole, cmdBloomFilter)
+import Kadena.Types
 import Kadena.Consensus.Util
 import qualified Kadena.Types as KD
 
@@ -73,15 +73,15 @@ handleBatch cmdbBatch = do
   start' <- now
   debug "Received Command Batch"
   s <- get
-  lid <- return $ KD._currentLeader s
+  lid <- return $ _csCurrentLeader s
   (out,_) <- runReaderT (runWriterT (handleCommandBatch cmdbBatch)) $
-             CommandEnv (KD._nodeRole s)
-                        (KD._cmdBloomFilter s)
+             CommandEnv (_csNodeRole s)
+                        (_csCmdBloomFilter s)
   debug "Finished processing command batch"
   case out of
     IAmLeader BatchProcessing{..} -> do
       end' <- now
-      updateLogs $ ULNew $ NewLogEntries (KD._term s) (KD.NleEntries $ updateCmdLat start' end' $ _unBPNewEntries newEntries)
+      updateLogs $ ULNew $ NewLogEntries (_csTerm s) (KD.NleEntries $ updateCmdLat start' end' $ _unBPNewEntries newEntries)
       unless (null $ _unBPNewEntries newEntries) $ do
         enqueueRequest $ Sender.BroadcastAE Sender.OnlySendIfFollowersAreInSync
       -- Bloom filters can give false positives but most of the time the commands will be new, so we do a second pass to double check
@@ -94,7 +94,7 @@ handleBatch cmdbBatch = do
         falsePositiveCommands <- return $! filter (\c' -> HashSet.member (toRequestKey $ snd c') falsePositive) $ _unBPAlreadySeen alreadySeen
         end <- now
         unless (HashSet.null falsePositive) $ do
-          updateLogs $ ULNew $ NewLogEntries (KD._term s) (KD.NleEntries $ updateCmdLat start' end $ falsePositiveCommands)
+          updateLogs $ ULNew $ NewLogEntries (_csTerm s) (KD.NleEntries $ updateCmdLat start' end $ falsePositiveCommands)
           enqueueRequest $ Sender.BroadcastAE Sender.OnlySendIfFollowersAreInSync
           debug $ "CMDB - False positives found "
                   ++ show (HashSet.size falsePositive)
@@ -102,7 +102,7 @@ handleBatch cmdbBatch = do
                   ++ "(" ++ printInterval start end ++ ")"
         sendHistoryNewKeys $ HashSet.union falsePositive $ HashSet.fromList $ toRequestKey . snd <$> _unBPAlreadySeen alreadySeen
       -- the false positives we already collisions so no need to add them
-      KD.cmdBloomFilter .= updateBloom newEntries (KD._cmdBloomFilter s)
+      csCmdBloomFilter .= updateBloom newEntries (_csCmdBloomFilter s)
       es <- view KD.evidenceState >>= liftIO
       gConfig <- view cfg
       quorumOk <- liftIO $ Sender.checkVoteQuorum gConfig (es ^. Ev.pesConvincedNodes)

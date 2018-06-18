@@ -19,7 +19,7 @@ import qualified Kadena.Sender.Service as Sender
 import qualified Kadena.Types.Log as Log
 import qualified Kadena.Types as KD
 
-import Kadena.Types hiding (votedFor, term, currentLeader, ignoreLeader, lazyVote)
+import Kadena.Types
 import Kadena.Consensus.Util
 
 data RequestVoteEnv = RequestVoteEnv {
@@ -120,7 +120,7 @@ handle :: RequestVote -> KD.Consensus ()
 handle rv = do
   s <- get
   mv <- queryLogs $ Set.fromList [Log.GetMaxIndex, Log.GetLastLogTerm]
-  if KD._nodeRole s == Leader
+  if _csNodeRole s == Leader
   then do
     enqueueRequest Sender.EstablishDominance
     nodeId' <- view KD.nodeId <$> KD.readConfig
@@ -128,19 +128,19 @@ handle rv = do
     enqueueRequest $ Sender.BroadcastRVR (_rvCandidateId rv) hfl False
   else do
     let rve = RequestVoteEnv
-                (KD._term s)
-                (KD._votedFor s)
-                (KD._lazyVote s)
-                (KD._currentLeader s)
-                (KD._ignoreLeader s)
+                (_csTerm s)
+                (_csVotedFor s)
+                (_csLazyVote s)
+                (_csCurrentLeader s)
+                (_csIgnoreLeader s)
                 (Log.hasQueryResult Log.MaxIndex mv)
                 (Log.hasQueryResult Log.LastLogTerm mv)
     (rvo, l) <- runReaderT (runWriterT (handleRequestVote rv)) rve
     mapM_ debug l
     case rvo of
       NoAction -> return ()
-      UpdateLazyVote stateUpdate -> KD.lazyVote .= Just stateUpdate
+      UpdateLazyVote stateUpdate -> csLazyVote .= Just stateUpdate
       UpdateLazyVoteAndVote{..} -> do
-        KD.lazyVote .= Just _updateLazyVote
+        csLazyVote .= Just _updateLazyVote
         enqueueRequest $ Sender.BroadcastRVR _targetNode Nothing _vote
       ReplyToRPCSender{..} -> enqueueRequest $ Sender.BroadcastRVR _targetNode Nothing _vote

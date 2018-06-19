@@ -64,10 +64,6 @@ hasElectionTimerLeaderFired :: Consensus Bool
 hasElectionTimerLeaderFired = do
   maxTimeout <- ((*2) . snd) <$> viewConfig electionTimeoutRange
   timeSinceLastAER' <- use csTimeSinceLastAER
-
-  -- let h1 = maxTimeout `asTypeOf` _
-  -- let h2 = timeSinceLastAER' `asTypeOf` _
-
   return $ timeSinceLastAER' >= maxTimeout
 
 resetElectionTimerLeader :: Consensus ()

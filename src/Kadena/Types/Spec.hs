@@ -42,7 +42,7 @@ import Data.Thyme.Time.Core ()
 import System.Random (Random)
 
 import Kadena.Types.Base
-import Kadena.Types.Config
+import Kadena.Config.TMVar
 import Kadena.Types.Event
 import Kadena.Types.Message
 import Kadena.Types.Metric

@@ -23,7 +23,7 @@ import Database.SQLite.Simple (Connection(..))
 
 import Kadena.Types.Base
 import Kadena.Types.Comms
-import Kadena.Types.Config
+import Kadena.Config.TMVar
 import Kadena.Types.Command (CmdLatencyMetrics(..))
 import Kadena.Types.Metric
 import Kadena.Log.Persistence
@@ -38,7 +38,7 @@ import Kadena.Types (Dispatch)
 import Kadena.Event (pprintBeat)
 
 runLogService :: Dispatch
-              -> (String -> IO()) 
+              -> (String -> IO())
               -> (Metric -> IO())
               -> Config
               -> IO ()

@@ -19,10 +19,10 @@ import Data.Thyme.Clock
 import Data.Either (partitionEithers)
 
 import Kadena.Command
+import qualified Kadena.Config.TMVar as TMV
 import Kadena.Types
 import Kadena.Consensus.Util
 import qualified Kadena.Types as KD
-
 import qualified Kadena.Sender.Service as Sender
 import qualified Kadena.Evidence.Types as Ev
 
@@ -105,7 +105,7 @@ handleBatch cmdbBatch = do
       csCmdBloomFilter .= updateBloom newEntries (_csCmdBloomFilter s)
       es <- view KD.evidenceState >>= liftIO
       gConfig <- view cfg
-      quorumOk <- liftIO $ Sender.checkVoteQuorum gConfig (es ^. Ev.pesConvincedNodes)
+      quorumOk <- liftIO $ TMV.checkVoteQuorum gConfig (es ^. Ev.pesConvincedNodes)
       when (Sender.willBroadcastAE quorumOk (es ^. Ev.pesNodeStates)) resetHeartbeatTimer
     IAmFollower BatchProcessing{..} -> do
       when (isJust lid) $ do

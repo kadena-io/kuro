@@ -31,13 +31,18 @@ flag pact-persistence
 library
   exposed-modules:     Apps.Kadena.Client
                      , Apps.Kadena.Server
-                     , Kadena.ConfigChange
-                     , Kadena.ConfigChange.Types
-                     , Kadena.ConfigChange.Util
                      , Kadena.Execution.Pact
                      , Kadena.Execution.Service
                      , Kadena.Execution.Types
                      , Kadena.Command
+                     , Kadena.Config
+                     , Kadena.Config.ClusterMembership
+                     , Kadena.Config.Pact.Types
+                     , Kadena.Config.TMVar
+                     , Kadena.Config.Types
+                     , Kadena.ConfigChange
+                     , Kadena.ConfigChange.Types
+                     , Kadena.ConfigChange.Util
                      , Kadena.Consensus.Handle
                      , Kadena.Consensus.Handle.AppendEntries
                      , Kadena.Consensus.Handle.Command
@@ -87,7 +92,6 @@ library
                      , Kadena.Types.Base
                      , Kadena.Types.Command
                      , Kadena.Types.Comms
-                     , Kadena.Types.Config
                      , Kadena.Types.Dispatch
                      , Kadena.Types.Entity
                      , Kadena.Types.Event

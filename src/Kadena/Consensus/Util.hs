@@ -37,18 +37,18 @@ import qualified Control.Concurrent.Lifted as CL
 
 import Data.HashSet (HashSet)
 import Data.Set (Set)
-import qualified Data.Set as Set
 import Data.Map.Strict (Map)
 
 import Data.Thyme.Clock
 import qualified System.Random as R
 
+import qualified Kadena.Config.ClusterMembership as CM
+import Kadena.Config.TMVar
 import Kadena.Types
 import qualified Kadena.Sender.Types as Sender
 import qualified Kadena.Log.Types as Log
 import qualified Kadena.Types.Log as Log
 import qualified Kadena.History.Types as History
-import Kadena.Util.Util
 
 getNewElectionTimeout :: Consensus Int
 getNewElectionTimeout = viewConfig electionTimeoutRange >>= randomRIO
@@ -165,8 +165,8 @@ logStaticMetrics :: Consensus ()
 logStaticMetrics = do
   Config{..} <- readConfig
   logMetric . MetricNodeId =<< viewConfig nodeId
-  logMetric $ MetricClusterSize (1 + Set.size (_cmOtherNodes _clusterMembers))
-  logMetric . MetricQuorumSize $ getQuorumSize (Set.size (_cmOtherNodes _clusterMembers))
+  logMetric $ MetricClusterSize (1 + CM.countOthers _clusterMembers)
+  logMetric . MetricQuorumSize $ CM.getQuorumSize (CM.countOthers _clusterMembers)
 
 -- NB: Yes, the strictness here is probably overkill, but this used to leak the bloom filter
 publishConsensus :: Consensus ()

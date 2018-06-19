@@ -12,11 +12,11 @@ import Control.Monad.State
 import Control.Monad.Writer.Strict
 import Data.Set as Set
 
+import qualified Kadena.Config.ClusterMembership as CM
+import qualified Kadena.Config.TMVar as TMV
 import qualified Kadena.Sender.Service as Sender
 import qualified Kadena.Types.Log as Log
 import qualified Kadena.Types as KD
-import Kadena.Util.Util
-
 import Kadena.Types
 import Kadena.Consensus.Util
 
@@ -101,11 +101,11 @@ handle m = do
   conf <- readConfig
   (o,l) <- runReaderT (runWriterT (handleRequestVoteResponse m))
            (RequestVoteResponseEnv
-            (KD._nodeId conf)
+            (TMV._nodeId conf)
             (_csNodeRole s)
             (_csTerm s)
             (_csYesVotes s)
-            (getQuorumSize $ Set.size $ KD._cmOtherNodes (KD._clusterMembers conf))
+            (CM.getQuorumSize $ CM.countOthers (TMV._clusterMembers conf))
             (_csInvalidCandidateResults s))
   mapM_ debug l
   case o of
@@ -123,7 +123,7 @@ handle m = do
 becomeLeader :: KD.Consensus ()
 becomeLeader = do
   setRole Leader
-  setCurrentLeader . Just =<< KD.viewConfig KD.nodeId
+  setCurrentLeader . Just =<< KD.viewConfig TMV.nodeId
   enqueueRequest $ Sender.EstablishDominance
   view KD.informEvidenceServiceOfElection >>= liftIO
   resetHeartbeatTimer

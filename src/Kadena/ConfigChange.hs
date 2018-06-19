@@ -20,10 +20,13 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Yaml as Y
 
+import Kadena.Config.ClusterMembership
+import Kadena.Config.TMVar
 import Kadena.ConfigChange.Util
 import Kadena.Types.Base
 import Kadena.Types.Command
-import Kadena.Types.Config
+import Kadena.Config
+import Kadena.Config.Types
 
 runWithNewConfig :: IO ()
 runWithNewConfig =
@@ -49,20 +52,16 @@ mutateGlobalConfig gc (ProcClusterChgSucc cmd) = do
 execClusterChangeCmd :: Config -> ClusterChangeCommand CCPayload -> IO Config
 execClusterChangeCmd cfg ClusterChangeCommand{..} = do
   let changeInfo = _ccpInfo _cccPayload
-  case _cciState changeInfo of
-  {-
-    Transitional -> return $ cfg { _changeToNodes = Set.fromList $ _cciNewNodeList changeInfo }
-  -}
-    Transitional -> do
-      let theMembers = _clusterMembers cfg
-      return $ cfg { _clusterMembers = theMembers { _cmChangeToNodes = Set.fromList $ _cciNewNodeList changeInfo } }
-    Final -> do
-      let others = Set.fromList $ _cciNewNodeList changeInfo
-      -- remove the current node from the new list of "other nodes" (it may also
-      -- not be in the new configuration at all, in which case delete does nothing)
-      let others' = Set.delete (_nodeId cfg) others
-      return cfg { _clusterMembers = ClusterMembership { _cmOtherNodes = others'
-                                                       , _cmChangeToNodes = Set.empty } }
+  let theMembers = _clusterMembers cfg
+  let newMembers = case _cciState changeInfo of
+        Transitional -> setTransitional theMembers (Set.fromList $ _cciNewNodeList changeInfo)
+        Final -> do
+          let others = Set.fromList $ _cciNewNodeList changeInfo
+          -- remove the current node from the new list of "other nodes" (it may also
+          -- not be in the new configuration at all, in which case delete does nothing)
+          let others' = Set.delete (_nodeId cfg) others
+          mkClusterMembership others' (Set.empty)
+  return cfg { _clusterMembers = newMembers}
 
 runConfigUpdater :: ConfigUpdater -> GlobalConfigTMVar -> IO ()
 runConfigUpdater ConfigUpdater{..} gcm = go initialConfigVersion

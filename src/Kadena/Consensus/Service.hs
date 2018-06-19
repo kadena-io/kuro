@@ -10,6 +10,8 @@ import Control.Monad
 import qualified Data.Set as Set
 import Data.Thyme.Clock (UTCTime)
 
+import qualified Kadena.Config.ClusterMembership as CM
+import Kadena.Config.TMVar
 import Kadena.Consensus.Handle
 import Kadena.Consensus.Util
 import Kadena.Event (foreverHeart)
@@ -115,12 +117,11 @@ runConsensusService :: ReceiverEnv -> GlobalConfigTMVar -> ConsensusSpec -> Cons
                             IO UTCTime -> MVar PublishedConsensus -> IO ()
 runConsensusService renv gcm spec rstate timeCache' mPubConsensus' = do
   rconf <- readCurrentConfig gcm
-  --let csize = 1 + Set.size (rconf ^. otherNodes)
   let members = rconf ^. clusterMembers
-      csize = 1 + Set.size (_cmOtherNodes members)
-      qsize = getQuorumSize csize
-      changeToSize = Set.size (_cmChangeToNodes members)
-      changeToQuorum = getQuorumSize changeToSize
+      csize = 1 + CM.countOthers members
+      qsize = CM.getQuorumSize csize
+      changeToSize = CM.countTransitional members
+      changeToQuorum = CM.getQuorumSize changeToSize
       publishMetric' = (spec ^. publishMetric)
       dispatch' = _dispatch renv
       dbgPrint' = Turbine._debugPrint renv

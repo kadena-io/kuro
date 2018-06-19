@@ -16,7 +16,9 @@ import Control.Monad.Writer
 import Data.Set (Set)
 import qualified Data.Set as Set
 
-import Kadena.Types hiding (nodeId, myPrivateKey, myPublicKey)
+import Kadena.Config.ClusterMembership
+import qualified Kadena.Config.TMVar as TMV
+import Kadena.Types
 import qualified Kadena.Sender.Service as Sender
 import qualified Kadena.Types.Log as Log
 import Kadena.Consensus.Util
@@ -64,7 +66,7 @@ handleElectionTimeout s = do
   then do
     lv <- view lazyVote
     case lv of
-      Just LazyVote{..} -> do
+      Just LazyVote{..} ->
         return $ VoteForLazyCandidate (_lvVoteFor ^. rvTerm) (_lvVoteFor ^. rvCandidateId) True
       Nothing -> becomeCandidate
   else if r == Leader && leaderWithoutFollowers'
@@ -84,7 +86,8 @@ becomeCandidate = do
   me <- view nodeId
   selfVote <- return $ createRequestVoteResponse me me newTerm True
   provenance <- selfVoteProvenance selfVote
-  potentials <- view (eteClusterMembers . cmOtherNodes)
+  members <- view eteClusterMembers
+  let potentials = otherNodes members
   return $ BecomeCandidate
     { _newTerm = newTerm
     , _newRole = Candidate
@@ -111,17 +114,16 @@ handle msg = do
              (_csNodeRole s)
              (_csTerm s)
              (_csLazyVote s)
-             (KD._nodeId c)
-             (KD._clusterMembers c)
+             (TMV._nodeId c)
+             (TMV._clusterMembers c)
              leaderWithoutFollowers'
-             (KD._myPrivateKey c)
-             (KD._myPublicKey c)
+             (TMV._myPrivateKey c)
+             (TMV._myPublicKey c)
   mapM_ debug l
   case out of
     AlreadyLeader -> return ()
     -- this is for handling the leader w/o followers case only
-    AbdicateAndLazyVote {..} -> do
-      castLazyVote _newTerm _lazyCandidate
+    AbdicateAndLazyVote {..} -> castLazyVote _newTerm _lazyCandidate
     VoteForLazyCandidate {..} -> castLazyVote _newTerm _lazyCandidate
     BecomeCandidate {..} -> do
       setRole _newRole
@@ -129,7 +131,7 @@ handle msg = do
       setVotedFor (Just _myNodeId)
       csYesVotes .= _yesVotes
       csPotentialVotes.= _potentialVotes
-      (sigForRV, rv) <- createRequestVote _newTerm _myNodeId (KD._myPublicKey c) (KD._myPrivateKey c)
+      (sigForRV, rv) <- createRequestVote _newTerm _myNodeId (TMV._myPublicKey c) (TMV._myPrivateKey c)
       csInvalidCandidateResults .= Just (InvalidCandidateResults sigForRV Set.empty)
       enqueueRequest $ Sender.BroadcastRV rv
       view KD.informEvidenceServiceOfElection >>= liftIO
@@ -149,8 +151,7 @@ castLazyVote lazyTerm' lazyCandidate' = do
 
 -- THREAD: SERVER MAIN. updates state
 setVotedFor :: Maybe NodeId -> KD.Consensus ()
-setVotedFor mvote = do
-  csVotedFor .= mvote
+setVotedFor mvote = csVotedFor .= mvote
 
 createRequestVoteResponse :: NodeId -> NodeId -> Term -> Bool -> RequestVoteResponse
 createRequestVoteResponse me' target' term' vote =

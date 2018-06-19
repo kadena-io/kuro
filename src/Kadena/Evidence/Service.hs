@@ -19,6 +19,7 @@ import qualified Data.Set as Set
 import Data.Thyme.Clock
 import Safe
 
+import Kadena.Config.ClusterMembership
 import Kadena.ConfigChange as CC
 import Kadena.Util.Util (linkAsyncTrack)
 import Kadena.Types.Dispatch (Dispatch)
@@ -26,7 +27,8 @@ import Kadena.Event (pprintBeat)
 import Kadena.Types.Event (ResetLeaderNoFollowersTimeout(..))
 import Kadena.Evidence.Spec as X
 import Kadena.Types.Metric (Metric)
-import Kadena.Types.Config
+import Kadena.Config.TMVar
+import Kadena.Config.Types
 import Kadena.Evidence.Types
 import Kadena.Types.Log as Log
 import Kadena.Types.Message
@@ -69,8 +71,9 @@ handleConfUpdate = do
   es@EvidenceState{..} <- get
   Config{..} <- view mConfig >>= liftIO . readCurrentConfig
   -- if there are no transitional config-change nodes AND there are no changes to the current nodes configuration
-  if null (_cmChangeToNodes _clusterMembers) && (_cmOtherNodes _esClusterMembers)
-       == (_cmOtherNodes _clusterMembers) && (snd _electionTimeoutRange) == _esMaxElectionTimeout
+  if not (hasTransitionalNodes _clusterMembers)
+     && otherNodes _esClusterMembers == otherNodes _clusterMembers
+     && (snd _electionTimeoutRange) == _esMaxElectionTimeout
   then do
     debug "Config update received but no action required"
     return ()
@@ -78,17 +81,17 @@ handleConfUpdate = do
     maxElectionTimeout' <- return $ snd $ _electionTimeoutRange
     -- df === nodes to add/remove when adopting the env's config, which is now different from what is
     --        stored in the state
-    let df = CC.diffNodes (_cmOtherNodes _esClusterMembers) (_cmOtherNodes _clusterMembers)
+    let df = CC.diffNodes (otherNodes _esClusterMembers) (otherNodes _clusterMembers)
     -- update the map of nodes -> (LogIndex, UTCTime) accordingly
     let updatedMap = CC.updateNodeMap df _esNodeStates (const (startIndex, minBound))
     -- df' === nodes to add/remove when moving to the transitional config-change nodes
-    let df' = CC.diffNodes (_cmOtherNodes _esClusterMembers) (_cmChangeToNodes _clusterMembers)
+    let df' = CC.diffNodes (otherNodes _esClusterMembers) (transitionalNodes _clusterMembers)
     -- update (again) the map of nodes -> (LogIndex, UTCTime) accordingly
     let updatedMap' = CC.updateNodeMap df' updatedMap (const (startIndex, minBound))
     put $ es
       { _esClusterMembers = _clusterMembers
-      , _esQuorumSize = getEvidenceQuorumSize $ Set.size $ _cmOtherNodes _clusterMembers
-      , _esChangeToQuorumSize = getEvidenceQuorumSize $ Set.size (_cmChangeToNodes _clusterMembers)
+      , _esQuorumSize = getEvidenceQuorumSize $ countOthers _clusterMembers
+      , _esChangeToQuorumSize = getEvidenceQuorumSize $ countTransitional _clusterMembers
       , _esNodeStates = updatedMap'
       , _esConvincedNodes = Set.difference _esConvincedNodes $ nodesToRemove df
       , _esMismatchNodes = Set.difference _esMismatchNodes $nodesToRemove df
@@ -216,8 +219,8 @@ garbageCollectCache es =
 checkPartialEvidence :: Int -> Int -> Map LogIndex (Set NodeId) -> EvidenceService EvidenceState (Either [Int] LogIndex)
 checkPartialEvidence evidenceNeeded changeToEvNeeded partialEvidence = do
   es <- get
-  let nodes = _cmOtherNodes (_esClusterMembers es)
-  let chgToNodes = _cmChangeToNodes(_esClusterMembers es)
+  let nodes = otherNodes (_esClusterMembers es)
+  let chgToNodes = transitionalNodes(_esClusterMembers es)
   return $ checkPartialEvidence' nodes chgToNodes evidenceNeeded changeToEvNeeded partialEvidence
 {-# INLINE checkPartialEvidence #-}
 

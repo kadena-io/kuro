@@ -31,10 +31,10 @@ import System.IO (BufferMode(..),stdout,stderr,hSetBuffering)
 import System.Log.FastLogger
 import System.Random
 
+import qualified Kadena.Config.ClusterMembership as CM
+import Kadena.Config.TMVar
 import Kadena.Consensus.Service
-
 import Kadena.Types.Base
-import Kadena.Types.Config
 import Kadena.Types.Spec hiding (timeCache)
 import Kadena.Types.Metric
 import Kadena.Types.Dispatch
@@ -153,7 +153,7 @@ runServer = do
   -- resetAwsEnv (rconf ^. enableAwsIntegration)
   me <- return $ rconf ^. nodeId
   let members = rconf ^. clusterMembers
-  oNodes <- return $ Set.toList $ Set.delete me (_cmOtherNodes members)-- (Map.keysSet $ rconf ^. clientPublicKeys)
+  oNodes <- return $ Set.toList $ Set.delete me (CM.otherNodes members)-- (Map.keysSet $ rconf ^. clientPublicKeys)
   dispatch <- initDispatch
 
   -- Each node has its own snap monitoring server

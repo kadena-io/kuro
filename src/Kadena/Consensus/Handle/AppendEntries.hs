@@ -24,16 +24,16 @@ import qualified Data.Set as Set
 import Data.Maybe (fromMaybe)
 import Data.Thyme.Clock
 
+import qualified Kadena.Config.ClusterMembership as CM
+import Kadena.Config.TMVar
 import Kadena.Command
 import Kadena.Types
 import Kadena.Sender.Service (createAppendEntriesResponse')
 import Kadena.Consensus.Util
 import qualified Kadena.Types as KD
-
 import qualified Kadena.Sender.Service as Sender
 import qualified Kadena.Log as Log
 import qualified Kadena.Types.Log as Log
-import Kadena.Util.Util
 
 data AppendEntriesEnv = AppendEntriesEnv {
 -- Old Constructors
@@ -141,7 +141,7 @@ confirmElection leader' term' votes = do
   tell ["confirming election of a new leader"]
   globalConfigVar <- view aeeGlobalConfig
   config <- liftIO $ readCurrentConfig globalConfigVar
-  let newNodes = _cmChangeToNodes (_clusterMembers config)
+  let newNodes = CM.transitionalNodes (_clusterMembers config)
   quorumOk <- if not (Set.null newNodes)
                 then return $ cfgChangeConfirmElection config votes
                 else do
@@ -156,16 +156,9 @@ confirmElection leader' term' votes = do
 cfgChangeConfirmElection :: Config -> Set RequestVoteResponse -> Bool
 cfgChangeConfirmElection config votes =
   let curNodes = getCurrentNodes config
-      newNodes = config^.clusterMembers^.cmChangeToNodes
+      newNodes = CM.transitionalNodes $ config^.clusterMembers
       voteIds = Set.map _rvrNodeId votes
-  in checkQuorum voteIds curNodes && checkQuorum voteIds newNodes
-
-checkQuorum :: Set NodeId -> Set NodeId -> Bool
-checkQuorum voteIds nodes =
-  let votes = Set.filter ((flip Set.member) nodes) voteIds
-      numVotes = Set.size votes
-      quorum = getQuorumSize numVotes
-  in numVotes >= quorum
+  in CM.checkQuorum voteIds curNodes && CM.checkQuorum voteIds newNodes
 
 validateVote :: NodeId -> Term -> RequestVoteResponse -> Bool
 validateVote leader' term' RequestVoteResponse{..} = _rvrCandidateId == leader' && _rvrTerm == term'
@@ -202,7 +195,7 @@ applyNewLeader NewLeaderConfirmed{..} = do
   setRole _stateRole
 
 logHashChange :: Hash -> KD.Consensus ()
-logHashChange (Hash mLastHash) = do
+logHashChange (Hash mLastHash) =
   logMetric $ KD.MetricHash mLastHash
 
 handleCC :: ClusterChangeMsg -> KD.Consensus ()
@@ -212,8 +205,8 @@ handle :: AppendEntries -> KD.Consensus ()
 handle ae = do
   start' <- now
   s <- get
-  vc <- viewConfig KD.clusterMembers
-  let quorumSize' = getQuorumSize $ Set.size (_cmOtherNodes vc)
+  vc <- viewConfig clusterMembers
+  let quorumSize' = CM.getQuorumSize $ CM.countOthers vc
   mv <- queryLogs $ Set.fromList [Log.GetSomeEntry (_prevLogIndex ae),Log.GetCommitIndex]
   logAtAEsLastLogIdx <- return $ Log.hasQueryResult (Log.SomeEntry $ _prevLogIndex ae) mv
   config <- view cfg
@@ -266,7 +259,7 @@ handle ae = do
 createAppendEntriesResponse :: Bool -> Bool -> LogIndex -> Hash -> KD.Consensus AppendEntriesResponse
 createAppendEntriesResponse success convinced maxIndex' lastLogHash' = do
   ct <- use csTerm
-  myNodeId' <- KD.viewConfig KD.nodeId
+  myNodeId' <- KD.viewConfig nodeId
   case createAppendEntriesResponse' success convinced ct myNodeId' maxIndex' lastLogHash' of
     AER' aer -> return aer
     _ -> error "deep invariant error: crtl-f for createAppendEntriesResponse"

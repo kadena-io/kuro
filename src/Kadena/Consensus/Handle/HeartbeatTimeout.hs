@@ -13,6 +13,7 @@ import Control.Monad.State
 import Control.Monad.Writer
 
 import Kadena.Types
+import qualified Kadena.Config.TMVar as TMV
 import Kadena.Consensus.Handle.AppendEntries (clearLazyVoteAndInformCandidates)
 import qualified Kadena.Sender.Service as Sender
 import Kadena.Consensus.Util
@@ -52,7 +53,7 @@ handle msg = do
       enqueueRequest $ Sender.BroadcastAER
       clearLazyVoteAndInformCandidates
       resetHeartbeatTimer
-      hbMicrosecs <- KD.viewConfig KD.heartbeatTimeout
+      hbMicrosecs <- KD.viewConfig TMV.heartbeatTimeout
       r <- view KD.mResetLeaderNoFollowers >>= liftIO . tryTakeMVar
       case r of
         Nothing -> csTimeSinceLastAER %= (+ hbMicrosecs)

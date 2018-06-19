@@ -8,9 +8,6 @@ module Kadena.Util.Util
   , catchAndRethrow
   , fromMaybeM
   , foreverRetry
-  , getCurrentNodes
-  , getQuorumSize
-  , getQuorumSizeOthers
   , linkAsyncTrack
   , seqIndex
   ) where
@@ -23,12 +20,7 @@ import Data.List (intersperse)
 import Data.Typeable
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
-import Data.Set (Set)
-import qualified Data.Set as Set
 import System.Process (system)
-
-import Kadena.Types.Base
-import Kadena.Types.Config
 
 --TODO: this is pretty ghetto, there has to be a better/cleaner way
 foreverRetry :: (String -> IO ()) -> String -> IO () -> IO ()
@@ -58,17 +50,6 @@ seqIndex s i =
     then Just (Seq.index s i)
     else Nothing
 
-getQuorumSize :: Int -> Int
-getQuorumSize 0 = 0
-getQuorumSize n = 1 + floor (fromIntegral n / 2 :: Float)
-
--- | Similar to getQuorumSize, but before determining the number of Ids, remove the given id (if it
---   is present) from the set of all ids
-getQuorumSizeOthers :: Set NodeId -> NodeId -> Int
-getQuorumSizeOthers ids myId =
-  let others = Set.delete myId ids
-  in getQuorumSize (Set.size others)
-
 fromMaybeM :: Monad m => m b -> Maybe b -> m b
 fromMaybeM errM = maybe errM (return $!)
 
@@ -92,9 +73,3 @@ catchAndRethrow loc fn = fn `catches` [Handler (\(e@TrackedError{..} :: TrackedE
 --   where to look after it's thrown.
 linkAsyncTrack :: String -> IO a -> IO ()
 linkAsyncTrack loc fn = link =<< (async $ catchAndRethrow loc fn)
-
-getCurrentNodes :: Config -> Set NodeId
-getCurrentNodes theConfig =
-  let myId = _nodeId theConfig
-      others = _cmOtherNodes (_clusterMembers theConfig)
-  in myId `Set.insert` others

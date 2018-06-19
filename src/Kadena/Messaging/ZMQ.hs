@@ -22,6 +22,8 @@ import qualified Data.Set as Set
 import Kadena.Message
 import Kadena.Types
 import Kadena.Util.Util (catchAndRethrow, linkAsyncTrack)
+import qualified Kadena.Config.ClusterMembership as CM
+import Kadena.Config.TMVar
 import Kadena.ConfigChange
 
 data Shutdown = IsShutdown | IsPending
@@ -163,5 +165,5 @@ confUpdater reconfMV shutdownPubMV shutdownSubMV Config{..} = do
     putMVar shutdownPubMV IsPending
     putMVar shutdownSubMV IsPending
     putMVar reconfMV $ ReconfSub Nothing $ Just shutdownSubMV
-  else do
-    putMVar reconfMV $ ReconfSub (Just (_cmOtherNodes _clusterMembers)) Nothing
+  else
+    putMVar reconfMV $ ReconfSub (Just (CM.otherNodes _clusterMembers)) Nothing

@@ -15,6 +15,7 @@ import Control.Monad.State (get)
 import qualified Data.Set as Set
 import qualified Data.Map.Strict as Map
 
+import qualified Kadena.Config.TMVar as TMV
 import qualified Kadena.Sender.Service as Sender
 import qualified Kadena.Types.Log as Log
 import qualified Kadena.Types as KD
@@ -123,7 +124,7 @@ handle rv = do
   if _csNodeRole s == Leader
   then do
     enqueueRequest Sender.EstablishDominance
-    nodeId' <- view KD.nodeId <$> KD.readConfig
+    nodeId' <- view TMV.nodeId <$> KD.readConfig
     hfl <- return $! mkHeardFromLeader (Just nodeId') (_rvProvenance rv) (Log.hasQueryResult Log.LastLogTerm mv) (Log.hasQueryResult Log.MaxIndex mv)
     enqueueRequest $ Sender.BroadcastRVR (_rvCandidateId rv) hfl False
   else do

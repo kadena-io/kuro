@@ -11,7 +11,9 @@ import qualified Data.HashMap.Strict as HM
 import "crypto-api" Crypto.Random
 import Crypto.Ed25519.Pure
 
-import Kadena.Types.Config
+import qualified Kadena.Config.ClusterMembership as CM
+import Kadena.Config.Pact.Types
+import Kadena.Config.TMVar
 import Kadena.Types.Base
 import Kadena.Types.Entity
 
@@ -21,9 +23,8 @@ import Pact.Types.Logger
 import Test.Hspec
 
 spec :: Spec
-spec = do
+spec =
   describe "testConfigRT" $ testConfigRT
-
 
 makeKeys :: CryptoRandomGen g => Int -> g -> [(PrivateKey,PublicKey)]
 makeKeys 0 _ = []
@@ -43,10 +44,9 @@ dummyConfig = do
       bRemote = EntityRemote "B" (toPub $ bStatic)
 
   return $ Config
-    { _clusterMembers = ClusterMembership
-        { _cmOtherNodes           = S.fromList [NodeId "hostB" 8001 "hostB:8001" "B",
-                                                NodeId "hostC" 8002 "hostB:8002" "C"]
-        , _cmChangeToNodes        = S.empty }
+    { _clusterMembers = CM.mkClusterMembership
+        (S.fromList [ NodeId "hostB" 8001 "hostB:8001" "B" , NodeId "hostC" 8002 "hostB:8002" "C"])
+        S.empty
     , _nodeId               = NodeId "hostA" 8000 "hostA:8000" "A"
     , _publicKeys           = M.fromList [("hostB",bp),("hostC",cp)]
     , _adminKeys            = M.fromList [("hostA",ap),("hostC",cp)]
@@ -88,5 +88,4 @@ testConfigRT = do
   let cenc = encode c
   case eitherDecode cenc :: Either String Config of
     Left err -> it "decodes" $ expectationFailure $ "decode failed: " ++ err
-    Right cdec -> do
-      it "roundtrips" $ encode cdec `shouldBe` cenc
+    Right cdec -> it "roundtrips" $ encode cdec `shouldBe` cenc

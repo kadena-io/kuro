@@ -3,7 +3,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
-module Kadena.Config.Pact.Types
+module Kadena.Types.PactDB
   ( PactPersistBackend(..)
   , PactPersistConfig(..)
   , PPBType(..) ) where

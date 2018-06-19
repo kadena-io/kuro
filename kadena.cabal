@@ -37,7 +37,6 @@ library
                      , Kadena.Command
                      , Kadena.Config
                      , Kadena.Config.ClusterMembership
-                     , Kadena.Config.Pact.Types
                      , Kadena.Config.TMVar
                      , Kadena.Config.Types
                      , Kadena.ConfigChange
@@ -107,6 +106,7 @@ library
                      , Kadena.Types.Message.RVR
                      , Kadena.Types.Message.Signed
                      , Kadena.Types.Metric
+                     , Kadena.Types.PactDB
                      , Kadena.Types.Spec
                      , Kadena.Types.Sqlite
                      , Kadena.Util.Util

@@ -32,7 +32,7 @@ import System.Exit
 
 import qualified Kadena.Config.ClusterMembership as CM
 import Kadena.Config.TMVar
-import Kadena.Config.Pact.Types
+import Kadena.Types.PactDB
 import Kadena.Types hiding (logDir)
 import Kadena.Types.Entity
 import Apps.Kadena.Client hiding (main)

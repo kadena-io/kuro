@@ -12,7 +12,7 @@ import "crypto-api" Crypto.Random
 import Crypto.Ed25519.Pure
 
 import qualified Kadena.Config.ClusterMembership as CM
-import Kadena.Config.Pact.Types
+import Kadena.Types.PactDB
 import Kadena.Config.TMVar
 import Kadena.Types.Base
 import Kadena.Types.Entity

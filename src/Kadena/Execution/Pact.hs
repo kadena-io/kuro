@@ -35,7 +35,7 @@ import Pact.Persist (Persister)
 import Pact.Server.PactService (jsonResult)
 import Pact.Types.Runtime
 
-import Kadena.Config.Pact.Types
+import Kadena.Types.PactDB
 import Kadena.Consensus.Publish
 import Kadena.Execution.Types
 import Kadena.Types.Entity

@@ -29,7 +29,7 @@ import Pact.Types.Logger (LogRules(..),initLoggers,doLog)
 
 import Kadena.Util.Util (linkAsyncTrack)
 import Kadena.Config
-import Kadena.Config.Pact.Types
+import Kadena.Types.PactDB
 import Kadena.Config.TMVar
 import Kadena.Config.Types
 import Kadena.Types.Base

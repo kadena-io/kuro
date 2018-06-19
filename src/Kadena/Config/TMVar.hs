@@ -21,7 +21,7 @@ import Data.Set (Set)
 import GHC.Generics
 
 import qualified Kadena.Config.ClusterMembership as CM
-import Kadena.Config.Pact.Types
+import Kadena.Types.PactDB
 import Kadena.Types.Base
 import Kadena.Types.Entity
 import Pact.Types.Logger hiding (logRules)

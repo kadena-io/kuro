@@ -31,9 +31,9 @@ import qualified Pact.Types.Command as Pact (CommandResult,Command)
 import Pact.Types.Logger (Loggers)
 import Pact.Types.RPC (PactRPC)
 
-
 import Kadena.Types.Base (NodeId)
-import Kadena.Types.Config (PactPersistConfig,GlobalConfigTMVar)
+import Kadena.Types.PactDB
+import Kadena.Config.Types (GlobalConfigTMVar)
 import Kadena.Types.Comms (Comms(..),initCommsNormal,readCommNormal,writeCommNormal)
 import Kadena.Types.KeySet
 import Kadena.Types.Metric (Metric)

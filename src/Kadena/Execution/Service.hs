@@ -28,7 +28,10 @@ import Pact.Types.Command ( ExecutionMode(..))
 import Pact.Types.Logger (LogRules(..),initLoggers,doLog)
 
 import Kadena.Util.Util (linkAsyncTrack)
-import Kadena.Types.Config
+import Kadena.Config
+import Kadena.Types.PactDB
+import Kadena.Config.TMVar
+import Kadena.Config.Types
 import Kadena.Types.Base
 import Kadena.Execution.Types
 import Kadena.Types.Metric
@@ -47,7 +50,7 @@ import Kadena.Private.Types (PrivatePlaintext(..),PrivateResult(..))
 import Kadena.Execution.Pact
 import Kadena.Consensus.Publish
 import Kadena.Types.Entity
-import qualified Kadena.ConfigChange.Service as CfgChange
+import qualified Kadena.ConfigChange as CfgChange
 
 initExecutionEnv
   :: Dispatch
@@ -133,7 +136,7 @@ handle = do
               ++ show (fromJust $ Log.lesMaxIndex logEntriesToApply)
         applyLogEntries ReplayFromDisk logEntriesToApply
       ExecLocal{..} -> applyLocalCommand (localCmd,localResult)
-      ExecConfigChange{..} -> applyConfigChange(logEntriesToApply)
+      ExecConfigChange{..} -> applyConfigChange logEntriesToApply
 
 applyLogEntries :: ReplayStatus -> LogEntries -> ExecutionService ()
 applyLogEntries rs les@(LogEntries leToApply) = do
@@ -151,7 +154,7 @@ applyLogEntries rs les@(LogEntries leToApply) = do
 logApplyLatency :: UTCTime -> LogEntry -> ExecutionService ()
 logApplyLatency startTime LogEntry{..} = case _leCmdLatMetrics of
   Nothing -> return ()
-  Just n -> do
+  Just n ->
     logMetric $ MetricApplyLatency $ fromIntegral $ interval (_lmFirstSeen n) startTime
 {-# INLINE logApplyLatency #-}
 
@@ -220,7 +223,7 @@ applyCommand _tEnd le@LogEntry{..} = do
           debug $ "WARNING: fully resolved consensus command found for " ++ show _leLogIndex
           return $! (result, _leCmdLatMetrics)
       gcm <- view mConfig
-      result <- liftIO $ CfgChange.mutateCluster gcm pproc
+      result <- liftIO $ CfgChange.mutateGlobalConfig gcm pproc
       lm <- stamp ppLat
       return ( rkey
              , ConsensusChangeResult
@@ -243,7 +246,7 @@ applyCommand _tEnd le@LogEntry{..} = do
             Left e -> finish $ PrivateFailure e
             Right cr -> finish $ PrivateSuccess cr
 
-applyPrivate :: LogEntry -> PrivatePlaintext -> ExecutionService (Either String (Pact.CommandResult))
+applyPrivate :: LogEntry -> PrivatePlaintext -> ExecutionService (Either String Pact.CommandResult)
 applyPrivate LogEntry{..} PrivatePlaintext{..} = case decode _ppMessage of
   Left e -> return $ Left e
   Right cmd -> case Pact.verifyCommand cmd of

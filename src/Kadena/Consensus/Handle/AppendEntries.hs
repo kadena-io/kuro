@@ -24,16 +24,16 @@ import qualified Data.Set as Set
 import Data.Maybe (fromMaybe)
 import Data.Thyme.Clock
 
+import qualified Kadena.Config.ClusterMembership as CM
+import Kadena.Config.TMVar
 import Kadena.Command
-import Kadena.Types hiding (term, currentLeader, ignoreLeader)
+import Kadena.Types
 import Kadena.Sender.Service (createAppendEntriesResponse')
 import Kadena.Consensus.Util
 import qualified Kadena.Types as KD
-
 import qualified Kadena.Sender.Service as Sender
 import qualified Kadena.Log as Log
 import qualified Kadena.Types.Log as Log
-import Kadena.Util.Util
 
 data AppendEntriesEnv = AppendEntriesEnv {
 -- Old Constructors
@@ -141,7 +141,7 @@ confirmElection leader' term' votes = do
   tell ["confirming election of a new leader"]
   globalConfigVar <- view aeeGlobalConfig
   config <- liftIO $ readCurrentConfig globalConfigVar
-  let newNodes = _changeToNodes config
+  let newNodes = CM.transitionalNodes (_clusterMembers config)
   quorumOk <- if not (Set.null newNodes)
                 then return $ cfgChangeConfirmElection config votes
                 else do
@@ -155,17 +155,9 @@ confirmElection leader' term' votes = do
 -- the exisiting set of nodes and the new configuration's set of nodes
 cfgChangeConfirmElection :: Config -> Set RequestVoteResponse -> Bool
 cfgChangeConfirmElection config votes =
-  let curNodes = getCurrentNodes config
-      newNodes = config^.changeToNodes
+  let members = config^.clusterMembers
       voteIds = Set.map _rvrNodeId votes
-  in checkQuorum voteIds curNodes && checkQuorum voteIds newNodes
-
-checkQuorum :: Set NodeId -> Set NodeId -> Bool
-checkQuorum voteIds nodes =
-  let votes = Set.filter ((flip Set.member) nodes) voteIds
-      numVotes = Set.size votes
-      quorum = getQuorumSize numVotes
-  in numVotes >= quorum
+  in CM.checkQuorum members voteIds
 
 validateVote :: NodeId -> Term -> RequestVoteResponse -> Bool
 validateVote leader' term' RequestVoteResponse{..} = _rvrCandidateId == leader' && _rvrTerm == term'
@@ -196,13 +188,13 @@ applyNewLeader :: CheckForNewLeaderOut -> KD.Consensus ()
 applyNewLeader LeaderUnchanged = return ()
 applyNewLeader NewLeaderConfirmed{..} = do
   setTerm _stateRsUpdateTerm
-  KD.ignoreLeader .= _stateIgnoreLeader
+  csIgnoreLeader .= _stateIgnoreLeader
   setCurrentLeader $ Just _stateCurrentLeader
   view KD.informEvidenceServiceOfElection >>= liftIO
   setRole _stateRole
 
 logHashChange :: Hash -> KD.Consensus ()
-logHashChange (Hash mLastHash) = do
+logHashChange (Hash mLastHash) =
   logMetric $ KD.MetricHash mLastHash
 
 handleCC :: ClusterChangeMsg -> KD.Consensus ()
@@ -212,14 +204,15 @@ handle :: AppendEntries -> KD.Consensus ()
 handle ae = do
   start' <- now
   s <- get
-  quorumSize' <- (getQuorumSize . Set.size) <$> viewConfig KD.otherNodes
+  vc <- viewConfig clusterMembers
+  let quorumSize' = CM.minQuorumOthers vc
   mv <- queryLogs $ Set.fromList [Log.GetSomeEntry (_prevLogIndex ae),Log.GetCommitIndex]
   logAtAEsLastLogIdx <- return $ Log.hasQueryResult (Log.SomeEntry $ _prevLogIndex ae) mv
   config <- view cfg
   let ape = AppendEntriesEnv
-              (KD._term s)
-              (KD._currentLeader s)
-              (KD._ignoreLeader s)
+              (_csTerm s)
+              (_csCurrentLeader s)
+              (_csIgnoreLeader s)
               logAtAEsLastLogIdx
               quorumSize'
               config
@@ -249,7 +242,7 @@ handle ae = do
             newLastLogHash' <- return $! Log.hasQueryResult Log.LastLogHash newMv
             logHashChange newLastLogHash'
             sendHistoryNewKeys rks
-            KD.cmdBloomFilter %= Bloom.insertList (HashSet.toList rks)
+            csCmdBloomFilter %= Bloom.insertList (HashSet.toList rks)
 --          else do
 --            enqueueRequest $ Sender.SingleAER _responseLeaderId False True
 --            enqueueRequest Sender.BroadcastAER -- NB: this can only happen after `updateLogs` is complete, the tracer query makes sure of this
@@ -258,31 +251,31 @@ handle ae = do
       clearLazyVoteAndInformCandidates
       -- This NEEDS to be last, otherwise we can have an election fire when we are are transmitting proof/accessing the logs
       -- It's rare but under load and given enough time, this will happen.
-      when (KD._nodeRole s /= Leader) resetElectionTimer
+      when (_csNodeRole s /= Leader) resetElectionTimer
       -- This `when` fixes a funky bug. If the leader receives an AE from itself it will reset its election timer (which can kill the leader).
       -- Ignoring this is safe because if we have an out of touch leader they will step down after 2x maxElectionTimeouts if it receives no valid AER
 
 createAppendEntriesResponse :: Bool -> Bool -> LogIndex -> Hash -> KD.Consensus AppendEntriesResponse
 createAppendEntriesResponse success convinced maxIndex' lastLogHash' = do
-  ct <- use KD.term
-  myNodeId' <- KD.viewConfig KD.nodeId
+  ct <- use csTerm
+  myNodeId' <- KD.viewConfig nodeId
   case createAppendEntriesResponse' success convinced ct myNodeId' maxIndex' lastLogHash' of
     AER' aer -> return aer
     _ -> error "deep invariant error: crtl-f for createAppendEntriesResponse"
 
 clearLazyVoteAndInformCandidates :: KD.Consensus ()
 clearLazyVoteAndInformCandidates = do
-  KD.invalidCandidateResults .= Nothing -- setting this to nothing is likely overkill
-  lazyVote' <- use KD.lazyVote
+  csInvalidCandidateResults .= Nothing -- setting this to nothing is likely overkill
+  lazyVote' <- use csLazyVote
   case lazyVote' of
     Nothing -> return ()
     Just lv -> do
       newMv <- queryLogs $ Set.fromList $ [Log.GetLastLogTerm, Log.GetLastLogIndex]
       term' <- return $! Log.hasQueryResult Log.LastLogTerm newMv
       logIndex' <- return $! Log.hasQueryResult Log.LastLogIndex newMv
-      leaderId' <- fromMaybe (error "Invariant Error in clearLazyVote: could not get leaderId") <$> use KD.currentLeader
+      leaderId' <- fromMaybe (error "Invariant Error in clearLazyVote: could not get leaderId") <$> use csCurrentLeader
       mapM_ (issueHflRVR leaderId' term' logIndex') (Map.elems (lv ^. lvAllReceived))
-      KD.lazyVote .= Nothing
+      csLazyVote .= Nothing
 
 issueHflRVR :: NodeId -> Term -> LogIndex -> RequestVote -> KD.Consensus ()
 issueHflRVR leaderId' term' logIndex' rv@RequestVote{..} = do

@@ -35,12 +35,11 @@ import Pact.Persist (Persister)
 import Pact.Server.PactService (jsonResult)
 import Pact.Types.Runtime
 
-
-import Kadena.Execution.Types
+import Kadena.Types.PactDB
 import Kadena.Consensus.Publish
-import Kadena.Types.Config (PactPersistConfig(..),PactPersistBackend(..))
-import Kadena.Util.Util (linkAsyncTrack)
+import Kadena.Execution.Types
 import Kadena.Types.Entity
+import Kadena.Util.Util (linkAsyncTrack)
 
 data Pact = Pact
   { _pTxId :: TxId
@@ -235,8 +234,7 @@ doResume tid PactEnv{..} ContMsg{..} PactState{..} Pact{..} EvalResult{..} PactE
       isLast = nextStep >= _pStepCount
       updateState pacts = void $ liftIO $ swapMVar _peState (PactState erRefStore pacts)
   if isLast
-    then do
-      debug $ "handleContSuccess: reaping pact [disabled]: " ++ show _cmTxId
+    then debug $ "handleContSuccess: reaping pact [disabled]: " ++ show _cmTxId
       -- updateState $ M.delete _cmTxId _psPacts
     else do
       ry <- mapM encodeResume _peYield

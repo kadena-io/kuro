@@ -14,7 +14,7 @@ module Kadena.Evidence.Spec
   , esQuorumSize, esChangeToQuorumSize, esNodeStates, esConvincedNodes, esPartialEvidence
   , esCommitIndex, esCacheMissAers, esMismatchNodes, esResetLeaderNoFollowers
   , esHashAtCommitIndex, esEvidenceCache, esMaxCachedIndex, esMaxElectionTimeout
-  , esOtherNodes, esChangeToNodes
+  , esClusterMembers
   , EvidenceProcessor
   , debugFn
   , publishMetric
@@ -34,7 +34,8 @@ import Data.Thyme.Clock
 
 import Kadena.Types.Base
 import Kadena.Types.Metric
-import Kadena.Types.Config
+import Kadena.Config.ClusterMembership
+import Kadena.Config.Types
 import Kadena.Types.Message
 import Kadena.Evidence.Types
 import Kadena.Types.Event (ResetLeaderNoFollowersTimeout)
@@ -44,7 +45,7 @@ data EvidenceEnv = EvidenceEnv
   { _logService :: !LogServiceChannel
   , _evidence :: !EvidenceChannel
   , _mResetLeaderNoFollowers :: !(MVar ResetLeaderNoFollowersTimeout)
-  , _mConfig :: !(GlobalConfigTMVar)
+  , _mConfig :: !GlobalConfigTMVar
   , _mPubStateTo :: !(MVar PublishedEvidenceState)
   , _debugFn :: !(String -> IO ())
   , _publishMetric :: !(Metric -> IO ())
@@ -54,8 +55,7 @@ makeLenses ''EvidenceEnv
 type EvidenceService s = RWST EvidenceEnv () s IO
 
 data EvidenceState = EvidenceState
-  { _esOtherNodes :: !(Set NodeId)
-  , _esChangeToNodes :: !(Set NodeId)
+  { _esClusterMembers :: ! ClusterMembership
   , _esQuorumSize :: !Int
   , _esChangeToQuorumSize :: !Int
   , _esNodeStates :: !(Map NodeId (LogIndex, UTCTime))
@@ -80,13 +80,12 @@ getEvidenceQuorumSize :: Int -> Int
 getEvidenceQuorumSize 0 = 0
 getEvidenceQuorumSize n = 1 + floor (fromIntegral n / 2 :: Float)
 
-initEvidenceState :: Set NodeId -> Set NodeId -> LogIndex -> Int -> EvidenceState
-initEvidenceState otherNodes' changeToNodes' commidIndex' maxElectionTimeout' = EvidenceState
-  { _esOtherNodes = otherNodes'
-  , _esChangeToNodes = changeToNodes'
-  , _esQuorumSize = getEvidenceQuorumSize $ Set.size otherNodes'
-  , _esChangeToQuorumSize = getEvidenceQuorumSize $ Set.size changeToNodes'
-  , _esNodeStates = Map.fromSet (\_ -> (commidIndex',minBound)) otherNodes'
+initEvidenceState :: ClusterMembership -> LogIndex -> Int -> EvidenceState
+initEvidenceState clusterMembers' commidIndex' maxElectionTimeout' = EvidenceState
+  { _esClusterMembers = clusterMembers'
+  , _esQuorumSize = getEvidenceQuorumSize $ countOthers clusterMembers'
+  , _esChangeToQuorumSize = getEvidenceQuorumSize $ countTransitional clusterMembers'
+  , _esNodeStates = Map.fromSet (\_ -> (commidIndex',minBound)) (otherNodes clusterMembers')
   , _esConvincedNodes = Set.empty
   , _esPartialEvidence = Map.empty
   , _esCommitIndex = commidIndex'
@@ -109,7 +108,7 @@ getTimestamp ReceivedMsg{..} = case _pTimeStamp of
 
 -- `checkEvidence` and `processResult` are staying here to keep them close to `Result`
 checkEvidence :: EvidenceState -> AppendEntriesResponse -> Result
-checkEvidence es aer@(AppendEntriesResponse{..}) = case Map.lookup _aerNodeId $ _esNodeStates es of
+checkEvidence es aer@AppendEntriesResponse{..} = case Map.lookup _aerNodeId $ _esNodeStates es of
   Just (lastLogIndex', lastTimestamp')
     | fromIntegral (interval lastTimestamp' (getTimestamp _aerProvenance)) < (_esMaxElectionTimeout es)
       && _aerIndex < lastLogIndex' -> Noop

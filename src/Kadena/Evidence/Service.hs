@@ -19,19 +19,21 @@ import qualified Data.Set as Set
 import Data.Thyme.Clock
 import Safe
 
+import Kadena.Config.ClusterMembership
+import Kadena.ConfigChange as CC
 import Kadena.Util.Util (linkAsyncTrack)
 import Kadena.Types.Dispatch (Dispatch)
 import Kadena.Event (pprintBeat)
 import Kadena.Types.Event (ResetLeaderNoFollowersTimeout(..))
 import Kadena.Evidence.Spec as X
 import Kadena.Types.Metric (Metric)
-import Kadena.Types.Config
+import Kadena.Config.TMVar
+import Kadena.Config.Types
 import Kadena.Evidence.Types
 import Kadena.Types.Log as Log
 import Kadena.Types.Message
 import Kadena.Types.Base
 import Kadena.Types.Comms
-import qualified Kadena.ConfigChange.Service as CfgChange
 
 -- TODO: re-integrate EKG when Evidence Service is finished and hspec tests are written
 -- import Kadena.Types.Metric
@@ -61,7 +63,7 @@ initializeState ev = do
   maxElectionTimeout' <- return $ snd $ _electionTimeoutRange
   mv <- queryLogs ev $ Set.singleton Log.GetCommitIndex
   commitIndex' <- return $ Log.hasQueryResult Log.CommitIndex mv
-  return $! initEvidenceState _otherNodes _changeToNodes commitIndex' maxElectionTimeout'
+  return $! initEvidenceState _clusterMembers commitIndex' maxElectionTimeout'
 
 -- | This handles initialization and config updates
 handleConfUpdate :: EvidenceService EvidenceState ()
@@ -69,7 +71,9 @@ handleConfUpdate = do
   es@EvidenceState{..} <- get
   Config{..} <- view mConfig >>= liftIO . readCurrentConfig
   -- if there are no transitional config-change nodes AND there are no changes to the current nodes configuration
-  if null _changeToNodes && _esOtherNodes == _otherNodes && (snd _electionTimeoutRange) == _esMaxElectionTimeout
+  if not (hasTransitionalNodes _clusterMembers)
+     && otherNodes _esClusterMembers == otherNodes _clusterMembers
+     && (snd _electionTimeoutRange) == _esMaxElectionTimeout
   then do
     debug "Config update received but no action required"
     return ()
@@ -77,18 +81,17 @@ handleConfUpdate = do
     maxElectionTimeout' <- return $ snd $ _electionTimeoutRange
     -- df === nodes to add/remove when adopting the env's config, which is now different from what is
     --        stored in the state
-    let df = CfgChange.diffNodes _esOtherNodes _otherNodes
+    let df = CC.diffNodes (otherNodes _esClusterMembers) (otherNodes _clusterMembers)
     -- update the map of nodes -> (LogIndex, UTCTime) accordingly
-    let updatedMap = CfgChange.updateNodeMap df _esNodeStates (const (startIndex, minBound))
+    let updatedMap = CC.updateNodeMap df _esNodeStates (const (startIndex, minBound))
     -- df' === nodes to add/remove when moving to the transitional config-change nodes
-    let df' = CfgChange.diffNodes _esOtherNodes _changeToNodes
+    let df' = CC.diffNodes (otherNodes _esClusterMembers) (transitionalNodes _clusterMembers)
     -- update (again) the map of nodes -> (LogIndex, UTCTime) accordingly
-    let updatedMap' = CfgChange.updateNodeMap df' updatedMap (const (startIndex, minBound))
+    let updatedMap' = CC.updateNodeMap df' updatedMap (const (startIndex, minBound))
     put $ es
-      { _esOtherNodes = _otherNodes
-      , _esChangeToNodes = _changeToNodes
-      , _esQuorumSize = getEvidenceQuorumSize $ Set.size _otherNodes
-      , _esChangeToQuorumSize = getEvidenceQuorumSize $ Set.size _changeToNodes
+      { _esClusterMembers = _clusterMembers
+      , _esQuorumSize = getEvidenceQuorumSize $ countOthers _clusterMembers
+      , _esChangeToQuorumSize = getEvidenceQuorumSize $ countTransitional _clusterMembers
       , _esNodeStates = updatedMap'
       , _esConvincedNodes = Set.difference _esConvincedNodes $ nodesToRemove df
       , _esMismatchNodes = Set.difference _esMismatchNodes $nodesToRemove df
@@ -130,7 +133,9 @@ runEvidenceProcessor = do
       runEvidenceProcessor
     Bounce -> do
       put $ garbageCollectCache es
-      return ()
+      -- MLN: eventually remove this.  Its a placeholder if any central activity on config change needs to happen
+      -- liftIO $ CC.runWithNewConfig
+      runEvidenceProcessor
     ClearConvincedNodes -> do
       debug "clearing convinced nodes"
       put $ es {_esConvincedNodes = Set.empty}
@@ -178,7 +183,7 @@ runEvidenceService ev = do
   startingEs <- initializeState ev
   putMVar (ev ^. mPubStateTo) $! PublishedEvidenceState (startingEs ^. esConvincedNodes) (startingEs ^. esNodeStates)
   let cu = ConfigUpdater (ev ^. debugFn) "Service|Evidence|Config" (const $ writeComm (ev ^. evidence) $ Bounce)
-  linkAsyncTrack "EvidenceConfUpdater" $ CfgChange.runConfigUpdater cu (ev ^. mConfig)
+  linkAsyncTrack "EvidenceConfUpdater" $ CC.runConfigUpdater cu (ev ^. mConfig)
   _ <- runRWST (debug "Launch!" >> foreverRunProcessor) ev startingEs
   return ()
 
@@ -215,8 +220,8 @@ garbageCollectCache es =
 checkPartialEvidence :: Int -> Int -> Map LogIndex (Set NodeId) -> EvidenceService EvidenceState (Either [Int] LogIndex)
 checkPartialEvidence evidenceNeeded changeToEvNeeded partialEvidence = do
   es <- get
-  let nodes = _esOtherNodes es
-  let chgToNodes = _esChangeToNodes es
+  let nodes = otherNodes (_esClusterMembers es)
+  let chgToNodes = transitionalNodes(_esClusterMembers es)
   return $ checkPartialEvidence' nodes chgToNodes evidenceNeeded changeToEvNeeded partialEvidence
 {-# INLINE checkPartialEvidence #-}
 

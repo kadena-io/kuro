@@ -10,6 +10,8 @@ import Control.Monad
 import qualified Data.Set as Set
 import Data.Thyme.Clock (UTCTime)
 
+import qualified Kadena.Config.ClusterMembership as CM
+import Kadena.Config.TMVar
 import Kadena.Consensus.Handle
 import Kadena.Consensus.Util
 import Kadena.Event (foreverHeart)
@@ -29,8 +31,6 @@ import qualified Kadena.Evidence.Service as Ev
 import qualified Kadena.PreProc.Service as PreProc
 import qualified Kadena.History.Service as History
 import qualified Kadena.HTTP.ApiServer as ApiServer
-import qualified Kadena.ConfigChange.Service as CC
-import qualified Kadena.ConfigChange.Types as CC
 import Kadena.Consensus.Publish
 import Kadena.Util.Util
 
@@ -102,15 +102,6 @@ launchLogService dispatch' dbgPrint' publishMetric' rconf = do
   linkAsyncTrack "LogThread" (Log.runLogService dispatch' dbgPrint' publishMetric' rconf)
   linkAsyncTrack "LogHB" $ (foreverHeart (_logService dispatch') 1000000 Log.Heart)
 
-launchConfigChangeService :: Dispatch
-  -> (String -> IO ())
-  -> (Metric -> IO ())
-  -> Config
-  -> IO ()
-launchConfigChangeService dispatch' dbgPrint' publishMetric' rconf = do
-  linkAsyncTrack "ConfigChangeThread" (CC.runConfigChangeService dispatch' dbgPrint' publishMetric' rconf)
-  linkAsyncTrack "ConfigChangeHB" $ (foreverHeart (_cfgChangeChannel dispatch') 1000000 CC.Heart)
-
 launchSenderService :: Dispatch
   -> (String -> IO ())
   -> (Metric -> IO ())
@@ -126,10 +117,11 @@ runConsensusService :: ReceiverEnv -> GlobalConfigTMVar -> ConsensusSpec -> Cons
                             IO UTCTime -> MVar PublishedConsensus -> IO ()
 runConsensusService renv gcm spec rstate timeCache' mPubConsensus' = do
   rconf <- readCurrentConfig gcm
-  let csize = 1 + Set.size (rconf ^. otherNodes)
-      qsize = getQuorumSize csize
-      changeToSize = Set.size (rconf ^. changeToNodes)
-      changeToQuorum = getQuorumSize changeToSize
+  let members = rconf ^. clusterMembers
+      csize = 1 + CM.countOthers members
+      qsize = CM.calcMinQuorum csize
+      changeToSize = CM.countTransitional members
+      changeToQuorum = CM.calcMinQuorum changeToSize
       publishMetric' = (spec ^. publishMetric)
       dispatch' = _dispatch renv
       dbgPrint' = Turbine._debugPrint renv
@@ -144,7 +136,7 @@ runConsensusService renv gcm spec rstate timeCache' mPubConsensus' = do
   publishMetric' $ MetricChangeToQuorumSize changeToQuorum
   linkAsyncTrack "ReceiverThread" $ runMessageReceiver renv
 
-  timerTarget' <- return $ (rstate ^. timerTarget)
+  timerTarget' <- return $ (rstate ^. csTimerTarget)
   -- EvidenceService Environment
   mEvState <- newEmptyMVar
   mLeaderNoFollowers <- newEmptyMVar
@@ -156,7 +148,6 @@ runConsensusService renv gcm spec rstate timeCache' mPubConsensus' = do
   launchEvidenceService dispatch' dbgPrint' publishMetric' mEvState gcm mLeaderNoFollowers
   launchLogService dispatch' dbgPrint' publishMetric' rconf
   launchApiService dispatch' gcm dbgPrint' mPubConsensus' getTimestamp'
-  launchConfigChangeService dispatch' dbgPrint' publishMetric' rconf
   linkAsyncTrack "ConsensusHB" (foreverHeart (_consensusEvent dispatch') 1000000 (ConsensusEvent . Heart))
   catchAndRethrow "ConsensusThread" $ runRWS_
     kadena

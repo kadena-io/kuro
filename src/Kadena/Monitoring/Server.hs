@@ -17,15 +17,16 @@ import qualified System.Metrics.Distribution as Dist
 import qualified System.Metrics.Prometheus.Ridley as R
 import qualified System.Metrics.Prometheus.Ridley.Types as R
 
+import Kadena.Config.TMVar
 import Kadena.Util.Util (awsDashVar)
-import Kadena.Types (Config, nodeId, Metric(..), LogIndex(..), Term(..), NodeId(..), _port)
+import Kadena.Types (Metric(..), LogIndex(..), Term(..), NodeId(..), _port)
 import Kadena.Monitoring.EkgMonitor ( Server, forkServer, getLabel, getGauge, getDistribution
                                     , serverMetricStore)
 
 -- TODO: possibly switch to 'newStore' API. this allows us to use groups.
 
 startApi :: Config -> IO Server
-startApi config = do 
+startApi config = do
   let port = 80 + fromIntegral (config ^. nodeId . to _port)
   server <- forkServer "0.0.0.0" port
   let store = serverMetricStore server
@@ -34,7 +35,7 @@ startApi config = do
 
 mkRegistry :: System.Metrics.Store -> R.Port -> IO ()
 mkRegistry store port = do
-  let rOptions = R.newOptions [] R.defaultMetrics 
+  let rOptions = R.newOptions [] R.defaultMetrics
   _ <- R.startRidleyWithStore rOptions ["metrics"] port store
   return ()
 
@@ -102,9 +103,9 @@ startMonitoring config = do
     MetricAvailableSize size ->
       Gauge.set availableSizeGauge $ fromIntegral size
     -- Cluster configuration change
-    MetricChangeToClusterSize size -> 
+    MetricChangeToClusterSize size ->
       Gauge.set changeToClusterSizeGauge $ fromIntegral size
-    MetricChangeToQuorumSize size -> 
+    MetricChangeToQuorumSize size ->
       Gauge.set changeToQuorumSizeGauge $ fromIntegral size
   where
     nodeDescription :: NodeId -> T.Text

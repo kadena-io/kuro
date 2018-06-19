@@ -31,10 +31,10 @@ import System.IO (BufferMode(..),stdout,stderr,hSetBuffering)
 import System.Log.FastLogger
 import System.Random
 
+import qualified Kadena.Config.ClusterMembership as CM
+import Kadena.Config.TMVar
 import Kadena.Consensus.Service
-
 import Kadena.Types.Base
-import Kadena.Types.Config
 import Kadena.Types.Spec hiding (timeCache)
 import Kadena.Types.Metric
 import Kadena.Types.Dispatch
@@ -144,7 +144,7 @@ runServer = do
   rconf <- getConfig
   gcm <- initGlobalConfigTMVar rconf
 #if WITH_KILL_SWITCH
-  when (Set.size (_otherNodes rconf) >= 16) $
+  when (Set.size (_cmOtherNodes (_clusterMembers rconf))) >= 16) $
     error $ "Beta versions of Kadena are limited to 16 consensus nodes."
 #endif
   utcTimeCache' <- utcTimeCache
@@ -152,7 +152,8 @@ runServer = do
   let debugFn = if rconf ^. enableDebug then showDebug fs else noDebug
   -- resetAwsEnv (rconf ^. enableAwsIntegration)
   me <- return $ rconf ^. nodeId
-  oNodes <- return $ Set.toList $ Set.delete me (rconf ^. otherNodes)-- (Map.keysSet $ rconf ^. clientPublicKeys)
+  let members = rconf ^. clusterMembers
+  oNodes <- return $ Set.toList $ Set.delete me (CM.otherNodes members)-- (Map.keysSet $ rconf ^. clientPublicKeys)
   dispatch <- initDispatch
 
   -- Each node has its own snap monitoring server

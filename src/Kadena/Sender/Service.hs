@@ -11,7 +11,6 @@ module Kadena.Sender.Service
   , ServiceEnv(..), debugPrint, serviceRequestChan, outboundGeneral
   , logService, getEvidenceState, publishMetric, aeReplicationLogLimit
   , runSenderService
-  , checkVoteQuorum
   , createAppendEntriesResponse' -- we need this for AER Evidence
   , willBroadcastAE
   , module X --re-export the types to make things straight forward
@@ -37,7 +36,8 @@ import qualified Kadena.Log.Types as Log
 import Kadena.Message
 import Kadena.Sender.Types as X
 import Kadena.Types.Base
-import Kadena.Types.Config as Cfg
+import Kadena.Config.TMVar as Cfg
+import qualified Kadena.Config.ClusterMembership as CM
 import Kadena.Types.Comms
 import Kadena.Types.Dispatch (Dispatch(..))
 import qualified Kadena.Types.Dispatch as KD
@@ -46,7 +46,6 @@ import qualified Kadena.Types.Log as Log
 import Kadena.Types.Message
 import Kadena.Types.Metric (Metric)
 import qualified Kadena.Types.Spec as Spec
-import Kadena.Util.Util
 
 data ServiceEnv = ServiceEnv
   { _debugPrint :: !(String -> IO ())
@@ -75,7 +74,7 @@ getStateSnapshot conf' pcons' = do
   return $! StateSnapshot
     { _snapNodeId = Cfg._nodeId conf
     , _snapNodeRole = st ^. Spec.pcRole
-    , _snapOtherNodes = Cfg._otherNodes conf
+    , _snapClusterMembers = Cfg._clusterMembers conf
     , _snapLeader = st ^. Spec.pcLeader
     , _snapTerm = st ^. Spec.pcTerm
     , _snapPublicKey = Cfg._myPublicKey conf
@@ -96,7 +95,7 @@ runSenderService dispatch gcm debugFn publishMetric' mPubEvState mPubCons = do
   s <- return $ StateSnapshot
     { _snapNodeId = Cfg._nodeId conf
     , _snapNodeRole = Follower
-    , _snapOtherNodes = Cfg._otherNodes conf
+    , _snapClusterMembers = Cfg._clusterMembers conf
     , _snapLeader = Nothing
     , _snapTerm = startTerm
     , _snapPublicKey = Cfg._myPublicKey conf
@@ -174,8 +173,7 @@ debug s = do
 
 -- views state, but does not update
 sendAllRequestVotes :: RequestVote -> SenderService StateSnapshot ()
-sendAllRequestVotes rv = do
-  pubRPC $ RV' $ rv
+sendAllRequestVotes rv = pubRPC $ RV' rv
 
 createAppendEntries' :: NodeId
                      -> (LogIndex, Term, LogEntries)
@@ -214,10 +212,11 @@ sendAllAppendEntries nodeCurrentIndex' nodesThatFollow' sendIfOutOfSync = do
   let ct = view snapTerm s
   let myNodeId' = view snapNodeId s
   let yesVotes' = view snapYesVotes s
-  let oNodes = view snapOtherNodes s
+  let oNodes = CM.otherNodes (_snapClusterMembers s)
+
   limit' <- view aeReplicationLogLimit
   gConfig <- view config
-  quorumOk <- liftIO $ checkVoteQuorum gConfig oNodes
+  quorumOk <- liftIO $ Cfg.checkVoteQuorum gConfig oNodes
   inSync' <- canBroadcastAE quorumOk nodeCurrentIndex' ct myNodeId' nodesThatFollow' sendIfOutOfSync
   synTime' <- liftIO $ getCurrentTime
   case inSync' of
@@ -310,22 +309,10 @@ canBroadcastAE everyoneBelieves nodeIndexMap ct myNodeId' vts broadcastControl =
       then return $ BackStreet inSyncRpc laggingFollowers
       else do
         s <- get
-        let oNodes' = view snapOtherNodes s
+        let oNodes' = CM.otherNodes (_snapClusterMembers s)
         debug $ "non-believers exist, establishing dominance over " ++ show ((Set.size vts) - 1)
         return $ BackStreet inSyncRpc $ Set.union laggingFollowers (oNodes' Set.\\ vts)
 {-# INLINE canBroadcastAE #-}
-
-checkVoteQuorum :: Cfg.GlobalConfigTMVar -> Set NodeId -> IO Bool
-checkVoteQuorum globalCfg votes = do
-  theConfig <- readCurrentConfig globalCfg
-  let myId = _nodeId theConfig
-  let currentNodes = getCurrentNodes theConfig
-  let currentQuorum = getQuorumSize $ Set.size currentNodes
-  let currentVotes = Set.size $ Set.filter (\x -> x `elem` currentNodes) votes
-  let newNodes = _changeToNodes theConfig
-  let changeToQuorum = getQuorumSizeOthers newNodes myId
-  let changeToVotes = Set.size $ Set.filter (\x -> x `elem` newNodes) votes
-  return $ currentVotes >= currentQuorum && changeToVotes >= changeToQuorum
 
 createAppendEntriesResponse' :: Bool -> Bool -> Term -> NodeId -> LogIndex -> Hash -> RPC
 createAppendEntriesResponse' success convinced ct myNodeId' lindex lhash =

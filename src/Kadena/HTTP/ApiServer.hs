@@ -136,12 +136,6 @@ sendClusterChange = do
   let rpcs = [buildCCCmdRpc ccCmd]
   queueRpcs rpcs
 
--- MLN: Remove
-{-
-
--}
-
-
 queueRpcs :: [(RequestKey,CMDWire)] -> Api ()
 queueRpcs rpcs = do
   p <- view aiPublish

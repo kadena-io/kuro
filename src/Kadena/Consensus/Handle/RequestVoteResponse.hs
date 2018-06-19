@@ -105,7 +105,7 @@ handle m = do
             (_csNodeRole s)
             (_csTerm s)
             (_csYesVotes s)
-            (CM.getQuorumSize $ CM.countOthers (TMV._clusterMembers conf))
+            (CM.minQuorumOthers (TMV._clusterMembers conf))
             (_csInvalidCandidateResults s))
   mapM_ debug l
   case o of

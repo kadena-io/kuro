@@ -7,7 +7,6 @@ module Kadena.Config.TMVar
   , pactPersist, aeBatchSize, preProcThreadCount, preProcUsePar, inMemTxCache, hostStaticDir
   , nodeClass, logRules
   , checkVoteQuorum
-  , getCurrentNodes
   , initGlobalConfigTMVar
   , GlobalConfig(..), gcVersion, gcConfig
   , GlobalConfigTMVar
@@ -72,13 +71,7 @@ checkVoteQuorum globalCfg votes = do
   theConfig <- readCurrentConfig globalCfg
   let myId = _nodeId theConfig
   let members = _clusterMembers theConfig
-  CM.checkVoteQuorum members votes myId
-
-getCurrentNodes :: Config -> Set NodeId
-getCurrentNodes theConfig =
-  let myId = _nodeId theConfig
-      members = _clusterMembers theConfig
-  in CM.getCurrentNodes members myId
+  return $ CM.checkQuorumIncluding members votes myId
 
 initGlobalConfigTMVar :: Config -> IO GlobalConfigTMVar
 initGlobalConfigTMVar c = newTMVarIO $ GlobalConfig initialConfigVersion c

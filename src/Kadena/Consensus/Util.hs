@@ -162,7 +162,7 @@ logStaticMetrics = do
   Config{..} <- readConfig
   logMetric . MetricNodeId =<< viewConfig nodeId
   logMetric $ MetricClusterSize (1 + CM.countOthers _clusterMembers)
-  logMetric . MetricQuorumSize $ CM.getQuorumSize (CM.countOthers _clusterMembers)
+  logMetric . MetricQuorumSize $ CM.minQuorumOthers _clusterMembers
 
 -- NB: Yes, the strictness here is probably overkill, but this used to leak the bloom filter
 publishConsensus :: Consensus ()

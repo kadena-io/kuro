@@ -155,10 +155,9 @@ confirmElection leader' term' votes = do
 -- the exisiting set of nodes and the new configuration's set of nodes
 cfgChangeConfirmElection :: Config -> Set RequestVoteResponse -> Bool
 cfgChangeConfirmElection config votes =
-  let curNodes = getCurrentNodes config
-      newNodes = CM.transitionalNodes $ config^.clusterMembers
+  let members = config^.clusterMembers
       voteIds = Set.map _rvrNodeId votes
-  in CM.checkQuorum voteIds curNodes && CM.checkQuorum voteIds newNodes
+  in CM.checkQuorum members voteIds
 
 validateVote :: NodeId -> Term -> RequestVoteResponse -> Bool
 validateVote leader' term' RequestVoteResponse{..} = _rvrCandidateId == leader' && _rvrTerm == term'
@@ -206,7 +205,7 @@ handle ae = do
   start' <- now
   s <- get
   vc <- viewConfig clusterMembers
-  let quorumSize' = CM.getQuorumSize $ CM.countOthers vc
+  let quorumSize' = CM.minQuorumOthers vc
   mv <- queryLogs $ Set.fromList [Log.GetSomeEntry (_prevLogIndex ae),Log.GetCommitIndex]
   logAtAEsLastLogIdx <- return $ Log.hasQueryResult (Log.SomeEntry $ _prevLogIndex ae) mv
   config <- view cfg

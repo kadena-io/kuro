@@ -132,8 +132,9 @@ runEvidenceProcessor = do
       put $ garbageCollectCache es
       runEvidenceProcessor
     Bounce -> do
-      -- put $ garbageCollectCache es
-      liftIO $ CC.runWithNewConfig
+      put $ garbageCollectCache es
+      -- MLN: eventually remove this.  Its a placeholder if any central activity on config change needs to happen
+      -- liftIO $ CC.runWithNewConfig
       runEvidenceProcessor
     ClearConvincedNodes -> do
       debug "clearing convinced nodes"

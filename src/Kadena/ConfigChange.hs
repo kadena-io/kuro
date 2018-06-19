@@ -6,7 +6,6 @@ module Kadena.ConfigChange
   , mkConfigChangeApiReq
   , mutateGlobalConfig
   , runConfigUpdater
-  , runWithNewConfig
   , updateNodeMap
   , updateNodeSet
   ) where
@@ -27,11 +26,6 @@ import Kadena.Types.Base
 import Kadena.Types.Command
 import Kadena.Config
 import Kadena.Config.Types
-
-runWithNewConfig :: IO ()
-runWithNewConfig =
-  putStrLn "whatever"
-
 
 mutateGlobalConfig :: GlobalConfigTMVar -> ProcessedClusterChg CCPayload -> IO ClusterChangeResult
 mutateGlobalConfig _ (ProcClusterChgFail err) = return $ ClusterChangeFailure err
@@ -60,7 +54,7 @@ execClusterChangeCmd cfg ClusterChangeCommand{..} = do
           -- remove the current node from the new list of "other nodes" (it may also
           -- not be in the new configuration at all, in which case delete does nothing)
           let others' = Set.delete (_nodeId cfg) others
-          mkClusterMembership others' (Set.empty)
+          mkClusterMembership others' Set.empty
   return cfg { _clusterMembers = newMembers}
 
 runConfigUpdater :: ConfigUpdater -> GlobalConfigTMVar -> IO ()

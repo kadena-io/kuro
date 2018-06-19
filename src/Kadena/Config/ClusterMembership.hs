@@ -1,18 +1,20 @@
 {-# LANGUAGE DeriveGeneric #-}
 
 module Kadena.Config.ClusterMembership
-  ( checkQuorum
-  , checkVoteQuorum
+  ( calcMinQuorum
+  , checkQuorum
+  , checkQuorumIncluding
   , ClusterMembership
   , countOthers
   , countTransitional
-  , getCurrentNodes
-  , getQuorumSize
-  , getQuorumSizeOthers
   , hasTransitionalNodes
+  , minQuorumOthers
+  , minQuorumTransitional
   , mkClusterMembership
+  , otherIncluding
   , otherNodes
   , setTransitional
+  , transitionalIncluding
   , transitionalNodes
   ) where
 
@@ -52,41 +54,47 @@ countOthers cm = Set.size $ _cmOtherNodes cm
 countTransitional :: ClusterMembership -> Int
 countTransitional cm = Set.size $ _cmChangeToNodes cm
 
+minQuorumOthers :: ClusterMembership -> Int
+minQuorumOthers cm = calcMinQuorum $ Set.size $ otherNodes cm
+
+minQuorumTransitional :: ClusterMembership -> Int
+minQuorumTransitional cm = calcMinQuorum $ Set.size $ transitionalNodes cm
+
 otherNodes :: ClusterMembership -> Set NodeId
 otherNodes = _cmOtherNodes
+
+otherIncluding :: ClusterMembership -> NodeId -> Set NodeId
+otherIncluding cm nodeToInclude =
+  nodeToInclude `Set.insert` (otherNodes cm)
 
 transitionalNodes :: ClusterMembership -> Set NodeId
 transitionalNodes = _cmChangeToNodes
 
-checkQuorum :: Set NodeId -> Set NodeId -> Bool
-checkQuorum voteIds nodes =
+transitionalIncluding :: ClusterMembership -> NodeId -> Set NodeId
+transitionalIncluding cm nodeToInclude =
+  nodeToInclude `Set.insert` (transitionalNodes cm)
+
+checkQuorum :: ClusterMembership -> Set NodeId -> Bool
+checkQuorum cm voteIds =
+  checkSetQuorum (otherNodes cm) voteIds && checkSetQuorum (transitionalNodes cm) voteIds
+
+checkSetQuorum :: Set NodeId -> Set NodeId -> Bool
+checkSetQuorum nodes voteIds =
   let votes = Set.filter ((flip Set.member) nodes) voteIds
       numVotes = Set.size votes
-      quorum = getQuorumSize numVotes
+      quorum = calcMinQuorum $ Set.size nodes
   in numVotes >= quorum
 
-checkVoteQuorum :: ClusterMembership -> Set NodeId -> NodeId -> IO Bool
-checkVoteQuorum clusterMembers votes myId = do
-  let currentNodes = getCurrentNodes clusterMembers myId
-  let currentQuorum = getQuorumSize $ Set.size currentNodes
-  let currentVotes = Set.size $ Set.filter (\x -> x `elem` currentNodes) votes
-  let newNodes = _cmChangeToNodes clusterMembers
-  let changeToQuorum = getQuorumSizeOthers newNodes myId
-  let changeToVotes = Set.size $ Set.filter (\x -> x `elem` newNodes) votes
-  return $ currentVotes >= currentQuorum && changeToVotes >= changeToQuorum
+checkQuorumIncluding :: ClusterMembership -> Set NodeId -> NodeId -> Bool
+checkQuorumIncluding cm votes nodeToInclude =
+  let othersInc = otherIncluding cm nodeToInclude
+      othersQuorum = calcMinQuorum $ Set.size othersInc
+      othersVotes = Set.size $ Set.filter (\x -> x `elem` othersInc) votes
+      transInc = transitionalIncluding cm nodeToInclude
+      transQuorum = calcMinQuorum $ Set.size transInc
+      transVotes = Set.size $ Set.filter (\x -> x `elem` transInc) votes
+  in othersVotes >= othersQuorum && transVotes >= transQuorum
 
-getCurrentNodes :: ClusterMembership -> NodeId -> Set NodeId
-getCurrentNodes clusterMembers  myId =
-  let others = _cmOtherNodes clusterMembers
-  in myId `Set.insert` others
-
-getQuorumSize :: Int -> Int
-getQuorumSize 0 = 0
-getQuorumSize n = 1 + floor (fromIntegral n / 2 :: Float)
-
--- | Similar to getQuorumSize, but before determining the number of Ids, remove the given id (if it
---   is present) from the set of all ids
-getQuorumSizeOthers :: Set NodeId -> NodeId -> Int
-getQuorumSizeOthers ids myId =
-    let others = Set.delete myId ids
-    in getQuorumSize (Set.size others)
+calcMinQuorum :: Int -> Int
+calcMinQuorum 0 = 0
+calcMinQuorum n = 1 + floor (fromIntegral n / 2 :: Float)

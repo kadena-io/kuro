@@ -130,10 +130,10 @@ sendPublicBatch = do
 
 sendClusterChange :: Api ()
 sendClusterChange = do
-  SubmitCC ccCmd <- readJSON
+  SubmitCC ccCmds <- readJSON
+  when (null ccCmds) $ die "Empty cluster change batch"
   log $ "public: received cluster configuration change command"
-
-  let rpcs = [buildCCCmdRpc ccCmd]
+  rpcs <- return $ buildCCCmdRpc <$> ccCmds
   queueRpcs rpcs
 
 queueRpcs :: [(RequestKey,CMDWire)] -> Api ()

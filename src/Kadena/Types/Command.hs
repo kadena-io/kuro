@@ -1,20 +1,31 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module Kadena.Types.Command
-  ( Command(..), sccCmd, sccPreProc, cccCmd, cccPreProc, pcCmd
+  ( CCPayload (..)
+  , CCState (..)
+  , ClusterChangeCommand (..), cccPayload, cccSigs, cccHash
+  , ClusterChangeInfo (..), cciNewNodeList, cciAddedNodes, cciRemovedNodes, cciState
+  , ClusterChangeResult (..)
+  , Command(..), sccCmd, sccPreProc, cccCmd, cccPreProc, pcCmd
+  , ConfigChangeApiReq(..)
   , Hashed(..)
   , Preprocessed(..)
   , RunPreProc(..)
   , FinishedPreProc(..)
   , PendingResult(..)
+  , ProcessedClusterChg (..)
   , SCCPreProcResult, CCCPreProcResult
   , CMDWire(..)
-  , CommandResult(..), scrResult, crHash, crLogIndex, crLatMetrics, ccrResult, cprResult
+  , CommandResult(..), crHash, crLogIndex, crLatMetrics
+  , scrResult, concrResult, pcrResult
   , CmdLatencyMetrics(..), rlmFirstSeen, rlmHitTurbine, rlmHitConsensus, rlmFinConsensus, rlmAerConsensus, rlmLogConsensus
   , rlmHitPreProc, rlmFinPreProc, rlmHitExecution, rlmFinExecution
   , lmFirstSeen, lmHitTurbine, lmHitPreProc, lmAerConsensus, lmLogConsensus
@@ -24,12 +35,12 @@ module Kadena.Types.Command
   , getCmdBodyHash
   ) where
 
-import Control.Lens
+import Control.Lens (ASetter, makeLenses)
 import Control.Concurrent
 import Control.DeepSeq
 import Data.Serialize (Serialize)
 import Data.ByteString (ByteString)
-
+import Data.Text (Text)
 import Data.Thyme.Clock
 import Data.Thyme.Time.Core ()
 import Data.Aeson
@@ -37,9 +48,9 @@ import GHC.Generics
 import GHC.Int (Int64)
 
 import Kadena.Types.Base
-import Kadena.Types.Config
 import Kadena.Private.Types (PrivateCiphertext,PrivateResult)
 
+import qualified Pact.ApiReq as Pact
 import qualified Pact.Types.Command as Pact
 import qualified Pact.Types.RPC as Pact
 import Pact.Types.Util
@@ -80,15 +91,83 @@ instance (Show a) => Show (Preprocessed a) where
   show Pending{} = "Pending {unPending = <MVar>}"
   show (Result a) = "Result {unResult = " ++ show a ++ "}"
 
+data CCState =
+  Transitional |
+  Final
+  deriving (Show, Eq, Ord, Generic, Serialize)
+instance ToJSON CCState where
+instance FromJSON CCState where
+instance NFData CCState
+
+data ConfigChangeApiReq = ConfigChangeApiReq
+  { _ylccInfo :: ClusterChangeInfo
+  , _ylccKeyPairs :: ![Pact.KeyPair]
+  , _ylccNonce :: Maybe String
+  } deriving (Eq,Show,Generic)
+instance ToJSON ConfigChangeApiReq where toJSON = lensyToJSON 5
+instance FromJSON ConfigChangeApiReq where parseJSON = lensyParseJSON 5
+
+data ClusterChangeInfo = ClusterChangeInfo
+  { _cciNewNodeList :: ![NodeId]
+  , _cciAddedNodes :: ![NodeId]
+  , _cciRemovedNodes :: ![NodeId]
+  , _cciState :: CCState }
+  deriving (Show, Eq, Generic, Serialize)
+makeLenses ''ClusterChangeInfo
+instance NFData ClusterChangeInfo
+instance ToJSON ClusterChangeInfo where
+  toJSON = lensyToJSON 4
+instance FromJSON ClusterChangeInfo where
+  parseJSON = lensyParseJSON 4
+
+data CCPayload = CCPayload
+  { _ccpInfo :: !ClusterChangeInfo
+  , _ccpNonce :: !Text
+  } deriving (Show, Eq, Generic, Serialize)
+
+instance NFData CCPayload
+instance ToJSON CCPayload where toJSON = lensyToJSON 4
+instance FromJSON CCPayload where parseJSON = lensyParseJSON 4
+
+data ClusterChangeCommand a = ClusterChangeCommand
+  { _cccPayload :: !a
+  , _cccSigs :: ![Pact.UserSig]
+  , _cccHash :: !Hash
+  } deriving (Eq,Show,Ord,Generic,Functor)
+makeLenses ''ClusterChangeCommand
+
+instance (Serialize a) => Serialize (ClusterChangeCommand a)
+instance (ToJSON a) => ToJSON (ClusterChangeCommand a) where
+    toJSON (ClusterChangeCommand payload uSigs hsh) =
+        object [ "cmd" .= payload
+               , "sigs" .= toJSON uSigs
+               , "hash" .= hsh
+               ]
+instance (FromJSON a) => FromJSON (ClusterChangeCommand a) where
+    parseJSON = withObject "Command" $ \o ->
+      ClusterChangeCommand <$> (o .: "cmd")
+                           <*> (o .: "sigs" >>= parseJSON)
+                           <*> (o .: "hash")
+    {-# INLINE parseJSON #-}
+
+instance NFData a => NFData (ClusterChangeCommand a)
+
+data ProcessedClusterChg a =
+  ProcClusterChgSucc
+    !(ClusterChangeCommand a) |
+  ProcClusterChgFail !String
+  deriving (Show, Eq, Generic, Serialize)
+instance NFData a => NFData (ProcessedClusterChg a)
+
 type SCCPreProcResult = PendingResult (Pact.ProcessedCommand (Pact.PactRPC Pact.ParsedCode))
-type CCCPreProcResult = PendingResult ProcessedConfigUpdate
+type CCCPreProcResult = PendingResult (ProcessedClusterChg CCPayload)
 
 data RunPreProc =
   RunSCCPreProc
     { _rpSccRaw :: !(Pact.Command ByteString)
     , _rpSccMVar :: !(MVar SCCPreProcResult) } |
   RunCCCPreProc
-    { _rpCccRaw :: !(ConfigUpdate ByteString)
+    { _rpCccRaw :: !(ClusterChangeCommand ByteString)
     , _rpCccMVar :: !(MVar CCCPreProcResult) }
 
 data FinishedPreProc =
@@ -96,7 +175,7 @@ data FinishedPreProc =
     { _fppSccRes :: !(Pact.ProcessedCommand (Pact.PactRPC Pact.ParsedCode))
     , _fppSccMVar :: !(MVar SCCPreProcResult)} |
   FinishedPreProcCCC
-    { _fppCccRes :: !ProcessedConfigUpdate
+    { _fppCccRes :: !(ProcessedClusterChg CCPayload)
     , _fppCccMVar :: !(MVar CCCPreProcResult)}
 
 instance NFData FinishedPreProc where
@@ -104,8 +183,8 @@ instance NFData FinishedPreProc where
     Pact.ProcSucc s -> rnf s
     Pact.ProcFail e -> rnf e
   rnf FinishedPreProcCCC{..} = case _fppCccRes of
-    ProcessedConfigSuccess s _ -> s `seq` ()
-    ProcessedConfigFailure e -> rnf e
+    ProcClusterChgSucc cmd -> rnf cmd
+    ProcClusterChgFail e -> rnf e
 
 data Hashed a = Hashed
   { _hValue :: !a
@@ -118,9 +197,9 @@ data Command =
   SmartContractCommand
   { _sccCmd :: !(Pact.Command ByteString)
   , _sccPreProc :: !(Preprocessed (Pact.ProcessedCommand (Pact.PactRPC Pact.ParsedCode))) } |
-  ConsensusConfigCommand
-  { _cccCmd :: !(ConfigUpdate ByteString)
-  , _cccPreProc :: !(Preprocessed ProcessedConfigUpdate)} |
+  ConsensusChangeCommand
+  { _cccCmd :: !(ClusterChangeCommand ByteString)
+  , _cccPreProc :: !(Preprocessed (ProcessedClusterChg CCPayload))} |
   PrivateCommand
   { _pcCmd :: !(Hashed PrivateCiphertext)
   }
@@ -130,9 +209,14 @@ makeLenses ''Command
 instance Ord Command where
   compare a b = compare (getCmdBodyHash a) (getCmdBodyHash b)
 
+data ClusterChangeResult =
+  ClusterChangeFailure !String
+  | ClusterChangeSuccess
+  deriving (Show, Eq, Ord, Generic, ToJSON, FromJSON, Serialize)
+
 getCmdBodyHash :: Command -> Hash
 getCmdBodyHash SmartContractCommand{ _sccCmd = Pact.Command{..}} = _cmdHash
-getCmdBodyHash ConsensusConfigCommand{ _cccCmd = ConfigUpdate{..}} = _cuHash
+getCmdBodyHash ConsensusChangeCommand{ _cccCmd = ClusterChangeCommand{..}} = _cccHash
 getCmdBodyHash PrivateCommand { _pcCmd = Hashed{..}} = _hHash
 
 data CMDWire =
@@ -167,14 +251,14 @@ data CommandResult =
     , _scrResult :: !Pact.CommandResult
     , _crLogIndex :: !LogIndex
     , _crLatMetrics :: !(Maybe CmdResultLatencyMetrics) } |
-  ConsensusConfigResult
+   ConsensusChangeResult
     { _crHash :: !Hash
-    , _ccrResult :: !ConfigUpdateResult
+    , _concrResult :: !ClusterChangeResult
     , _crLogIndex :: !LogIndex
     , _crLatMetrics :: !(Maybe CmdResultLatencyMetrics) } |
   PrivateCommandResult
     { _crHash :: !Hash
-    , _cprResult :: !(PrivateResult Pact.CommandResult)
+    , _pcrResult :: !(PrivateResult Pact.CommandResult)
     , _crLogIndex :: !LogIndex
     , _crLatMetrics :: !(Maybe CmdResultLatencyMetrics) }
   deriving (Show, Eq, Generic)

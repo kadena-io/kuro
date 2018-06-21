@@ -9,7 +9,7 @@ module Kadena.Execution.Service
   , module Kadena.Execution.Types
   ) where
 
-import Control.Lens hiding (Index, (|>))
+import Control.Lens hiding (Index)
 import Control.Concurrent
 import Control.Monad
 import Control.Monad.IO.Class
@@ -28,11 +28,15 @@ import Pact.Types.Command ( ExecutionMode(..))
 import Pact.Types.Logger (LogRules(..),initLoggers,doLog)
 
 import Kadena.Util.Util (linkAsyncTrack)
-import Kadena.Types.Config
+import Kadena.Config
+import Kadena.Types.PactDB
+import Kadena.Config.TMVar
+import Kadena.Config.Types
 import Kadena.Types.Base
 import Kadena.Execution.Types
 import Kadena.Types.Metric
 import Kadena.Types.Command
+import Kadena.Types.KeySet
 import Kadena.Types.Log
 import Kadena.Types.Dispatch (Dispatch)
 import qualified Kadena.Types.Dispatch as D
@@ -46,7 +50,7 @@ import Kadena.Private.Types (PrivatePlaintext(..),PrivateResult(..))
 import Kadena.Execution.Pact
 import Kadena.Consensus.Publish
 import Kadena.Types.Entity
-import qualified Kadena.ConfigChange.Service as CfgChange
+import qualified Kadena.ConfigChange as CfgChange
 
 initExecutionEnv
   :: Dispatch
@@ -132,6 +136,7 @@ handle = do
               ++ show (fromJust $ Log.lesMaxIndex logEntriesToApply)
         applyLogEntries ReplayFromDisk logEntriesToApply
       ExecLocal{..} -> applyLocalCommand (localCmd,localResult)
+      ExecConfigChange{..} -> applyConfigChange logEntriesToApply
 
 applyLogEntries :: ReplayStatus -> LogEntries -> ExecutionService ()
 applyLogEntries rs les@(LogEntries leToApply) = do
@@ -149,7 +154,7 @@ applyLogEntries rs les@(LogEntries leToApply) = do
 logApplyLatency :: UTCTime -> LogEntry -> ExecutionService ()
 logApplyLatency startTime LogEntry{..} = case _leCmdLatMetrics of
   Nothing -> return ()
-  Just n -> do
+  Just n ->
     logMetric $ MetricApplyLatency $ fromIntegral $ interval (_lmFirstSeen n) startTime
 {-# INLINE logApplyLatency #-}
 
@@ -204,12 +209,12 @@ applyCommand _tEnd le@LogEntry{..} = do
                , _crLogIndex = _leLogIndex
                , _crLatMetrics = lm
                })
-    ConsensusConfigCommand{..} -> do
+    ConsensusChangeCommand{..} -> do
       (pproc, ppLat) <- case _cccPreProc of
         Unprocessed -> do
           debug $ "WARNING: non-preproccessed config command found for " ++ show _leLogIndex
           case (verifyCommand _leCommand) of
-            ConsensusConfigCommand{..} -> return $! (result _cccPreProc, _leCmdLatMetrics)
+            ConsensusChangeCommand{..} -> return $! (result _cccPreProc, _leCmdLatMetrics)
             _ -> error "[applyCommand.conf.2] unreachable exception... and yet reached"
         Pending{..} -> do
           PendingResult{..} <- getPendingPreProcCCC startTime pending
@@ -218,12 +223,12 @@ applyCommand _tEnd le@LogEntry{..} = do
           debug $ "WARNING: fully resolved consensus command found for " ++ show _leLogIndex
           return $! (result, _leCmdLatMetrics)
       gcm <- view mConfig
-      result <- liftIO $ CfgChange.mutateConfig gcm pproc
+      result <- liftIO $ CfgChange.mutateGlobalConfig gcm pproc
       lm <- stamp ppLat
       return ( rkey
-             , ConsensusConfigResult
+             , ConsensusChangeResult
                { _crHash = chash
-               , _ccrResult = result
+               , _concrResult = result
                , _crLogIndex = _leLogIndex
                , _crLatMetrics = lm
                })
@@ -241,7 +246,7 @@ applyCommand _tEnd le@LogEntry{..} = do
             Left e -> finish $ PrivateFailure e
             Right cr -> finish $ PrivateSuccess cr
 
-applyPrivate :: LogEntry -> PrivatePlaintext -> ExecutionService (Either String (Pact.CommandResult))
+applyPrivate :: LogEntry -> PrivatePlaintext -> ExecutionService (Either String Pact.CommandResult)
 applyPrivate LogEntry{..} PrivatePlaintext{..} = case decode _ppMessage of
   Left e -> return $ Left e
   Right cmd -> case Pact.verifyCommand cmd of
@@ -255,6 +260,11 @@ applyLocalCommand (cmd, mv) = do
   applyLocal <- Pact._ceiApplyCmd <$> use csCommandExecInterface
   cr <- liftIO $ applyLocal Local cmd
   liftIO $ putMVar mv (Pact._crResult cr)
+
+-- | This may be used in the future for configuration changes other than cluster membership changes.
+--   Cluster membership changes are implemented via applyCommand
+applyConfigChange :: LogEntries -> ExecutionService ()
+applyConfigChange _ = debug "[Execution service]: applyConfigChange - not implemented"
 
 updateLatPreProc :: Maybe UTCTime -> Maybe UTCTime -> Maybe CmdLatencyMetrics -> Maybe CmdLatencyMetrics
 updateLatPreProc hitPreProc finPreProc = fmap update'

@@ -48,7 +48,7 @@ import qualified Data.ByteString as S
 import Data.Int (Int64)
 import qualified Data.Text as T
 import Data.Time.Clock.POSIX (getPOSIXTime)
-import Prelude hiding (read)
+import Prelude
 
 import qualified System.Metrics as Metrics
 import qualified System.Metrics.Counter as Counter

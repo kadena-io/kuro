@@ -15,7 +15,7 @@ module Kadena.Sender.Types
   ( SenderServiceChannel(..)
   , ServiceRequest'(..)
   , ServiceRequest(..)
-  , StateSnapshot(..), snapNodeId, snapNodeRole, snapOtherNodes, snapLeader, snapTerm, snapPublicKey
+  , StateSnapshot(..), snapNodeId, snapNodeRole, snapClusterMembers, snapLeader, snapTerm, snapPublicKey
   , snapPrivateKey, snapYesVotes
   , AEBroadcastControl(..)
   ) where
@@ -29,7 +29,7 @@ import Data.Thyme.Clock
 import Kadena.Types.Base
 import Kadena.Types.Message
 import Kadena.Types.Comms
-
+import Kadena.Config.ClusterMembership
 import Kadena.Types.Event (Beat)
 
 data ServiceRequest' =
@@ -77,7 +77,7 @@ data ServiceRequest =
 data StateSnapshot = StateSnapshot
   { _snapNodeId :: !NodeId
   , _snapNodeRole :: !Role
-  , _snapOtherNodes :: !(Set NodeId)
+  , _snapClusterMembers :: !ClusterMembership
   , _snapLeader :: !(Maybe NodeId)
   , _snapTerm :: !Term
   , _snapPublicKey :: !PublicKey

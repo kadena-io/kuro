@@ -30,7 +30,6 @@ import qualified Data.HashSet as HashSet
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Set as Set
-
 import qualified Data.Serialize as SZ
 
 import Snap.Core
@@ -45,14 +44,15 @@ import qualified Pact.Types.Command as Pact
 import Pact.Types.RPC (PactRPC)
 import Pact.Types.API
 
+import Kadena.Command (SubmitCC(..))
 import Kadena.Types.Command
 import Kadena.Types.Base
 import Kadena.Types.Comms
-import Kadena.Types.Config as Config
+import Kadena.Config.Types as Config
+import Kadena.Config.TMVar as Config
 import Kadena.Types.Spec
 import Kadena.Types.Entity
-import Kadena.History.Types ( History(..)
-                            , PossiblyIncompleteResults(..))
+import Kadena.History.Types ( History(..), PossiblyIncompleteResults(..))
 import qualified Kadena.History.Types as History
 import qualified Kadena.Execution.Types as Exec
 import Kadena.Types.Dispatch
@@ -108,6 +108,7 @@ api = route [
       ,("listen",registerListener)
       ,("local",sendLocal)
       ,("private",sendPrivateBatch)
+      ,("config", sendClusterChange)
       ]
 
 sendLocal :: Api ()
@@ -127,6 +128,13 @@ sendPublicBatch = do
   rpcs <- return $ buildCmdRpc <$> cmds
   queueRpcs rpcs
 
+sendClusterChange :: Api ()
+sendClusterChange = do
+  SubmitCC ccCmd <- readJSON
+  log $ "public: received cluster configuration change command"
+
+  let rpcs = [buildCCCmdRpc ccCmd]
+  queueRpcs rpcs
 
 queueRpcs :: [(RequestKey,CMDWire)] -> Api ()
 queueRpcs rpcs = do
@@ -178,10 +186,10 @@ scrToAr :: CommandResult -> ApiResult
 scrToAr cr = case cr of
   SmartContractResult{..} ->
     ApiResult (toJSON (Pact._crResult _scrResult)) (Pact._crTxId _scrResult) metaData'
-  ConsensusConfigResult{..} ->
-    ApiResult (toJSON _ccrResult) tidFromLid metaData'
+  ConsensusChangeResult{..} ->
+    ApiResult (toJSON _concrResult) tidFromLid metaData'
   PrivateCommandResult{..} ->
-    ApiResult (handlePR _cprResult) tidFromLid metaData'
+    ApiResult (handlePR _pcrResult) tidFromLid metaData'
   where metaData' = Just $ toJSON $ _crLatMetrics $ cr
         tidFromLid = Just $ Pact.TxId $ fromIntegral $ _crLogIndex $ cr
         handlePR (PrivateFailure e) = toJSON $ "ERROR: " ++ show e
@@ -203,16 +211,16 @@ die res = do
   _ <- getResponse -- chuck what we've done so far
   setJSON
   log res
-  writeLBS $ encode $ (ApiFailure res :: ApiResponse ())
+  writeLBS $ encode $ (ApiFailure ("Kadena.HTTP.ApiServer" ++ res) :: ApiResponse ())
   finishWith =<< getResponse
 
-readJSON :: FromJSON t => Api t
+readJSON :: (Show t, FromJSON t) => Api t
 readJSON = do
   b <- readRequestBody 1000000000
   snd <$> tryParseJSON b
 
 tryParseJSON
-  :: FromJSON t =>
+  :: (Show t, FromJSON t) =>
      BSL.ByteString -> Api (BS.ByteString, t)
 tryParseJSON b = case eitherDecode b of
     Right v -> return (toStrict b,v)

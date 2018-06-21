@@ -11,7 +11,7 @@ import Control.Monad
 import Control.Monad.Reader
 
 import Kadena.Message
-import Kadena.Types hiding (debugPrint, nodeId)
+import Kadena.Types hiding (debugPrint)
 import Kadena.Messaging.Turbine.Types
 
 rvAndRvrTurbine :: ReaderT ReceiverEnv IO ()

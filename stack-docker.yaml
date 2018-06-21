@@ -1,4 +1,4 @@
-resolver: lts-8.14
+resolver: lts-8.15
 
 # Local packages, usually specified by relative directory name
 packages:
@@ -10,6 +10,8 @@ packages:
 - location: submodules/hdbc-odbc
   extra-dep: true
 - location: submodules/thyme
+  extra-dep: true
+- location: submodules/sbv
   extra-dep: true
 
 
@@ -24,6 +26,12 @@ extra-deps:
 - unagi-chan-0.4.0.0
 - bloomfilter-2.0.1.0
 - concurrent-extra-0.7.0.10
+- ridley-0.3.1.2
+- ekg-prometheus-adapter-0.1.0.3
+- prometheus-0.4.2
+- system-command-0.0.10
+- monad-gen-0.3.0.1
+
 
 # Override default flag values for local packages and extra-deps
 flags: {}

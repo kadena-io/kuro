@@ -36,12 +36,11 @@ import Pact.Server.PactService (jsonResult)
 import Pact.Types.Hash
 import Pact.Types.Runtime
 
-
-import Kadena.Execution.Types
+import Kadena.Types.PactDB
 import Kadena.Consensus.Publish
-import Kadena.Types.Config (PactPersistConfig(..),PactPersistBackend(..))
-import Kadena.Util.Util (linkAsyncTrack)
+import Kadena.Execution.Types
 import Kadena.Types.Entity
+import Kadena.Util.Util (linkAsyncTrack)
 
 data Pact = Pact
   { _pTxId :: TxId
@@ -145,7 +144,7 @@ applyExec (ExecMsg parsedCode edata) ks = do
   PactState{..} <- liftIO $ readMVar _peState
   let sigs = userSigsToPactKeySet ks
       evalEnv = setupEvalEnv _peDbEnv (Just (_elName $ _ecLocal $ _peEntity)) _peMode
-                (MsgData sigs edata Nothing initialHash) _psRefStore
+                (MsgData sigs edata Nothing (_cmdHash _peCommand)) _psRefStore
   EvalResult{..} <- liftIO $ evalExec evalEnv parsedCode
   mp <- join <$> mapM (handleYield erInput sigs) erExec
   let newState = PactState erRefStore $ case mp of
@@ -200,7 +199,9 @@ applyContinuation cm@ContMsg{..} = do
           when (_cmStep < 0 || _cmStep >= _pStepCount) $ throwCmdEx $ "Invalid step value: " ++ show _cmStep
           res <- mapM decodeResume _cmResume
           let evalEnv = setupEvalEnv _peDbEnv (Just (_elName $ _ecLocal $ _peEntity)) _peMode
-                (MsgData _pSigs Null (Just $ PactStep _cmStep _cmRollback (fromString $ show $ _cmTxId) res) initialHash)
+                (MsgData _pSigs Null
+                 (Just $ PactStep _cmStep _cmRollback (fromString $ show $ _cmTxId) res)
+                 (_cmdHash _peCommand))
                 _psRefStore
           tryAny (liftIO $ evalContinuation evalEnv _pContinuation) >>=
             either (handleContFailure tid pe cm ps) (handleContSuccess tid pe cm ps pact)
@@ -234,8 +235,7 @@ doResume tid PactEnv{..} ContMsg{..} PactState{..} Pact{..} EvalResult{..} PactE
       isLast = nextStep >= _pStepCount
       updateState pacts = void $ liftIO $ swapMVar _peState (PactState erRefStore pacts)
   if isLast
-    then do
-      debug $ "handleContSuccess: reaping pact [disabled]: " ++ show _cmTxId
+    then debug $ "handleContSuccess: reaping pact [disabled]: " ++ show _cmTxId
       -- updateState $ M.delete _cmTxId _psPacts
     else do
       ry <- mapM encodeResume _peYield

@@ -29,7 +29,8 @@ import System.FilePath
 
 import Kadena.Util.Util
 import Kadena.Types.Base
-import Kadena.Types.Config
+import Kadena.Config.TMVar
+import Kadena.Config.Types
 import Kadena.History.Types as X
 import qualified Kadena.History.Persistence as DB
 import Kadena.Types.Dispatch (Dispatch)
@@ -59,8 +60,7 @@ runHistoryService env mState = catchAndRethrow "historyService" $ do
     Nothing -> do
       pers <- setupPersistence dbg (env ^. dbPath)
       return $! HistoryState { _registeredListeners = HashMap.empty, _persistence = pers }
-    Just mState' -> do
-      return mState'
+    Just mState' -> return mState'
   dbg "[Service|Histoy] Launch!"
   (_,bouncedState,_) <- runRWST (handle oChan) env initHistoryState
   runHistoryService env (Just bouncedState)
@@ -211,8 +211,7 @@ queryForResults (srks, mRes) = do
     OnDisk{..} -> do
       completed <- return $! HashSet.filter (\k -> not $ HashSet.member k incompleteRequestKeys) srks
       if HashSet.null completed
-      then do
-        liftIO $! putMVar mRes $ PossiblyIncompleteResults $ HashMap.empty
+      then liftIO $! putMVar mRes $ PossiblyIncompleteResults $ HashMap.empty
       else do
         found <- liftIO $ DB.selectCompletedCommands dbConn completed
         liftIO $! putMVar mRes $ PossiblyIncompleteResults $ found
@@ -231,10 +230,8 @@ registerNewListeners newListeners' = do
   srks <- return $! HashSet.fromMap $ const () <$> newListeners'
   pers <- use persistence
   found <- case pers of
-    InMemory m -> do
-      return $! fromJust <$> HashMap.filterWithKey (checkForIndividualResultInMem srks) m
-    OnDisk{..} -> do
-      liftIO $! DB.selectCompletedCommands dbConn srks
+    InMemory m -> return $! fromJust <$> HashMap.filterWithKey (checkForIndividualResultInMem srks) m
+    OnDisk{..} -> liftIO $! DB.selectCompletedCommands dbConn srks
   noNeedToListen <- return $! HashSet.intersection (HashSet.fromMap $ const () <$> found) srks
   readyToServiceListeners <- return $! HashMap.filterWithKey (\k _ -> HashSet.member k noNeedToListen) newListeners'
   realListeners <- return $! HashMap.filterWithKey (\k _ -> not $ HashSet.member k noNeedToListen) newListeners'

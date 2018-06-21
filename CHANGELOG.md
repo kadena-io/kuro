@@ -1,3 +1,7 @@
+# Version 1.1.2.0
+* Pact 2.4
+* Early release of Prometheus integration
+
 # Version 1.1.1.1
 * Pact 2.3.7
 

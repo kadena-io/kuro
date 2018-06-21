@@ -1,8 +1,11 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
 module Kadena.Consensus.Publish
-  (Publish(..),publish,pactTextToCMDWire,buildCmdRpc,buildCmdRpcBS,pactBSToCMDWire)
-  where
+  ( Publish(..), publish, buildCmdRpc, buildCmdRpcBS
+  , buildCCCmdRpc
+  , pactBSToCMDWire, pactTextToCMDWire
+  , clusterChgBSToCMDWire, clusterChgTextToCMDWire
+  ) where
 
 import Control.Concurrent
 import Data.Thyme (UTCTime)
@@ -58,3 +61,14 @@ buildCmdRpc c@Pact.Command{..} = (RequestKey _cmdHash, pactTextToCMDWire c)
 
 buildCmdRpcBS :: Pact.Command ByteString -> (RequestKey,CMDWire)
 buildCmdRpcBS c@Pact.Command{..} = (RequestKey _cmdHash, pactBSToCMDWire c)
+
+-- TODO: Try to implment ClusterChangeCommand as Pact.Command ClusterChangeCommand.  If possible,
+-- this can be removed in favor of using Pact's buildCmdRpc
+buildCCCmdRpc :: ClusterChangeCommand Text -> (RequestKey, CMDWire)
+buildCCCmdRpc c@ClusterChangeCommand {..} = (RequestKey _cccHash, clusterChgTextToCMDWire c)
+
+clusterChgTextToCMDWire :: ClusterChangeCommand Text -> CMDWire
+clusterChgTextToCMDWire cmd = clusterChgBSToCMDWire (encodeUtf8 <$> cmd)
+
+clusterChgBSToCMDWire :: ClusterChangeCommand ByteString -> CMDWire
+clusterChgBSToCMDWire = CCCWire . SZ.encode

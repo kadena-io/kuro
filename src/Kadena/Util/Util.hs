@@ -3,26 +3,24 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Kadena.Util.Util
-  ( seqIndex
-  , getQuorumSize
+  ( TrackedError(..)
   , awsDashVar
+  , catchAndRethrow
   , fromMaybeM
   , foreverRetry
-  , TrackedError(..)
-  , catchAndRethrow
   , linkAsyncTrack
+  , seqIndex
   ) where
 
-import Control.Monad
 import Control.Concurrent (forkFinally, putMVar, takeMVar, newEmptyMVar, forkIO)
 import Control.Concurrent.Async
+import Control.Monad
 import Control.Monad.Catch
-import System.Process (system)
-
 import Data.List (intersperse)
 import Data.Typeable
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
+import System.Process (system)
 
 --TODO: this is pretty ghetto, there has to be a better/cleaner way
 foreverRetry :: (String -> IO ()) -> String -> IO () -> IO ()
@@ -52,9 +50,6 @@ seqIndex s i =
     then Just (Seq.index s i)
     else Nothing
 
-getQuorumSize :: Int -> Int
-getQuorumSize n = 1 + floor (fromIntegral n / 2 :: Float)
-
 fromMaybeM :: Monad m => m b -> Maybe b -> m b
 fromMaybeM errM = maybe errM (return $!)
 
@@ -72,7 +67,9 @@ catchAndRethrow :: MonadCatch m => String -> m a -> m a
 catchAndRethrow loc fn = fn `catches` [Handler (\(e@TrackedError{..} :: TrackedError SomeException) -> throwM $ e {teTrace = [loc] ++ teTrace})
                                       ,Handler (\(e :: SomeException)  -> throwM $ TrackedError [loc] e)]
 
--- | Run an action asynchronously on a new thread. If an uncaught exception is encountered in the thread, capture it, track its location, and re-throw it to the parent thread.
--- This is useful for when you're not expecting an exception in a child thread and want to know where to look after it's thrown.
+-- | Run an action asynchronously on a new thread. If an uncaught exception is encountered in the
+--   thread, capture it, track its location, and re-throw it to the parent thread.
+--   This is useful for when you're not expecting an exception in a child thread and want to know
+--   where to look after it's thrown.
 linkAsyncTrack :: String -> IO a -> IO ()
 linkAsyncTrack loc fn = link =<< (async $ catchAndRethrow loc fn)

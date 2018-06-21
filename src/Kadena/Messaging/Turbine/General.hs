@@ -18,7 +18,7 @@ import Data.Thyme.Clock (getCurrentTime, UTCTime)
 
 import Kadena.Log
 import Kadena.Message
-import Kadena.Types hiding (debugPrint, nodeId)
+import Kadena.Types hiding (debugPrint)
 import Kadena.PreProc.Types (ProcessRequestChannel(..), ProcessRequest(..))
 import Kadena.Messaging.Turbine.Types
 

@@ -70,7 +70,7 @@ crFromField hsh li tid cr lat = SmartContractResult hsh (Pact.CommandResult (Pac
       Right v' -> v'
 
 ccFromField :: Hash -> LogIndex -> ByteString -> ByteString -> CommandResult
-ccFromField hsh li ccr lat = ConsensusConfigResult hsh v li (latFromField ccr lat)
+ccFromField hsh li ccr lat = ConsensusChangeResult hsh v li (latFromField ccr lat)
   where
     v = case A.eitherDecodeStrict' ccr of
       Left err -> error $ "ccFromField: unable to decode CommandResult from database! " ++ show err ++ "\n" ++ show ccr
@@ -129,19 +129,19 @@ insertRow s SmartContractResult{..} =
             ,htToField SCC
             ,crToField (Pact._crResult _scrResult)
             ,latToField _crLatMetrics]
-insertRow s ConsensusConfigResult{..} =
+insertRow s ConsensusChangeResult{..} =
     execs "insertRow" s [hashToField _crHash
             ,SInt $ fromIntegral _crLogIndex
             ,SInt $ -1
             ,htToField CCC
-            ,crToField $ A.toJSON _ccrResult
+            ,crToField $ A.toJSON _concrResult
             ,latToField _crLatMetrics]
 insertRow s PrivateCommandResult{..} =
   execs "insertRow" s [hashToField _crHash
             ,SInt $ fromIntegral _crLogIndex
             ,SInt $ -1
             ,htToField PC
-            ,crToField $ A.toJSON (Pact._crResult <$> _cprResult)
+            ,crToField $ A.toJSON (Pact._crResult <$> _pcrResult)
             ,latToField _crLatMetrics]
 
 insertCompletedCommand :: DbEnv -> [CommandResult] -> IO ()

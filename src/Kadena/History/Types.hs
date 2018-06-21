@@ -32,7 +32,7 @@ import Data.Thyme.Clock (UTCTime)
 import Database.SQLite3.Direct
 
 import Kadena.Types.Base as X
-import Kadena.Types.Config as X hiding (nodeId, _nodeId)
+import Kadena.Config.Types as X
 import Kadena.Types.Command as X
 import Kadena.Types.Comms as X
 import Kadena.Types.Metric as X

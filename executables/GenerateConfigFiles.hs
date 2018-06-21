@@ -30,6 +30,9 @@ import qualified Data.ByteString.Char8 as BSC
 import System.Directory
 import System.Exit
 
+import qualified Kadena.Config.ClusterMembership as CM
+import Kadena.Config.TMVar
+import Kadena.Types.PactDB
 import Kadena.Types hiding (logDir)
 import Kadena.Types.Entity
 import Apps.Kadena.Client hiding (main)
@@ -282,8 +285,7 @@ toAliasMap = M.fromList . map (first _alias) . M.toList
 createClusterConfig :: ConfigParams -> (Map Alias PublicKey) -> (Map NodeId PrivateKey, Map NodeId PublicKey) ->
                        (Map NodeId EntityConfig) -> Int -> NodeId -> Config
 createClusterConfig cp@ConfigParams{..} adminKeys' (privMap, pubMap) entMap apiP nid = Config
-  { _otherNodes           = Set.delete nid $ M.keysSet pubMap
-  , _changeToNodes        = Set.empty
+  { _clusterMembers       = CM.mkClusterMembership (Set.delete nid $ M.keysSet pubMap) Set.empty
   , _nodeId               = nid
   , _publicKeys           = toAliasMap $ pubMap
   , _adminKeys            = adminKeys'

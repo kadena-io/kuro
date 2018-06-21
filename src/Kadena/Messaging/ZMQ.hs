@@ -22,7 +22,9 @@ import qualified Data.Set as Set
 import Kadena.Message
 import Kadena.Types
 import Kadena.Util.Util (catchAndRethrow, linkAsyncTrack)
-import Kadena.ConfigChange.Service
+import qualified Kadena.Config.ClusterMembership as CM
+import Kadena.Config.TMVar
+import Kadena.ConfigChange
 
 data Shutdown = IsShutdown | IsPending
 data ReconfSub = ReconfSub
@@ -104,7 +106,7 @@ runMsgServer dispatch me addrList debug gcm = forever $ do
               Just _ -> putMVar shutdownSubMV IsShutdown
           Just (ReconfSub (Just newNodeList) _) -> do
             connectedNodeIds <- liftIO $ takeMVar connectedNodeIdsMV
-            DiffNodes{..} <- return $ diffNodes NodesToDiff { prevNodes = connectedNodeIds, currentNodes = newNodeList }
+            DiffNodes{..} <- return $ diffNodes connectedNodeIds newNodeList
             void $ forM_ nodesToAdd $ \addr -> do
                 _ <- connect subSocket $ nodeIdToZmqAddr $ addr
                 liftIO $ debug $ zmqSub ++ "connected to: " ++ (show $ nodeIdToZmqAddr addr)
@@ -163,5 +165,5 @@ confUpdater reconfMV shutdownPubMV shutdownSubMV Config{..} = do
     putMVar shutdownPubMV IsPending
     putMVar shutdownSubMV IsPending
     putMVar reconfMV $ ReconfSub Nothing $ Just shutdownSubMV
-  else do
-    putMVar reconfMV $ ReconfSub (Just _otherNodes) Nothing
+  else
+    putMVar reconfMV $ ReconfSub (Just (CM.otherNodes _clusterMembers)) Nothing

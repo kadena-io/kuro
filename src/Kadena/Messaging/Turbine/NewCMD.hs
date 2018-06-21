@@ -16,7 +16,8 @@ import Data.Foldable (toList)
 import Data.Thyme.Clock (getCurrentTime)
 
 import Kadena.Command
-import Kadena.Types hiding (debugPrint, nodeId)
+import Kadena.Types hiding (debugPrint)
+import Kadena.Types.KeySet
 import Kadena.Message
 import Kadena.Messaging.Turbine.Types
 import Kadena.PreProc.Types (ProcessRequestChannel(..), ProcessRequest(..))

@@ -12,7 +12,7 @@ module Apps.Kadena.Client
   , Node(..)
   -- exported for testing
   , CliCmd(..), ClientOpts(..), coptions, flushStrLn, Formatter(..), getServer, handleCmd
-  , initRequestId, parseCliCmd, Repl, ReplApiData(..), ReplState(..), runREPL, calcInterval 
+  , initRequestId, parseCliCmd, Repl, ReplApiData(..), ReplState(..), runREPL, calcInterval
   ) where
 
 import qualified Control.Exception as Exception
@@ -25,52 +25,52 @@ import Control.Concurrent.MVar
 import Control.Concurrent.Async
 import Control.Applicative
 
-import qualified Data.Text as T
-import Data.Text.Encoding (decodeUtf8)
-import qualified Data.ByteString.Base16 as B16
-import qualified Data.ByteString as B
-import qualified Data.ByteString.Char8 as BS8
-import qualified Data.ByteString.Lazy.Char8 as BSL
-import qualified Data.HashMap.Strict as HM
-import qualified Data.Vector as V
-import qualified Data.Set as S
-import Data.Function
-
 import qualified Data.Aeson as A
 import Data.Aeson hiding ((.=), Result(..), Value(..))
+import Data.Aeson.Encode.Pretty
 import Data.Aeson.Lens
 import Data.Aeson.Types hiding ((.=), Result(..))
-import Data.Aeson.Encode.Pretty
-import qualified Data.Yaml as Y
-
-import Text.Trifecta as TF hiding (err, rendered)
-
+import qualified Data.ByteString as B
+import qualified Data.ByteString.Base16 as B16
+import qualified Data.ByteString.Char8 as BS8
+import qualified Data.ByteString.Lazy.Char8 as BSL
 import Data.Default
 import Data.Foldable
+import Data.Function
+import qualified Data.HashMap.Strict as HM
 import Data.Int
 import Data.Maybe
 import Data.List
+import qualified Data.Set as S
 import Data.String
+import Data.Text (Text)
+import qualified Data.Text as T
+import Data.Text.Encoding (decodeUtf8)
 import Data.Thyme.Clock
 import Data.Thyme.Time.Core (unUTCTime, toMicroseconds)
+import qualified Data.Vector as V
+import qualified Data.Yaml as Y
+
 import GHC.Generics (Generic)
-import Network.Wreq hiding (Raw)
+import Network.Wreq hiding (Raw, get)
 import System.Console.GetOpt
 import System.Environment
 import System.Exit hiding (die)
 import System.IO
+import Text.Trifecta as TF hiding (err, rendered)
 
-import Pact.Types.API hiding (Poll)
-import qualified Pact.Types.API as Pact
-import Pact.Types.RPC
-import qualified Pact.Types.Command as Pact
-import qualified Pact.Types.Crypto as Pact
-import Pact.Types.Util
-import Pact.ApiReq
-
+import Kadena.Command (mkClusterChangeCommand, SubmitCC(..))
+import Kadena.ConfigChange (mkConfigChangeApiReq)
 import Kadena.Types.Base hiding (printLatTime)
 import Kadena.Types.Entity (EntityName)
-import Kadena.Types.Command (CmdResultLatencyMetrics(..))
+import Kadena.Types.Command
+import Pact.Types.API hiding (Poll)
+import qualified Pact.Types.API as Pact
+import qualified Pact.Types.Command as Pact
+import qualified Pact.Types.Crypto as Pact
+import Pact.Types.RPC
+import Pact.Types.Util
+import Pact.ApiReq
 
 data ClientOpts = ClientOpts {
       _oConfig :: FilePath
@@ -129,8 +129,8 @@ data CliCmd =
   Help |
   Keys (Maybe (T.Text,Maybe T.Text)) |
   Load FilePath Mode |
-  LoadConfigChange FilePath Mode | 
-  Poll String | 
+  ConfigChange FilePath |
+  Poll String |
   PollMetrics String |
   Send Mode String |
   Private EntityName [EntityName] String |
@@ -150,17 +150,17 @@ data ReplState = ReplState {
 }
 makeLenses ''ReplState
 
-type Repl a = RWST ClientConfig [ReplApiData] ReplState IO a 
+type Repl a = RWST ClientConfig [ReplApiData] ReplState IO a
 
-data ReplApiData = 
-    ReplApiRequest 
+data ReplApiData =
+    ReplApiRequest
       { _apiRequestKey :: RequestKey
-      , _replCmd :: String }  
-  | ReplApiResponse 
+      , _replCmd :: String }
+  | ReplApiResponse
       { _apiResponseKey ::  RequestKey
-      , _apiResult :: ApiResult 
+      , _apiResult :: ApiResult
       , _batchCnt :: Maybe Int64
-} deriving Show  
+} deriving Show
 
 prompt :: String -> String
 prompt s = "\ESC[0;31m" ++ s ++ "> \ESC[0m"
@@ -207,13 +207,14 @@ postAPI ep rq = do
 
 postSpecifyServerAPI :: (ToJSON req,FromJSON resp) => String -> String -> req -> IO (Response resp)
 postSpecifyServerAPI ep server' rq = do
-  r <- liftIO $ post ("http://" ++ server' ++ "/api/v1/" ++ ep) (toJSON rq)
+  let url = "http://" ++ server' ++ "/api/v1/" ++ ep
+  r <- liftIO $ post url (toJSON rq)
   asJSON r
 
 handleResp :: (t -> Repl ()) -> Response (ApiResponse t) -> Repl ()
 handleResp a r = do
         case r ^. responseBody of
-          ApiFailure{..} -> flushStrLn $ "Failure in API Send: " ++ show _apiError
+          ApiFailure{..} -> flushStrLn $ "Apps.Kadena.Client.handleResp - failure in API Send: " ++ show _apiError
           ApiSuccess{..} -> a _apiResponse
 
 handleBatchResp :: RequestKeys -> Repl ()
@@ -221,38 +222,51 @@ handleBatchResp resp = do
         rk <- return $ head $ _rkRequestKeys resp
         showResult 10000 [rk] Nothing
 
-sendCmd :: Mode -> String -> String -> Repl () 
+sendCmd :: Mode -> String -> String -> Repl ()
 sendCmd m cmd replCmd = do
   j <- use cmdData
-  e <- mkExec cmd j Nothing
+  e <- mkExec cmd j Nothing -- Note: this is mkExec in this  module, not the one in Pact.ApiReq
   case m of
     Transactional -> do
-      resp <- postAPI "send" (SubmitBatch [e]) 
+      resp <- postAPI "send" (SubmitBatch [e])
       tellKeys resp replCmd
       handleResp handleBatchResp resp
     Local -> do
-      y <- postAPI "local" e 
+      y <- postAPI "local" e
       handleResp (\(resp :: Value) -> putJSON resp) y
+
+sendConfigChangeCmd :: ConfigChangeApiReq -> String -> Repl ()
+sendConfigChangeCmd ccApiReq@ConfigChangeApiReq{..} fileName = do
+  e <- mkConfigChangeExec ccApiReq
+  resp <- postAPI "config" (SubmitCC e)
+  tellKeys resp fileName
+  handleResp handleBatchResp resp
+
+mkConfigChangeExec :: ConfigChangeApiReq -> Repl (ClusterChangeCommand Text)
+mkConfigChangeExec ccApiReq = do
+  ccCmd <- liftIO $ mkClusterChangeCommand ccApiReq
+  return $ fmap decodeUtf8 ccCmd
 
 tellKeys :: Response (ApiResponse RequestKeys) -> String -> Repl ()
 tellKeys resp cmd =
   case resp ^. responseBody of
     ApiSuccess ks ->
       tell $ fmap (\k -> ReplApiRequest { _apiRequestKey = k, _replCmd = cmd }) (_rkRequestKeys ks)
-    ApiFailure _ -> return () 
-    
+    ApiFailure _ -> return ()
+
 sendPrivate :: Pact.Address -> String -> Repl ()
 sendPrivate addy msg = do
   j <- use cmdData
   e <- mkExec msg j (Just addy)
   postAPI "private" (SubmitBatch [e]) >>= handleResp handleBatchResp
 
-putJSON :: ToJSON a => a -> Repl ()
-putJSON a = use fmt >>= \f -> flushStrLn $ case f of
-  Raw -> BSL.unpack $ encode a
-  PrettyJSON -> BSL.unpack $ encodePretty a
-  YAML -> doYaml
-  Table -> fromMaybe doYaml $ pprintTable (toJSON a)
+putJSON :: (ToJSON a) => a -> Repl ()
+putJSON a =
+  use fmt >>= \f -> flushStrLn $ case f of
+    Raw -> BSL.unpack $ encode a
+    PrettyJSON -> BSL.unpack $ encodePretty a
+    YAML -> doYaml
+    Table -> fromMaybe doYaml $ pprintTable (toJSON a)
   where doYaml = BS8.unpack $ Y.encode a
 
 batchTest :: Int -> String -> Repl ()
@@ -323,8 +337,8 @@ parallelBatchTest totalNumCmds' cmdRate' sleep' = do
 
 load :: Mode -> FilePath -> Repl ()
 load m fp = do
+  --Note that MkApiReqExec calls mkExec defined in Pact.ApiReq, not the one defined in this module
   ((ApiReq {..},code,cdata,_),_) <- liftIO $ mkApiReqExec fp
-  
   keys .= _ylKeyPairs
   cmdData .= cdata
   sendCmd m code fp
@@ -336,8 +350,10 @@ load m fp = do
     Just c -> flushStrLn ("Setting batch command to: " ++ show c) >> batchCmd .= (T.unpack c)
   cmdData .= Null
 
-_loadConfigChange :: Mode -> FilePath -> Repl ()
-_loadConfigChange _m _fp = undefined
+loadConfigChange :: FilePath -> Repl ()
+loadConfigChange fp = do
+  ccApiReq <- liftIO $ mkConfigChangeApiReq fp
+  sendConfigChangeCmd ccApiReq fp
 
 showResult :: Int -> [RequestKey] -> Maybe Int64 -> Repl ()
 showResult _ [] _ = return ()
@@ -373,7 +389,7 @@ pollForResult printMetrics rk = do
       resp <- asJSON r
       case resp ^. responseBody of
         ApiFailure err -> flushStrLn $ "Error: no results received: " ++ show err
-        ApiSuccess (PollResponses prs) -> do 
+        ApiSuccess (PollResponses prs) -> do
           tell (fmap (\(k, v) -> ReplApiResponse { _apiResponseKey = k, _apiResult = v, _batchCnt = Nothing }) (HM.toList prs) )
           forM_ (HM.elems prs) $ \ApiResult{..} -> do
             putJSON _arResult
@@ -485,9 +501,8 @@ cliCmds = [
                         (symbol "table" >> pure Table))),
   ("private","TO [FROM1 FROM2...] CMD","Send private transactional command to server addressed with entity names",
    parsePrivate),
-  ("loadConfigChange", "YAMLFILE", "Load and submit transactionaly a yaml configuration change file",
-   LoadConfigChange <$> some anyChar <*> pure 
-   Transactional) 
+  ("configChange", "YAMLFILE", "Load and submit transactionally a yaml configuration change file",
+   ConfigChange <$> some anyChar)
   ]
 
 parsePrivate :: TF.Parser CliCmd
@@ -541,7 +556,7 @@ handleCmd cmd reqStr = case cmd of
    | sleepBetweenBatches < 250 -> void $ flushStrLn "Aborting: sleep between batches needs to be >= 250"
    | otherwise -> parallelBatchTest totalNumCmds cmdRate sleepBetweenBatches
   Load s m -> load m s
-  LoadConfigChange _ _ -> return () -- Not implemented yet 
+  ConfigChange fp -> loadConfigChange fp
   Poll s -> parseRK s >>= void . pollForResult False . RequestKey . Hash
   PollMetrics rk -> do
     s <- use server
@@ -594,15 +609,15 @@ help = do
 
 intervalOfNumerous :: Int64 -> Int64 -> String
 intervalOfNumerous cnt mics = let
-  (interval', perSec) = calcInterval cnt mics 
+  (interval', perSec) = calcInterval cnt mics
   in "Completed in " ++ show (interval' :: Double) ++
      "sec (" ++ show perSec ++ " per sec)"
 
 calcInterval :: Int64 -> Int64 -> (Double, Integer)
-calcInterval cnt mics = 
+calcInterval cnt mics =
   let interval' = fromIntegral mics / 1000000
       perSec = ceiling (fromIntegral cnt / interval')
-  in (interval', perSec) 
+  in (interval', perSec)
 
 initRequestId :: IO Int64
 initRequestId = do

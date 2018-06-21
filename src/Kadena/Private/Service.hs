@@ -10,7 +10,7 @@ import Control.Monad.Catch (catch)
 import Control.Exception (SomeException)
 
 import Kadena.Types.Dispatch (Dispatch(..))
-import Kadena.Types.Config (Config(..))
+import Kadena.Config.TMVar
 import Kadena.Types.Base (_alias)
 import Kadena.Types.Comms (readComm,writeComm)
 

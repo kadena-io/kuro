@@ -2,10 +2,12 @@
 
 module ConfigChangeSpec (spec) where
 
+import Control.Exception.Safe
 import Data.Aeson as AE
 import qualified Data.HashMap.Strict as HM
 import Data.Scientific
 import Safe
+import System.Time.Extra
 import Test.Hspec
 
 import Apps.Kadena.Client
@@ -22,13 +24,33 @@ testClusterCommands :: Spec
 testClusterCommands =
         it "tests commands send to a locally running cluster" $ do
             delTempFiles
-            (results, metrics) <- runAll testRequests testMetrics
-            putStrLn "\nCommand tests:"
-            ok <- checkResults results
-            ok `shouldBe` True
-            putStrLn "\nMetric tests:"
-            metricsOk <- checkMetrics metrics
-            metricsOk `shouldBe` True
+
+
+            procHandles <- runServers
+            putStrLn "Servers are running, sleeping for a few seconds"
+            _ <- sleep 3
+            catchAny (do
+                         putStrLn "\nCommand tests:"
+                         results <- runClientCommands clientArgs testRequests
+                         ok <- checkResults results
+                         ok `shouldBe` True
+
+                         putStrLn "\nMetric tests:"
+                         metrics <- gatherMetrics testMetrics
+
+                         metricsOk <- metrics `seq` checkMetrics metrics
+                         --metricsOk <- checkMetrics metrics
+
+                         metricsOk `shouldBe` True
+                         stopProcesses procHandles
+                         putStrLn "Done."
+                     )
+                     (\e -> do
+                         stopProcesses procHandles
+                         throw e)
+
+clientArgs :: [String]
+clientArgs = words $ "-c " ++ testConfDir ++ "client.yaml"
 
 checkResults :: [TestResult] -> IO Bool
 checkResults xs =

@@ -15,6 +15,7 @@ module Util.TestRunner
   , TestResult(..)) where
 
 import Apps.Kadena.Client
+import qualified Apps.Kadena.Server as App
 import Control.Concurrent
 import Control.Exception.Safe
 import Control.Lens
@@ -36,6 +37,7 @@ import Pact.ApiReq
 import Pact.Types.API
 import System.Command
 import System.Console.GetOpt
+import System.Environment
 import System.Time.Extra
 import Text.Trifecta (ErrInfo(..), parseString, Result(..))
 
@@ -92,34 +94,36 @@ delTempFiles = do
 
 runAll :: [TestRequest] -> [TestMetric]-> IO ([TestResult], [TestMetricResult])
 runAll testRequests testMetrics = do
-  procHandles <- runServers
+  terminationFuncs <- runServers
   putStrLn "Servers are running, sleeping for a few seconds"
   _ <- sleep 3
   catchAny (do
               results <- runClientCommands clientArgs testRequests
               metricResults <- gatherMetrics testMetrics
-              metricResults `seq` results `seq` stopProcesses procHandles
+              metricResults `seq` results `seq` sequence terminationFuncs
               return (results, metricResults))
            (\e -> do
-              stopProcesses procHandles
+              sequence terminationFuncs
               throw e)
 
-runServers :: IO [ProcessHandle]
+-- | Returns a list of IO actions that kill all the servers
+runServers :: IO [IO ()]
 runServers =
   foldM f [] serverArgs where
     f acc x = do
         h <- runServer x
         return $ h : acc
 
-runServer :: String -> IO ProcessHandle
+-- | Returns an IO action that kills the thread.
+runServer :: String -> IO (IO ())
 runServer args = do
+--    tid <- forkIO (withArgs (words args) App.main)
+--    sleep 1
+--    return (killThread tid)
     let p = proc "kadenaserver" $ words args
     (_, _, _, procHandle) <- createProcess p
     sleep 1
-    return procHandle
-
-stopProcesses :: [ProcessHandle] -> IO ()
-stopProcesses handles = mapM_ terminateProcess handles
+    return (terminateProcess procHandle)
 
 serverArgs :: [String]
 serverArgs = [serverArgs0, serverArgs1, serverArgs2, serverArgs3]

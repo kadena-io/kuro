@@ -117,13 +117,13 @@ runServers =
 -- | Returns an IO action that kills the thread.
 runServer :: String -> IO (IO ())
 runServer args = do
---    tid <- forkIO (withArgs (words args) App.main)
---    sleep 1
---    return (killThread tid)
-    let p = proc "kadenaserver" $ words args
-    (_, _, _, procHandle) <- createProcess p
+    tid <- forkIO (withArgs (words args) App.main)
     sleep 1
-    return (terminateProcess procHandle)
+    return (killThread tid)
+--    let p = proc "kadenaserver" $ words args
+--    (_, _, _, procHandle) <- createProcess p
+--    sleep 1
+--    return (terminateProcess procHandle)
 
 serverArgs :: [String]
 serverArgs = [serverArgs0, serverArgs1, serverArgs2, serverArgs3]

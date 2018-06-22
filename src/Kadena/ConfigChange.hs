@@ -19,6 +19,9 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Yaml as Y
 
+-- MLN: remove
+import Debug.Trace
+
 import Kadena.Config.ClusterMembership
 import Kadena.Config.TMVar
 import Kadena.ConfigChange.Util
@@ -35,10 +38,12 @@ mutateGlobalConfig gc (ProcClusterChgSucc cmd) = do
   if null missingKeys
   then do
     conf' <- execClusterChangeCmd _gcConfig cmd
-    atomically $ do
-        putTMVar gc $ GlobalConfig { _gcVersion = ConfigVersion $ configVersion _gcVersion + 1
-                                   , _gcConfig = conf' }
-        return ClusterChangeSuccess
+    -- MLN: remove
+    trace ("Me: " ++ show (_nodeId conf') ++ " About to change the global TMVar to: " ++ show (_clusterMembers conf'))
+          atomically $ do
+            putTMVar gc $ GlobalConfig { _gcVersion = ConfigVersion $ configVersion _gcVersion + 1
+                                       , _gcConfig = conf' }
+            return ClusterChangeSuccess
   else do
     atomically $ putTMVar gc origGc
     return $ ClusterChangeFailure $ "Admin signatures missing from: " ++ show missingKeys
@@ -47,14 +52,20 @@ execClusterChangeCmd :: Config -> ClusterChangeCommand CCPayload -> IO Config
 execClusterChangeCmd cfg ClusterChangeCommand{..} = do
   let changeInfo = _ccpInfo _cccPayload
   let theMembers = _clusterMembers cfg
+  -- MLN: replace original
   let newMembers = case _cciState changeInfo of
-        Transitional -> setTransitional theMembers (Set.fromList $ _cciNewNodeList changeInfo)
-        Final -> do
-          let others = Set.fromList $ _cciNewNodeList changeInfo
-          -- remove the current node from the new list of "other nodes" (it may also
-          -- not be in the new configuration at all, in which case delete does nothing)
-          let others' = Set.delete (_nodeId cfg) others
-          mkClusterMembership others' Set.empty
+                Transitional ->
+                  trace ("Transitional - Me: " ++ show (_nodeId cfg)
+                         ++ ", newNodeList: " ++ show (_cciNewNodeList changeInfo))
+                    setTransitional theMembers (Set.fromList $ _cciNewNodeList changeInfo)
+                Final -> do
+                  let others = trace ("Final - Me: " ++ show (_nodeId cfg)
+                                      ++ ", newNodeList: " ++ show (_cciNewNodeList changeInfo))
+                                 Set.fromList $ _cciNewNodeList changeInfo
+                  -- remove the current node from the new list of "other nodes" (it may also
+                  -- not be in the new configuration at all, in which case delete does nothing)
+                  let others' = Set.delete (_nodeId cfg) others
+                  mkClusterMembership others' Set.empty
   return cfg { _clusterMembers = newMembers}
 
 runConfigUpdater :: ConfigUpdater -> GlobalConfigTMVar -> IO ()

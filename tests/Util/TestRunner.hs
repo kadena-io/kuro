@@ -10,7 +10,6 @@ module Util.TestRunner
   , testConfDir
   , runClientCommands
   , runServers
-  , runServersWith
   , stopProcesses
   , TestMetric(..)
   , TestMetricResult(..)
@@ -20,7 +19,6 @@ module Util.TestRunner
 
 import Apps.Kadena.Client
 import Control.Concurrent
-import Control.Exception.Safe
 import Control.Lens
 import Control.Monad
 import Control.Monad.Trans.RWS.Lazy

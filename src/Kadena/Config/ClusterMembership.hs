@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Kadena.Config.ClusterMembership
   ( calcMinQuorum
@@ -13,6 +14,7 @@ module Kadena.Config.ClusterMembership
   , mkClusterMembership
   , otherIncluding
   , otherNodes
+  , othersAsText
   , setTransitional
   , transitionalIncluding
   , transitionalNodes
@@ -21,6 +23,9 @@ module Kadena.Config.ClusterMembership
 import Data.Aeson
 import Data.Set (Set)
 import qualified Data.Set as Set
+import Data.String.Conv
+import Data.Text (Text)
+import qualified Data.Text as T
 import GHC.Generics
 
 import Kadena.Types.Base
@@ -66,6 +71,12 @@ otherNodes = _cmOtherNodes
 otherIncluding :: ClusterMembership -> NodeId -> Set NodeId
 otherIncluding cm nodeToInclude =
   nodeToInclude `Set.insert` (otherNodes cm)
+
+othersAsText :: ClusterMembership -> Text
+othersAsText cm =
+  let others = Set.toList $ otherNodes cm
+      txtIds = fmap (toS . unAlias . _alias) others :: [Text]
+  in T.intercalate ", " txtIds
 
 transitionalNodes :: ClusterMembership -> Set NodeId
 transitionalNodes = _cmChangeToNodes

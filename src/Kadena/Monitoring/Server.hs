@@ -58,13 +58,15 @@ startMonitoring config = do
   roleLabel <- getLabel "kadena.node.role" ekg
   appliedIndexGauge <- getGauge "kadena.node.applied_index" ekg
   applyLatencyDist <- getDistribution "kadena.node.apply_latency" ekg
-  -- Cluster
+  -- Cluster, quorum size
   clusterSizeGauge <- getGauge "kadena.cluster.size" ekg
   quorumSizeGauge <- getGauge "kadena.cluster.quorum_size" ekg
   availableSizeGauge <- getGauge "kadena.cluster.available_size" ekg
   -- Cluster configuration change
   changeToClusterSizeGauge <- getGauge "kadena.cluster.change_to_size" ekg
   changeToQuorumSizeGauge <- getGauge "kadena.cluster.change_to_quorum_size" ekg
+  -- Cluster membership
+  clusterMembersLabel <- getLabel "kadena.cluster.members" ekg
 
   return $ \case
     -- Consensus
@@ -107,6 +109,8 @@ startMonitoring config = do
       Gauge.set changeToClusterSizeGauge $ fromIntegral size
     MetricChangeToQuorumSize size ->
       Gauge.set changeToQuorumSizeGauge $ fromIntegral size
+    MetricClusterMembers members ->
+      Label.set clusterMembersLabel members
   where
     nodeDescription :: NodeId -> T.Text
     nodeDescription (NodeId host port _ _) = T.pack $ host ++ ":" ++ show port

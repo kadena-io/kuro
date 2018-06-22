@@ -38,7 +38,6 @@ import qualified Control.Concurrent.Lifted as CL
 import Data.HashSet (HashSet)
 import Data.Set (Set)
 import Data.Map.Strict (Map)
-
 import Data.Thyme.Clock
 import qualified System.Random as R
 
@@ -161,8 +160,13 @@ logStaticMetrics :: Consensus ()
 logStaticMetrics = do
   Config{..} <- readConfig
   logMetric . MetricNodeId =<< viewConfig nodeId
+  -- MLN: remove
+  -- trace ("calling logMetric for MetricClusterSize with: " ++ show (1 + CM.countOthers _clusterMembers))
   logMetric $ MetricClusterSize (1 + CM.countOthers _clusterMembers)
   logMetric . MetricQuorumSize $ CM.minQuorumOthers _clusterMembers
+  logMetric $ MetricChangeToClusterSize (1 + CM.countTransitional _clusterMembers)
+  logMetric . MetricChangeToQuorumSize $ CM.minQuorumTransitional _clusterMembers
+  logMetric $ MetricClusterMembers (CM.othersAsText _clusterMembers)
 
 -- NB: Yes, the strictness here is probably overkill, but this used to leak the bloom filter
 publishConsensus :: Consensus ()

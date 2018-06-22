@@ -3,9 +3,12 @@
 module ConfigChangeSpec (spec) where
 
 import Control.Exception.Safe
+import Control.Monad
 import Data.Aeson as AE
 import qualified Data.HashMap.Strict as HM
+import Data.List.Extra
 import Data.Scientific
+import Debug.Trace
 import Safe
 import System.Time.Extra
 import Test.Hspec
@@ -24,8 +27,6 @@ testClusterCommands :: Spec
 testClusterCommands =
         it "tests commands send to a locally running cluster" $ do
             delTempFiles
-
-
             procHandles <- runServers
             putStrLn "Servers are running, sleeping for a few seconds"
             _ <- sleep 3
@@ -35,16 +36,34 @@ testClusterCommands =
                          ok <- checkResults results
                          ok `shouldBe` True
 
-                         putStrLn "\nMetric tests:"
-                         metrics <- gatherMetrics testMetrics
-
-                         metricsOk <- metrics `seq` checkMetrics metrics
-                         --metricsOk <- checkMetrics metrics
-
+                         putStrLn "\nMetric test - waiting for cluster size == 4..."
+                         metricsOk <- waitForMetric testMetric1
+                         -- metrics <- gatherMetrics testMetrics1
+                         -- metricsOk <- ok `seq` checkMetrics metrics
                          metricsOk `shouldBe` True
+
+                         memberMetrics1 <- gatherMetrics [testMetric3]
+                         membersOk1 <- checkMetrics memberMetrics1
+                         membersOk1 `shouldBe` True
+
+                         putStrLn "\nFirst config change test:"
+                         ccResults1 <- runClientCommands clientArgs ccTestRequests1
+                         ccOk1 <- checkResults ccResults1
+                         ccOk1 `shouldBe` True
+
+                         -- putStrLn "\nSecond run of Metric Tests:"
+                         putStrLn "Metric test - waiting for cluster size == 3..."
+                         metricsOk2 <- waitForMetric testMetric2
+                         -- metrics2 <- gatherMetrics testMetrics2
+                         -- metricsOk2 <- ccOk1 `seq` checkMetrics metrics2
+                         metricsOk2 `shouldBe` True
+
+                         memberAfterChange1 <- gatherMetrics [testMetric4]
+                         membersAfterChangeOk1 <- checkMetrics memberAfterChange1
+                         membersAfterChangeOk1 `shouldBe` True
+
                          stopProcesses procHandles
-                         putStrLn "Done."
-                     )
+                         putStrLn "Done.")
                      (\e -> do
                          stopProcesses procHandles
                          throw e)
@@ -87,9 +106,7 @@ checkMetrics xs =
                 Just val -> do
                     let r = evalTm req val
                     if not r
-                      then do
-                        failMetric result "Metric Eval function failed"
-                        return False
+                      then return False
                       else do
                         passMetric result
                         return $ r && bOk
@@ -155,13 +172,17 @@ passTest tr = putStrLn $ "Test passed: " ++ cmd (requestTr tr)
 failMetric :: TestMetricResult -> String -> IO ()
 failMetric tmr addlInfo = do
     putStrLn $ "Metric failure: " ++ metricNameTm (requestTmr tmr)
+    putStrLn $ "Value received: " ++ show (valueTmr tmr)
     putStrLn $ "(" ++ addlInfo ++ ")"
 
 passMetric :: TestMetricResult -> IO ()
 passMetric tmr = putStrLn $ "Metric test passed: " ++ metricNameTm (requestTmr tmr)
 
 testRequests :: [TestRequest]
-testRequests = [testReq1, testReq2, testReq3, testReq4, testReq5, testCfgChange1]
+testRequests = [testReq1, testReq2, testReq3, testReq4, testReq5]
+
+ccTestRequests1 :: [TestRequest]
+ccTestRequests1 = [testCfgChange1]
 
 testReq1 :: TestRequest
 testReq1 = TestRequest
@@ -205,10 +226,36 @@ testCfgChange1 = TestRequest
   , eval = checkCCSuccess
   , displayStr = "Removes node2 from the cluster" }
 
-testMetrics :: [TestMetric]
-testMetrics = [testMetric1]
-
 testMetric1 :: TestMetric
 testMetric1 = TestMetric
   { metricNameTm = "/kadena/cluster/size"
   , evalTm = (\s -> readDef (0.0 :: Float) s == 4.0) }
+
+testMetric2 :: TestMetric
+testMetric2 = TestMetric
+  { metricNameTm = "/kadena/cluster/size"
+  , evalTm = (\s -> readDef (0.0 :: Float) s == 3.0) }
+
+testMetric3 :: TestMetric
+testMetric3 = TestMetric
+  { metricNameTm = "/kadena/cluster/members"
+  , evalTm = (\s -> trace ("testMetric3: " ++ s) (splitOn ", " s) /= ["node1", "node2", "node3"]) }
+
+testMetric4 :: TestMetric
+testMetric4 = TestMetric
+  { metricNameTm = "/kadena/cluster/members"
+  , evalTm = (\s -> trace ("testMetric4: " ++ s) (splitOn ", " s) /= ["node1", "node3"]) }
+
+waitForMetric :: TestMetric -> IO Bool
+waitForMetric tm = do
+  t <- timeout 10 go
+  return $ case t of
+    Nothing -> False
+    Just _ -> True
+  where
+    go :: IO ()
+    go = do
+      rs <- gatherMetrics [tm]
+      ok <- checkMetrics rs
+      unless ok go
+      return ()

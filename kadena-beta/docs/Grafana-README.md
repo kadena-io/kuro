@@ -20,7 +20,7 @@ Hit `return` when the command `./kadenaclient.sh` appears at the prompt in the l
 ## Start Prometheus
 Start a new terminal session and enter:
 
-`$ cd YOUR_KADENA_DIRECTORY` 
+`$ cd YOUR_KADENA_DIRECTORY`
 
 `$ prometheus --config.file=prometheus.yml`
 
@@ -65,9 +65,9 @@ Access: proxy
 
 Auth: (leave all 5 boxes unchecked)
 
-Advanced HTTP Setttings:  
+Advanced HTTP Setttings:
 
-    Whitelisted cookies (leave blank) 
+    Whitelisted cookies (leave blank)
 
     Scrape Interval: 5s
 
@@ -96,9 +96,11 @@ Additional metrics can be added next to the letters B, C, etc. if desiered.
 
 Select the General tab, and replace the text "Panel Title" with something more meaningful.
 
-Finally, select the blue arrow in the upper left to return to the dashboard.
+Finally, select the blue arrow in the upper right to return to the dashboard.
 
-If desired, you can now click the "Add panel" button at the top to add additional panels to this dashboard.
+On the upper right corner of the dashboard, also set the duration to "last 5 minutes", set "Refreshing every" to 5s and hit the Apply button
+
+If desired, you can now click the "Add panel" button at the top right (white graph with an orange + sign) to add additional panels to this dashboard.
 
 
 

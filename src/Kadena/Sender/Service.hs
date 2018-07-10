@@ -164,7 +164,7 @@ queryLogs q = do
   ls <- view logService
   mv <- liftIO newEmptyMVar
   liftIO . writeComm ls $ Log.Query q mv
-  liftIO $ takeMVar mv
+  liftIO $ takeMVar mv  -- blocks until mv is no longer empty
 
 debug :: String -> SenderService StateSnapshot ()
 debug s = do
@@ -183,10 +183,8 @@ createAppendEntries' :: NodeId
                      -> Set RequestVoteResponse
                      -> RPC
 createAppendEntries' target (pli, plt, es) ct myNodeId' vts yesVotes' =
-  let
-    vts' = if Set.member target vts then Set.empty else yesVotes'
-  in
-    AE' $ AppendEntries ct myNodeId' pli plt es vts' NewMsg
+  let vts' = if Set.member target vts then Set.empty else yesVotes'
+  in AE' $ AppendEntries ct myNodeId' pli plt es vts' NewMsg
 
 establishDominance :: SenderService StateSnapshot ()
 establishDominance = do
@@ -212,15 +210,13 @@ sendAllAppendEntries nodeCurrentIndex' nodesThatFollow' sendIfOutOfSync = do
   let ct = view snapTerm s
   let myNodeId' = view snapNodeId s
   let yesVotes' = view snapYesVotes s
-  let oNodes = CM.otherNodes (_snapClusterMembers s)
-
+  let cm = _snapClusterMembers s
+  let oNodes = CM.otherNodes cm
   limit' <- view aeReplicationLogLimit
-  gConfig <- view config
-  quorumOk <- liftIO $ Cfg.checkVoteQuorum gConfig oNodes
-  inSync' <- canBroadcastAE quorumOk nodeCurrentIndex' ct myNodeId' nodesThatFollow' sendIfOutOfSync
+  inSync' <- canBroadcastAE cm nodeCurrentIndex' ct myNodeId' nodesThatFollow' sendIfOutOfSync
   synTime' <- liftIO $ getCurrentTime
   case inSync' of
-    BackStreet{..} -> do
+    BackStreet{..} ->
       case broadcastRPC of
         Just broadcastableRPC -> do -- NB: SendAERegardless gets you here
           -- We can't take the short cut but the AE (which is overloaded as a heartbeat grr...) still need to be sent
@@ -238,13 +234,10 @@ sendAllAppendEntries nodeCurrentIndex' nodesThatFollow' sendIfOutOfSync = do
           sendRpcsPeicewise rpcs (length rpcs, endTime')
           debug $ "AE sent Regardless"
           pubRPC broadcastableRPC -- TODO: this is terrible as laggers will need a pause to catch up correctly unless we have them cache future AE
-        Nothing -> do -- NB: OnlySendIfInSync gets you here
+        Nothing -> -- NB: OnlySendIfInSync gets you here
           -- We can't just spam AE's to the followers because they can get clogged with overlapping/redundant AE's. This eventually trips an election.
           -- TODO: figure out how an out of date follower can precache LEs that it can't add to it's log yet (without tripping an election)
           debug $ "AE withheld, followers are out of sync (synTime=" ++ printInterval startTime' synTime' ++ ")"
---           endTime' <- liftIO $ getCurrentTime
---           debug $ "followers are out of sync, broadcasting AE anyway: " ++ printInterval startTime' endTime'
---             ++ " (synTime=" ++ printInterval startTime' synTime' ++ ")"
     InSync{..} -> do
       -- Hell yeah, we can just broadcast. We don't care about the Broadcast control if we know we can broadcast.
       -- This saves us a lot of time when node count grows.
@@ -260,40 +253,36 @@ data InSync =
     , laggingFollowers :: !(Set NodeId) }
   deriving (Show, Eq)
 
-willBroadcastAE :: Bool -> Map NodeId (LogIndex, UTCTime) -> Bool
-willBroadcastAE everyoneBelieves nodeIndexMap =
+willBroadcastAE :: CM.ClusterMembership -> Map NodeId (LogIndex, UTCTime) -> Set NodeId -> NodeId -> Bool
+willBroadcastAE cm nodeIndexMap votes myNodeId =
   -- we only want to do this if we know that every node is in sync with us (the leader)
-  let
-    indexList = fst <$> Map.elems nodeIndexMap -- get a list of where everyone is
-    indexSet = Set.fromList $ indexList -- condense every Followers LI into a set
-    inSync = 1 == Set.size indexSet
-  in
-    everyoneBelieves && inSync
+  let everyoneBelieves = CM.containsAllNodesExcluding cm votes myNodeId
+  in everyoneBelieves && (inSync cm nodeIndexMap myNodeId)
 
-canBroadcastAE :: Bool
+canBroadcastAE :: CM.ClusterMembership
                -> Map NodeId (LogIndex, UTCTime)
                -> Term
                -> NodeId
                -> Set NodeId
                -> AEBroadcastControl
                -> SenderService StateSnapshot InSync
-canBroadcastAE everyoneBelieves nodeIndexMap ct myNodeId' vts broadcastControl =
+canBroadcastAE cm nodeIndexMap ct myNodeId' vts broadcastControl =
   -- we only want to do this if we know that every node is in sync with us (the leader)
   let
-    mniList = fst <$> Map.elems nodeIndexMap -- get a list of where everyone is
-    mniSet = Set.fromList $ mniList -- condense every Followers LI into a set
+    everyoneBelieves = CM.containsAllNodesExcluding cm vts myNodeId'
+    mniList = fst <$> Map.elems nodeIndexMap -- get a list of where everyone is (in ascend. order of keys)
+    mniSet = Set.fromList $ mniList -- condense every Followers LI into a set (in ascending order of indexes)
     latestFollower = head $ Set.toDescList mniSet
     laggingFollowers = Map.keysSet $ Map.filter ((/=) latestFollower . fst) nodeIndexMap
-    inSync = 1 == Set.size mniSet -- if each LI is the same, then the set is a signleton
-    mni = head $ Set.elems mniSet -- totally unsafe but we only call it if we are going to broadcast
+    elemSet = Set.elems mniSet -- list of indexes in ascending order
+    mni = head elemSet -- (least index) totally unsafe but we only call it if we are going to broadcast
   in
-    if everyoneBelieves && inSync
+    if everyoneBelieves && (inSync cm nodeIndexMap myNodeId')
     then do
       limit' <- view aeReplicationLogLimit
       mv <- queryLogs $ Set.singleton $ Log.GetInfoAndEntriesAfter (Just $ 1 + mni) limit'
       (pli,plt, es) <- return $ Log.hasQueryResult (Log.InfoAndEntriesAfter (Just $ 1 + mni) limit') mv
---      debug $ "InfoAndEntriesAfter InSync " ++ (show (Just $ 1 + mni)) ++ " " ++ show limit'
---            ++ " with results " ++ show (Log.lesMinIndex es, Log.lesMaxIndex es)
+
       return $ InSync $ AE' $ AppendEntries ct myNodeId' pli plt es Set.empty NewMsg
     else do
       inSyncRpc <- case broadcastControl of
@@ -313,6 +302,18 @@ canBroadcastAE everyoneBelieves nodeIndexMap ct myNodeId' vts broadcastControl =
         debug $ "non-believers exist, establishing dominance over " ++ show ((Set.size vts) - 1)
         return $ BackStreet inSyncRpc $ Set.union laggingFollowers (oNodes' Set.\\ vts)
 {-# INLINE canBroadcastAE #-}
+
+inSync :: CM.ClusterMembership -> Map NodeId (LogIndex, UTCTime) -> NodeId -> Bool
+inSync cm nodeIndexMap myNodeId =
+  -- for the purpose of this calculation, ignore any evidence that may have come from nodes no longer in the configuration
+  let allNodes = CM.otherNodes cm `Set.union` CM.transitionalNodes cm
+      filteredMap = Map.filterWithKey (\k _ -> k `Set.member` allNodes) nodeIndexMap
+      indexSet = Set.fromList $ fst <$> Map.elems filteredMap -- get a list of where everyone is
+      nodeKeys = Set.fromList $ Map.keys filteredMap
+      ok = Set.size indexSet == 1
+           && CM.containsAllNodesExcluding cm nodeKeys myNodeId
+  in ok
+{-# INLINE inSync #-}
 
 createAppendEntriesResponse' :: Bool -> Bool -> Term -> NodeId -> LogIndex -> Hash -> RPC
 createAppendEntriesResponse' success convinced ct myNodeId' lindex lhash =

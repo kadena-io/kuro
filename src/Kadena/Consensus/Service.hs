@@ -119,9 +119,9 @@ runConsensusService renv gcm spec rstate timeCache' mPubConsensus' = do
   rconf <- readCurrentConfig gcm
   let members = rconf ^. clusterMembers
       csize = 1 + CM.countOthers members
-      qsize = CM.calcMinQuorum csize
+      qsize = CM.minQuorumOthers members
       changeToSize = CM.countTransitional members
-      changeToQuorum = CM.calcMinQuorum changeToSize
+      changeToQuorum = CM.minQuorumTransitional members
       publishMetric' = (spec ^. publishMetric)
       dispatch' = _dispatch renv
       dbgPrint' = Turbine._debugPrint renv

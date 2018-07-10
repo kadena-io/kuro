@@ -105,10 +105,15 @@ handleBatch cmdbBatch = do
       csCmdBloomFilter .= updateBloom newEntries (_csCmdBloomFilter s)
       es <- view KD.evidenceState >>= liftIO
       gConfig <- view cfg
-      quorumOk <- liftIO $ TMV.checkVoteQuorum gConfig (es ^. Ev.pesConvincedNodes)
-      when (Sender.willBroadcastAE quorumOk (es ^. Ev.pesNodeStates)) resetHeartbeatTimer
+      theCfg <- liftIO $ TMV.readCurrentConfig gConfig
+      let willBroadcast = Sender.willBroadcastAE (TMV._clusterMembers theCfg)
+                                                 (es ^. Ev.pesNodeStates)
+                                                 (es ^. Ev.pesConvincedNodes)
+                                                 (TMV._nodeId theCfg)
+      when willBroadcast
+        resetHeartbeatTimer
     IAmFollower BatchProcessing{..} -> do
-      when (isJust lid) $ do
+      when (isJust lid) $
         enqueueRequest' $ Sender.ForwardCommandToLeader $ NewCmdRPC (encodeCommand . snd <$> _unBPNewEntries newEntries) NewMsg
       unless (null $ _unBPAlreadySeen alreadySeen) $ do
         start <- now

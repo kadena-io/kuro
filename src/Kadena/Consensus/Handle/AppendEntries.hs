@@ -7,7 +7,6 @@ module Kadena.Consensus.Handle.AppendEntries
   ( createAppendEntriesResponse
   , clearLazyVoteAndInformCandidates
   , handle
-  , handleCC
   ) where
 
 import Control.Lens hiding (Index)
@@ -79,20 +78,22 @@ data ValidResponse =
 
 -- THREAD: SERVER MAIN. updates state
 handleAppendEntries :: (MonadWriter [String] m, MonadReader AppendEntriesEnv m, MonadIO m) =>
-                        AppendEntries -> m AppendEntriesOut
-handleAppendEntries ae@AppendEntries{..} = do
+                        AppendEntries -> NodeId -> m AppendEntriesOut
+handleAppendEntries ae@AppendEntries{..} myId = do
   tell ["received appendEntries: " ++ show _prevLogIndex ]
   nlo <- checkForNewLeader ae
   (currentLeader',ignoreLeader',currentTerm' ) :: (Maybe NodeId,Bool,Term) <-
                 case nlo of
                   LeaderUnchanged -> (,,) <$> view currentLeader <*> view ignoreLeader <*> view term
-                  NewLeaderConfirmed{..} -> return (Just _stateCurrentLeader,_stateIgnoreLeader,_stateRsUpdateTerm)
+                  NewLeaderConfirmed{..} ->
+                    return (Just _stateCurrentLeader,_stateIgnoreLeader,_stateRsUpdateTerm)
   case currentLeader' of
     Just leader' | not ignoreLeader' && leader' == _leaderId && _aeTerm == currentTerm' -> do
       plmatch <- prevLogEntryMatches _prevLogIndex _prevLogTerm
       if not plmatch
         then return $ AppendEntriesOut nlo $ ValidLeaderAndTerm _leaderId SendFailureResponse
-        else AppendEntriesOut nlo . ValidLeaderAndTerm _leaderId <$> appendLogEntries _prevLogIndex _aeEntries
+        else AppendEntriesOut nlo . ValidLeaderAndTerm _leaderId
+                <$> appendLogEntries myId _prevLogIndex _aeEntries
           {-
           if (not (Seq.null _aeEntries))
             -- only broadcast when there are new entries
@@ -104,13 +105,14 @@ handleAppendEntries ae@AppendEntries{..} = do
             -- that didn't
             then sendAllAppendEntriesResponse
             else sendAppendEntriesResponse _leaderId True True
-          --}
+          -}
     _ | not ignoreLeader' && _aeTerm >= currentTerm' -> do -- see TODO about setTerm
-      tell ["sending unconvinced response for AE received from "
+      let str' = "sending unconvinced response for AE received from "
            ++ show (KD.unAlias $ _digNodeId $ _pDig $ _aeProvenance)
            ++ " for " ++ show (_aeTerm, _prevLogIndex)
            ++ " with " ++ show (Log.lesCnt _aeEntries)
-           ++ " entries; my term is " ++ show currentTerm']
+           ++ " entries; my term is " ++ show currentTerm'
+      tell [ str']
       return $ AppendEntriesOut nlo $ SendUnconvincedResponse _leaderId
     _ -> return $ AppendEntriesOut nlo Ignore
 
@@ -172,13 +174,14 @@ prevLogEntryMatches pli plt = do
     Just LogEntry{..} -> return (_leTerm == plt)
 
 appendLogEntries :: (MonadWriter [String] m, MonadReader AppendEntriesEnv m)
-                 => LogIndex -> LogEntries -> m ValidResponse
-appendLogEntries pli newEs
+                 => NodeId -> LogIndex -> LogEntries -> m ValidResponse
+appendLogEntries _myId pli newEs
   | Log.lesNull newEs = return DoNothing
-  | otherwise = case Log.toReplicateLogEntries pli newEs of
+  | otherwise =
+    case Log.toReplicateLogEntries pli newEs of
       Left err -> do
-          tell ["Failure to Append Logs: " ++ err]
-          return SendFailureResponse
+        tell ["Failure to Append Logs: " ++ err]
+        return SendFailureResponse
       Right rle -> do
         replay <- return $ HashSet.fromList $ fmap (toRequestKey . _leCommand) (Map.elems (newEs ^. Log.logEntries))
         tell ["replicated LogEntry(s): " ++ show (_rleMinLogIdx rle) ++ " through " ++ show (_rleMaxLogIdx rle)]
@@ -197,8 +200,12 @@ logHashChange :: Hash -> KD.Consensus ()
 logHashChange (Hash mLastHash) =
   logMetric $ KD.MetricHash mLastHash
 
+{-
 handleCC :: ClusterChangeMsg -> KD.Consensus ()
-handleCC (ClusterChangeMsg _ ae) = handle ae
+handleCC (ClusterChangeMsg _ ae) = do
+  error "handleCC is actually called"
+  handle ae
+-}
 
 handle :: AppendEntries -> KD.Consensus ()
 handle ae = do
@@ -206,6 +213,7 @@ handle ae = do
   s <- get
   vc <- viewConfig clusterMembers
   let quorumSize' = CM.minQuorumOthers vc
+  myId <- viewConfig nodeId
   mv <- queryLogs $ Set.fromList [Log.GetSomeEntry (_prevLogIndex ae),Log.GetCommitIndex]
   logAtAEsLastLogIdx <- return $ Log.hasQueryResult (Log.SomeEntry $ _prevLogIndex ae) mv
   config <- view cfg
@@ -216,15 +224,16 @@ handle ae = do
               logAtAEsLastLogIdx
               quorumSize'
               config
-  (AppendEntriesOut{..}, l) <- runReaderT (runWriterT (handleAppendEntries ae)) ape
+  (AppendEntriesOut{..}, l) <- runReaderT (runWriterT (handleAppendEntries ae myId)) ape
   mapM_ debug l
   applyNewLeader _newLeaderAction
   case _result of
     Ignore -> do
-      debug $ "Ignoring AE from "
-            ++ show (KD.unAlias $ _digNodeId $ _pDig $ _aeProvenance ae )
-            ++ " for " ++ show (_prevLogIndex $ ae)
-            ++ " with " ++ show (Log.lesCnt $ _aeEntries ae) ++ " entries."
+      let str = "appendEntries - Ignoring AE from: "
+                ++ show (KD.unAlias $ _digNodeId $ _pDig $ _aeProvenance ae )
+                ++ " for " ++ show (_prevLogIndex $ ae)
+                ++ " with " ++ show (Log.lesCnt $ _aeEntries ae) ++ " entries."
+      debug str
       return ()
     SendUnconvincedResponse{..} -> enqueueRequest $ Sender.SingleAER _responseLeaderId False False
     ValidLeaderAndTerm{..} -> do

@@ -2,20 +2,22 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Kadena.Config.ClusterMembership
-  ( calcMinQuorum
-  , checkQuorum
+  ( checkQuorum
   , checkQuorumIncluding
   , ClusterMembership
+  , containsAllNodesExcluding
   , countOthers
   , countTransitional
   , hasTransitionalNodes
   , minQuorumOthers
   , minQuorumTransitional
   , mkClusterMembership
-  , otherIncluding
+  , othersExcluding
+  , othersIncluding
   , otherNodes
   , othersAsText
   , setTransitional
+  , transitionalExcluding
   , transitionalIncluding
   , transitionalNodes
   ) where
@@ -51,7 +53,8 @@ hasTransitionalNodes cm =
   _cmChangeToNodes cm /= Set.empty
 
 setTransitional :: ClusterMembership -> Set NodeId -> ClusterMembership
-setTransitional cm transNodes = mkClusterMembership (_cmOtherNodes cm) transNodes
+setTransitional cm transNodes =
+  mkClusterMembership (_cmOtherNodes cm) transNodes
 
 countOthers :: ClusterMembership -> Int
 countOthers cm = Set.size $ _cmOtherNodes cm
@@ -60,16 +63,22 @@ countTransitional :: ClusterMembership -> Int
 countTransitional cm = Set.size $ _cmChangeToNodes cm
 
 minQuorumOthers :: ClusterMembership -> Int
-minQuorumOthers cm = calcMinQuorum $ Set.size $ otherNodes cm
+minQuorumOthers cm =
+  (calcMinQuorum $ (Set.size $ otherNodes cm) + 1)
 
 minQuorumTransitional :: ClusterMembership -> Int
-minQuorumTransitional cm = calcMinQuorum $ Set.size $ transitionalNodes cm
+minQuorumTransitional cm =
+  calcMinQuorum $ Set.size $ transitionalNodes cm
 
 otherNodes :: ClusterMembership -> Set NodeId
 otherNodes = _cmOtherNodes
 
-otherIncluding :: ClusterMembership -> NodeId -> Set NodeId
-otherIncluding cm nodeToInclude =
+othersExcluding :: ClusterMembership -> NodeId -> Set NodeId
+othersExcluding cm nodeToExclude =
+  nodeToExclude `Set.delete` (otherNodes cm)
+
+othersIncluding :: ClusterMembership -> NodeId -> Set NodeId
+othersIncluding cm nodeToInclude =
   nodeToInclude `Set.insert` (otherNodes cm)
 
 othersAsText :: ClusterMembership -> Text
@@ -80,6 +89,10 @@ othersAsText cm =
 
 transitionalNodes :: ClusterMembership -> Set NodeId
 transitionalNodes = _cmChangeToNodes
+
+transitionalExcluding :: ClusterMembership -> NodeId -> Set NodeId
+transitionalExcluding cm nodeToExclude =
+  nodeToExclude `Set.delete` (transitionalNodes cm)
 
 transitionalIncluding :: ClusterMembership -> NodeId -> Set NodeId
 transitionalIncluding cm nodeToInclude =
@@ -98,14 +111,22 @@ checkSetQuorum nodes voteIds =
 
 checkQuorumIncluding :: ClusterMembership -> Set NodeId -> NodeId -> Bool
 checkQuorumIncluding cm votes nodeToInclude =
-  let othersInc = otherIncluding cm nodeToInclude
+  let othersInc = othersIncluding cm nodeToInclude
       othersQuorum = calcMinQuorum $ Set.size othersInc
       othersVotes = Set.size $ Set.filter (\x -> x `elem` othersInc) votes
-      transInc = transitionalIncluding cm nodeToInclude
-      transQuorum = calcMinQuorum $ Set.size transInc
-      transVotes = Set.size $ Set.filter (\x -> x `elem` transInc) votes
+      trans = transitionalNodes cm
+      transQuorum = calcMinQuorum $ Set.size trans
+      transVotes = Set.size $ Set.filter (\x -> x `elem` trans) votes
   in othersVotes >= othersQuorum && transVotes >= transQuorum
 
 calcMinQuorum :: Int -> Int
 calcMinQuorum 0 = 0
 calcMinQuorum n = 1 + floor (fromIntegral n / 2 :: Float)
+
+containsAllNodesExcluding :: ClusterMembership -> Set NodeId -> NodeId -> Bool
+containsAllNodesExcluding cm nodesToCheck nodeToExclude =
+  let othersEx = othersExcluding cm nodeToExclude
+      transEx = transitionalExcluding cm nodeToExclude
+  in (othersEx == Set.filter (\n -> n `elem` othersEx) nodesToCheck)
+       && (transEx == Set.filter(\n -> n `elem` transEx) nodesToCheck)
+

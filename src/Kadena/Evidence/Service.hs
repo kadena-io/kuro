@@ -81,18 +81,15 @@ handleConfUpdate = do
     maxElectionTimeout' <- return $ snd $ _electionTimeoutRange
     -- df === nodes to add/remove when adopting the env's config, which is now different from what is
     --        stored in the state
-    let df = CC.diffNodes (otherNodes _esClusterMembers) (otherNodes _clusterMembers)
-    -- update the map of nodes -> (LogIndex, UTCTime) accordingly
+    let newMapKeys = otherNodes _clusterMembers `Set.union` transitionalNodes _clusterMembers
+    let prevKeys = Map.keys _esNodeStates
+    let df = CC.diffNodes (Set.fromList prevKeys) $ Set.delete _nodeId newMapKeys
     let updatedMap = CC.updateNodeMap df _esNodeStates (const (startIndex, minBound))
-    -- df' === nodes to add/remove when moving to the transitional config-change nodes
-    let df' = CC.diffNodes (otherNodes _esClusterMembers) (transitionalNodes _clusterMembers)
-    -- update (again) the map of nodes -> (LogIndex, UTCTime) accordingly
-    let updatedMap' = CC.updateNodeMap df' updatedMap (const (startIndex, minBound))
     put $ es
       { _esClusterMembers = _clusterMembers
       , _esQuorumSize = getEvidenceQuorumSize $ countOthers _clusterMembers
       , _esChangeToQuorumSize = getEvidenceQuorumSize $ countTransitional _clusterMembers
-      , _esNodeStates = updatedMap'
+      , _esNodeStates = updatedMap
       , _esConvincedNodes = Set.difference _esConvincedNodes $ nodesToRemove df
       , _esMismatchNodes = Set.difference _esMismatchNodes $nodesToRemove df
       , _esMaxElectionTimeout = maxElectionTimeout'
@@ -126,27 +123,20 @@ runEvidenceProcessor = do
       publishEvidence
       when (newEs ^. esResetLeaderNoFollowers) tellKadenaToResetLeaderNoFollowersTimeout
       processCommitCkResult res
-      runEvidenceProcessor
     Heart tock -> do
       liftIO (pprintBeat tock) >>= debug
       put $ garbageCollectCache es
-      runEvidenceProcessor
     Bounce -> do
       put $ garbageCollectCache es
-      -- MLN: eventually remove this.  Its a placeholder if any central activity on config change needs to happen
-      -- liftIO $ CC.runWithNewConfig
-      runEvidenceProcessor
     ClearConvincedNodes -> do
       debug "clearing convinced nodes"
       put $ es {_esConvincedNodes = Set.empty}
-      runEvidenceProcessor
     CacheNewHash{..} -> do
       debug $ "new hash to cache received: " ++ show _cLogIndex
       put $ es
         { _esEvidenceCache = Map.insert _cLogIndex _cHash (_esEvidenceCache es)
         , _esMaxCachedIndex = if _cLogIndex > (_esMaxCachedIndex es) then _cLogIndex else (_esMaxCachedIndex es)
         }
-      runEvidenceProcessor
 
 processCommitCkResult :: CommitCheckResult -> EvidenceService EvidenceState ()
 processCommitCkResult (SteadyState ci) = do

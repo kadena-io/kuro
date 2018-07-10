@@ -160,8 +160,6 @@ logStaticMetrics :: Consensus ()
 logStaticMetrics = do
   Config{..} <- readConfig
   logMetric . MetricNodeId =<< viewConfig nodeId
-  -- MLN: remove
-  -- trace ("calling logMetric for MetricClusterSize with: " ++ show (1 + CM.countOthers _clusterMembers))
   logMetric $ MetricClusterSize (1 + CM.countOthers _clusterMembers)
   logMetric . MetricQuorumSize $ CM.minQuorumOthers _clusterMembers
   logMetric $ MetricChangeToClusterSize (1 + CM.countTransitional _clusterMembers)

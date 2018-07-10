@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module ConfigChangeSpec (spec) where
 
@@ -38,10 +39,9 @@ testClusterCommands =
 
                          putStrLn "\nMetric test - waiting for cluster size == 4..."
                          metricsOk <- waitForMetric testMetric1
-                         -- metrics <- gatherMetrics testMetrics1
-                         -- metricsOk <- ok `seq` checkMetrics metrics
                          metricsOk `shouldBe` True
 
+                         --checking for the right list of cluster members
                          memberMetrics1 <- gatherMetrics [testMetric3]
                          membersOk1 <- checkMetrics memberMetrics1
                          membersOk1 `shouldBe` True
@@ -51,16 +51,20 @@ testClusterCommands =
                          ccOk1 <- checkResults ccResults1
                          ccOk1 `shouldBe` True
 
-                         -- putStrLn "\nSecond run of Metric Tests:"
                          putStrLn "Metric test - waiting for cluster size == 3..."
                          metricsOk2 <- waitForMetric testMetric2
-                         -- metrics2 <- gatherMetrics testMetrics2
-                         -- metricsOk2 <- ccOk1 `seq` checkMetrics metrics2
+
                          metricsOk2 `shouldBe` True
 
+                         --checking for the right list of cluster members
                          memberAfterChange1 <- gatherMetrics [testMetric4]
                          membersAfterChangeOk1 <- checkMetrics memberAfterChange1
                          membersAfterChangeOk1 `shouldBe` True
+
+                         --running (some of) the client commands again after the config change
+                         results2 <- runClientCommands clientArgs testRequestsRepeated
+                         ok2 <- checkResults results2
+                         ok2 `shouldBe` True
 
                          stopProcesses procHandles
                          putStrLn "Done.")
@@ -181,8 +185,15 @@ passMetric tmr = putStrLn $ "Metric test passed: " ++ metricNameTm (requestTmr t
 testRequests :: [TestRequest]
 testRequests = [testReq1, testReq2, testReq3, testReq4, testReq5]
 
+_ccTestRequests0 :: [TestRequest]
+_ccTestRequests0 = [_testCfgChange0]
+
 ccTestRequests1 :: [TestRequest]
 ccTestRequests1 = [testCfgChange1]
+
+-- tests that can be repeated
+testRequestsRepeated :: [TestRequest]
+testRequestsRepeated = [testReq1, testReq4, testReq5]
 
 testReq1 :: TestRequest
 testReq1 = TestRequest
@@ -218,6 +229,13 @@ testReq5 = TestRequest
   , matchCmd = "(test.transfer \"Acct1\" \"Acct2\" 1.00)"
   , eval = checkBatchPerSecond 1000
   , displayStr = "Executes the function transferring 1.00 from Acct 1 to Acc2 4000 times" }
+
+_testCfgChange0 :: TestRequest
+_testCfgChange0 = TestRequest
+  { cmd = "configChange test-files/conf/config-change-00.yaml"
+  , matchCmd = "test-files/conf/config-change-00.yaml"
+  , eval = checkCCSuccess
+  , displayStr = "Removes node2 from the cluster" }
 
 testCfgChange1 :: TestRequest
 testCfgChange1 = TestRequest

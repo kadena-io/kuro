@@ -47,13 +47,13 @@ execClusterChangeCmd cfg ClusterChangeCommand{..} = do
   let changeInfo = _ccpInfo _cccPayload
   let theMembers = _clusterMembers cfg
   let newMembers = case _cciState changeInfo of
-                Transitional -> setTransitional theMembers (Set.fromList $ _cciNewNodeList changeInfo)
-                Final -> do
-                  let others = Set.fromList $ _cciNewNodeList changeInfo
-                  -- remove the current node from the new list of "other nodes" (it may also
-                  -- not be in the new configuration at all, in which case delete does nothing)
-                  let others' = Set.delete (_nodeId cfg) others
-                  mkClusterMembership others' Set.empty
+        Transitional -> setTransitional theMembers (Set.fromList $ _cciNewNodeList changeInfo)
+        Final -> do
+          let others = Set.fromList $ _cciNewNodeList changeInfo
+          -- remove the current node from the new list of "other nodes" (it may also
+          -- not be in the new configuration at all, in which case delete does nothing)
+          let others' = Set.delete (_nodeId cfg) others
+          mkClusterMembership others' Set.empty
   return cfg { _clusterMembers = newMembers}
 
 runConfigUpdater :: ConfigUpdater -> GlobalConfigTMVar -> IO ()

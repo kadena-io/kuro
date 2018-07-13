@@ -65,34 +65,37 @@ initializeState ev = do
   commitIndex' <- return $ Log.hasQueryResult Log.CommitIndex mv
   return $! initEvidenceState _clusterMembers commitIndex' maxElectionTimeout'
 
+-- | Updates EvidencState when it gets stale vs the globel Config's values
 handleConfUpdate :: EvidenceService EvidenceState ()
 handleConfUpdate = do
-  es@EvidenceState{..} <- get
+  es <- get
   Config{..} <- view mConfig >>= liftIO . readCurrentConfig
-  let maxTimeoutChg = (snd _electionTimeoutRange) /= _esMaxElectionTimeout
-  let clusterChg =  otherNodes _esClusterMembers /= otherNodes _clusterMembers ||
-                    transitionalNodes _esClusterMembers /= transitionalNodes _clusterMembers
-  if not maxTimeoutChg && not clusterChg
-    then do
+  let maxTimeoutChanged = (snd _electionTimeoutRange) /= (_esMaxElectionTimeout es)
+  let clusterMembersChanged =  otherNodes (_esClusterMembers es) /= otherNodes _clusterMembers ||
+                    transitionalNodes (_esClusterMembers es) /= transitionalNodes _clusterMembers
+  if not maxTimeoutChanged && not clusterMembersChanged
+    then do -- ^ No update needed
       debug "Config update received but no action required"
       return ()
   else do
-    let newEs= case (maxTimeoutChg, clusterChg) of
-          (True, False) -> chgMaxTimeout es (snd _electionTimeoutRange)
-          (False, True) -> chgNodes es _clusterMembers _nodeId
-          _             -> do -- update both
-            let newEs' = chgMaxTimeout es (snd _electionTimeoutRange)
-            chgNodes newEs' _clusterMembers _nodeId
+    let newEs= case (maxTimeoutChanged, clusterMembersChanged) of
+          (True, False) -> changeMaxTimeoutES es (snd _electionTimeoutRange) -- ^ Only max-timeout needs updating
+          (False, True) -> changeNodesES es _clusterMembers _nodeId
+          (_, _)        -> do -- ^ Both the max-timeout and the cluster members require updating
+            let newEs' = changeMaxTimeoutES es (snd _electionTimeoutRange)
+            changeNodesES newEs' _clusterMembers _nodeId
     put newEs -- MLN: original code calls publish evidence with the original es (prior to updating)...
     publishEvidence
     debug "Config update received, update implemented"
     return ()
 
-chgMaxTimeout :: EvidenceState -> Int -> EvidenceState
-chgMaxTimeout es n = es { _esMaxElectionTimeout = n }
+-- | Create a new EvidenceState with the supplied max-timeout value
+changeMaxTimeoutES :: EvidenceState -> Int -> EvidenceState
+changeMaxTimeoutES es n = es { _esMaxElectionTimeout = n }
 
-chgNodes :: EvidenceState -> ClusterMembership -> NodeId -> EvidenceState
-chgNodes es members myNodeId =
+-- | Create a new EvidenceState, updating the fields reflecting a change to the cluster members
+changeNodesES :: EvidenceState -> ClusterMembership -> NodeId -> EvidenceState
+changeNodesES es members myNodeId =
     let newMapKeys = otherNodes members `Set.union` transitionalNodes members
         prevKeys = Map.keys $ _esNodeStates es
         df = CC.diffNodes (Set.fromList prevKeys) $ Set.delete myNodeId newMapKeys

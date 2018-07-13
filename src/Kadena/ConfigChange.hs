@@ -18,6 +18,7 @@ import qualified Data.Map as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Yaml as Y
+
 import Kadena.Config.ClusterMembership
 import Kadena.Config.TMVar
 import Kadena.ConfigChange.Util
@@ -35,9 +36,9 @@ mutateGlobalConfig gc (ProcClusterChgSucc cmd) = do
   then do
     conf' <- execClusterChangeCmd _gcConfig cmd
     atomically $ do
-      putTMVar gc $ GlobalConfig { _gcVersion = ConfigVersion $ configVersion _gcVersion + 1
-                                 , _gcConfig = conf' }
-      return ClusterChangeSuccess
+        putTMVar gc $ GlobalConfig { _gcVersion = ConfigVersion $ configVersion _gcVersion + 1
+                                   , _gcConfig = conf' }
+        return ClusterChangeSuccess
   else do
     atomically $ putTMVar gc origGc
     return $ ClusterChangeFailure $ "Admin signatures missing from: " ++ show missingKeys

@@ -65,38 +65,46 @@ initializeState ev = do
   commitIndex' <- return $ Log.hasQueryResult Log.CommitIndex mv
   return $! initEvidenceState _clusterMembers commitIndex' maxElectionTimeout'
 
--- | This handles initialization and config updates
 handleConfUpdate :: EvidenceService EvidenceState ()
 handleConfUpdate = do
   es@EvidenceState{..} <- get
   Config{..} <- view mConfig >>= liftIO . readCurrentConfig
-  -- if there are no transitional config-change nodes AND there are no changes to the current nodes configuration
-  if not (hasTransitionalNodes _clusterMembers)
-     && otherNodes _esClusterMembers == otherNodes _clusterMembers
-     && (snd _electionTimeoutRange) == _esMaxElectionTimeout
-  then do
-    debug "Config update received but no action required"
-    return ()
+  let maxTimeoutChg = (snd _electionTimeoutRange) /= _esMaxElectionTimeout
+  let clusterChg =  otherNodes _esClusterMembers /= otherNodes _clusterMembers ||
+                    transitionalNodes _esClusterMembers /= transitionalNodes _clusterMembers
+  if not maxTimeoutChg && not clusterChg
+    then do
+      debug "Config update received but no action required"
+      return ()
   else do
-    maxElectionTimeout' <- return $ snd $ _electionTimeoutRange
-    -- df === nodes to add/remove when adopting the env's config, which is now different from what is
-    --        stored in the state
-    let newMapKeys = otherNodes _clusterMembers `Set.union` transitionalNodes _clusterMembers
-    let prevKeys = Map.keys _esNodeStates
-    let df = CC.diffNodes (Set.fromList prevKeys) $ Set.delete _nodeId newMapKeys
-    let updatedMap = CC.updateNodeMap df _esNodeStates (const (startIndex, minBound))
-    put $ es
-      { _esClusterMembers = _clusterMembers
-      , _esQuorumSize = getEvidenceQuorumSize $ countOthers _clusterMembers
-      , _esChangeToQuorumSize = getEvidenceQuorumSize $ countTransitional _clusterMembers
-      , _esNodeStates = updatedMap
-      , _esConvincedNodes = Set.difference _esConvincedNodes $ nodesToRemove df
-      , _esMismatchNodes = Set.difference _esMismatchNodes $nodesToRemove df
-      , _esMaxElectionTimeout = maxElectionTimeout'
-      }
+    let newEs= case (maxTimeoutChg, clusterChg) of
+          (True, False) -> chgMaxTimeout es (snd _electionTimeoutRange)
+          (False, True) -> chgNodes es _clusterMembers _nodeId
+          _             -> do -- update both
+            let newEs' = chgMaxTimeout es (snd _electionTimeoutRange)
+            chgNodes newEs' _clusterMembers _nodeId
+    put newEs -- MLN: original code calls publish evidence with the original es (prior to updating)...
     publishEvidence
     debug "Config update received, update implemented"
     return ()
+
+chgMaxTimeout :: EvidenceState -> Int -> EvidenceState
+chgMaxTimeout es n = es { _esMaxElectionTimeout = n }
+
+chgNodes :: EvidenceState -> ClusterMembership -> NodeId -> EvidenceState
+chgNodes es members myNodeId =
+    let newMapKeys = otherNodes members `Set.union` transitionalNodes members
+        prevKeys = Map.keys $ _esNodeStates es
+        df = CC.diffNodes (Set.fromList prevKeys) $ Set.delete myNodeId newMapKeys
+        updatedMap = CC.updateNodeMap df (_esNodeStates es) (const (startIndex, minBound))
+        in es
+          { _esClusterMembers = members
+          , _esQuorumSize = getEvidenceQuorumSize $ countOthers members
+          , _esChangeToQuorumSize = getEvidenceQuorumSize $ countTransitional members
+          , _esNodeStates = updatedMap
+          , _esConvincedNodes = Set.difference (_esConvincedNodes es) $ nodesToRemove df
+          , _esMismatchNodes = Set.difference (_esMismatchNodes es) $nodesToRemove df
+          }
 
 publishEvidence :: EvidenceService EvidenceState ()
 publishEvidence = do
@@ -334,7 +342,6 @@ processEvidence aers = do
 -- | The semantics for this are that the MVar is initialized empty, when Evidence needs to signal consensus it puts
 -- the MVar and when consensus needs to check it (every heartbeat) it does so. Now, Evidence will be tryPut-ing all
 -- the freaking time (possibly clusterSize/aerBatchSize per second) but Consensus only needs to check once per second.
---tellKadenaToResetLeaderNoFollowersTimeout :: EvidenceProcEnv ()
 tellKadenaToResetLeaderNoFollowersTimeout :: EvidenceService EvidenceState ()
 tellKadenaToResetLeaderNoFollowersTimeout = do
   m <- view mResetLeaderNoFollowers

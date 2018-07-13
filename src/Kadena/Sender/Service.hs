@@ -28,7 +28,7 @@ import Data.Serialize hiding (get, put)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Thyme.Clock (UTCTime, getCurrentTime)
-
+  
 import Kadena.Evidence.Types hiding (Heart)
 import Kadena.Event (pprintBeat)
 import Kadena.Log.Types (LogServiceChannel)
@@ -56,7 +56,7 @@ data ServiceEnv = ServiceEnv
   -- Log Storage
   , _logService :: !LogServiceChannel
   -- Evidence Thread's Published State
-  , _getEvidenceState :: !(IO PublishedEvidenceState)
+  , _getEvidenceState :: !(MVar PublishedEvidenceState)
   , _publishMetric :: !(Metric -> IO ())
   , _config :: !Cfg.GlobalConfigTMVar
   , _pubCons :: !(MVar Spec.PublishedConsensus)
@@ -110,7 +110,7 @@ runSenderService dispatch gcm debugFn publishMetric' mPubEvState mPubCons = do
     , _outboundGeneral = dispatch ^. KD.outboundGeneral
     -- Log Storage
     , _logService = dispatch ^. KD.logService
-    , _getEvidenceState = readMVar mPubEvState
+    , _getEvidenceState = mPubEvState
     , _publishMetric = publishMetric'
     , _config = gcm
     , _pubCons = mPubCons
@@ -150,7 +150,8 @@ serviceRequests = do
         put ss
         case m of
           BroadcastAE{..} -> do
-            evState <- view getEvidenceState >>= liftIO
+            mEvState <- view getEvidenceState
+            evState <- liftIO $ readMVar mEvState
             sendAllAppendEntries (_pesNodeStates evState) (_pesConvincedNodes evState) _srAeBoardcastControl
           EstablishDominance -> establishDominance
           SingleAER{..} -> sendAppendEntriesResponse _srFor _srSuccess _srConvinced
@@ -282,7 +283,6 @@ canBroadcastAE cm nodeIndexMap ct myNodeId' vts broadcastControl =
       limit' <- view aeReplicationLogLimit
       mv <- queryLogs $ Set.singleton $ Log.GetInfoAndEntriesAfter (Just $ 1 + mni) limit'
       (pli,plt, es) <- return $ Log.hasQueryResult (Log.InfoAndEntriesAfter (Just $ 1 + mni) limit') mv
-
       return $ InSync $ AE' $ AppendEntries ct myNodeId' pli plt es Set.empty NewMsg
     else do
       inSyncRpc <- case broadcastControl of

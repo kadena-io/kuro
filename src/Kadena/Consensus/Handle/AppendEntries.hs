@@ -9,6 +9,7 @@ module Kadena.Consensus.Handle.AppendEntries
   , handle
   ) where
 
+import Control.Exception (Exception, throw)
 import Control.Lens hiding (Index)
 import Control.Monad.Reader
 import Control.Monad.State (get)
@@ -75,6 +76,10 @@ data ValidResponse =
       { _newRequestKeys :: HashSet RequestKey
       , _newEntries :: ReplicateLogEntries } |
     DoNothing
+
+data LogAppendException = LogAppendException String
+  deriving Show
+instance Exception LogAppendException
 
 -- THREAD: SERVER MAIN. updates state
 handleAppendEntries :: (MonadWriter [String] m, MonadReader AppendEntriesEnv m, MonadIO m) =>
@@ -180,8 +185,10 @@ appendLogEntries _myId pli newEs
   | otherwise =
     case Log.toReplicateLogEntries pli newEs of
       Left err -> do
-        tell ["Failure to Append Logs: " ++ err]
-        return SendFailureResponse
+        -- MLN: Is this a fatal error? at least for now, for debugging...
+        --tell ["Failure to Append Logs: " ++ err]
+        --return SendFailureResponse
+        throw $ LogAppendException $ "Failure to Append Logs: " ++ err
       Right rle -> do
         replay <- return $ HashSet.fromList $ fmap (toRequestKey . _leCommand) (Map.elems (newEs ^. Log.logEntries))
         tell ["replicated LogEntry(s): " ++ show (_rleMinLogIdx rle) ++ " through " ++ show (_rleMaxLogIdx rle)]

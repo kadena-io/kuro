@@ -6,6 +6,7 @@ module Kadena.Consensus.Handle.Command
     (handleBatch)
     where
 
+import Control.Concurrent.MVar
 import Control.Lens
 import Control.Monad.Reader
 import Control.Monad.State
@@ -103,7 +104,8 @@ handleBatch cmdbBatch = do
         sendHistoryNewKeys $ HashSet.union falsePositive $ HashSet.fromList $ toRequestKey . snd <$> _unBPAlreadySeen alreadySeen
       -- the false positives we already collisions so no need to add them
       csCmdBloomFilter .= updateBloom newEntries (_csCmdBloomFilter s)
-      es <- view KD.evidenceState >>= liftIO
+      mEs <- view KD.evidenceState
+      es <- liftIO $ readMVar mEs
       gConfig <- view cfg
       theCfg <- liftIO $ TMV.readCurrentConfig gConfig
       let willBroadcast = Sender.willBroadcastAE (TMV._clusterMembers theCfg)

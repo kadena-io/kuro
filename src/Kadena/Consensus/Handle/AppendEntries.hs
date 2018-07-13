@@ -207,13 +207,6 @@ logHashChange :: Hash -> KD.Consensus ()
 logHashChange (Hash mLastHash) =
   logMetric $ KD.MetricHash mLastHash
 
-{-
-handleCC :: ClusterChangeMsg -> KD.Consensus ()
-handleCC (ClusterChangeMsg _ ae) = do
-  error "handleCC is actually called"
-  handle ae
--}
-
 handle :: AppendEntries -> KD.Consensus ()
 handle ae = do
   start' <- now

@@ -12,7 +12,7 @@ module Kadena.ConfigChange
 
 import Control.Concurrent.STM
 import Control.Monad.IO.Class
-import Control.Monad.Catch hiding (handle)
+import Control.Monad.Catch
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Set (Set)

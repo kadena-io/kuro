@@ -14,7 +14,7 @@ module Kadena.HTTP.ApiServer
   ) where
 
 import Prelude hiding (log)
-import Control.Lens hiding ((.=))
+import Control.Lens
 import Control.Concurrent
 import Control.Monad.Reader
 

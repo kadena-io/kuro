@@ -227,10 +227,10 @@ checkPartialEvidence evidenceNeeded changeToEvNeeded partialEvidence = do
 
 checkPartialEvidence' :: (Set NodeId) -> (Set NodeId) -> Int -> Int -> Map LogIndex (Set NodeId) -> Either [Int] LogIndex
 checkPartialEvidence' nodes chgToNodes evidenceNeeded changeToEvNeeded partialEvidence =
-  -- | fold the (Map LogIndex (Set NodeId)) into [Map LogIndex Int]
-  --   where the Ints represent the count of votes at a particular index
-  --   the first list item is built from log entries whose nodeId is part of the current config
-  --   the second list item is built from log entries whose nodeId is part of the transitional config
+  -- fold the (Map LogIndex (Set NodeId)) into [Map LogIndex Int]
+  -- where the Ints represent the count of votes at a particular index
+  -- the first list item is built from log entries whose nodeId is part of the current config
+  -- the second list item is built from log entries whose nodeId is part of the transitional config
   let emptyMap = Map.empty :: Map LogIndex Int
       (nodeMap, changeToNodeMap) =
         Map.foldrWithKey f (emptyMap, emptyMap) partialEvidence where

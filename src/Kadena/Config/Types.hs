@@ -42,7 +42,7 @@ instance ToJSON KeyPair where
 instance FromJSON KeyPair where
   parseJSON = lensyParseJSON 3
 
--- | Not implemented
+-- Not implemented
 data NodeUpdateCommand =
     NodeToPassive
       { _nucNodeId :: !NodeId } |
@@ -54,7 +54,7 @@ data NodeUpdateCommand =
       , _nucKeyPairPath :: !FilePath }
     deriving (Show, Eq, Ord, Generic, Serialize)
 
-  -- | Not implemented
+-- Not implemented
 data AdminUpdateCommand =
     AddAdminKey
       { _aucAlias :: !Alias
@@ -66,7 +66,7 @@ data AdminUpdateCommand =
       { _aucAlias :: !Alias }
     deriving (Show, Eq, Ord, Generic, Serialize)
 
-    -- | Not implemented
+-- Not implemented
 data AdminCommand =
     RotateLeader
       { _cucTerm :: !Term }

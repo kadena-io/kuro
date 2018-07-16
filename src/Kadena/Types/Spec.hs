@@ -17,7 +17,6 @@ module Kadena.Types.Spec
   , csNodeRole, csTerm, csVotedFor, csLazyVote, csCurrentLeader, csIgnoreLeader
   , csTimerThread, csYesVotes, csPotentialVotes, csLastCommitTime
   , csTimeSinceLastAER, csCmdBloomFilter, csInvalidCandidateResults
-  , Event(..)
   , mkConsensusEnv
   , PublishedConsensus(..),pcLeader,pcRole,pcTerm,pcYesVotes
   , LazyVote(..), lvVoteFor, lvAllReceived

@@ -9,13 +9,12 @@ module Kadena.Types.History
   , PossiblyIncompleteResults(..)
   , ListenerResult(..)
   , HistoryEnv(..)
-  , historyChannel, debugPrint, getTimestamp, dbPath
+  , henvHistoryChannel, henvDebugPrint, henvGetTimestamp, henvDbPath
   , HistoryState(..)
   , registeredListeners, persistence
   , PersistenceSystem(..)
   , HistoryChannel(..)
   , HistoryService
-  , module X
   ) where
 
 import Control.Lens hiding (Index)
@@ -31,12 +30,12 @@ import Data.Thyme.Clock (UTCTime)
 
 import Database.SQLite3.Direct
 
-import Kadena.Types.Base as X
-import Kadena.Types.Config as X
-import Kadena.Types.Command as X
-import Kadena.Types.Comms as X
-import Kadena.Types.Metric as X
-import Kadena.Types.Message as X
+import Kadena.Types.Base
+import Kadena.Types.Config
+import Kadena.Types.Command
+import Kadena.Types.Comms
+import Kadena.Types.Metric
+import Kadena.Types.Message
 import Kadena.Types.Event (Beat)
 
 newtype ExistenceResult = ExistenceResult
@@ -68,7 +67,7 @@ data History =
   PruneInFlightKeys
     { hKeysToPrune :: !(HashSet RequestKey) } |
   Bounce |
-  Heart Beat
+  HistoryBeat Beat
   deriving (Eq)
 
 newtype HistoryChannel = HistoryChannel (Chan History)
@@ -79,10 +78,10 @@ instance Comms History HistoryChannel where
   writeComm (HistoryChannel c) = writeCommNormal c
 
 data HistoryEnv = HistoryEnv
-  { _historyChannel :: !HistoryChannel
-  , _debugPrint :: !(String -> IO ())
-  , _getTimestamp :: !(IO UTCTime)
-  , _dbPath :: !(Maybe FilePath)
+  { _henvHistoryChannel :: !HistoryChannel
+  , _henvDebugPrint :: !(String -> IO ())
+  , _henvGetTimestamp :: !(IO UTCTime)
+  , _henvDbPath :: !(Maybe FilePath)
   }
 makeLenses ''HistoryEnv
 

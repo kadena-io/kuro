@@ -4,7 +4,7 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE FlexibleInstances #-}
 
-module Kadena.Config.Types
+module Kadena.Types.Config
   ( ConfigUpdater(..)
   , DiffNodes(..)
   , GlobalConfigTMVar

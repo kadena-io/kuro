@@ -24,8 +24,8 @@ import Kadena.Config.TMVar
 import Kadena.ConfigChange.Util
 import Kadena.Types.Base
 import Kadena.Types.Command
+import Kadena.Types.Config
 import Kadena.Config
-import Kadena.Config.Types
 
 mutateGlobalConfig :: GlobalConfigTMVar -> ProcessedClusterChg CCPayload -> IO ClusterChangeResult
 mutateGlobalConfig _ (ProcClusterChgFail err) = return $ ClusterChangeFailure err

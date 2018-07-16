@@ -11,7 +11,7 @@ import Control.Concurrent.STM
 import qualified Data.Yaml as Y
 
 import Kadena.Config.TMVar
-import Kadena.Config.Types
+import Kadena.Types.Config
 import Kadena.Types.Base
 import Kadena.Types.KeySet
 

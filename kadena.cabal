@@ -38,7 +38,6 @@ library
                      , Kadena.Config
                      , Kadena.Config.ClusterMembership
                      , Kadena.Config.TMVar
-                     , Kadena.Config.Types
                      , Kadena.ConfigChange
                      , Kadena.ConfigChange.Types
                      , Kadena.ConfigChange.Util
@@ -91,6 +90,7 @@ library
                      , Kadena.Types.Base
                      , Kadena.Types.Command
                      , Kadena.Types.Comms
+                     , Kadena.Types.Config
                      , Kadena.Types.Dispatch
                      , Kadena.Types.Entity
                      , Kadena.Types.Event

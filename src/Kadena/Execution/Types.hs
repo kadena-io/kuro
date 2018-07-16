@@ -33,7 +33,7 @@ import Pact.Types.RPC (PactRPC)
 
 import Kadena.Types.Base (NodeId)
 import Kadena.Types.PactDB
-import Kadena.Config.Types (GlobalConfigTMVar)
+import Kadena.Types.Config (GlobalConfigTMVar)
 import Kadena.Types.Comms (Comms(..),initCommsNormal,readCommNormal,writeCommNormal)
 import Kadena.Types.KeySet
 import Kadena.Types.Metric (Metric)

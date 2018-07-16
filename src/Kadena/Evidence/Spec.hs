@@ -32,6 +32,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Thyme.Clock
 
+import Kadena.Config.TMVar
 import Kadena.Types.Base
 import Kadena.Types.Config
 import Kadena.Types.Metric
@@ -107,26 +108,33 @@ getTimestamp ReceivedMsg{..} = case _pTimeStamp of
   Just v -> _unReceivedAt v
 
 -- `checkEvidence` and `processResult` are staying here to keep them close to `Result`
-checkEvidence :: EvidenceState -> AppendEntriesResponse -> Result
-checkEvidence es aer@AppendEntriesResponse{..} = case Map.lookup _aerNodeId $ _esNodeStates es of
-  Just (lastLogIndex', lastTimestamp')
-    | fromIntegral (interval lastTimestamp' (getTimestamp _aerProvenance)) < (_esMaxElectionTimeout es)
-      && _aerIndex < lastLogIndex' -> Noop
-  _ -> do
-    if not _aerConvinced
-      then Unconvinced _aerNodeId _aerIndex (getTimestamp _aerProvenance)
-    else if not _aerSuccess
-      then Unsuccessful _aerNodeId _aerIndex (getTimestamp _aerProvenance)
-    else if _aerIndex == _esCommitIndex es && _aerHash == es ^. esHashAtCommitIndex
-      then SuccessfulSteadyState _aerNodeId _aerIndex (getTimestamp _aerProvenance)
-    else case Map.lookup _aerIndex (es ^. esEvidenceCache) of
-      Nothing -> SuccessfulButCacheMiss aer
-      Just h | h == _aerHash -> Successful _aerNodeId _aerIndex (getTimestamp _aerProvenance)
-             | otherwise     -> MisMatch _aerNodeId _aerIndex
-      -- this one is interesting. We are going to make it the responsibility of the follower to identify that they have a bad incremental hash
-      -- and prune all of their uncommitted logs.
+checkEvidence :: Config -> EvidenceState -> AppendEntriesResponse -> IO Result
+checkEvidence cfg es aer@AppendEntriesResponse{..} = do
+  let validNode = checkValidSender cfg _aerNodeId
+  if not validNode
+    then return $ InvalidNode _aerNodeId _aerIndex (getTimestamp _aerProvenance)
+  else return $ case Map.lookup _aerNodeId (_esNodeStates es) of
+    Just (lastLogIndex', lastTimestamp')
+      | fromIntegral (interval lastTimestamp' (getTimestamp _aerProvenance)) < (_esMaxElectionTimeout es)
+        && _aerIndex < lastLogIndex' -> Noop
+    _ -> do
+      if not _aerConvinced
+        then Unconvinced _aerNodeId _aerIndex (getTimestamp _aerProvenance)
+      else if not _aerSuccess
+        then Unsuccessful _aerNodeId _aerIndex (getTimestamp _aerProvenance)
+      else if _aerIndex == _esCommitIndex es && _aerHash == es ^. esHashAtCommitIndex
+        then SuccessfulSteadyState _aerNodeId _aerIndex (getTimestamp _aerProvenance)
+      else case Map.lookup _aerIndex (es ^. esEvidenceCache) of
+        Nothing -> SuccessfulButCacheMiss aer
+        Just h | h == _aerHash -> Successful _aerNodeId _aerIndex (getTimestamp _aerProvenance)
+              | otherwise     -> MisMatch _aerNodeId _aerIndex
+        -- this one is interesting. We are going to make it the responsibility of the follower to identify that they have a bad incremental hash
+        -- and prune all of their uncommitted logs.
 {-# INLINE checkEvidence #-}
 
+-- | Is the sender a valid node in the configuration?
+checkValidSender :: Config -> NodeId -> Bool
+checkValidSender cfg senderId = clusterMember (_clusterMembers cfg) senderId
 
 processResult :: MonadState EvidenceState m => Result -> m ()
 processResult Unconvinced{..} = do
@@ -156,7 +164,6 @@ processResult Successful{..} = do
               in if null s then Nothing else Just deleted
     Just _ -> return ()
     Nothing -> return ()
-
 -- this one is interesting, we have an old but successful message... I think we just drop it
 processResult SuccessfulSteadyState{..} = do
   -- basically, nothings going on and these are just heartbeats
@@ -171,4 +178,7 @@ processResult MisMatch{..} = do
   esConvincedNodes %= Set.insert _rNodeId
   esMismatchNodes %= Set.insert _rNodeId
 processResult Noop = return ()
+processResult InvalidNode{..} = do
+  esConvincedNodes %= Set.delete _rNodeId
+  esNodeStates %= Map.delete _rNodeId
 {-# INLINE processResult #-}

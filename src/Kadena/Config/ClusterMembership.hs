@@ -9,6 +9,7 @@ module Kadena.Config.ClusterMembership
   , countOthers
   , countTransitional
   , hasTransitionalNodes
+  , clusterMember
   , minQuorumOthers
   , minQuorumTransitional
   , mkClusterMembership
@@ -158,3 +159,7 @@ containsAllNodesExcluding cm nodesToCheck nodeToExclude =
   in (othersEx == Set.filter (\n -> n `elem` othersEx) nodesToCheck)
        && (transEx == Set.filter(\n -> n `elem` transEx) nodesToCheck)
 
+-- | Does the given nodeId exist in this cluster configuration -- i.e., in either the 'others'
+-- or '''transitional' sets?
+clusterMember :: ClusterMembership -> NodeId -> Bool
+clusterMember cm node = node `Set.member` (otherNodes cm) || node `Set.member` (transitionalNodes cm) 

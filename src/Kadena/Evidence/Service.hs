@@ -20,17 +20,14 @@ import Data.Thyme.Clock
 import Safe
 
 import Kadena.Config.ClusterMembership
+import Kadena.Config.TMVar
+import Kadena.Config.Types
 import Kadena.ConfigChange as CC
-import Kadena.Util.Util (linkAsyncTrack)
-import Kadena.Types.Dispatch (Dispatch)
 import Kadena.Event (pprintBeat)
-import Kadena.Types.Event (ResetLeaderNoFollowersTimeout(..))
 import Kadena.Evidence.Spec as X
 import Kadena.Types.Metric (Metric)
 import Kadena.Config.TMVar
 import Kadena.Evidence.Types
-import Kadena.Types.Log as Log
-import Kadena.Types.Message
 import Kadena.Types.Base
 import Kadena.Types.Comms
 import Kadena.Types.Config
@@ -337,8 +334,13 @@ processCacheMisses = do
 
 processEvidence :: [AppendEntriesResponse] -> EvidenceService EvidenceState CommitCheckResult
 processEvidence aers = do
-  es <- get
-  mapM_ processResult (checkEvidence es <$> aers)
+  gc <- view mConfig
+  cfg <- liftIO $ readCurrentConfig gc -- :: Config
+  es <- get -- :: EvidenceState
+  forM_ aers (\aer -> do
+    res <- liftIO $ checkEvidence cfg es aer -- :: Result
+    processResult res :: EvidenceService EvidenceState ()
+    return () )
   checkForNewCommitIndex
 {-# INLINE processEvidence #-}
 

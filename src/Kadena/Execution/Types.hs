@@ -38,10 +38,8 @@ import Kadena.Types.Comms (Comms(..),initCommsNormal,readCommNormal,writeCommNor
 import Kadena.Types.KeySet
 import Kadena.Types.Metric (Metric)
 import Kadena.Types.Log (LogEntry,LogEntries)
-
 import Kadena.Types.Event (Beat)
-
-import Kadena.History.Types (HistoryChannel)
+import Kadena.Types.History (HistoryChannel)
 import Kadena.Private.Types (PrivateChannel)
 import Kadena.Types.Entity (EntityConfig)
 

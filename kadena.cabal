@@ -60,7 +60,6 @@ library
                      , Kadena.HTTP.Static
                      , Kadena.History.Persistence
                      , Kadena.History.Service
-                     , Kadena.History.Types
                      , Kadena.Log
                      , Kadena.Log.LogApi
                      , Kadena.Log.Persistence
@@ -94,6 +93,7 @@ library
                      , Kadena.Types.Dispatch
                      , Kadena.Types.Entity
                      , Kadena.Types.Event
+                     , Kadena.Types.History
                      , Kadena.Types.KeySet
                      , Kadena.Types.Log
                      , Kadena.Types.Message

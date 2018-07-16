@@ -40,7 +40,7 @@ import Kadena.Types.KeySet
 import Kadena.Types.Log
 import Kadena.Types.Dispatch (Dispatch)
 import qualified Kadena.Types.Dispatch as D
-import qualified Kadena.History.Types as History
+import qualified Kadena.Types.History as History
 import qualified Kadena.Log as Log
 import Kadena.Types.Comms (Comms(..))
 import Kadena.Command

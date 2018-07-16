@@ -2,7 +2,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
-module Kadena.History.Types
+module Kadena.Types.History
   ( History(..)
   , DbEnv(..)
   , ExistenceResult(..)

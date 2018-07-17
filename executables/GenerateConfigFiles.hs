@@ -33,7 +33,7 @@ import System.Exit
 import qualified Kadena.Config.ClusterMembership as CM
 import Kadena.Config.TMVar
 import Kadena.Types.PactDB
-import Kadena.Types hiding (logDir)
+import Kadena.Types
 import Kadena.Types.Entity
 import Apps.Kadena.Client hiding (main)
 
@@ -108,7 +108,7 @@ data ConfigParams = ConfigParams
   , electionMax :: !Int
   , electionMin :: !Int
   , inMemTxs :: !Int
-  , logDir :: !FilePath
+  , cpLogDir :: !FilePath
   , confDir :: !FilePath
   , enableWB :: !Bool
   , hostStaticDirB :: !Bool
@@ -208,7 +208,7 @@ getParams cfgMode = do
     , electionMax = electionMax' * 1000000
     , electionMin = electionMin' * 1000000
     , inMemTxs = inMemTxs'
-    , logDir = logDir'
+    , cpLogDir = logDir'
     , confDir = confDir'
     , enableWB = enableWB'
     , hostStaticDirB = hostStaticDir'
@@ -299,7 +299,7 @@ createClusterConfig cp@ConfigParams{..} adminKeys' (privMap, pubMap) entMap apiP
   , _logRules             = mkLogRules
   , _apiPort              = apiP
   , _entity               = entMap M.! nid
-  , _logDir               = logDir
+  , _logDir               = cpLogDir
   , _aeBatchSize          = aeRepLimit
   , _preProcThreadCount   = ppThreadCnt
   , _preProcUsePar        = ppUsePar
@@ -314,7 +314,7 @@ mkPactPersistConfig ConfigParams{..} enablePersist NodeId{..} = PactPersistConfi
   , _ppcBackend = if enablePersist
                   then PPBSQLite
                        { _ppbSqliteConfig = SQLiteConfig {
-                             dbFile = logDir </> (show $ _alias) ++ "-pact.sqlite"
+                             dbFile = cpLogDir </> (show $ _alias) ++ "-pact.sqlite"
                            , pragmas = if enableWB then [] else fastNoJournalPragmas } }
                   else PPBInMemory
   }

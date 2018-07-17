@@ -30,6 +30,8 @@ import System.FilePath
 import Kadena.Util.Util
 import Kadena.Types.Base
 import Kadena.Types.Config
+import Kadena.Types.Command (CommandResult(..))
+import Kadena.Types.Comms (Comms(..))
 import Kadena.Config.TMVar
 import Kadena.Types.History as X
 import qualified Kadena.History.Persistence as DB
@@ -44,21 +46,21 @@ initHistoryEnv
   -> Config
   -> HistoryEnv
 initHistoryEnv dispatch' debugPrint' getTimestamp' rconf = HistoryEnv
-  { _historyChannel = dispatch' ^. D.historyChannel
-  , _debugPrint = debugPrint'
-  , _getTimestamp = getTimestamp'
-  , _dbPath = if rconf ^. enablePersistence
+  { _henvHistoryChannel = dispatch' ^. D.historyChannel
+  , _henvDebugPrint = debugPrint'
+  , _henvGetTimestamp = getTimestamp'
+  , _henvDbPath = if rconf ^. enablePersistence
               then Just $ (rconf ^. logDir) </> (show $ _alias $ rconf ^. (nodeId)) ++ "-logResult.sqlite"
               else Nothing
   }
 
 runHistoryService :: HistoryEnv -> Maybe HistoryState -> IO ()
 runHistoryService env mState = catchAndRethrow "historyService" $ do
-  let dbg = env ^. debugPrint
-  let oChan = env ^. historyChannel
+  let dbg = env ^. henvDebugPrint
+  let oChan = env ^. henvHistoryChannel
   initHistoryState <- case mState of
     Nothing -> do
-      pers <- setupPersistence dbg (env ^. dbPath)
+      pers <- setupPersistence dbg (env ^. henvDbPath)
       return $! HistoryState { _registeredListeners = HashMap.empty, _persistence = pers }
     Just mState' -> return mState'
   dbg "[Service|Histoy] Launch!"
@@ -67,11 +69,11 @@ runHistoryService env mState = catchAndRethrow "historyService" $ do
 
 debug :: String -> HistoryService ()
 debug s = do
-  dbg <- view debugPrint
+  dbg <- view henvDebugPrint
   liftIO $! dbg $ "[Service|History] " ++ s
 
 now :: HistoryService UTCTime
-now = view getTimestamp >>= liftIO
+now = view henvGetTimestamp >>= liftIO
 
 setupPersistence :: (String -> IO ()) -> Maybe FilePath -> IO PersistenceSystem
 setupPersistence dbg Nothing = do
@@ -98,7 +100,7 @@ handle oChan = do
   q <- liftIO $ readComm oChan
   unless (q == Bounce) $ do
     case q of
-      Heart t -> do
+      HistoryBeat t -> do
         liftIO (pprintBeat t) >>= debug
 #if WITH_KILL_SWITCH
         _k''

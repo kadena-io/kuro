@@ -21,7 +21,6 @@ import Safe
 
 import Kadena.Config.ClusterMembership
 import Kadena.Config.TMVar
-import Kadena.Config.Types
 import Kadena.ConfigChange as CC
 import Kadena.Event (pprintBeat)
 import Kadena.Evidence.Spec as X
@@ -31,11 +30,15 @@ import Kadena.Evidence.Types
 import Kadena.Types.Base
 import Kadena.Types.Comms
 import Kadena.Types.Config
-
+import Kadena.Types.Dispatch (Dispatch)
+import Kadena.Types.Event (ResetLeaderNoFollowersTimeout(..))
+import Kadena.Types.Message (AppendEntriesResponse(..))
+import Kadena.Util.Util (linkAsyncTrack)
 -- TODO: re-integrate EKG when Evidence Service is finished and hspec tests are written
 -- import Kadena.Types.Metric
-import qualified Kadena.Types.Dispatch as Dispatch
 import qualified Kadena.Log.Types as Log
+import qualified Kadena.Types.Log as Log
+import qualified Kadena.Types.Dispatch as Dispatch
 
 initEvidenceEnv :: Dispatch
                 -> (String -> IO ())

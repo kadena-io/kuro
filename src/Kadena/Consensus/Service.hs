@@ -52,7 +52,7 @@ launchHistoryService :: Dispatch
   -> IO ()
 launchHistoryService dispatch' dbgPrint' getTimestamp' rconf = do
   linkAsyncTrack "HistoryThread" (History.runHistoryService (History.initHistoryEnv dispatch' dbgPrint' getTimestamp' rconf) Nothing)
-  linkAsyncTrack "HistoryHB" (foreverHeart (_historyChannel dispatch') 1000000 History.Heart)
+  linkAsyncTrack "HistoryHB" (foreverHeart (_historyChannel dispatch') 1000000 HistoryBeat)
 
 launchPreProcService :: Dispatch
   -> (String -> IO ())

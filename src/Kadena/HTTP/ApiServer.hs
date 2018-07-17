@@ -48,12 +48,12 @@ import Kadena.Command (SubmitCC(..))
 import Kadena.Types.Command
 import Kadena.Types.Base
 import Kadena.Types.Comms
-import Kadena.Config.Types as Config
+import Kadena.Types.Config as Config
 import Kadena.Config.TMVar as Config
 import Kadena.Types.Spec
 import Kadena.Types.Entity
-import Kadena.History.Types ( History(..), PossiblyIncompleteResults(..))
-import qualified Kadena.History.Types as History
+import Kadena.Types.History (History(..), PossiblyIncompleteResults(..))
+import qualified Kadena.Types.History as History
 import qualified Kadena.Execution.Types as Exec
 import Kadena.Types.Dispatch
 import Kadena.Private.Service (encrypt)

@@ -28,12 +28,12 @@ import Kadena.Types.Event (ResetLeaderNoFollowersTimeout(..))
 import Kadena.Evidence.Spec as X
 import Kadena.Types.Metric (Metric)
 import Kadena.Config.TMVar
-import Kadena.Config.Types
 import Kadena.Evidence.Types
 import Kadena.Types.Log as Log
 import Kadena.Types.Message
 import Kadena.Types.Base
 import Kadena.Types.Comms
+import Kadena.Types.Config
 
 -- TODO: re-integrate EKG when Evidence Service is finished and hspec tests are written
 -- import Kadena.Types.Metric

@@ -48,7 +48,7 @@ import Kadena.Types
 import qualified Kadena.Sender.Types as Sender
 import qualified Kadena.Log.Types as Log
 import qualified Kadena.Types.Log as Log
-import qualified Kadena.History.Types as History
+import qualified Kadena.Types.History as History
 
 getNewElectionTimeout :: Consensus Int
 getNewElectionTimeout = viewConfig electionTimeoutRange >>= randomRIO

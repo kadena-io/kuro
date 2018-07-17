@@ -33,15 +33,13 @@ import Pact.Types.RPC (PactRPC)
 
 import Kadena.Types.Base (NodeId)
 import Kadena.Types.PactDB
-import Kadena.Config.Types (GlobalConfigTMVar)
+import Kadena.Types.Config (GlobalConfigTMVar)
 import Kadena.Types.Comms (Comms(..),initCommsNormal,readCommNormal,writeCommNormal)
 import Kadena.Types.KeySet
 import Kadena.Types.Metric (Metric)
 import Kadena.Types.Log (LogEntry,LogEntries)
-
 import Kadena.Types.Event (Beat)
-
-import Kadena.History.Types (HistoryChannel)
+import Kadena.Types.History (HistoryChannel)
 import Kadena.Private.Types (PrivateChannel)
 import Kadena.Types.Entity (EntityConfig)
 

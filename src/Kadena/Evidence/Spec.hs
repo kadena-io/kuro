@@ -33,9 +33,9 @@ import qualified Data.Set as Set
 import Data.Thyme.Clock
 
 import Kadena.Types.Base
+import Kadena.Types.Config
 import Kadena.Types.Metric
 import Kadena.Config.ClusterMembership
-import Kadena.Config.Types
 import Kadena.Types.Message
 import Kadena.Evidence.Types
 import Kadena.Types.Event (ResetLeaderNoFollowersTimeout)

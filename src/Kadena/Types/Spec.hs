@@ -17,7 +17,6 @@ module Kadena.Types.Spec
   , csNodeRole, csTerm, csVotedFor, csLazyVote, csCurrentLeader, csIgnoreLeader
   , csTimerThread, csYesVotes, csPotentialVotes, csLastCommitTime
   , csTimeSinceLastAER, csCmdBloomFilter, csInvalidCandidateResults
-  , Event(..)
   , mkConsensusEnv
   , PublishedConsensus(..),pcLeader,pcRole,pcTerm,pcYesVotes
   , LazyVote(..), lvVoteFor, lvAllReceived
@@ -50,7 +49,7 @@ import Kadena.Types.Comms
 import Kadena.Types.Dispatch
 import Kadena.Sender.Types (SenderServiceChannel, ServiceRequest')
 import Kadena.Log.Types (QueryApi(..))
-import Kadena.History.Types (History(..))
+import Kadena.Types.History (History(..))
 import Kadena.Evidence.Types (PublishedEvidenceState, Evidence(ClearConvincedNodes))
 
 data PublishedConsensus = PublishedConsensus

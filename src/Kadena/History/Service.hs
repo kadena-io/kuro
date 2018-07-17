@@ -29,9 +29,9 @@ import System.FilePath
 
 import Kadena.Util.Util
 import Kadena.Types.Base
+import Kadena.Types.Config
 import Kadena.Config.TMVar
-import Kadena.Config.Types
-import Kadena.History.Types as X
+import Kadena.Types.History as X
 import qualified Kadena.History.Persistence as DB
 import Kadena.Types.Dispatch (Dispatch)
 import qualified Kadena.Types.Dispatch as D

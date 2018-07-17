@@ -31,7 +31,7 @@ import qualified Pact.Types.Command as Pact
 import Pact.Types.Runtime (TxId)
 import Kadena.Types
 import Kadena.Types.Sqlite
-import Kadena.History.Types
+import Kadena.Types.History
 
 data HistType = SCC | CCC | PC deriving (Show, Eq)
 

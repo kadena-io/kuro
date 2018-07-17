@@ -99,8 +99,6 @@ library
                      , Kadena.Types.Message
                      , Kadena.Types.Message.AE
                      , Kadena.Types.Message.AER
-                     , Kadena.Types.Message.CC
-                     , Kadena.Types.Message.CCR
                      , Kadena.Types.Message.NewCMD
                      , Kadena.Types.Message.RV
                      , Kadena.Types.Message.RVR

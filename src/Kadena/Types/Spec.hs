@@ -23,7 +23,7 @@ module Kadena.Types.Spec
   , InvalidCandidateResults(..), icrMyReqVoteSig, icrNoVotes
   ) where
 
-import Control.Concurrent (MVar, ThreadId, killThread, yield, forkIO, threadDelay, tryPutMVar, tryTakeMVar, readMVar)
+import Control.Concurrent (MVar, ThreadId, killThread, yield, forkIO, threadDelay, tryPutMVar, tryTakeMVar)
 import Control.Concurrent.STM
 import Control.Lens hiding (Index, (|>))
 import Control.Monad
@@ -137,7 +137,7 @@ data ConsensusEnv = ConsensusEnv
   , _killEnqueued     :: !(ThreadId -> IO ())
   , _dequeue          :: !(IO Event)
   , _clientSendMsg    :: !(OutboundGeneral -> IO ())
-  , _evidenceState    :: !(IO PublishedEvidenceState)
+  , _evidenceState    :: !(MVar PublishedEvidenceState)
   , _timeCache        :: !(IO UTCTime)
   , _mResetLeaderNoFollowers :: !(MVar ResetLeaderNoFollowersTimeout)
   , _informEvidenceServiceOfElection :: !(IO ())
@@ -176,7 +176,7 @@ mkConsensusEnv conf' rSpec dispatch timerTarget' timeCache' mEs mResetLeaderNoFo
     , _killEnqueued = killThread
     , _dequeue = _unConsensusEvent <$> readComm ie'
     , _clientSendMsg = writeComm cog'
-    , _evidenceState = readMVar mEs
+    , _evidenceState = mEs
     , _timeCache = timeCache'
     , _mResetLeaderNoFollowers = mResetLeaderNoFollowers'
     , _informEvidenceServiceOfElection = writeComm ev' ClearConvincedNodes

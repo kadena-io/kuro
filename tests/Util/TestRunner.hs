@@ -5,9 +5,12 @@
 
 module Util.TestRunner
   ( delTempFiles
-  , runAll
+  , gatherMetrics
   , testDir
   , testConfDir
+  , runClientCommands
+  , runServers
+  , stopProcesses
   , TestMetric(..)
   , TestMetricResult(..)
   , TestRequest(..)
@@ -16,7 +19,6 @@ module Util.TestRunner
 
 import Apps.Kadena.Client
 import Control.Concurrent
-import Control.Exception.Safe
 import Control.Lens
 import Control.Monad
 import Control.Monad.Trans.RWS.Lazy
@@ -90,20 +92,6 @@ delTempFiles = do
     _ <- createProcess p
     return ()
 
-runAll :: [TestRequest] -> [TestMetric]-> IO ([TestResult], [TestMetricResult])
-runAll testRequests testMetrics = do
-  procHandles <- runServers
-  putStrLn "Servers are running, sleeping for a few seconds"
-  _ <- sleep 3
-  catchAny (do
-              results <- runClientCommands clientArgs testRequests
-              metricResults <- gatherMetrics testMetrics
-              metricResults `seq` results `seq` stopProcesses procHandles
-              return (results, metricResults))
-           (\e -> do
-              stopProcesses procHandles
-              throw e)
-
 runServers :: IO [ProcessHandle]
 runServers =
   foldM f [] serverArgs where
@@ -129,9 +117,6 @@ serverArgs0 = "+RTS -N4 -RTS -c " ++ testConfDir ++ "10000-cluster.yaml"
 serverArgs1 = "+RTS -N4 -RTS -c " ++ testConfDir ++ "10001-cluster.yaml"
 serverArgs2 = "+RTS -N4 -RTS -c " ++ testConfDir ++ "10002-cluster.yaml"
 serverArgs3 = "+RTS -N4 -RTS -c " ++ testConfDir ++ "10003-cluster.yaml"
-
-clientArgs :: [String]
-clientArgs = words $ "-c " ++ testConfDir ++ "client.yaml"
 
 runClientCommands :: [String] ->  [TestRequest] -> IO [TestResult]
 runClientCommands args testRequests =
@@ -209,7 +194,7 @@ _printResponses xs =
 
 isRequest :: ReplApiData -> Bool
 isRequest (ReplApiRequest _ _) = True
-isRequest (ReplApiResponse{}) = False
+isRequest ReplApiResponse{} = False
 
 simpleRunREPL :: [TestRequest] -> Repl ()
 simpleRunREPL [] = return ()

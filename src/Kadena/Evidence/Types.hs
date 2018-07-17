@@ -90,12 +90,18 @@ data Result =
   -- ... unless we're the odd man out
     { _rNodeId :: !NodeId
     , _rLogIndex :: !LogIndex } |
-  Noop
+  Noop |
   -- This is for a very specific AER event, IFF:
   --   - we have already counted evidence for another AER for this node that is for a later LogIndex
   --   - this Noop AER was received within less than one MaxElectionTimeBound
   -- Why: because AER's can and do come in out of order sometimes. We don't want to decrease a the nodeState
   --      for a given node if we can avoid it.
+  InvalidNode
+  -- Sender is no longer part of the cluster configuration, but due to some bad timing the AER
+  -- message arrived anyway
+    { _rNodeId :: !NodeId
+    , _rLogIndex :: !LogIndex
+    , _rReceivedAt :: !UTCTime }
   deriving (Show, Eq)
 
 data CommitCheckResult =

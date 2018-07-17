@@ -20,25 +20,25 @@ import Data.Thyme.Clock
 import Safe
 
 import Kadena.Config.ClusterMembership
+import Kadena.Config.TMVar
 import Kadena.ConfigChange as CC
-import Kadena.Util.Util (linkAsyncTrack)
-import Kadena.Types.Dispatch (Dispatch)
 import Kadena.Event (pprintBeat)
-import Kadena.Types.Event (ResetLeaderNoFollowersTimeout(..))
 import Kadena.Evidence.Spec as X
 import Kadena.Types.Metric (Metric)
 import Kadena.Config.TMVar
 import Kadena.Evidence.Types
-import Kadena.Types.Log as Log
-import Kadena.Types.Message
 import Kadena.Types.Base
 import Kadena.Types.Comms
 import Kadena.Types.Config
-
+import Kadena.Types.Dispatch (Dispatch)
+import Kadena.Types.Event (ResetLeaderNoFollowersTimeout(..))
+import Kadena.Types.Message (AppendEntriesResponse(..))
+import Kadena.Util.Util (linkAsyncTrack)
 -- TODO: re-integrate EKG when Evidence Service is finished and hspec tests are written
 -- import Kadena.Types.Metric
-import qualified Kadena.Types.Dispatch as Dispatch
 import qualified Kadena.Log.Types as Log
+import qualified Kadena.Types.Log as Log
+import qualified Kadena.Types.Dispatch as Dispatch
 
 initEvidenceEnv :: Dispatch
                 -> (String -> IO ())
@@ -65,41 +65,49 @@ initializeState ev = do
   commitIndex' <- return $ Log.hasQueryResult Log.CommitIndex mv
   return $! initEvidenceState _clusterMembers commitIndex' maxElectionTimeout'
 
--- | This handles initialization and config updates
+-- | Updates EvidencState when it gets stale vs the globel Config's values
 handleConfUpdate :: EvidenceService EvidenceState ()
 handleConfUpdate = do
-  es@EvidenceState{..} <- get
+  es <- get
   Config{..} <- view mConfig >>= liftIO . readCurrentConfig
-  -- if there are no transitional config-change nodes AND there are no changes to the current nodes configuration
-  if not (hasTransitionalNodes _clusterMembers)
-     && otherNodes _esClusterMembers == otherNodes _clusterMembers
-     && (snd _electionTimeoutRange) == _esMaxElectionTimeout
-  then do
-    debug "Config update received but no action required"
-    return ()
+  let maxTimeoutChanged = (snd _electionTimeoutRange) /= (_esMaxElectionTimeout es)
+  let clusterMembersChanged =  otherNodes (_esClusterMembers es) /= otherNodes _clusterMembers ||
+                    transitionalNodes (_esClusterMembers es) /= transitionalNodes _clusterMembers
+  if not maxTimeoutChanged && not clusterMembersChanged
+    then do -- ^ No update needed
+      debug "Config update received but no action required"
+      return ()
   else do
-    maxElectionTimeout' <- return $ snd $ _electionTimeoutRange
-    -- df === nodes to add/remove when adopting the env's config, which is now different from what is
-    --        stored in the state
-    let df = CC.diffNodes (otherNodes _esClusterMembers) (otherNodes _clusterMembers)
-    -- update the map of nodes -> (LogIndex, UTCTime) accordingly
-    let updatedMap = CC.updateNodeMap df _esNodeStates (const (startIndex, minBound))
-    -- df' === nodes to add/remove when moving to the transitional config-change nodes
-    let df' = CC.diffNodes (otherNodes _esClusterMembers) (transitionalNodes _clusterMembers)
-    -- update (again) the map of nodes -> (LogIndex, UTCTime) accordingly
-    let updatedMap' = CC.updateNodeMap df' updatedMap (const (startIndex, minBound))
-    put $ es
-      { _esClusterMembers = _clusterMembers
-      , _esQuorumSize = getEvidenceQuorumSize $ countOthers _clusterMembers
-      , _esChangeToQuorumSize = getEvidenceQuorumSize $ countTransitional _clusterMembers
-      , _esNodeStates = updatedMap'
-      , _esConvincedNodes = Set.difference _esConvincedNodes $ nodesToRemove df
-      , _esMismatchNodes = Set.difference _esMismatchNodes $nodesToRemove df
-      , _esMaxElectionTimeout = maxElectionTimeout'
-      }
+    let newEs= case (maxTimeoutChanged, clusterMembersChanged) of
+          (True, False) -> changeMaxTimeoutES es (snd _electionTimeoutRange) -- ^ Only max-timeout needs updating
+          (False, True) -> changeNodesES es _clusterMembers _nodeId
+          (_, _)        -> do -- ^ Both the max-timeout and the cluster members require updating
+            let newEs' = changeMaxTimeoutES es (snd _electionTimeoutRange)
+            changeNodesES newEs' _clusterMembers _nodeId
+    put newEs -- MLN: original code calls publish evidence with the original es (prior to updating)...
     publishEvidence
     debug "Config update received, update implemented"
     return ()
+
+-- | Create a new EvidenceState with the supplied max-timeout value
+changeMaxTimeoutES :: EvidenceState -> Int -> EvidenceState
+changeMaxTimeoutES es n = es { _esMaxElectionTimeout = n }
+
+-- | Create a new EvidenceState, updating the fields reflecting a change to the cluster members
+changeNodesES :: EvidenceState -> ClusterMembership -> NodeId -> EvidenceState
+changeNodesES es members myNodeId =
+    let newMapKeys = otherNodes members `Set.union` transitionalNodes members
+        prevKeys = Map.keys $ _esNodeStates es
+        df = CC.diffNodes (Set.fromList prevKeys) $ Set.delete myNodeId newMapKeys
+        updatedMap = CC.updateNodeMap df (_esNodeStates es) (const (startIndex, minBound))
+        in es
+          { _esClusterMembers = members
+          , _esQuorumSize = getEvidenceQuorumSize $ countOthers members
+          , _esChangeToQuorumSize = getEvidenceQuorumSize $ countTransitional members
+          , _esNodeStates = updatedMap
+          , _esConvincedNodes = Set.difference (_esConvincedNodes es) $ nodesToRemove df
+          , _esMismatchNodes = Set.difference (_esMismatchNodes es) $nodesToRemove df
+          }
 
 publishEvidence :: EvidenceService EvidenceState ()
 publishEvidence = do
@@ -126,27 +134,20 @@ runEvidenceProcessor = do
       publishEvidence
       when (newEs ^. esResetLeaderNoFollowers) tellKadenaToResetLeaderNoFollowersTimeout
       processCommitCkResult res
-      runEvidenceProcessor
     Heart tock -> do
       liftIO (pprintBeat tock) >>= debug
       put $ garbageCollectCache es
-      runEvidenceProcessor
     Bounce -> do
       put $ garbageCollectCache es
-      -- MLN: eventually remove this.  Its a placeholder if any central activity on config change needs to happen
-      -- liftIO $ CC.runWithNewConfig
-      runEvidenceProcessor
     ClearConvincedNodes -> do
       debug "clearing convinced nodes"
       put $ es {_esConvincedNodes = Set.empty}
-      runEvidenceProcessor
     CacheNewHash{..} -> do
       debug $ "new hash to cache received: " ++ show _cLogIndex
       put $ es
         { _esEvidenceCache = Map.insert _cLogIndex _cHash (_esEvidenceCache es)
         , _esMaxCachedIndex = if _cLogIndex > (_esMaxCachedIndex es) then _cLogIndex else (_esMaxCachedIndex es)
         }
-      runEvidenceProcessor
 
 processCommitCkResult :: CommitCheckResult -> EvidenceService EvidenceState ()
 processCommitCkResult (SteadyState ci) = do
@@ -336,15 +337,19 @@ processCacheMisses = do
 
 processEvidence :: [AppendEntriesResponse] -> EvidenceService EvidenceState CommitCheckResult
 processEvidence aers = do
-  es <- get
-  mapM_ processResult (checkEvidence es <$> aers)
+  gc <- view mConfig
+  cfg <- liftIO $ readCurrentConfig gc -- :: Config
+  es <- get -- :: EvidenceState
+  forM_ aers (\aer -> do
+    res <- liftIO $ checkEvidence cfg es aer -- :: Result
+    processResult res :: EvidenceService EvidenceState ()
+    return () )
   checkForNewCommitIndex
 {-# INLINE processEvidence #-}
 
 -- | The semantics for this are that the MVar is initialized empty, when Evidence needs to signal consensus it puts
 -- the MVar and when consensus needs to check it (every heartbeat) it does so. Now, Evidence will be tryPut-ing all
 -- the freaking time (possibly clusterSize/aerBatchSize per second) but Consensus only needs to check once per second.
---tellKadenaToResetLeaderNoFollowersTimeout :: EvidenceProcEnv ()
 tellKadenaToResetLeaderNoFollowersTimeout :: EvidenceService EvidenceState ()
 tellKadenaToResetLeaderNoFollowersTimeout = do
   m <- view mResetLeaderNoFollowers

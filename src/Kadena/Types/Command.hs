@@ -15,7 +15,7 @@ module Kadena.Types.Command
   , ClusterChangeInfo (..), cciNewNodeList, cciAddedNodes, cciRemovedNodes, cciState
   , ClusterChangeResult (..)
   , Command(..), sccCmd, sccPreProc, cccCmd, cccPreProc, pcCmd
-  , ConfigChangeApiReq(..)
+  , ConfigChangeApiReq(..), ylccInfo, ylccKeyPairs, ylccNonce
   , Hashed(..)
   , Preprocessed(..)
   , RunPreProc(..)
@@ -99,14 +99,6 @@ instance ToJSON CCState where
 instance FromJSON CCState where
 instance NFData CCState
 
-data ConfigChangeApiReq = ConfigChangeApiReq
-  { _ylccInfo :: ClusterChangeInfo
-  , _ylccKeyPairs :: ![Pact.KeyPair]
-  , _ylccNonce :: Maybe String
-  } deriving (Eq,Show,Generic)
-instance ToJSON ConfigChangeApiReq where toJSON = lensyToJSON 5
-instance FromJSON ConfigChangeApiReq where parseJSON = lensyParseJSON 5
-
 data ClusterChangeInfo = ClusterChangeInfo
   { _cciNewNodeList :: ![NodeId]
   , _cciAddedNodes :: ![NodeId]
@@ -119,6 +111,15 @@ instance ToJSON ClusterChangeInfo where
   toJSON = lensyToJSON 4
 instance FromJSON ClusterChangeInfo where
   parseJSON = lensyParseJSON 4
+
+data ConfigChangeApiReq = ConfigChangeApiReq
+  { _ylccInfo :: ClusterChangeInfo
+  , _ylccKeyPairs :: ![Pact.KeyPair]
+  , _ylccNonce :: Maybe String
+  } deriving (Eq,Show,Generic)
+makeLenses ''ConfigChangeApiReq
+instance ToJSON ConfigChangeApiReq where toJSON = lensyToJSON 5
+instance FromJSON ConfigChangeApiReq where parseJSON = lensyParseJSON 5
 
 data CCPayload = CCPayload
   { _ccpInfo :: !ClusterChangeInfo

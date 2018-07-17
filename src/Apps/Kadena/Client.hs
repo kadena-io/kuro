@@ -43,7 +43,6 @@ import Data.Maybe
 import Data.List
 import qualified Data.Set as S
 import Data.String
-import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding (decodeUtf8)
 import Data.Thyme.Clock
@@ -59,7 +58,7 @@ import System.Exit hiding (die)
 import System.IO
 import Text.Trifecta as TF hiding (err, rendered)
 
-import Kadena.Command (mkClusterChangeCommand, SubmitCC(..))
+import Kadena.Command
 import Kadena.ConfigChange (mkConfigChangeApiReq)
 import Kadena.Types.Base hiding (printLatTime)
 import Kadena.Types.Entity (EntityName)
@@ -212,7 +211,7 @@ postSpecifyServerAPI ep server' rq = do
   asJSON r
 
 handleResp :: (t -> Repl ()) -> Response (ApiResponse t) -> Repl ()
-handleResp a r = do
+handleResp a r =
         case r ^. responseBody of
           ApiFailure{..} -> flushStrLn $ "Apps.Kadena.Client.handleResp - failure in API Send: " ++ show _apiError
           ApiSuccess{..} -> a _apiResponse
@@ -237,15 +236,10 @@ sendCmd m cmd replCmd = do
 
 sendConfigChangeCmd :: ConfigChangeApiReq -> String -> Repl ()
 sendConfigChangeCmd ccApiReq@ConfigChangeApiReq{..} fileName = do
-  e <- mkConfigChangeExec ccApiReq
-  resp <- postAPI "config" (SubmitCC e)
+  execs <- liftIO $ mkConfigChangeExecs ccApiReq
+  resp <- postAPI "config" (SubmitCC execs)
   tellKeys resp fileName
   handleResp handleBatchResp resp
-
-mkConfigChangeExec :: ConfigChangeApiReq -> Repl (ClusterChangeCommand Text)
-mkConfigChangeExec ccApiReq = do
-  ccCmd <- liftIO $ mkClusterChangeCommand ccApiReq
-  return $ fmap decodeUtf8 ccCmd
 
 tellKeys :: Response (ApiResponse RequestKeys) -> String -> Repl ()
 tellKeys resp cmd =
@@ -277,7 +271,7 @@ batchTest n cmd = do
   resp <- postAPI "send" es
   flushStrLn $ "Sent, retrieving responses"
   case resp ^. responseBody of
-    ApiFailure{..} -> do
+    ApiFailure{..} ->
       flushStrLn $ "Failure: " ++ show _apiError
     ApiSuccess{..} -> do
       rk <- return $ last $ _rkRequestKeys _apiResponse
@@ -305,7 +299,7 @@ processParBatchPerServer sleep' (sema, (Node{..}, batches)) = do
     resp <- postSpecifyServerAPI "send" _nURL $ SubmitBatch batch
     flushStrLn $ "Sent a batch to " ++ _nURL
     case resp ^. responseBody of
-      ApiFailure{..} -> do
+      ApiFailure{..} ->
         flushStrLn $ _nURL ++ " Failure: " ++ show _apiError
       ApiSuccess{..} -> do
         rk <- return $ last $ _rkRequestKeys _apiResponse
@@ -546,7 +540,7 @@ handleCmd cmd reqStr = case cmd of
   Server Nothing -> do
     use server >>= \s -> flushStrLn $ "Current server: " ++ s
     flushStrLn "Servers:"
-    view ccEndpoints >>= \es -> forM_ (sort $ HM.toList es) $ \(i,e) -> do
+    view ccEndpoints >>= \es -> forM_ (sort $ HM.toList es) $ \(i,e) ->
       flushStrLn $ i ++ ": " ++ show e
   Server (Just s) -> server .= s
   Batch n | n <= 50000 -> use batchCmd >>= batchTest n

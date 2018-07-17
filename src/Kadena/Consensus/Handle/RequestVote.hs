@@ -48,8 +48,9 @@ data RequestVoteOut =
     , _lastLogIndex :: !(Maybe HeardFromLeader)
     , _vote :: Bool }
 
-handleRequestVote :: (MonadWriter [String] m, MonadReader RequestVoteEnv m) => RequestVote -> m RequestVoteOut
-handleRequestVote rv@RequestVote{..} = do
+handleRequestVote :: (MonadWriter [String] m, MonadReader RequestVoteEnv m)
+                  => RequestVote -> NodeId -> m RequestVoteOut
+handleRequestVote rv@RequestVote{..} _myId = do
   tell ["got a requestVote RPC for " ++ show _rvTerm]
   votedFor' <- view votedFor
   term' <- view term
@@ -121,22 +122,22 @@ handle :: RequestVote -> KD.Consensus ()
 handle rv = do
   s <- get
   mv <- queryLogs $ Set.fromList [Log.GetMaxIndex, Log.GetLastLogTerm]
+  nodeId' <- view TMV.nodeId <$> KD.readConfig
   if _csNodeRole s == Leader
   then do
     enqueueRequest Sender.EstablishDominance
-    nodeId' <- view TMV.nodeId <$> KD.readConfig
     hfl <- return $! mkHeardFromLeader (Just nodeId') (_rvProvenance rv) (Log.hasQueryResult Log.LastLogTerm mv) (Log.hasQueryResult Log.MaxIndex mv)
     enqueueRequest $ Sender.BroadcastRVR (_rvCandidateId rv) hfl False
   else do
     let rve = RequestVoteEnv
-                (_csTerm s)
-                (_csVotedFor s)
-                (_csLazyVote s)
-                (_csCurrentLeader s)
-                (_csIgnoreLeader s)
-                (Log.hasQueryResult Log.MaxIndex mv)
-                (Log.hasQueryResult Log.LastLogTerm mv)
-    (rvo, l) <- runReaderT (runWriterT (handleRequestVote rv)) rve
+          (_csTerm s)
+          (_csVotedFor s)
+          (_csLazyVote s)
+          (_csCurrentLeader s)
+          (_csIgnoreLeader s)
+          (Log.hasQueryResult Log.MaxIndex mv)
+          (Log.hasQueryResult Log.LastLogTerm mv)
+    (rvo, l) <- runReaderT (runWriterT (handleRequestVote rv nodeId')) rve
     mapM_ debug l
     case rvo of
       NoAction -> return ()

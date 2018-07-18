@@ -53,7 +53,7 @@ import Kadena.Types.Spec
 import Kadena.Types.Entity
 import Kadena.Types.History (History(..), PossiblyIncompleteResults(..))
 import qualified Kadena.Types.History as History
-import qualified Kadena.Execution.Types as Exec
+import qualified Kadena.Types.Execution as Exec
 import Kadena.Types.Dispatch
 import Kadena.Private.Service (encrypt)
 import Kadena.Private.Types (PrivatePlaintext(..),PrivateCiphertext(..),Labeled(..),PrivateResult(..))

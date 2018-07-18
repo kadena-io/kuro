@@ -25,7 +25,7 @@ import Kadena.Types.Comms
 import Kadena.Sender.Types (SenderServiceChannel)
 import Kadena.Log.Types (LogServiceChannel)
 import Kadena.Evidence.Spec (EvidenceChannel)
-import Kadena.Execution.Types (ExecutionChannel)
+import Kadena.Types.Execution (ExecutionChannel)
 import Kadena.Types.History (HistoryChannel)
 import Kadena.PreProc.Types (ProcessRequestChannel)
 import Kadena.Private.Types (PrivateChannel)

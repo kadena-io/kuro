@@ -33,7 +33,6 @@ library
                      , Apps.Kadena.Server
                      , Kadena.Execution.Pact
                      , Kadena.Execution.Service
-                     , Kadena.Execution.Types
                      , Kadena.Command
                      , Kadena.Config
                      , Kadena.Config.ClusterMembership
@@ -93,6 +92,7 @@ library
                      , Kadena.Types.Entity
                      , Kadena.Types.Event
                      , Kadena.Types.Evidence
+                     , Kadena.Types.Execution
                      , Kadena.Types.History
                      , Kadena.Types.KeySet
                      , Kadena.Types.Log

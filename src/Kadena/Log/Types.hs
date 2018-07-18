@@ -51,8 +51,8 @@ import Kadena.Types.Log
 import Kadena.Types.Comms
 import Kadena.Types.Event (Beat,ConsensusEventChannel)
 import Kadena.Types.Evidence (EvidenceChannel)
+import Kadena.Types.Execution (ExecutionChannel)
 
-import Kadena.Execution.Types (ExecutionChannel)
 import Kadena.Sender.Types (SenderServiceChannel)
 
 data QueryApi =

@@ -2,14 +2,14 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
-module Kadena.Execution.Types
+module Kadena.Types.Execution
   ( ApplyFn
   , Execution(..)
   , ExecutionEnv(..)
-  , execChannel, debugPrint, publishMetric
-  , getTimestamp, historyChannel, mConfig
-  , pactPersistConfig, execLoggers, entityConfig
-  , privateChannel
+  , eenvExecChannel, eenvDebugPrint, eenvPublishMetric
+  , eenvGetTimestamp, eenvHistoryChannel, eenvMConfig
+  , eenvPactPersistConfig, eenvExecLoggers, eenvEntityConfig
+  , eenvPrivateChannel
   , ExecutionState(..)
   , csNodeId,csKeySet,csCommandExecInterface
   , ExecutionChannel(..)
@@ -50,7 +50,7 @@ data Execution =
   ExecuteNewEntries { logEntriesToApply :: !LogEntries } |
   ChangeNodeId { newNodeId :: !NodeId } |
   UpdateKeySet { newKeySet :: !KeySet } |
-  Heart Beat |
+  ExecutionBeat Beat |
   ExecLocal { localCmd :: !(Pact.Command ByteString),
               localResult :: !(MVar Value) } |
   ExecConfigChange { logEntriesToApply :: !LogEntries }
@@ -63,16 +63,16 @@ instance Comms Execution ExecutionChannel where
   writeComm (ExecutionChannel c) = writeCommNormal c
 
 data ExecutionEnv = ExecutionEnv
-  { _execChannel :: !ExecutionChannel
-  , _historyChannel :: !HistoryChannel
-  , _privateChannel :: !PrivateChannel
-  , _pactPersistConfig :: !PactPersistConfig
-  , _debugPrint :: !(String -> IO ())
-  , _execLoggers :: !Loggers
-  , _publishMetric :: !(Metric -> IO ())
-  , _getTimestamp :: !(IO UTCTime)
-  , _mConfig :: GlobalConfigTMVar
-  , _entityConfig :: !EntityConfig
+  { _eenvExecChannel :: !ExecutionChannel
+  , _eenvHistoryChannel :: !HistoryChannel
+  , _eenvPrivateChannel :: !PrivateChannel
+  , _eenvPactPersistConfig :: !PactPersistConfig
+  , _eenvDebugPrint :: !(String -> IO ())
+  , _eenvExecLoggers :: !Loggers
+  , _eenvPublishMetric :: !(Metric -> IO ())
+  , _eenvGetTimestamp :: !(IO UTCTime)
+  , _eenvMConfig :: GlobalConfigTMVar
+  , _eenvEntityConfig :: !EntityConfig
   }
 makeLenses ''ExecutionEnv
 

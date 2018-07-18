@@ -6,7 +6,6 @@
 module Kadena.Execution.Service
   ( initExecutionEnv
   , runExecutionService
-  , module Kadena.Execution.Types
   ) where
 
 import Control.Lens hiding (Index)
@@ -32,7 +31,7 @@ import Kadena.Config
 import Kadena.Types.PactDB
 import Kadena.Config.TMVar
 import Kadena.Types.Base
-import Kadena.Execution.Types
+import Kadena.Types.Execution
 import Kadena.Types.Metric
 import Kadena.Types.Command
 import Kadena.Types.Config
@@ -63,16 +62,16 @@ initExecutionEnv
   -> EntityConfig
   -> ExecutionEnv
 initExecutionEnv dispatch' debugPrint' persistConfig logRules' publishMetric' getTimestamp' gcm' ent = ExecutionEnv
-  { _execChannel = dispatch' ^. D.execService
-  , _historyChannel = dispatch' ^. D.historyChannel
-  , _privateChannel = dispatch' ^. D.privateChannel
-  , _pactPersistConfig = persistConfig
-  , _debugPrint = debugPrint'
-  , _execLoggers = initLoggers debugPrint' doLog logRules'
-  , _publishMetric = publishMetric'
-  , _getTimestamp = getTimestamp'
-  , _mConfig = gcm'
-  , _entityConfig = ent
+  { _eenvExecChannel = dispatch' ^. D.execService
+  , _eenvHistoryChannel = dispatch' ^. D.historyChannel
+  , _eenvPrivateChannel = dispatch' ^. D.privateChannel
+  , _eenvPactPersistConfig = persistConfig
+  , _eenvDebugPrint = debugPrint'
+  , _eenvExecLoggers = initLoggers debugPrint' doLog logRules'
+  , _eenvPublishMetric = publishMetric'
+  , _eenvGetTimestamp = getTimestamp'
+  , _eenvMConfig = gcm'
+  , _eenvEntityConfig = ent
   }
 
 data ReplayStatus = ReplayFromDisk | FreshCommands deriving (Show, Eq)
@@ -90,31 +89,31 @@ runExecutionService env pub nodeId' keySet' = do
     _csNodeId = nodeId',
     _csKeySet = keySet',
     _csCommandExecInterface = cmdExecInter}
-  let cu = ConfigUpdater (env ^. debugPrint) "Service|Execution" (onUpdateConf (env ^. execChannel))
-  linkAsyncTrack "ExecutionConfUpdater" $ CfgChange.runConfigUpdater cu (env ^. mConfig)
+  let cu = ConfigUpdater (env ^. eenvDebugPrint) "Service|Execution" (onUpdateConf (env ^. eenvExecChannel))
+  linkAsyncTrack "ExecutionConfUpdater" $ CfgChange.runConfigUpdater cu (env ^. eenvMConfig)
   void $ runRWST handle env initExecutionState
 
 debug :: String -> ExecutionService ()
 debug s = do
-  dbg <- view debugPrint
+  dbg <- view eenvDebugPrint
   liftIO $! dbg $ "[Service|Execution] " ++ s
 
 now :: ExecutionService UTCTime
-now = view getTimestamp >>= liftIO
+now = view eenvGetTimestamp >>= liftIO
 
 logMetric :: Metric -> ExecutionService ()
 logMetric m = do
-  publishMetric' <- view publishMetric
+  publishMetric' <- view eenvPublishMetric
   liftIO $! publishMetric' m
 
 handle :: ExecutionService ()
 handle = do
-  oChan <- view execChannel
+  oChan <- view eenvExecChannel
   debug "Launch!"
   forever $ do
     q <- liftIO $ readComm oChan
     case q of
-      Heart t -> liftIO (pprintBeat t) >>= debug
+      ExecutionBeat t -> liftIO (pprintBeat t) >>= debug
       ChangeNodeId{..} -> do
         prevNodeId <- use csNodeId
         unless (prevNodeId == newNodeId) $ do
@@ -147,7 +146,7 @@ applyLogEntries rs les@(LogEntries leToApply) = do
   if not (null results)
     then do
       debug $! "Applied " ++ show (length results) ++ " CMD(s)"
-      hChan <- view historyChannel
+      hChan <- view eenvHistoryChannel
       unless (rs == ReplayFromDisk) $ liftIO $! writeComm hChan (History.Update $ HashMap.fromList results)
     else debug "Applied log entries but did not send results?"
 
@@ -222,7 +221,7 @@ applyCommand _tEnd le@LogEntry{..} = do
         Result{..}  -> do
           debug $ "WARNING: fully resolved consensus command found for " ++ show _leLogIndex
           return $! (result, _leCmdLatMetrics)
-      gcm <- view mConfig
+      gcm <- view eenvMConfig
       result <- liftIO $ CfgChange.mutateGlobalConfig gcm pproc
       lm <- stamp ppLat
       return ( rkey
@@ -233,7 +232,7 @@ applyCommand _tEnd le@LogEntry{..} = do
                , _crLatMetrics = lm
                })
     PrivateCommand Hashed{..} -> do
-      pchan <- view privateChannel
+      pchan <- view eenvPrivateChannel
       r <- liftIO $ decrypt pchan _hValue
       let finish pr = stamp _leCmdLatMetrics >>= \l ->
             return (rkey, PrivateCommandResult chash pr _leLogIndex l)

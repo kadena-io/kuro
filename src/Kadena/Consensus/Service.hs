@@ -18,7 +18,7 @@ import Kadena.Event (foreverHeart)
 import Kadena.Types
 import Kadena.Types.Entity
 import Kadena.Types.KeySet
-
+import Kadena.Types.Execution
 import Kadena.Messaging.Turbine
 import qualified Kadena.Messaging.Turbine as Turbine
 import qualified Kadena.Execution.Service as Exec
@@ -91,7 +91,7 @@ launchExecutionService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTim
       (_logRules rconf') publishMetric' getTimestamp' gcm' ent
   pub <- return $! Publish pubConsensus dispatch' getTimestamp' nodeId'
   linkAsyncTrack "ExecutionThread" (Exec.runExecutionService execEnv pub nodeId' keySet')
-  linkAsyncTrack "ExecutionHB" $ foreverHeart (_execService dispatch') 1000000 Exec.Heart
+  linkAsyncTrack "ExecutionHB" $ foreverHeart (_execService dispatch') 1000000 ExecutionBeat
 
 launchLogService :: Dispatch
   -> (String -> IO ())

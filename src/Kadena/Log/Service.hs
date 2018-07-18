@@ -33,7 +33,7 @@ import Kadena.Log.Types
 import Kadena.Log.LogApi as X
 import qualified Kadena.Types.Evidence as Ev
 import qualified Kadena.Types.Dispatch as Dispatch
-import qualified Kadena.Execution.Types as Exec
+import qualified Kadena.Types.Execution as Exec
 import Kadena.Types (Dispatch)
 import Kadena.Event (pprintBeat)
 

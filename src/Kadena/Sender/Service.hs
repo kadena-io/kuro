@@ -29,19 +29,20 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Thyme.Clock (UTCTime, getCurrentTime)
 
+import Kadena.Types.Base 
 import Kadena.Types.Evidence
 import Kadena.Event (pprintBeat)
 import Kadena.Log.Types (LogServiceChannel)
 import qualified Kadena.Log.Types as Log
 import Kadena.Message
 import Kadena.Sender.Types as X
-import Kadena.Types.Base
 import Kadena.Config.TMVar as Cfg
 import qualified Kadena.Config.ClusterMembership as CM
 import Kadena.Types.Comms
 import Kadena.Types.Dispatch (Dispatch(..))
 import qualified Kadena.Types.Dispatch as KD
 import Kadena.Types.Log (LogEntries(..))
+import Kadena.Log.Types (LogIndex(..))
 import qualified Kadena.Types.Log as Log
 import Kadena.Types.Message
 import Kadena.Types.Metric (Metric)

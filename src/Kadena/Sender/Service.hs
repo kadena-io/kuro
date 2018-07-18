@@ -28,8 +28,8 @@ import Data.Serialize hiding (get, put)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Thyme.Clock (UTCTime, getCurrentTime)
-  
-import Kadena.Evidence.Types hiding (Heart)
+
+import Kadena.Types.Evidence
 import Kadena.Event (pprintBeat)
 import Kadena.Log.Types (LogServiceChannel)
 import qualified Kadena.Log.Types as Log

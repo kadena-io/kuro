@@ -34,11 +34,10 @@ import Data.Thyme.Clock
 
 import Kadena.Config.TMVar
 import Kadena.Types.Base
-import Kadena.Types.Config
 import Kadena.Types.Metric
 import Kadena.Config.ClusterMembership
 import Kadena.Types.Message
-import Kadena.Evidence.Types
+import Kadena.Types.Evidence
 import Kadena.Types.Event (ResetLeaderNoFollowersTimeout)
 import Kadena.Log.Types (LogServiceChannel)
 

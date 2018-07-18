@@ -25,7 +25,7 @@ import Kadena.Types
 import Kadena.Consensus.Util
 import qualified Kadena.Types as KD
 import qualified Kadena.Sender.Service as Sender
-import qualified Kadena.Evidence.Types as Ev
+import qualified Kadena.Types.Evidence as Ev
 
 data CommandEnv = CommandEnv
   { _nodeRole :: Role

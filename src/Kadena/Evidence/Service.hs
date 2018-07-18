@@ -20,18 +20,17 @@ import Data.Thyme.Clock
 import Safe
 
 import Kadena.Config.ClusterMembership
-import Kadena.Config.TMVar
 import Kadena.ConfigChange as CC
 import Kadena.Event (pprintBeat)
 import Kadena.Evidence.Spec as X
 import Kadena.Types.Metric (Metric)
 import Kadena.Config.TMVar
-import Kadena.Evidence.Types
 import Kadena.Types.Base
 import Kadena.Types.Comms
 import Kadena.Types.Config
 import Kadena.Types.Dispatch (Dispatch)
 import Kadena.Types.Event (ResetLeaderNoFollowersTimeout(..))
+import Kadena.Types.Evidence (Evidence(..), PublishedEvidenceState(..), CommitCheckResult (..))
 import Kadena.Types.Message (AppendEntriesResponse(..))
 import Kadena.Util.Util (linkAsyncTrack)
 -- TODO: re-integrate EKG when Evidence Service is finished and hspec tests are written
@@ -134,10 +133,10 @@ runEvidenceProcessor = do
       publishEvidence
       when (newEs ^. esResetLeaderNoFollowers) tellKadenaToResetLeaderNoFollowersTimeout
       processCommitCkResult res
-    Heart tock -> do
+    EvidenceBeat tock -> do
       liftIO (pprintBeat tock) >>= debug
       put $ garbageCollectCache es
-    Bounce -> do
+    EvidenceBounce -> do
       put $ garbageCollectCache es
     ClearConvincedNodes -> do
       debug "clearing convinced nodes"
@@ -183,7 +182,7 @@ runEvidenceService :: EvidenceEnv -> IO ()
 runEvidenceService ev = do
   startingEs <- initializeState ev
   putMVar (ev ^. mPubStateTo) $! PublishedEvidenceState (startingEs ^. esConvincedNodes) (startingEs ^. esNodeStates)
-  let cu = ConfigUpdater (ev ^. debugFn) "Service|Evidence|Config" (const $ writeComm (ev ^. evidence) $ Bounce)
+  let cu = ConfigUpdater (ev ^. debugFn) "Service|Evidence|Config" (const $ writeComm (ev ^. evidence) $ EvidenceBounce)
   linkAsyncTrack "EvidenceConfUpdater" $ CC.runConfigUpdater cu (ev ^. mConfig)
   _ <- runRWST (debug "Launch!" >> foreverRunProcessor) ev startingEs
   return ()

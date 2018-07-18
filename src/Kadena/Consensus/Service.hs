@@ -26,7 +26,7 @@ import qualified Kadena.Sender.Service as Sender
 import qualified Kadena.Types.Log as Log
 import qualified Kadena.Log.Types as Log
 import qualified Kadena.Log.Service as Log
-import qualified Kadena.Evidence.Types as Ev
+import qualified Kadena.Types.Evidence as Ev
 import qualified Kadena.Evidence.Service as Ev
 import qualified Kadena.PreProc.Service as PreProc
 import qualified Kadena.History.Service as History
@@ -72,7 +72,7 @@ launchEvidenceService :: Dispatch
   -> IO ()
 launchEvidenceService dispatch' dbgPrint' publishMetric' mEvState rconf' mLeaderNoFollowers = do
   linkAsyncTrack "EvidenceThread" (Ev.runEvidenceService $! Ev.initEvidenceEnv dispatch' dbgPrint' rconf' mEvState mLeaderNoFollowers publishMetric')
-  linkAsyncTrack "EvidenceHB" $ foreverHeart (_evidence dispatch') 1000000 Ev.Heart
+  linkAsyncTrack "EvidenceHB" $ foreverHeart (_evidence dispatch') 1000000 EvidenceBeat
 
 launchExecutionService :: Dispatch
   -> (String -> IO ())

@@ -29,7 +29,6 @@ import System.FilePath
 
 import Kadena.Util.Util
 import Kadena.Types.Base
-import Kadena.Types.Config
 import Kadena.Types.Command (CommandResult(..))
 import Kadena.Types.Comms (Comms(..))
 import Kadena.Config.TMVar

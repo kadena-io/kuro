@@ -20,7 +20,7 @@ import Data.Thyme.Clock (getCurrentTime)
 
 import Kadena.Types hiding (debugPrint)
 import Kadena.Types.KeySet
-import Kadena.Evidence.Types (Evidence(VerifiedAER))
+import Kadena.Types.Evidence (Evidence(VerifiedAER))
 
 import Kadena.Messaging.Turbine.Types
 

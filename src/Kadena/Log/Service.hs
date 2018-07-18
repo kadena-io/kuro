@@ -31,7 +31,7 @@ import Kadena.Types.Log
 import Kadena.Log
 import Kadena.Log.Types
 import Kadena.Log.LogApi as X
-import qualified Kadena.Evidence.Types as Ev
+import qualified Kadena.Types.Evidence as Ev
 import qualified Kadena.Types.Dispatch as Dispatch
 import qualified Kadena.Execution.Types as Exec
 import Kadena.Types (Dispatch)

@@ -8,6 +8,7 @@ module Kadena.Config.ClusterMembership
   , containsAllNodesExcluding
   , countOthers
   , countTransitional
+  , getAllExcluding
   , hasTransitionalNodes
   , clusterMember
   , minQuorumOthers
@@ -163,3 +164,9 @@ containsAllNodesExcluding cm nodesToCheck nodeToExclude =
 -- or '''transitional' sets?
 clusterMember :: ClusterMembership -> NodeId -> Bool
 clusterMember cm node = node `Set.member` (otherNodes cm) || node `Set.member` (transitionalNodes cm) 
+
+-- | Get a set containing all the nodes -- i.e., the 'other' nodes `union` the config change
+--   transitional nodes.  The specified node is excluded
+getAllExcluding :: ClusterMembership -> NodeId -> Set NodeId
+getAllExcluding cm nodeToExclude =
+  Set.delete nodeToExclude $ (otherNodes cm) `Set.union` (transitionalNodes cm)  

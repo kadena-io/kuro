@@ -90,9 +90,9 @@ clusterChangeInfo1 = ClusterChangeInfo
                        , _cciRemovedNodes = [node2]
                        , _cciState = Transitional }
 clusterChangeInfo2 = ClusterChangeInfo
-                       { _cciNewNodeList = nodes123
+                       { _cciNewNodeList = nodes012
                        , _cciAddedNodes = [node2]
-                       , _cciRemovedNodes = [node0]
+                       , _cciRemovedNodes = [node3]
                        , _cciState = Transitional }
 clusterChangeInfo3 = ClusterChangeInfo
                        { _cciNewNodeList = nodes0123
@@ -100,8 +100,8 @@ clusterChangeInfo3 = ClusterChangeInfo
                        , _cciRemovedNodes = []
                        , _cciState = Transitional }
 
-nodes123, nodes013, nodes0123 :: [NodeId]
-nodes123 = [node1, node2, node3]
+nodes012, nodes013, nodes0123 :: [NodeId]
+nodes012 = [node0, node1, node2]
 nodes013 = [node0, node1, node3]
 nodes0123 = [node0, node1, node2, node3]
 

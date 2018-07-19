@@ -28,7 +28,7 @@ import Data.Serialize hiding (get, put)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Thyme.Clock (UTCTime, getCurrentTime)
-  
+
 import Kadena.Evidence.Types hiding (Heart)
 import Kadena.Event (pprintBeat)
 import Kadena.Log.Types (LogServiceChannel)
@@ -203,45 +203,58 @@ establishDominance = do
   pubRPC rpc
   debug $ "asserted dominance: " ++ show (interval stTime edTime) ++ "mics"
 
--- | Send all append entries is only needed in special circumstances. Either we have a Heartbeat event or we are getting a quick win in with CMD's
-sendAllAppendEntries :: Map NodeId (LogIndex, UTCTime) -> Set NodeId -> AEBroadcastControl -> SenderService StateSnapshot ()
+-- | Send all append entries is only needed in special circumstances. Either we have a Heartbeat
+--   event or we are getting a quick win in with CMD's
+sendAllAppendEntries :: Map NodeId (LogIndex, UTCTime) -> Set NodeId
+                     -> AEBroadcastControl -> SenderService StateSnapshot ()
 sendAllAppendEntries nodeCurrentIndex' nodesThatFollow' sendIfOutOfSync = do
   startTime' <- liftIO $ getCurrentTime
   s <- get
   let ct = view snapTerm s
-  let myNodeId' = view snapNodeId s
+  let myId' = view snapNodeId s
   let yesVotes' = view snapYesVotes s
   let cm = _snapClusterMembers s
-  let oNodes = CM.otherNodes cm
+  let allNodes = CM.getAllExcluding cm myId'
   limit' <- view aeReplicationLogLimit
-  inSync' <- canBroadcastAE cm nodeCurrentIndex' ct myNodeId' nodesThatFollow' sendIfOutOfSync
+  inSync' <- canBroadcastAE cm nodeCurrentIndex' ct myId' nodesThatFollow' sendIfOutOfSync
   synTime' <- liftIO $ getCurrentTime
   case inSync' of
     BackStreet{..} ->
       case broadcastRPC of
         Just broadcastableRPC -> do -- NB: SendAERegardless gets you here
-          -- We can't take the short cut but the AE (which is overloaded as a heartbeat grr...) still need to be sent
-          -- This usually takes place when we hit a heartbeat timeout
+          -- We can't take the short cut but the AE (which is overloaded as a heartbeat grr...)
+          -- still need to be sent. This usually takes place when we hit a heartbeat timeout
           debug "followers are out of sync, publishing latest LogEntries"
-          mv <- queryLogs $ Set.map (\n -> Log.GetInfoAndEntriesAfter ((+) 1 . fst <$> Map.lookup n nodeCurrentIndex') limit') oNodes
-          rpcs <- return $!
-            (\target -> ( target
-                        , createAppendEntries' target
-                          (Log.hasQueryResult (Log.InfoAndEntriesAfter ((+) 1 .fst <$> Map.lookup target nodeCurrentIndex') limit') mv)
-                          ct myNodeId' nodesThatFollow' yesVotes')
-                        ) <$> Set.toList laggingFollowers
+          resultMap <- queryLogs $ Set.map (\n -> do
+                                              let mPair = Map.lookup n nodeCurrentIndex'
+                                              let mIndex = ((+) 1 . fst <$> mPair)
+                                              Log.GetInfoAndEntriesAfter mIndex limit')
+                                           allNodes
+          rpcs <- return $
+            (\target ->
+               let mPair = Map.lookup target nodeCurrentIndex'
+                   mIndex = ((+) 1 . fst <$> mPair)
+                   ieAfter = Log.InfoAndEntriesAfter mIndex limit'
+                   triple = Log.hasQueryResult ieAfter resultMap
+                   entries' = createAppendEntries' target triple ct myId' nodesThatFollow' yesVotes'
+               in (target, entries'))
+            <$> Set.toList laggingFollowers
           endTime' <- liftIO $ getCurrentTime
-          debug $ "AE servicing lagging nodes, taking " ++ printInterval startTime' endTime' ++ " to create (syncTime=" ++ printInterval startTime' synTime' ++ ")"
+          debug $ "AE servicing lagging nodes, taking " ++ printInterval startTime' endTime'
+               ++ " to create (syncTime=" ++ printInterval startTime' synTime' ++ ")"
           sendRpcsPeicewise rpcs (length rpcs, endTime')
           debug $ "AE sent Regardless"
-          pubRPC broadcastableRPC -- TODO: this is terrible as laggers will need a pause to catch up correctly unless we have them cache future AE
+          pubRPC broadcastableRPC -- TODO: this is terrible as laggers will need a pause to catch up
+                                  -- correctly unless we have them cache future AE
         Nothing -> -- NB: OnlySendIfInSync gets you here
-          -- We can't just spam AE's to the followers because they can get clogged with overlapping/redundant AE's. This eventually trips an election.
-          -- TODO: figure out how an out of date follower can precache LEs that it can't add to it's log yet (without tripping an election)
+          -- We can't just spam AE's to the followers because they can get clogged with
+          -- overlapping/redundant AE's. This eventually trips an election.
+          -- TODO: figure out how an out of date follower can precache LEs that it can't add to it's
+          -- log yet (without tripping an election)
           debug $ "AE withheld, followers are out of sync (synTime=" ++ printInterval startTime' synTime' ++ ")"
     InSync{..} -> do
-      -- Hell yeah, we can just broadcast. We don't care about the Broadcast control if we know we can broadcast.
-      -- This saves us a lot of time when node count grows.
+      -- Hell yeah, we can just broadcast. We don't care about the Broadcast control if we know we
+      -- can broadcast. This saves us a lot of time when node count grows.
       pubRPC $ broadcastableRPC
       endTime' <- liftIO $ getCurrentTime
       debug $ "AE broadcasted, followers are in sync" ++ printInterval startTime' endTime'
@@ -275,7 +288,7 @@ canBroadcastAE cm nodeIndexMap ct myNodeId' vts broadcastControl =
     mniSet = Set.fromList $ mniList -- condense every Followers LI into a set (in ascending order of indexes)
     latestFollower = head $ Set.toDescList mniSet
     laggingFollowers = Map.keysSet $ Map.filter ((/=) latestFollower . fst) nodeIndexMap
-    elemSet = Set.elems mniSet -- list of indexes in ascending order
+    elemSet = Set.elems mniSet -- indexes in ascending order
     mni = head elemSet -- (least index) totally unsafe but we only call it if we are going to broadcast
   in
     if everyoneBelieves && (inSync cm nodeIndexMap myNodeId')
@@ -298,15 +311,17 @@ canBroadcastAE cm nodeIndexMap ct myNodeId' vts broadcastControl =
       then return $ BackStreet inSyncRpc laggingFollowers
       else do
         s <- get
-        let oNodes' = CM.otherNodes (_snapClusterMembers s)
-        debug $ "non-believers exist, establishing dominance over " ++ show ((Set.size vts) - 1)
-        return $ BackStreet inSyncRpc $ Set.union laggingFollowers (oNodes' Set.\\ vts)
+        let allNodes = CM.getAllExcluding (_snapClusterMembers s) myNodeId'
+        let diff = allNodes Set.\\ vts
+        let theUnion = Set.union laggingFollowers diff
+        debug $ "non-believers exist, establishing dominance"
+        return $ BackStreet inSyncRpc theUnion
 {-# INLINE canBroadcastAE #-}
 
 inSync :: CM.ClusterMembership -> Map NodeId (LogIndex, UTCTime) -> NodeId -> Bool
 inSync cm nodeIndexMap myNodeId =
   -- for the purpose of this calculation, ignore any evidence that may have come from nodes no longer in the configuration
-  let allNodes = CM.otherNodes cm `Set.union` CM.transitionalNodes cm
+  let allNodes = CM.getAllExcluding cm myNodeId
       filteredMap = Map.filterWithKey (\k _ -> k `Set.member` allNodes) nodeIndexMap
       indexSet = Set.fromList $ fst <$> Map.elems filteredMap -- get a list of where everyone is
       nodeKeys = Set.fromList $ Map.keys filteredMap

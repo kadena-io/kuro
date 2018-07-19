@@ -113,10 +113,10 @@ runMsgServer dispatch me addrList debug gcm = forever $ do
               liftIO $ putStrLn connectStr -- remove this eventually, too useful for now...
               liftIO $ debug connectStr
             void $ forM_ nodesToRemove $ \addr -> do
-                _ <- disconnect subSocket $ nodeIdToZmqAddr $ addr
-                let deconStr = zmqSub ++ "disconnected from: " ++ (show $ nodeIdToZmqAddr addr)
-                liftIO $ debug deconStr
-                liftIO $ putStrLn deconStr -- remove this eventually, too useful for now...
+              _ <- disconnect subSocket $ nodeIdToZmqAddr $ addr
+              let deconStr = zmqSub ++ "disconnected from: " ++ (show $ nodeIdToZmqAddr addr)
+              liftIO $ debug deconStr
+              liftIO $ putStrLn deconStr -- remove this eventually, too useful for now...
             liftIO $ putMVar connectedNodeIdsMV newNodeList
             liftIO $ debug $ zmqSub ++ "reconfigured ZMQ"
             runSub

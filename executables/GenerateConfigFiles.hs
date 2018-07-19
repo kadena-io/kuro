@@ -100,20 +100,20 @@ main = do
     err -> putStrLn $ "Invalid args, wanted `` or `--distributed path-to-cluster-ip-file` but got: " ++ show err
 
 data ConfigParams = ConfigParams
-  { clusterCnt :: !Int
-  , aeRepLimit :: !Int
-  , ppThreadCnt :: !Int
-  , ppUsePar :: !Bool
-  , heartbeat :: !Int
-  , electionMax :: !Int
-  , electionMin :: !Int
-  , inMemTxs :: !Int
+  { cpClusterCnt :: !Int
+  , cpAeRepLimit :: !Int
+  , cpPpThreadCnt :: !Int
+  , cpPpUsePar :: !Bool
+  , cpHeartbeat :: !Int
+  , cpElectionMax :: !Int
+  , cpElectionMin :: !Int
+  , cpInMemTxs :: !Int
   , cpLogDir :: !FilePath
-  , confDir :: !FilePath
-  , enableWB :: !Bool
-  , hostStaticDirB :: !Bool
-  , adminKeyCnt :: !Int
-  , entityCnt :: !Int
+  , cpConfDir :: !FilePath
+  , cpEnableWB :: !Bool
+  , cpHostStaticDirB :: !Bool
+  , cpAdminKeyCnt :: !Int
+  , cpEntityCnt :: !Int
   } deriving (Show)
 
 data ConfGenMode =
@@ -200,20 +200,20 @@ getParams cfgMode = do
      ", must be >0, <= cluster size)")
     (Just clusterCnt') $ validate ((&&) <$> (> 0) <*> (<= clusterCnt')) ("Must be >0, <=" ++ show clusterCnt')
   return $ ConfigParams
-    { clusterCnt = clusterCnt'
-    , aeRepLimit = aeRepLimit'
-    , ppThreadCnt = ppThreadCnt'
-    , ppUsePar = ppUsePar'
-    , heartbeat = heartbeat' * 1000000
-    , electionMax = electionMax' * 1000000
-    , electionMin = electionMin' * 1000000
-    , inMemTxs = inMemTxs'
+    { cpClusterCnt = clusterCnt'
+    , cpAeRepLimit = aeRepLimit'
+    , cpPpThreadCnt = ppThreadCnt'
+    , cpPpUsePar = ppUsePar'
+    , cpHeartbeat = heartbeat' * 1000000
+    , cpElectionMax = electionMax' * 1000000
+    , cpElectionMin = electionMin' * 1000000
+    , cpInMemTxs = inMemTxs'
     , cpLogDir = logDir'
-    , confDir = confDir'
-    , enableWB = enableWB'
-    , hostStaticDirB = hostStaticDir'
-    , adminKeyCnt = adminKeyCnt'
-    , entityCnt = entityCnt'
+    , cpConfDir = confDir'
+    , cpEnableWB = enableWB'
+    , cpHostStaticDirB = hostStaticDir'
+    , cpAdminKeyCnt = adminKeyCnt'
+    , cpEntityCnt = entityCnt'
     }
 
 makeAdminKeys :: Int -> IO (Map Alias KeyPair)
@@ -229,23 +229,23 @@ mainAws clustersFile = do
   clusterKeys <- makeKeys (length clusters) <$> (newGenIO :: IO SystemRandom)
   clusterKeyMaps <- return $ awsKeyMaps clusterIds clusterKeys
   cfgParams@ConfigParams{..} <- getParams AWS { awsClusterCnt = length clusterIds }
-  adminKeyPairs <- makeAdminKeys adminKeyCnt
+  adminKeyPairs <- makeAdminKeys cpAdminKeyCnt
   adminKeys' <- return $ fmap _kpPublicKey adminKeyPairs
-  ents <- mkEntities clusterIds entityCnt
+  ents <- mkEntities clusterIds cpEntityCnt
   clusterConfs <- return (createClusterConfig cfgParams adminKeys' clusterKeyMaps ents 8000 <$> clusterIds)
-  mkConfs confDir clusterConfs adminKeyPairs True
+  mkConfs cpConfDir clusterConfs adminKeyPairs True
 
 mainLocal :: IO ()
 mainLocal = do
   cfgParams@ConfigParams{..} <- getParams LOCAL
-  adminKeyPairs <- makeAdminKeys adminKeyCnt
+  adminKeyPairs <- makeAdminKeys cpAdminKeyCnt
   adminKeys' <- return $ fmap _kpPublicKey adminKeyPairs
-  clusterKeyMaps <- mkNodes (mkNode "127.0.0.1" 10000 "node") . makeKeys clusterCnt <$> (newGenIO :: IO SystemRandom)
+  clusterKeyMaps <- mkNodes (mkNode "127.0.0.1" 10000 "node") . makeKeys cpClusterCnt <$> (newGenIO :: IO SystemRandom)
   let nids = M.keys (fst clusterKeyMaps)
-  ents <- mkEntities nids entityCnt
+  ents <- mkEntities nids cpEntityCnt
   clusterConfs <- return $ zipWith (createClusterConfig cfgParams adminKeys' clusterKeyMaps ents)
                   [8000..] nids
-  mkConfs confDir clusterConfs adminKeyPairs False
+  mkConfs cpConfDir clusterConfs adminKeyPairs False
 
 
 mkConfs :: FilePath -> [Config] -> Map Alias KeyPair -> Bool -> IO ()
@@ -291,8 +291,8 @@ createClusterConfig cp@ConfigParams{..} adminKeys' (privMap, pubMap) entMap apiP
   , _adminKeys            = adminKeys'
   , _myPrivateKey         = privMap M.! nid
   , _myPublicKey          = pubMap M.! nid
-  , _electionTimeoutRange = (electionMin, electionMax)
-  , _heartbeatTimeout     = heartbeat
+  , _electionTimeoutRange = (cpElectionMin, cpElectionMax)
+  , _heartbeatTimeout     = cpHeartbeat
   , _enableDebug          = True
   , _enablePersistence    = True
   , _pactPersist          = mkPactPersistConfig cp True nid
@@ -300,22 +300,22 @@ createClusterConfig cp@ConfigParams{..} adminKeys' (privMap, pubMap) entMap apiP
   , _apiPort              = apiP
   , _entity               = entMap M.! nid
   , _logDir               = cpLogDir
-  , _aeBatchSize          = aeRepLimit
-  , _preProcThreadCount   = ppThreadCnt
-  , _preProcUsePar        = ppUsePar
-  , _inMemTxCache         = inMemTxs
-  , _hostStaticDir        = hostStaticDirB
+  , _aeBatchSize          = cpAeRepLimit
+  , _preProcThreadCount   = cpPpThreadCnt
+  , _preProcUsePar        = cpPpUsePar
+  , _inMemTxCache         = cpInMemTxs
+  , _hostStaticDir        = cpHostStaticDirB
   , _nodeClass            = Active
   }
 
 mkPactPersistConfig :: ConfigParams -> Bool -> NodeId -> PactPersistConfig
 mkPactPersistConfig ConfigParams{..} enablePersist NodeId{..} = PactPersistConfig {
-    _ppcWriteBehind = enableWB
+    _ppcWriteBehind = cpEnableWB
   , _ppcBackend = if enablePersist
                   then PPBSQLite
                        { _ppbSqliteConfig = SQLiteConfig {
                              dbFile = cpLogDir </> (show $ _alias) ++ "-pact.sqlite"
-                           , pragmas = if enableWB then [] else fastNoJournalPragmas } }
+                           , pragmas = if cpEnableWB then [] else fastNoJournalPragmas } }
                   else PPBInMemory
   }
 

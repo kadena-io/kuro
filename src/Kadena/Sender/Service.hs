@@ -107,10 +107,10 @@ runSenderService dispatch gcm debugFn publishMetric' mPubEvState mPubCons = do
     { _debugPrint = debugFn
     , _aeReplicationLogLimit = Cfg._aeBatchSize conf
     -- Comm Channels
-    , _serviceRequestChan = _senderService dispatch
-    , _outboundGeneral = dispatch ^. KD.outboundGeneral
+    , _serviceRequestChan = _dispSenderService dispatch
+    , _outboundGeneral = dispatch ^. KD.dispOutboundGeneral
     -- Log Storage
-    , _logService = dispatch ^. KD.logService
+    , _logService = dispatch ^. KD.dispLogService
     , _getEvidenceState = mPubEvState
     , _publishMetric = publishMetric'
     , _config = gcm

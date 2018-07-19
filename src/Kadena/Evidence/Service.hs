@@ -47,8 +47,8 @@ initEvidenceEnv :: Dispatch
                 -> (Metric -> IO ())
                 -> EvidenceEnv
 initEvidenceEnv dispatch debugFn' mConfig' mPubStateTo' mResetLeaderNoFollowers' publishMetric' = EvidenceEnv
-  { _logService = dispatch ^. Dispatch.logService
-  , _evidence = dispatch ^. Dispatch.evidence
+  { _logService = dispatch ^. Dispatch.dispLogService
+  , _evidence = dispatch ^. Dispatch.dispEvidence
   , _mResetLeaderNoFollowers = mResetLeaderNoFollowers'
   , _mConfig = mConfig'
   , _mPubStateTo = mPubStateTo'

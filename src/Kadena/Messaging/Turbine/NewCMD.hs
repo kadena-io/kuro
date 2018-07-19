@@ -20,14 +20,14 @@ import Kadena.Types hiding (debugPrint)
 import Kadena.Types.KeySet
 import Kadena.Message
 import Kadena.Messaging.Turbine.Types
-import Kadena.PreProc.Types (ProcessRequestChannel(..), ProcessRequest(..))
+import Kadena.Types.PreProc (ProcessRequestChannel(..), ProcessRequest(..))
 
 newCmdTurbine :: ReaderT ReceiverEnv IO ()
 newCmdTurbine = do
-  getCmds' <- view (dispatch.inboundCMD)
-  prChan <- view (dispatch.processRequestChannel)
+  getCmds' <- view (dispatch.dispInboundCMD)
+  prChan <- view (dispatch.dispProcessRequestChannel)
   let getCmds n = readComms getCmds' n
-  enqueueEvent' <- view (dispatch.consensusEvent)
+  enqueueEvent' <- view (dispatch.dispConsensusEvent)
   let enqueueEvent = writeComm enqueueEvent' . ConsensusEvent
   debug <- view debugPrint
   ks <- view keySet

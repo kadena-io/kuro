@@ -62,9 +62,9 @@ initExecutionEnv
   -> EntityConfig
   -> ExecutionEnv
 initExecutionEnv dispatch' debugPrint' persistConfig logRules' publishMetric' getTimestamp' gcm' ent = ExecutionEnv
-  { _eenvExecChannel = dispatch' ^. D.execService
-  , _eenvHistoryChannel = dispatch' ^. D.historyChannel
-  , _eenvPrivateChannel = dispatch' ^. D.privateChannel
+  { _eenvExecChannel = dispatch' ^. D.dispExecService
+  , _eenvHistoryChannel = dispatch' ^. D.dispHistoryChannel
+  , _eenvPrivateChannel = dispatch' ^. D.dispPrivateChannel
   , _eenvPactPersistConfig = persistConfig
   , _eenvDebugPrint = debugPrint'
   , _eenvExecLoggers = initLoggers debugPrint' doLog logRules'

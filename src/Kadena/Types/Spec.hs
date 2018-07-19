@@ -183,12 +183,12 @@ mkConsensusEnv conf' rSpec dispatch timerTarget' timeCache' mEs mResetLeaderNoFo
     , _mPubConsensus = mPubConsensus'
     }
   where
-    g' = dispatch ^. senderService
-    cog' = dispatch ^. outboundGeneral
-    ls' = dispatch ^. logService
-    hs' = dispatch ^. historyChannel
-    ie' = dispatch ^. consensusEvent
-    ev' = dispatch ^. evidence
+    g' = dispatch ^. dispSenderService
+    cog' = dispatch ^. dispOutboundGeneral
+    ls' = dispatch ^. dispLogService
+    hs' = dispatch ^. dispHistoryChannel
+    ie' = dispatch ^. dispConsensusEvent
+    ev' = dispatch ^. dispEvidence
 
 sendMsg :: SenderServiceChannel -> ServiceRequest' -> IO ()
 sendMsg outboxWrite og = do

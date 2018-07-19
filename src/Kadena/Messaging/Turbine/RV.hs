@@ -16,8 +16,8 @@ import Kadena.Messaging.Turbine.Types
 
 rvAndRvrTurbine :: ReaderT ReceiverEnv IO ()
 rvAndRvrTurbine = do
-  getRvAndRVRs' <- view (dispatch.inboundRVorRVR)
-  enqueueEvent <- view (dispatch.consensusEvent)
+  getRvAndRVRs' <- view (dispatch.dispInboundRVorRVR)
+  enqueueEvent <- view (dispatch.dispConsensusEvent)
   debug <- view debugPrint
   ks <- view keySet
   liftIO $ forever $ do

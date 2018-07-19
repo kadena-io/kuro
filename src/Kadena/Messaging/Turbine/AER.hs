@@ -26,9 +26,9 @@ import Kadena.Messaging.Turbine.Types
 
 aerTurbine :: ReaderT ReceiverEnv IO ()
 aerTurbine = do
-  getAers' <- view (dispatch.inboundAER)
+  getAers' <- view (dispatch.dispInboundAER)
   let getAers n = readComms getAers' n
-  enqueueEvent' <- view (dispatch.evidence)
+  enqueueEvent' <- view (dispatch.dispEvidence)
   let enqueueEvent = writeComm enqueueEvent' . VerifiedAER
   debug <- view debugPrint
   ks <- view keySet

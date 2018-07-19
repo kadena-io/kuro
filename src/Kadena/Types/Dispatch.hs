@@ -1,20 +1,21 @@
 {-# LANGUAGE TemplateHaskell #-}
 
 module Kadena.Types.Dispatch
-  ( Dispatch(..), initDispatch
-  , inboundAER
-  , inboundCMD
-  , inboundRVorRVR
-  , inboundGeneral
-  , outboundGeneral
-  , consensusEvent
-  , senderService
-  , logService
-  , evidence
-  , execService
-  , historyChannel
-  , processRequestChannel
-  , privateChannel
+  ( Dispatch(..)
+  , initDispatch
+  , dispInboundAER
+  , dispInboundCMD
+  , dispInboundRVorRVR
+  , dispInboundGeneral
+  , dispOutboundGeneral
+  , dispConsensusEvent
+  , dispSenderService
+  , dispLogService
+  , dispEvidence
+  , dispExecService
+  , dispHistoryChannel
+  , dispProcessRequestChannel
+  , dispPrivateChannel
   ) where
 
 import Control.Lens
@@ -27,25 +28,25 @@ import Kadena.Log.Types (LogServiceChannel)
 import Kadena.Evidence.Spec (EvidenceChannel)
 import Kadena.Types.Execution (ExecutionChannel)
 import Kadena.Types.History (HistoryChannel)
-import Kadena.PreProc.Types (ProcessRequestChannel)
+import Kadena.Types.PreProc (ProcessRequestChannel)
 import Kadena.Private.Types (PrivateChannel)
 import Kadena.Types.Message (InboundCMDChannel,OutboundGeneralChannel)
 import Kadena.Types.Event (ConsensusEventChannel)
 
 data Dispatch = Dispatch
-  { _inboundAER      :: InboundAERChannel
-  , _inboundCMD      :: InboundCMDChannel
-  , _inboundRVorRVR  :: InboundRVorRVRChannel
-  , _inboundGeneral  :: InboundGeneralChannel
-  , _outboundGeneral :: OutboundGeneralChannel
-  , _consensusEvent   :: ConsensusEventChannel
-  , _senderService   :: SenderServiceChannel
-  , _logService   :: LogServiceChannel
-  , _evidence   :: EvidenceChannel
-  , _execService :: ExecutionChannel
-  , _historyChannel :: HistoryChannel
-  , _processRequestChannel :: ProcessRequestChannel
-  , _privateChannel :: PrivateChannel
+  { _dispInboundAER      :: InboundAERChannel
+  , _dispInboundCMD      :: InboundCMDChannel
+  , _dispInboundRVorRVR  :: InboundRVorRVRChannel
+  , _dispInboundGeneral  :: InboundGeneralChannel
+  , _dispOutboundGeneral :: OutboundGeneralChannel
+  , _dispConsensusEvent   :: ConsensusEventChannel
+  , _dispSenderService   :: SenderServiceChannel
+  , _dispLogService   :: LogServiceChannel
+  , _dispEvidence   :: EvidenceChannel
+  , _dispExecService :: ExecutionChannel
+  , _dispHistoryChannel :: HistoryChannel
+  , _dispProcessRequestChannel :: ProcessRequestChannel
+  , _dispPrivateChannel :: PrivateChannel
   } deriving (Typeable)
 
 initDispatch :: IO Dispatch

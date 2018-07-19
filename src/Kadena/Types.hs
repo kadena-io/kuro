@@ -18,3 +18,4 @@ import Kadena.Types.Message as X
 import Kadena.Types.Metric as X
 import Kadena.Types.Spec as X
 import Kadena.Types.History as X
+import Kadena.Types.PreProc as X

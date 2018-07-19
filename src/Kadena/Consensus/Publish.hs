@@ -45,9 +45,9 @@ publish Publish{..} die rpcs = do
   rks' <- return $ RequestKeys $! fst <$> rpcs
   if pNodeId == ldr
   then  -- dispatch internally if we're leader, otherwise send outbound
-    liftIO $ writeComm (_inboundCMD pDispatch) $ InboundCMDFromApi $ (rAt, NewCmdInternal cmds')
+    liftIO $ writeComm (_dispInboundCMD pDispatch) $ InboundCMDFromApi $ (rAt, NewCmdInternal cmds')
   else
-    liftIO $ writeComm (_senderService pDispatch) $! ForwardCommandToLeader (NewCmdRPC cmds' NewMsg)
+    liftIO $ writeComm (_dispSenderService pDispatch) $! ForwardCommandToLeader (NewCmdRPC cmds' NewMsg)
   return rks'
 
 pactBSToCMDWire :: Pact.Command ByteString -> CMDWire

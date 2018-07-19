@@ -20,7 +20,6 @@ import Data.Thyme.Clock
 import Safe
 
 import Kadena.Config.ClusterMembership
-import Kadena.Config.TMVar
 import Kadena.ConfigChange as CC
 import Kadena.Event (pprintBeat)
 import Kadena.Evidence.Spec as X

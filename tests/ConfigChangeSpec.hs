@@ -38,41 +38,53 @@ testClusterCommands =
                          ok `shouldBe` True
 
                          putStrLn "\nMetric test - waiting for cluster size == 4..."
-                         metricsOk <- waitForMetric testMetric1
-                         metricsOk `shouldBe` True
+                         okSize4 <- waitForMetric testMetricSize4
+                         okSize4 `shouldBe` True
 
                          --checking for the right list of cluster members
-                         memberMetrics1 <- gatherMetrics [testMetric3]
-                         membersOk1 <- checkMetrics memberMetrics1
-                         membersOk1 `shouldBe` True
+                         m123 <- gatherMetrics [testMetric123]
+                         okM123 <- checkMetrics m123
+                         okM123 `shouldBe` True
 
-                         putStrLn "\nFirst config change test:"
-
-                         -- ccResults1 <- runClientCommands clientArgs ccTestRequests1
-                         ccResults1 <- runClientCommands clientArgs _ccTestRequests0
-
-                         ccOk1 <- checkResults ccResults1
-                         ccOk1 `shouldBe` True
+                         putStrLn "\nConfig change test #1 - Dropping node02:"
+                         ccResults1 <- runClientCommands clientArgs ccTest0123to013
+                         okCC1 <- checkResults ccResults1
+                         okCC1 `shouldBe` True
 
                          putStrLn "Metric test - waiting for cluster size == 3..."
-
-                         --metricsOk2 <- waitForMetric testMetric2
-                         metricsOk2 <- waitForMetric testMetric1
-
-                         metricsOk2 `shouldBe` True
+                         okSize3 <- waitForMetric testMetricSize3
+                         okSize3 `shouldBe` True
 
                          --checking for the right list of cluster members
+                         m13 <- gatherMetrics [testMetric13]
+                         okM13 <- checkMetrics m13
+                         okM13 `shouldBe` True
 
-                         --memberAfterChange1 <- gatherMetrics [testMetric4]
-                         memberAfterChange1 <- gatherMetrics [testMetric3]
-
-                         membersAfterChangeOk1 <- checkMetrics memberAfterChange1
-                         membersAfterChangeOk1 `shouldBe` True
-
-                         --running (some of) the client commands again after the config change
+                         putStrLn "Runing post config change #1 commands:"
                          results2 <- runClientCommands clientArgs testRequestsRepeated
                          ok2 <- checkResults results2
                          ok2 `shouldBe` True
+
+                         {-
+                         putStrLn "Config change test#2 - adding back node02:"
+                         ccResults1b <- runClientCommands clientArgs ccTest013to0123
+                         okCC1b <- checkResults ccResults1b
+                         okCC1b `shouldBe` True
+                         -}
+
+                         putStrLn "Config change test #2 - Dropping node3, adding node2"
+                         ccResults2 <- runClientCommands clientArgs ccTest013to012
+                         okCC2 <- checkResults ccResults2
+                         okCC2 `shouldBe` True
+
+                         putStrLn "Metric test - waiting for the set {node0, node1, node2}..."
+                         ok012 <- waitForMetric testMetric12
+                         ok012 `shouldBe` True
+
+                         putStrLn "Runing post config change #2 commands:"
+                         results3 <- runClientCommands clientArgs testRequestsRepeated
+                         ok3 <- checkResults results3
+                         ok3 `shouldBe` True
 
                          stopProcesses procHandles
                          putStrLn "Done.")
@@ -191,17 +203,25 @@ passMetric :: TestMetricResult -> IO ()
 passMetric tmr = putStrLn $ "Metric test passed: " ++ metricNameTm (requestTmr tmr)
 
 testRequests :: [TestRequest]
-testRequests = [testReq1, testReq2, testReq3, testReq4, testReq5]
+--testRequests = [testReq1, testReq2, testReq3, testReq4, testReq5]
+testRequests = [testReq1, testReq2, testReq3, testReq4]
 
 _ccTestRequests0 :: [TestRequest]
 _ccTestRequests0 = [_testCfgChange0]
 
-ccTestRequests1 :: [TestRequest]
-ccTestRequests1 = [testCfgChange1]
+ccTest0123to013 :: [TestRequest]
+ccTest0123to013 = [cfg0123to013]
+
+ccTest013to0123 :: [TestRequest]
+ccTest013to0123 = [cfg013to0123]
+
+ccTest013to012:: [TestRequest]
+ccTest013to012 = [cfg013to012]
 
 -- tests that can be repeated
 testRequestsRepeated :: [TestRequest]
-testRequestsRepeated = [testReq1, testReq4, testReq5]
+-- testRequestsRepeated = [testReq1, testReq4, testReq5]
+testRequestsRepeated = [testReq1, testReq4]
 
 testReq1 :: TestRequest
 testReq1 = TestRequest
@@ -245,32 +265,55 @@ _testCfgChange0 = TestRequest
   , eval = checkCCSuccess
   , displayStr = "Removes node2 from the cluster" }
 
-testCfgChange1 :: TestRequest
-testCfgChange1 = TestRequest
+cfg0123to013 :: TestRequest
+cfg0123to013 = TestRequest
   { cmd = "configChange test-files/conf/config-change-01.yaml"
   , matchCmd = "test-files/conf/config-change-01.yaml"
   , eval = checkCCSuccess
   , displayStr = "Removes node2 from the cluster" }
 
-testMetric1 :: TestMetric
-testMetric1 = TestMetric
+cfg013to0123 :: TestRequest
+cfg013to0123 = TestRequest
+  { cmd = "configChange test-files/conf/config-change-01b.yaml"
+  , matchCmd = "test-files/conf/config-change-01b.yaml"
+  , eval = checkCCSuccess
+  , displayStr = "Replaces node2 back into the cluster" }
+
+cfg013to012 :: TestRequest
+cfg013to012 = TestRequest
+  { cmd = "configChange test-files/conf/config-change-02.yaml"
+  , matchCmd = "test-files/conf/config-change-02.yaml"
+  , eval = checkCCSuccess
+  , displayStr = "Adds back node2 and removes node3 from the cluster" }
+
+testMetricSize4 :: TestMetric
+testMetricSize4 = TestMetric
   { metricNameTm = "/kadena/cluster/size"
   , evalTm = (\s -> readDef (0.0 :: Float) s == 4.0) }
 
-testMetric2 :: TestMetric
-testMetric2 = TestMetric
+testMetricSize3 :: TestMetric
+testMetricSize3 = TestMetric
   { metricNameTm = "/kadena/cluster/size"
   , evalTm = (\s -> readDef (0.0 :: Float) s == 3.0) }
 
-testMetric3 :: TestMetric
-testMetric3 = TestMetric
+testMetric123 :: TestMetric
+testMetric123 = TestMetric
   { metricNameTm = "/kadena/cluster/members"
   , evalTm = (\s -> (splitOn ", " s) /= ["node1", "node2", "node3"]) }
 
-testMetric4 :: TestMetric
-testMetric4 = TestMetric
+testMetric13 :: TestMetric
+testMetric13 = TestMetric
   { metricNameTm = "/kadena/cluster/members"
   , evalTm = (\s -> (splitOn ", " s) /= ["node1", "node3"]) }
+
+testMetric12 :: TestMetric
+testMetric12 = TestMetric
+  { metricNameTm = "/kadena/cluster/members"
+  , evalTm = (\s -> (splitOn ", " s) /= ["node1", "node2"]) }
+
+
+
+
 
 waitForMetric :: TestMetric -> IO Bool
 waitForMetric tm = do

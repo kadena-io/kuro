@@ -8,6 +8,7 @@ module Kadena.Config.ClusterMembership
   , containsAllNodesExcluding
   , countOthers
   , countTransitional
+  , getAllExcluding
   , hasTransitionalNodes
   , clusterMember
   , minQuorumOthers
@@ -61,7 +62,7 @@ setTransitional :: ClusterMembership -> Set NodeId -> ClusterMembership
 setTransitional cm transNodes =
   mkClusterMembership (_cmOtherNodes cm) transNodes
 
--- | Count the number of "other" nodes 
+-- | Count the number of "other" nodes
 -- (all nodes in the cluster minus the node currently runnning)
 countOthers :: ClusterMembership -> Int
 countOthers cm = Set.size $ _cmOtherNodes cm
@@ -95,7 +96,7 @@ othersIncluding :: ClusterMembership -> NodeId -> Set NodeId
 othersIncluding cm nodeToInclude =
   nodeToInclude `Set.insert` (otherNodes cm)
 
--- | Get the names of the "other" nodes as Text with commas separating the names 
+-- | Get the names of the "other" nodes as Text with commas separating the names
 othersAsText :: ClusterMembership -> Text
 othersAsText cm =
   let others = Set.toList $ otherNodes cm
@@ -162,4 +163,10 @@ containsAllNodesExcluding cm nodesToCheck nodeToExclude =
 -- | Does the given nodeId exist in this cluster configuration -- i.e., in either the 'others'
 -- or '''transitional' sets?
 clusterMember :: ClusterMembership -> NodeId -> Bool
-clusterMember cm node = node `Set.member` (otherNodes cm) || node `Set.member` (transitionalNodes cm) 
+clusterMember cm node = node `Set.member` (otherNodes cm) || node `Set.member` (transitionalNodes cm)
+
+-- | Get a set containing all the nodes -- i.e., the 'other' nodes `union` the config change
+--   transitional nodes.  The specified node is excluded
+getAllExcluding :: ClusterMembership -> NodeId -> Set NodeId
+getAllExcluding cm nodeToExclude =
+  Set.delete nodeToExclude $ otherNodes cm `Set.union` transitionalNodes cm

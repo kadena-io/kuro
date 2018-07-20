@@ -14,7 +14,7 @@ import Kadena.Config.TMVar
 import Kadena.Types.Base (_alias)
 import Kadena.Types.Comms (readComm,writeComm)
 
-import Kadena.Private.Types
+import Kadena.Types.Private
 import Kadena.Private.Private
 import Kadena.Types.Entity
 

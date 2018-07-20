@@ -56,7 +56,7 @@ import qualified Kadena.Types.History as History
 import qualified Kadena.Types.Execution as Exec
 import Kadena.Types.Dispatch
 import Kadena.Private.Service (encrypt)
-import Kadena.Private.Types (PrivatePlaintext(..),PrivateCiphertext(..),Labeled(..),PrivateResult(..))
+import Kadena.Types.Private (PrivatePlaintext(..),PrivateCiphertext(..),Labeled(..),PrivateResult(..))
 import Kadena.Consensus.Publish
 
 import Kadena.HTTP.Static

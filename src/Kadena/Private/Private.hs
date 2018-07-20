@@ -44,7 +44,7 @@ import qualified Data.Set as S
 import Pact.Types.Orphans ()
 import Pact.Types.Util (AsString(..))
 
-import Kadena.Private.Types
+import Kadena.Types.Private
 import Kadena.Types.Entity
 
 

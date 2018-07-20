@@ -75,9 +75,7 @@ library
                      , Kadena.Monitoring.EkgSnap
                      , Kadena.Monitoring.Server
                      , Kadena.PreProc.Service
-                     , Kadena.PreProc.Types
                      , Kadena.Private.Private
-                     , Kadena.Private.Types
                      , Kadena.Private.Service
                      , Kadena.Sender.Service
                      , Kadena.Sender.Types
@@ -105,6 +103,8 @@ library
                      , Kadena.Types.Message.Signed
                      , Kadena.Types.Metric
                      , Kadena.Types.PactDB
+                     , Kadena.Types.PreProc
+                     , Kadena.Types.Private
                      , Kadena.Types.Spec
                      , Kadena.Types.Sqlite
                      , Kadena.Util.Util

@@ -29,7 +29,7 @@ import Kadena.Evidence.Spec (EvidenceChannel)
 import Kadena.Types.Execution (ExecutionChannel)
 import Kadena.Types.History (HistoryChannel)
 import Kadena.Types.PreProc (ProcessRequestChannel)
-import Kadena.Private.Types (PrivateChannel)
+import Kadena.Types.Private (PrivateChannel)
 import Kadena.Types.Message (InboundCMDChannel,OutboundGeneralChannel)
 import Kadena.Types.Event (ConsensusEventChannel)
 

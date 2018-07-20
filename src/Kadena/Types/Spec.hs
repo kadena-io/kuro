@@ -47,7 +47,7 @@ import Kadena.Types.Message
 import Kadena.Types.Metric
 import Kadena.Types.Comms
 import Kadena.Types.Dispatch
-import Kadena.Sender.Types (SenderServiceChannel, ServiceRequest')
+import Kadena.Types.Sender (SenderServiceChannel, ServiceRequest')
 import Kadena.Log.Types (QueryApi(..))
 import Kadena.Types.History (History(..))
 import Kadena.Types.Evidence (PublishedEvidenceState, Evidence(ClearConvincedNodes))

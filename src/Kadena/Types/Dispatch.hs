@@ -23,7 +23,7 @@ import Control.Lens
 import Data.Typeable
 
 import Kadena.Types.Comms
-import Kadena.Sender.Types (SenderServiceChannel)
+import Kadena.Types.Sender (SenderServiceChannel)
 import Kadena.Log.Types (LogServiceChannel)
 import Kadena.Evidence.Spec (EvidenceChannel)
 import Kadena.Types.Execution (ExecutionChannel)

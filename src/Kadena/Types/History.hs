@@ -31,11 +31,8 @@ import Data.Thyme.Clock (UTCTime)
 import Database.SQLite3.Direct
 
 import Kadena.Types.Base
-import Kadena.Types.Config
 import Kadena.Types.Command
 import Kadena.Types.Comms
-import Kadena.Types.Metric
-import Kadena.Types.Message
 import Kadena.Types.Event (Beat)
 
 newtype ExistenceResult = ExistenceResult

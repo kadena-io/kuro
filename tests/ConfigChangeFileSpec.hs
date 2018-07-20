@@ -96,7 +96,7 @@ clusterChangeInfo2 = ClusterChangeInfo
                        , _cciState = Transitional }
 clusterChangeInfo3 = ClusterChangeInfo
                        { _cciNewNodeList = nodes0123
-                       , _cciAddedNodes = [node3]
+                       , _cciAddedNodes = [node0]
                        , _cciRemovedNodes = []
                        , _cciState = Transitional }
 

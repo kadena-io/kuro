@@ -100,7 +100,7 @@ runMsgServer dispatch me addrList debug gcm = forever $ do
       liftIO $ putMVar semephory ()
       let
         runSub = liftIO (tryTakeMVar reconfigureSub) >>= \case
-          Just (ReconfSub _ (Just shutdownSubMV)) -> do
+          Just (ReconfSub _ (Just shutdownSubMV)) ->
             liftIO $ tryTakeMVar shutdownSubMV >>= \case
               Nothing -> error "invariant error: shutdownSubMV should be populated"
               Just _ -> putMVar shutdownSubMV IsShutdown
@@ -108,11 +108,15 @@ runMsgServer dispatch me addrList debug gcm = forever $ do
             connectedNodeIds <- liftIO $ takeMVar connectedNodeIdsMV
             DiffNodes{..} <- return $ diffNodes connectedNodeIds newNodeList
             void $ forM_ nodesToAdd $ \addr -> do
-                _ <- connect subSocket $ nodeIdToZmqAddr $ addr
-                liftIO $ debug $ zmqSub ++ "connected to: " ++ (show $ nodeIdToZmqAddr addr)
+              _ <- connect subSocket $ nodeIdToZmqAddr $ addr
+              let connectStr = zmqSub ++ "CC - connecting to: " ++ (show $ nodeIdToZmqAddr addr)
+              liftIO $ putStrLn connectStr -- remove this eventually, too useful for now...
+              liftIO $ debug connectStr
             void $ forM_ nodesToRemove $ \addr -> do
-                _ <- disconnect subSocket $ nodeIdToZmqAddr $ addr
-                liftIO $ debug $ zmqSub ++ "disconnected from: " ++ (show $ nodeIdToZmqAddr addr)
+              _ <- disconnect subSocket $ nodeIdToZmqAddr $ addr
+              let deconStr = zmqSub ++ "disconnected from: " ++ (show $ nodeIdToZmqAddr addr)
+              liftIO $ debug deconStr
+              liftIO $ putStrLn deconStr -- remove this eventually, too useful for now...
             liftIO $ putMVar connectedNodeIdsMV newNodeList
             liftIO $ debug $ zmqSub ++ "reconfigured ZMQ"
             runSub
@@ -151,19 +155,20 @@ runMsgServer dispatch me addrList debug gcm = forever $ do
                       liftIO $ debug $ zmqSub ++ " Received " ++ (show $ _digType dig) ++ " from " ++ (show $ _digNodeId dig) ++ " " ++ printInterval ts endTime
                 runSub
       runSub
-  let cu = ConfigUpdater debug "ZMQ|Config" (confUpdater reconfigureSub shutdownPub shutdownSub)
+  let cu = ConfigUpdater debug "ZMQ|Config" (confUpdater reconfigureSub shutdownPub shutdownSub me)
   linkAsyncTrack "ZMQConfigUpdater" $ runConfigUpdater cu gcm
 
   void $ takeMVar shutdownPub
   void $ takeMVar shutdownSub
 
-confUpdater :: MVar ReconfSub -> MVar Shutdown -> MVar Shutdown -> Config -> IO ()
-confUpdater reconfMV shutdownPubMV shutdownSubMV Config{..} = do
+confUpdater :: MVar ReconfSub -> MVar Shutdown -> MVar Shutdown -> NodeId -> Config -> IO ()
+confUpdater reconfMV shutdownPubMV shutdownSubMV me Config{..} = do
   let shouldShutdown = False
   if shouldShutdown
   then do
     putMVar shutdownPubMV IsPending
     putMVar shutdownSubMV IsPending
     putMVar reconfMV $ ReconfSub Nothing $ Just shutdownSubMV
-  else
-    putMVar reconfMV $ ReconfSub (Just (CM.otherNodes _clusterMembers)) Nothing
+  else do
+    let theNodes = CM.getAllExcluding _clusterMembers me
+    putMVar reconfMV $ ReconfSub (Just theNodes) Nothing

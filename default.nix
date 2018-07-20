@@ -1,4 +1,6 @@
-{ rpRef ? "80236ad3769602813d1c963e2bd90edd3147734b", rpSha ?  "13l46z12i1bdwl9w76vl0cw860syvjkm8a4zgc0610f98h18dqh1" }:
+{ killSwitch ? false
+, rpRef ? "80236ad3769602813d1c963e2bd90edd3147734b"
+, rpSha ?  "13l46z12i1bdwl9w76vl0cw860syvjkm8a4zgc0610f98h18dqh1" }:
 
 let rp = (import <nixpkgs> {}).fetchFromGitHub {
            owner = "adetokunbo";

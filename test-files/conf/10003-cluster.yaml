@@ -2,7 +2,7 @@ pactPersist:
   writeBehind: true
   backend:
     config:
-      dbFile: ./test-files/log/node3-pact.sqlite
+      dbFile: ./test-files/log3/node3-pact.sqlite
       pragmas: []
     type: SQLITE
 publicKeys:
@@ -12,7 +12,7 @@ publicKeys:
   node3: 0c297d59fccf78661f88b0b29d91c7931c30894dbdcc33bfa59dd83dd37cc834
 aeBatchSize: 20000
 heartbeatTimeout: 1000000
-logDir: ./test-files/log
+logDir: ./test-files/log3
 apiPort: 8003
 logRules:
   PactService:

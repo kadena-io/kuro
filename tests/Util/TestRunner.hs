@@ -39,6 +39,7 @@ import System.Command
 import System.Console.GetOpt
 import System.Environment
 import System.Time.Extra
+import Test.Hspec
 import Text.Trifecta (ErrInfo(..), parseString, Result(..))
 
 testDir, testConfDir, _testLogDir :: String
@@ -51,7 +52,7 @@ data TestRequest = TestRequest
   , matchCmd :: String -- used when the command as processed differs from the original command issued
                        -- e.g., the command "load myFile.yaml" is processed as "myFile.yaml"
                        -- FIXME: really need to find a better way to match these...
-  , eval :: TestResponse -> Bool
+  , eval :: TestResponse -> Expectation
   , displayStr :: String
   }
 
@@ -94,45 +95,37 @@ delTempFiles = do
 
 runAll :: [TestRequest] -> [TestMetric]-> IO ([TestResult], [TestMetricResult])
 runAll testRequests testMetrics = do
-  terminationFuncs <- runServers
+  runServers
   putStrLn "Servers are running, sleeping for a few seconds"
   _ <- sleep 3
   catchAny (do
               results <- runClientCommands clientArgs testRequests
               metricResults <- gatherMetrics testMetrics
-              metricResults `seq` results `seq` sequence terminationFuncs
+              metricResults `seq` results `seq` return ()
               return (results, metricResults))
-           (\e -> do
-              sequence terminationFuncs
-              throw e)
+           (\e -> throw e)
 
 -- | Returns a list of IO actions that kill all the servers
-runServers :: IO [IO ()]
-runServers =
-  foldM f [] serverArgs where
-    f acc x = do
-        h <- runServer x
-        return $ h : acc
+runServers :: IO ()
+runServers = do
+  sleep 1
+  mapM_ runServer serverArgs
 
 -- | Returns an IO action that kills the thread.
-runServer :: String -> IO (IO ())
+runServer :: String -> IO ()
 runServer args = do
     tid <- forkIO (withArgs (words args) App.main)
     sleep 1
-    return (killThread tid)
---    let p = proc "kadenaserver" $ words args
---    (_, _, _, procHandle) <- createProcess p
---    sleep 1
---    return (terminateProcess procHandle)
+    return ()
 
 serverArgs :: [String]
 serverArgs = [serverArgs0, serverArgs1, serverArgs2, serverArgs3]
 
 serverArgs0, serverArgs1, serverArgs2, serverArgs3 :: String
-serverArgs0 = "+RTS -N4 -RTS -c " ++ testConfDir ++ "10000-cluster.yaml"
-serverArgs1 = "+RTS -N4 -RTS -c " ++ testConfDir ++ "10001-cluster.yaml"
-serverArgs2 = "+RTS -N4 -RTS -c " ++ testConfDir ++ "10002-cluster.yaml"
-serverArgs3 = "+RTS -N4 -RTS -c " ++ testConfDir ++ "10003-cluster.yaml"
+serverArgs0 = "-c " ++ testConfDir ++ "10000-cluster.yaml"
+serverArgs1 = "-c " ++ testConfDir ++ "10001-cluster.yaml"
+serverArgs2 = "-c " ++ testConfDir ++ "10002-cluster.yaml"
+serverArgs3 = "-c " ++ testConfDir ++ "10003-cluster.yaml"
 
 clientArgs :: [String]
 clientArgs = words $ "-c " ++ testConfDir ++ "client.yaml"

@@ -24,32 +24,24 @@ testClusterCommands =
             delTempFiles
             (results, metrics) <- runAll testRequests testMetrics
             putStrLn "\nCommand tests:"
-            ok <- checkResults results
-            ok `shouldBe` True
+            checkResults results
             putStrLn "\nMetric tests:"
             metricsOk <- checkMetrics metrics
             metricsOk `shouldBe` True
 
-checkResults :: [TestResult] -> IO Bool
-checkResults xs =
-    foldr checkResult (return True) (reverse xs) where
-        checkResult result ok = do
-            let req = requestTr result
-            let resp = responseTr result
-            bOk <- ok
-            case resp of
-                Nothing -> do
-                    failTest result "Response is missing"
-                    return False
-                Just rsp -> do
-                    let r = eval req rsp
-                    if not r
-                      then do
-                        failTest result "Eval function failed"
-                        return False
-                      else do
-                        passTest result
-                        return $ r && bOk
+checkResults :: [TestResult] -> Expectation
+checkResults xs = mapM_ checkResult xs
+    --foldr checkResult (return True) (reverse xs)
+  where
+    checkResult result = do
+        let req = requestTr result
+        let resp = responseTr result
+        case resp of
+          Nothing -> expectationFailure $
+            failureMessage result "Response is missing"
+          Just rsp -> do
+            printPassed result
+            eval req rsp
 
 checkMetrics :: [TestMetricResult] -> IO Bool
 checkMetrics xs =
@@ -72,26 +64,28 @@ checkMetrics xs =
                         passMetric result
                         return $ r && bOk
 
-checkSuccess :: TestResponse -> Bool
-checkSuccess tr =
-  resultSuccess tr && parseStatus (_arResult $ apiResult tr)
+checkSuccess :: TestResponse -> Expectation
+checkSuccess tr = do
+  resultSuccess tr `shouldBe` True
+  --parseStatus (_arResult $ apiResult tr)
 
-checkCCSuccess :: TestResponse -> Bool
-checkCCSuccess tr =
-  resultSuccess tr && parseCCStatus (_arResult $ apiResult tr)
+checkCCSuccess :: TestResponse -> Expectation
+checkCCSuccess tr = do
+  resultSuccess tr `shouldBe` True
+  parseCCStatus (_arResult $ apiResult tr) `shouldBe` True
 
-checkScientific :: Scientific -> TestResponse -> Bool
-checkScientific sci tr =
-  resultSuccess tr && case parseScientific $ _arResult $ apiResult tr of
-    Nothing -> False
-    Just x  -> x == sci
+checkScientific :: Scientific -> TestResponse -> Expectation
+checkScientific sci tr = do
+  resultSuccess tr `shouldBe` True
+  parseScientific (_arResult $ apiResult tr) `shouldBe` Just sci
 
-checkBatchPerSecond :: Integer -> TestResponse -> Bool
-checkBatchPerSecond minPerSec tr =
-  let perSecOk = case perSecMay tr of
-        Nothing -> False
-        Just perSec -> perSec >= minPerSec
-  in resultSuccess tr && perSecOk
+checkBatchPerSecond :: Integer -> TestResponse -> Expectation
+checkBatchPerSecond minPerSec tr = do
+    resultSuccess tr `shouldBe` True
+    perSecMay tr `shouldSatisfy` check
+  where
+    check (Just perSec) = perSec >= minPerSec
+    check Nothing = False
 
 perSecMay :: TestResponse -> Maybe Integer
 perSecMay tr = do
@@ -99,13 +93,6 @@ perSecMay tr = do
     (AE.Success lats) <- fromJSON <$> (_arMetaData (apiResult tr))
     microSeconds <- _rlmFinExecution lats
     return $ snd $ calcInterval count microSeconds
-
-parseStatus :: AE.Value -> Bool
-parseStatus (AE.Object o) =
-  case HM.lookup "status" o of
-    Nothing -> False
-    Just s  -> s == "success"
-parseStatus _ = False
 
 parseCCStatus :: AE.Value -> Bool
 parseCCStatus (AE.Object o) =
@@ -122,13 +109,14 @@ parseScientific (AE.Object o) =
     Just _ -> Nothing
 parseScientific _ = Nothing
 
-failTest :: TestResult -> String -> IO ()
-failTest tr addlInfo = do
-    putStrLn $ "Test failure: " ++ cmd (requestTr tr)
-    putStrLn $ "(" ++ addlInfo ++ ")"
+failureMessage :: TestResult -> String -> String
+failureMessage tr addlInfo = unlines
+    [ "Test failure: " ++ cmd (requestTr tr)
+    , "(" ++ addlInfo ++ ")"
+    ]
 
-passTest :: TestResult -> IO ()
-passTest tr = putStrLn $ "Test passed: " ++ cmd (requestTr tr)
+printPassed :: TestResult -> IO ()
+printPassed tr = putStrLn $ "Test passed: " ++ cmd (requestTr tr)
 
 failMetric :: TestMetricResult -> String -> IO ()
 failMetric tmr addlInfo = do

@@ -5,7 +5,7 @@
 
 module Util.TestRunner
   ( delTempFiles
-  , gatherMetrics
+  , gatherMetric
   , testDir
   , testConfDir
   , runClientCommands
@@ -206,11 +206,11 @@ simpleRunREPL (x:xs) = do
       handleCmd c reqStr
       simpleRunREPL xs
 
-gatherMetrics :: [TestMetric] -> IO [TestMetricResult]
-gatherMetrics tms = mapM (\tm -> do
+gatherMetric :: TestMetric -> IO TestMetricResult
+gatherMetric tm = do
     let name = metricNameTm tm
     value <- getMetric name
-    return $ TestMetricResult { requestTmr = tm, valueTmr = value}) tms
+    return $ TestMetricResult { requestTmr = tm, valueTmr = value}
 
 getMetric :: String -> IO (Maybe String)
 getMetric path = do

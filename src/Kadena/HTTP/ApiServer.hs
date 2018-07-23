@@ -14,7 +14,7 @@ module Kadena.HTTP.ApiServer
   ) where
 
 import Prelude hiding (log)
-import Control.Lens hiding ((.=))
+import Control.Lens
 import Control.Concurrent
 import Control.Monad.Reader
 
@@ -24,7 +24,6 @@ import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.Text as T
 import Data.Text.Encoding
-
 import Data.HashSet (HashSet)
 import qualified Data.HashSet as HashSet
 import Data.HashMap.Strict (HashMap)
@@ -48,12 +47,12 @@ import Kadena.Command (SubmitCC(..))
 import Kadena.Types.Command
 import Kadena.Types.Base
 import Kadena.Types.Comms
-import Kadena.Config.Types as Config
+import Kadena.Types.Config as Config
 import Kadena.Config.TMVar as Config
 import Kadena.Types.Spec
 import Kadena.Types.Entity
-import Kadena.History.Types ( History(..), PossiblyIncompleteResults(..))
-import qualified Kadena.History.Types as History
+import Kadena.Types.History (History(..), PossiblyIncompleteResults(..))
+import qualified Kadena.Types.History as History
 import qualified Kadena.Execution.Types as Exec
 import Kadena.Types.Dispatch
 import Kadena.Private.Service (encrypt)
@@ -130,17 +129,38 @@ sendPublicBatch = do
 
 sendClusterChange :: Api ()
 sendClusterChange = do
-  SubmitCC ccCmd <- readJSON
-  log $ "public: received cluster configuration change command"
-
-  let rpcs = [buildCCCmdRpc ccCmd]
-  queueRpcs rpcs
+  SubmitCC ccCmds <- readJSON
+  when (null ccCmds) $ die "Empty cluster change batch"
+  when (length ccCmds /= 2) $ die "Exactly two cluster change commands required -- one Transitional, one Final"
+  let transCmd = head ccCmds
+  let finalCmd = head $ tail $ ccCmds
+  let transRpc = buildCCCmdRpc transCmd
+  queueRpcsNoResp [transRpc]
+  let transListenerReq = ListenerRequest (fst transRpc) --listen for the result of the transitional command
+  ccTransResult <- listenFor transListenerReq
+  case ccTransResult of
+    ClusterChangeSuccess -> do
+      log "Transitional CC was sucessful, now ok to send the Final"
+      let finalRpc = buildCCCmdRpc finalCmd
+      queueRpcs [finalRpc]
+      let finalListenerReq = ListenerRequest (fst finalRpc)
+      ccFinalResult <- listenFor finalListenerReq
+      case ccFinalResult of
+        ClusterChangeSuccess -> log "Final CC was sucessful, Config change complete"
+        ClusterChangeFailure eFinal -> log $ "Final cluster change failed: " ++ eFinal
+    ClusterChangeFailure eTrans  -> log $ "Transitional cluster change failed: " ++ eTrans
 
 queueRpcs :: [(RequestKey,CMDWire)] -> Api ()
 queueRpcs rpcs = do
   p <- view aiPublish
   rks <- publish p die rpcs
   writeResponse $ ApiSuccess rks
+
+queueRpcsNoResp :: [(RequestKey,CMDWire)] -> Api ()
+queueRpcsNoResp rpcs = do
+    p <- view aiPublish
+    _rks <- publish p die rpcs
+    return ()
 
 sendPrivateBatch :: Api ()
 sendPrivateBatch = do
@@ -169,7 +189,6 @@ sendPrivateBatch = do
                       hc = Hashed pc hsh
                   return (RequestKey hsh,PCWire $ SZ.encode hc)
   queueRpcs rpcs
-
 
 poll :: Api ()
 poll = do
@@ -231,6 +250,21 @@ setJSON = modifyResponse $ setHeader "Content-Type" "application/json"
 
 writeResponse :: ToJSON j => j -> Api ()
 writeResponse j = setJSON >> writeLBS (encode j)
+
+listenFor :: ListenerRequest -> Api ClusterChangeResult
+listenFor (ListenerRequest rk) = do
+  hChan <- view (aiDispatch.historyChannel)
+  m <- liftIO $ newEmptyMVar
+  liftIO $ writeComm hChan $ RegisterListener (HashMap.fromList [(rk,m)])
+  log $ "listenFor -- registered Listener for: " ++ show rk
+  res <- liftIO $ readMVar m
+  case res of
+    History.GCed msg -> do
+      let errStr = "Listener GCed for: " ++ show rk ++ " because " ++ msg
+      return $ ClusterChangeFailure errStr
+    History.ListenerResult cr -> do
+      log $ "listenFor -- Listener Serviced for: " ++ show rk
+      return $ _concrResult cr
 
 registerListener :: Api ()
 registerListener = do

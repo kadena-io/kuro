@@ -31,16 +31,16 @@ import Kadena.Util.Util (linkAsyncTrack)
 import Kadena.Config
 import Kadena.Types.PactDB
 import Kadena.Config.TMVar
-import Kadena.Config.Types
 import Kadena.Types.Base
 import Kadena.Execution.Types
 import Kadena.Types.Metric
 import Kadena.Types.Command
+import Kadena.Types.Config
 import Kadena.Types.KeySet
 import Kadena.Types.Log
 import Kadena.Types.Dispatch (Dispatch)
 import qualified Kadena.Types.Dispatch as D
-import qualified Kadena.History.Types as History
+import qualified Kadena.Types.History as History
 import qualified Kadena.Log as Log
 import Kadena.Types.Comms (Comms(..))
 import Kadena.Command

@@ -2,11 +2,13 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Kadena.Command
   ( encodeCommand, decodeCommand, decodeCommandEither
   , {- decodeCommandIO, -} decodeCommandEitherIO
   , mkClusterChangeCommand
+  , mkConfigChangeExecs
   , verifyCommand, verifyCommandIfNotPending
   , prepPreprocCommand
   , runPreproc, runPreprocPure
@@ -14,7 +16,7 @@ module Kadena.Command
   , toRequestKey
   , initCmdLat, populateCmdLat
   , mkLatResults
-  , SubmitCC (..)
+  , SubmitCC (..), sccClusterChangeCommands
   ) where
 
 import Control.Exception
@@ -28,6 +30,7 @@ import qualified Data.Serialize as S
 import qualified Data.ByteString.Lazy as BSL
 import Data.String.Conv
 import Data.Text (Text)
+import Data.Text.Encoding (decodeUtf8)
 import Data.Thyme.Clock
 import Data.Thyme.Time.Core ()
 import GHC.Generics
@@ -57,6 +60,15 @@ mkClusterChangeCommand ConfigChangeApiReq{..} = do
             , _cccSigs = theSigs
             , _cccHash = theHash }
 
+mkConfigChangeExecs :: ConfigChangeApiReq -> IO [ClusterChangeCommand Text]
+mkConfigChangeExecs ccApiReq = do
+  -- just to ensure its correctly set to Transitional
+  let transApiReq = set (ylccInfo . cciState) Transitional ccApiReq
+  let finalApiReq = set (ylccInfo . cciState) Final ccApiReq
+  transCmd <- mkClusterChangeCommand transApiReq
+  finalCmd <- mkClusterChangeCommand finalApiReq
+  return $ (fmap . fmap) decodeUtf8 [transCmd, finalCmd]
+
 createSignatures :: Pact.PPKScheme -> [Pact.KeyPair] -> Hash -> [Pact.UserSig]
 createSignatures scheme keypairs msg =
   fmap (\Pact.KeyPair{..} -> createSignature scheme _kpSecret _kpPublic msg) keypairs
@@ -70,8 +82,9 @@ createSignature scheme sk pk msg =
 
 -- | similar to Pact.Types.API.SubmitBatch but for a single config change command
 data SubmitCC = SubmitCC
-  { _sccClusterChangeCommand :: ClusterChangeCommand Text
+  { _sccClusterChangeCommands :: ![ClusterChangeCommand Text]
   } deriving (Eq,Generic,Show)
+makeLenses ''SubmitCC
 instance ToJSON SubmitCC where
   toJSON = lensyToJSON 4
 instance FromJSON SubmitCC where
@@ -193,7 +206,7 @@ prepPreprocCommand cmd@SmartContractCommand{..} = do
   case _sccPreProc of
     Unprocessed -> do
       mv <- newEmptyMVar
-      return $ (cmd { _sccPreProc = Pending mv}, Just $ RunSCCPreProc _sccCmd mv)
+      return (cmd { _sccPreProc = Pending mv}, Just $ RunSCCPreProc _sccCmd mv)
     err -> error $ "Invariant Error: cmd has already been preped: " ++ show err ++ "\n### for ###\n" ++ show _sccCmd
 prepPreprocCommand cmd@ConsensusChangeCommand{..} = do
   case _cccPreProc of

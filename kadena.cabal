@@ -38,7 +38,6 @@ library
                      , Kadena.Config
                      , Kadena.Config.ClusterMembership
                      , Kadena.Config.TMVar
-                     , Kadena.Config.Types
                      , Kadena.ConfigChange
                      , Kadena.ConfigChange.Types
                      , Kadena.ConfigChange.Util
@@ -61,7 +60,6 @@ library
                      , Kadena.HTTP.Static
                      , Kadena.History.Persistence
                      , Kadena.History.Service
-                     , Kadena.History.Types
                      , Kadena.Log
                      , Kadena.Log.LogApi
                      , Kadena.Log.Persistence
@@ -91,16 +89,16 @@ library
                      , Kadena.Types.Base
                      , Kadena.Types.Command
                      , Kadena.Types.Comms
+                     , Kadena.Types.Config
                      , Kadena.Types.Dispatch
                      , Kadena.Types.Entity
                      , Kadena.Types.Event
+                     , Kadena.Types.History
                      , Kadena.Types.KeySet
                      , Kadena.Types.Log
                      , Kadena.Types.Message
                      , Kadena.Types.Message.AE
                      , Kadena.Types.Message.AER
-                     , Kadena.Types.Message.CC
-                     , Kadena.Types.Message.CCR
                      , Kadena.Types.Message.NewCMD
                      , Kadena.Types.Message.RV
                      , Kadena.Types.Message.RVR

@@ -5,9 +5,11 @@
 
 module Util.TestRunner
   ( delTempFiles
-  , runAll
+  , gatherMetrics
   , testDir
   , testConfDir
+  , runClientCommands
+  , runServers
   , TestMetric(..)
   , TestMetricResult(..)
   , TestRequest(..)
@@ -17,7 +19,6 @@ module Util.TestRunner
 import Apps.Kadena.Client
 import qualified Apps.Kadena.Server as App
 import Control.Concurrent
-import Control.Exception.Safe
 import Control.Lens
 import Control.Monad
 import Control.Monad.Trans.RWS.Lazy
@@ -93,18 +94,6 @@ delTempFiles = do
     _ <- createProcess p
     return ()
 
-runAll :: [TestRequest] -> [TestMetric]-> IO ([TestResult], [TestMetricResult])
-runAll testRequests testMetrics = do
-  runServers
-  putStrLn "Servers are running, sleeping for a few seconds"
-  _ <- sleep 3
-  catchAny (do
-              results <- runClientCommands clientArgs testRequests
-              metricResults <- gatherMetrics testMetrics
-              metricResults `seq` results `seq` return ()
-              return (results, metricResults))
-           (\e -> throw e)
-
 -- | Returns a list of IO actions that kill all the servers
 runServers :: IO ()
 runServers = do
@@ -114,7 +103,7 @@ runServers = do
 -- | Returns an IO action that kills the thread.
 runServer :: String -> IO ()
 runServer args = do
-    tid <- forkIO (withArgs (words args) App.main)
+    _ <- forkIO (withArgs (words args) App.main)
     sleep 1
     return ()
 
@@ -126,9 +115,6 @@ serverArgs0 = "-c " ++ testConfDir ++ "10000-cluster.yaml"
 serverArgs1 = "-c " ++ testConfDir ++ "10001-cluster.yaml"
 serverArgs2 = "-c " ++ testConfDir ++ "10002-cluster.yaml"
 serverArgs3 = "-c " ++ testConfDir ++ "10003-cluster.yaml"
-
-clientArgs :: [String]
-clientArgs = words $ "-c " ++ testConfDir ++ "client.yaml"
 
 runClientCommands :: [String] ->  [TestRequest] -> IO [TestResult]
 runClientCommands args testRequests =
@@ -206,7 +192,7 @@ _printResponses xs =
 
 isRequest :: ReplApiData -> Bool
 isRequest (ReplApiRequest _ _) = True
-isRequest (ReplApiResponse{}) = False
+isRequest ReplApiResponse{} = False
 
 simpleRunREPL :: [TestRequest] -> Repl ()
 simpleRunREPL [] = return ()

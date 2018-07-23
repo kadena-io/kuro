@@ -12,7 +12,7 @@ module Kadena.ConfigChange
 
 import Control.Concurrent.STM
 import Control.Monad.IO.Class
-import Control.Monad.Catch hiding (handle)
+import Control.Monad.Catch
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Set (Set)
@@ -24,8 +24,8 @@ import Kadena.Config.TMVar
 import Kadena.ConfigChange.Util
 import Kadena.Types.Base
 import Kadena.Types.Command
+import Kadena.Types.Config
 import Kadena.Config
-import Kadena.Config.Types
 
 mutateGlobalConfig :: GlobalConfigTMVar -> ProcessedClusterChg CCPayload -> IO ClusterChangeResult
 mutateGlobalConfig _ (ProcClusterChgFail err) = return $ ClusterChangeFailure err

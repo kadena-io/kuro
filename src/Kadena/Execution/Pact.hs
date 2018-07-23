@@ -33,7 +33,6 @@ import Pact.Types.Server (throwCmdEx,userSigsToPactKeySet)
 import Pact.PersistPactDb (initDbEnv,pactdb)
 import Pact.Persist (Persister)
 import Pact.Server.PactService (jsonResult)
-import Pact.Types.Hash
 import Pact.Types.Runtime
 
 import Kadena.Types.PactDB

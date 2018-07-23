@@ -4,6 +4,7 @@ module Kadena.Types.Metric
   ) where
 
 import Data.ByteString (ByteString)
+import Data.Text (Text)
 
 import Kadena.Types.Base
 
@@ -25,3 +26,4 @@ data Metric
   | MetricAvailableSize Int
   | MetricChangeToClusterSize Int -- cluster size after config change
   | MetricChangeToQuorumSize Int -- quorum size after config change
+  | MetricClusterMembers Text

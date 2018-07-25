@@ -21,7 +21,7 @@ import Kadena.Types.Dispatch
 import Kadena.Types.Base
 import Kadena.Types.Command
 import Kadena.Types.Message
-import Kadena.Sender.Types
+import Kadena.Types.Sender
 import Kadena.Util.Util
 
 import Pact.Types.API

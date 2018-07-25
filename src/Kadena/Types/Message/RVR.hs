@@ -1,4 +1,4 @@
-{-# LANGUAGE BangPatterns #-}
+\{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE RecordWildCards #-}

@@ -28,9 +28,9 @@ import qualified Kadena.Config.ClusterMembership as CM
 import Kadena.Config.TMVar
 import Kadena.Command
 import Kadena.Types
-import Kadena.Sender.Service (createAppendEntriesResponse')
 import Kadena.Consensus.Util
 import qualified Kadena.Types as KD
+import qualified Kadena.Types.Sender as Sender
 import qualified Kadena.Sender.Service as Sender
 import qualified Kadena.Log as Log
 import qualified Kadena.Types.Log as Log
@@ -268,7 +268,7 @@ createAppendEntriesResponse :: Bool -> Bool -> LogIndex -> Hash -> KD.Consensus 
 createAppendEntriesResponse success convinced maxIndex' lastLogHash' = do
   ct <- use csTerm
   myNodeId' <- KD.viewConfig nodeId
-  case createAppendEntriesResponse' success convinced ct myNodeId' maxIndex' lastLogHash' of
+  case Sender.createAppendEntriesResponse' success convinced ct myNodeId' maxIndex' lastLogHash' of
     AER' aer -> return aer
     _ -> error "deep invariant error: crtl-f for createAppendEntriesResponse"
 

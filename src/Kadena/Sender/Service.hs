@@ -13,7 +13,6 @@ module Kadena.Sender.Service
   , runSenderService
   , createAppendEntriesResponse' -- we need this for AER Evidence
   , willBroadcastAE
-  , module X --re-export the types to make things straight forward
   ) where
 
 import Control.Concurrent
@@ -35,7 +34,7 @@ import Kadena.Event (pprintBeat)
 import Kadena.Log.Types (LogServiceChannel)
 import qualified Kadena.Log.Types as Log
 import Kadena.Message
-import Kadena.Sender.Types as X
+import Kadena.Types.Sender
 import Kadena.Config.TMVar as Cfg
 import qualified Kadena.Config.ClusterMembership as CM
 import Kadena.Types.Comms
@@ -159,7 +158,7 @@ serviceRequests = do
           BroadcastAER -> sendAllAppendEntriesResponse
           BroadcastRV rv -> sendAllRequestVotes rv
           BroadcastRVR{..} -> sendRequestVoteResponse _srCandidate _srHeardFromLeader _srVote
-      Heart t -> liftIO (pprintBeat t) >>= debug
+      SenderBeat t -> liftIO (pprintBeat t) >>= debug
 
 queryLogs :: Set Log.AtomicQuery -> SenderService StateSnapshot (Map Log.AtomicQuery Log.QueryResult)
 queryLogs q = do

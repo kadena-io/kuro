@@ -43,7 +43,7 @@ import Kadena.Util.Util (awsDashVar, linkAsyncTrack)
 import Kadena.Messaging.ZMQ
 import Kadena.Monitoring.Server (startMonitoring)
 import Kadena.Private.Service (runPrivateService)
-import qualified Kadena.Messaging.Turbine as Turbine
+import Kadena.Types.Turbine (ReceiverEnv(..))
 
 data Options = Options
   {  optConfigFile :: FilePath
@@ -118,8 +118,8 @@ simpleReceiverEnv :: Dispatch
                   -> Config
                   -> (String -> IO ())
                   -> MVar String
-                  -> Turbine.ReceiverEnv
-simpleReceiverEnv dispatch conf debugFn restartTurbo' = Turbine.ReceiverEnv
+                  -> ReceiverEnv
+simpleReceiverEnv dispatch conf debugFn restartTurbo' = ReceiverEnv
   dispatch
   (KeySet (view publicKeys conf))
   debugFn

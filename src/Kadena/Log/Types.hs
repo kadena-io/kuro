@@ -52,8 +52,7 @@ import Kadena.Types.Comms
 import Kadena.Types.Event (Beat,ConsensusEventChannel)
 import Kadena.Types.Evidence (EvidenceChannel)
 import Kadena.Types.Execution (ExecutionChannel)
-
-import Kadena.Sender.Types (SenderServiceChannel)
+import Kadena.Types.Sender (SenderServiceChannel)
 
 data QueryApi =
   Query (Set AtomicQuery) (MVar (Map AtomicQuery QueryResult)) |

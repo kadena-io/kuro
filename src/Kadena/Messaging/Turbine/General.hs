@@ -20,17 +20,17 @@ import Kadena.Log
 import Kadena.Message
 import Kadena.Types hiding (debugPrint)
 import Kadena.Types.PreProc (ProcessRequestChannel(..), ProcessRequest(..))
-import Kadena.Messaging.Turbine.Types
+import Kadena.Messaging.Turbine.Util
 
 generalTurbine :: ReaderT ReceiverEnv IO ()
 generalTurbine = do
-  gm' <- view (dispatch.dispInboundGeneral)
-  prChan <- view (dispatch.dispProcessRequestChannel)
+  gm' <- view (turbineDispatch . dispInboundGeneral)
+  prChan <- view (turbineDispatch . dispProcessRequestChannel)
   let gm n = readComms gm' n
-  enqueueEvent' <- view (dispatch.dispConsensusEvent)
+  enqueueEvent' <- view (turbineDispatch . dispConsensusEvent)
   let enqueueEvent = writeComm enqueueEvent' . ConsensusEvent
-  debug <- view debugPrint
-  ks <- view keySet
+  debug <- view turbineDebugPrint
+  ks <- view turbineKeySet
   forever $ liftIO $ do
     msgs <- gm 10
     readTime' <- getCurrentTime

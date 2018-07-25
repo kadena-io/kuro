@@ -44,7 +44,7 @@ import qualified System.Random as R
 import qualified Kadena.Config.ClusterMembership as CM
 import Kadena.Config.TMVar
 import Kadena.Types
-import qualified Kadena.Sender.Types as Sender
+import qualified Kadena.Types.Sender as Sender
 import qualified Kadena.Log.Types as Log
 import qualified Kadena.Types.Log as Log
 import qualified Kadena.Types.History as History

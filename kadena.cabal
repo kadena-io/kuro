@@ -68,7 +68,7 @@ library
                      , Kadena.Messaging.Turbine.General
                      , Kadena.Messaging.Turbine.NewCMD
                      , Kadena.Messaging.Turbine.RV
-                     , Kadena.Messaging.Turbine.Types
+                     , Kadena.Messaging.Turbine.Util
                      , Kadena.Messaging.ZMQ
                      , Kadena.Monitoring.EkgJson
                      , Kadena.Monitoring.EkgMonitor
@@ -78,7 +78,6 @@ library
                      , Kadena.Private.Private
                      , Kadena.Private.Service
                      , Kadena.Sender.Service
-                     , Kadena.Sender.Types
                      , Kadena.Spec.Simple
                      , Kadena.Types
                      , Kadena.Types.Base
@@ -105,8 +104,10 @@ library
                      , Kadena.Types.PactDB
                      , Kadena.Types.PreProc
                      , Kadena.Types.Private
+                     , Kadena.Types.Sender
                      , Kadena.Types.Spec
                      , Kadena.Types.Sqlite
+                     , Kadena.Types.Turbine
                      , Kadena.Util.Util
 
   build-depends:       BoundedChan

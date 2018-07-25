@@ -20,8 +20,9 @@ import Kadena.Types.Entity
 import Kadena.Types.KeySet
 import Kadena.Types.Execution
 import Kadena.Messaging.Turbine
-import qualified Kadena.Messaging.Turbine as Turbine
+import qualified Kadena.Types.Turbine as Turbine
 import qualified Kadena.Execution.Service as Exec
+import qualified Kadena.Types.Sender as Sender
 import qualified Kadena.Sender.Service as Sender
 import qualified Kadena.Types.Log as Log
 import qualified Kadena.Log.Types as Log
@@ -111,7 +112,7 @@ launchSenderService :: Dispatch
   -> IO ()
 launchSenderService dispatch' dbgPrint' publishMetric' mEvState mPubCons rconf = do
   linkAsyncTrack "SenderThread" (Sender.runSenderService dispatch' rconf dbgPrint' publishMetric' mEvState mPubCons)
-  linkAsyncTrack "SenderHB" $ foreverHeart (_dispSenderService dispatch') 1000000 Sender.Heart
+  linkAsyncTrack "SenderHB" $ foreverHeart (_dispSenderService dispatch') 1000000 Sender.SenderBeat
 
 runConsensusService :: ReceiverEnv -> GlobalConfigTMVar -> ConsensusSpec -> ConsensusState ->
                             IO UTCTime -> MVar PublishedConsensus -> IO ()
@@ -123,10 +124,10 @@ runConsensusService renv gcm spec rstate timeCache' mPubConsensus' = do
       changeToSize = CM.countTransitional members
       changeToQuorum = CM.minQuorumTransitional members
       publishMetric' = (spec ^. publishMetric)
-      dispatch' = _dispatch renv
-      dbgPrint' = Turbine._debugPrint renv
+      dispatch' = Turbine._turbineDispatch renv
+      dbgPrint' = Turbine._turbineDebugPrint renv
       getTimestamp' = spec ^. getTimestamp
-      keySet' = Turbine._keySet renv
+      keySet' = Turbine._turbineKeySet renv
       nodeId' = rconf ^. nodeId
 
   publishMetric' $ MetricClusterSize csize

@@ -19,3 +19,5 @@ import Kadena.Types.Metric as X
 import Kadena.Types.Spec as X
 import Kadena.Types.History as X
 import Kadena.Types.PreProc as X
+import Kadena.Types.Sender as X
+import Kadena.Types.Turbine as X

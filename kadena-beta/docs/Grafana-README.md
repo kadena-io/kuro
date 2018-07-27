@@ -22,7 +22,7 @@ Start a new terminal session and enter:
 
 `$ cd YOUR_KADENA_DIRECTORY`
 
-`$ prometheus --config.file=prometheus.yml`
+`$ prometheus --config.file=monitor/prometheus.yml`
 
 ## Verfify Prometheus is running
 Open a browser to the url http://localhost:9090
@@ -57,6 +57,8 @@ Click the button "+ Add data sources"
 
 Give the new data source a name in the name field and then select the following settings:
 
+Name: kadena
+
 Type: Prometheus
 
 URL: http://localhost:9090
@@ -72,6 +74,20 @@ Advanced HTTP Setttings:
     Scrape Interval: 5s
 
   Click the "Save & Test" button.  You should now see "Data source is working" displayed above the "Save & Test" button.
+
+## Import Kadena Dashboard
+
+Click on the "+" icon, then "Import"
+
+Click on "Upload .json File"
+
+Load "monitor/grafana-dashboard.json" from your Kadena directory.
+
+In the following "Options" screen, set "kadena" (which refers to the desired data source) to kadena, from the dropdown.
+
+Click "Import".
+
+## Create a New Dashboard
 
 Hover over the "+" symbol on the left, then underneath "Create" select "Dashboard".
 
@@ -101,21 +117,3 @@ Finally, select the blue arrow in the upper right to return to the dashboard.
 On the upper right corner of the dashboard, also set the duration to "last 5 minutes", set "Refreshing every" to 5s and hit the Apply button
 
 If desired, you can now click the "Add panel" button at the top right (white graph with an orange + sign) to add additional panels to this dashboard.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

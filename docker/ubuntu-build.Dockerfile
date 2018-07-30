@@ -22,8 +22,7 @@ RUN bash -c "mkdir -p /kadena/log && \
     stack build --flag kadena:kill-switch && \
     stack install"
 
-
 RUN mkdir -p /ubuntu-16.04 && \
-    cp ~/.local/bin/* /ubuntu-16.04
+    cp /kadena/bin/* /ubuntu-16.04
 
 CMD ["/bin/bash"]

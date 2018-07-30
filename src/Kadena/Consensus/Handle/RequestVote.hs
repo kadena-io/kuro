@@ -16,7 +16,7 @@ import qualified Data.Set as Set
 import qualified Data.Map.Strict as Map
 
 import qualified Kadena.Config.TMVar as TMV
-import qualified Kadena.Sender.Service as Sender
+import qualified Kadena.Types.Sender as Sender (ServiceRequest(..))
 import qualified Kadena.Types.Log as Log
 import qualified Kadena.Types as KD
 

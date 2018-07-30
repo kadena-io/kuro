@@ -5,7 +5,6 @@
 module Kadena.PreProc.Service
   ( initPreProcEnv
   , runPreProcService
-  , module X
   ) where
 
 import Control.Lens hiding (Index, (|>))
@@ -23,11 +22,13 @@ import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import Data.Foldable
 
-import Kadena.Command
-import Kadena.PreProc.Types as X
+import Kadena.Types.Comms 
+import Kadena.Types.Command (FinishedPreProc(..))
+import Kadena.Types.PreProc 
 import Kadena.Types.Dispatch (Dispatch)
 import qualified Kadena.Types.Dispatch as D
 import Kadena.Event
+import Kadena.Command (runPreproc, runPreprocPure, finishPreProc)
 import Kadena.Types.Event (Beat)
 
 initPreProcEnv
@@ -38,18 +39,18 @@ initPreProcEnv
   -> Bool
   -> ProcessRequestEnv
 initPreProcEnv dispatch' threadCount' debugPrint' getTimestamp' usePar' = ProcessRequestEnv
-  { _processRequestChannel = dispatch' ^. D.processRequestChannel
-  , _threadCount = threadCount'
-  , _debugPrint = debugPrint'
-  , _getTimestamp = getTimestamp'
-  , _usePar = usePar'
+  { _preProcessRequestChannel = dispatch' ^. D.dispProcessRequestChannel
+  , _preThreadCount = threadCount'
+  , _preDebugPrint = debugPrint'
+  , _preGetTimestamp = getTimestamp'
+  , _preUsePar = usePar'
   }
 
 runPreProcService :: ProcessRequestEnv -> IO ()
 runPreProcService env = do
-  let dbg = env ^. debugPrint
+  let dbg = env ^. preDebugPrint
   dbg "[Service|PreProc] Launch!"
-  if env ^. usePar
+  if env ^. preUsePar
   then do
     viaPar env
   else do
@@ -60,15 +61,15 @@ runPreProcService env = do
 
 debug :: String -> ProcessRequestService ()
 debug s = do
-  dbg <- view debugPrint
+  dbg <- view preDebugPrint
   liftIO $! dbg $ "[Service|PreProc] " ++ s
 
 now :: ProcessRequestService UTCTime
-now = view getTimestamp >>= liftIO
+now = view preGetTimestamp >>= liftIO
 
 threadPool :: ProcessRequestEnv -> IO [Async ()]
-threadPool env@ProcessRequestEnv{..} = replicateM _threadCount $
-  async $ forever $ runReaderT (handle _processRequestChannel) env
+threadPool env@ProcessRequestEnv{..} = replicateM _preThreadCount $
+  async $ forever $ runReaderT (handle _preProcessRequestChannel) env
 
 ppBeat :: Beat -> ProcessRequestService ()
 ppBeat b = liftIO (pprintBeat b) >>= debug
@@ -79,7 +80,7 @@ handle workChan = do
     (CommandPreProc rpp) -> do
       hitPreProc <- now
       liftIO $! void $! runPreproc hitPreProc rpp
-    Heart t -> ppBeat t
+    PreProcBeat t -> ppBeat t
 {-# INLINE handle #-}
 
 betterParallelProc :: NFData a => [a] -> [a]
@@ -103,24 +104,24 @@ mkProperTime cnt startTime endTime = properTime
 
 evalPreProcCmd :: ProcessRequest -> FinishedPreProc
 evalPreProcCmd (CommandPreProc rpp) = runPreprocPure rpp
-evalPreProcCmd Heart{} = error $ "Invariant Error: `evalPreProcCmd` caught a HeartBeat"
+evalPreProcCmd PreProcBeat{} = error $ "Invariant Error: `evalPreProcCmd` caught a HeartBeat"
 {-# INLINE evalPreProcCmd #-}
 
 filterBatch :: Seq ProcessRequest -> (Seq ProcessRequest, Seq ProcessRequest)
 filterBatch s = Seq.partition isHB s
   where
     isHB :: ProcessRequest -> Bool
-    isHB (Heart _) = True
+    isHB (PreProcBeat _) = True
     isHB (CommandPreProc _) = False
 {-# INLINE filterBatch #-}
 
 viaPar :: ProcessRequestEnv -> IO ()
 viaPar env@ProcessRequestEnv{..} = do
-  let getWork = filterBatch <$> readComms _processRequestChannel _threadCount
+  let getWork = filterBatch <$> readComms _preProcessRequestChannel _preThreadCount
   (flip runReaderT) env $ forever $ do
     (hbs, newWork) <- liftIO $ getWork
     unless (Seq.null hbs) $ forM_ hbs $ \case
-      Heart t -> ppBeat t
+      PreProcBeat t -> ppBeat t
       CommandPreProc{} -> error $ "Invariant Error: `viaPar` caught a CommandPreProc"
     unless (Seq.null newWork) $ do
       startTime <- now

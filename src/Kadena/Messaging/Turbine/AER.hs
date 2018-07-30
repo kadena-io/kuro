@@ -20,18 +20,18 @@ import Data.Thyme.Clock (getCurrentTime)
 
 import Kadena.Types hiding (debugPrint)
 import Kadena.Types.KeySet
-import Kadena.Evidence.Types (Evidence(VerifiedAER))
+import Kadena.Types.Evidence (Evidence(VerifiedAER))
 
-import Kadena.Messaging.Turbine.Types
+import Kadena.Messaging.Turbine.Util
 
 aerTurbine :: ReaderT ReceiverEnv IO ()
 aerTurbine = do
-  getAers' <- view (dispatch.inboundAER)
+  getAers' <- view (turbineDispatch . dispInboundAER)
   let getAers n = readComms getAers' n
-  enqueueEvent' <- view (dispatch.evidence)
+  enqueueEvent' <- view (turbineDispatch . dispEvidence)
   let enqueueEvent = writeComm enqueueEvent' . VerifiedAER
-  debug <- view debugPrint
-  ks <- view keySet
+  debug <- view turbineDebugPrint
+  ks <- view turbineKeySet
   forever $ liftIO $ do
     -- basically get every AER
     rawAers <- getAers 2000

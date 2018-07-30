@@ -33,13 +33,11 @@ library
                      , Apps.Kadena.Server
                      , Kadena.Execution.Pact
                      , Kadena.Execution.Service
-                     , Kadena.Execution.Types
                      , Kadena.Command
                      , Kadena.Config
                      , Kadena.Config.ClusterMembership
                      , Kadena.Config.TMVar
                      , Kadena.ConfigChange
-                     , Kadena.ConfigChange.Types
                      , Kadena.ConfigChange.Util
                      , Kadena.Consensus.Handle
                      , Kadena.Consensus.Handle.AppendEntries
@@ -54,7 +52,6 @@ library
                      , Kadena.Event
                      , Kadena.Evidence.Service
                      , Kadena.Evidence.Spec
-                     , Kadena.Evidence.Types
                      , Kadena.Execution.ConfigChange
                      , Kadena.HTTP.ApiServer
                      , Kadena.HTTP.Static
@@ -71,28 +68,28 @@ library
                      , Kadena.Messaging.Turbine.General
                      , Kadena.Messaging.Turbine.NewCMD
                      , Kadena.Messaging.Turbine.RV
-                     , Kadena.Messaging.Turbine.Types
+                     , Kadena.Messaging.Turbine.Util
                      , Kadena.Messaging.ZMQ
                      , Kadena.Monitoring.EkgJson
                      , Kadena.Monitoring.EkgMonitor
                      , Kadena.Monitoring.EkgSnap
                      , Kadena.Monitoring.Server
                      , Kadena.PreProc.Service
-                     , Kadena.PreProc.Types
                      , Kadena.Private.Private
-                     , Kadena.Private.Types
                      , Kadena.Private.Service
                      , Kadena.Sender.Service
-                     , Kadena.Sender.Types
                      , Kadena.Spec.Simple
                      , Kadena.Types
                      , Kadena.Types.Base
                      , Kadena.Types.Command
                      , Kadena.Types.Comms
                      , Kadena.Types.Config
+                     , Kadena.Types.ConfigChange
                      , Kadena.Types.Dispatch
                      , Kadena.Types.Entity
                      , Kadena.Types.Event
+                     , Kadena.Types.Evidence
+                     , Kadena.Types.Execution
                      , Kadena.Types.History
                      , Kadena.Types.KeySet
                      , Kadena.Types.Log
@@ -105,8 +102,12 @@ library
                      , Kadena.Types.Message.Signed
                      , Kadena.Types.Metric
                      , Kadena.Types.PactDB
+                     , Kadena.Types.PreProc
+                     , Kadena.Types.Private
+                     , Kadena.Types.Sender
                      , Kadena.Types.Spec
                      , Kadena.Types.Sqlite
+                     , Kadena.Types.Turbine
                      , Kadena.Util.Util
 
   build-depends:       BoundedChan

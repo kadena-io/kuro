@@ -53,10 +53,10 @@ import Kadena.Types.Spec
 import Kadena.Types.Entity
 import Kadena.Types.History (History(..), PossiblyIncompleteResults(..))
 import qualified Kadena.Types.History as History
-import qualified Kadena.Execution.Types as Exec
+import qualified Kadena.Types.Execution as Exec
 import Kadena.Types.Dispatch
 import Kadena.Private.Service (encrypt)
-import Kadena.Private.Types (PrivatePlaintext(..),PrivateCiphertext(..),Labeled(..),PrivateResult(..))
+import Kadena.Types.Private (PrivatePlaintext(..),PrivateCiphertext(..),Labeled(..),PrivateResult(..))
 import Kadena.Consensus.Publish
 
 import Kadena.HTTP.Static
@@ -114,7 +114,7 @@ sendLocal :: Api ()
 sendLocal = do
   (cmd :: Pact.Command BS.ByteString) <- fmap encodeUtf8 <$> readJSON
   mv <- liftIO newEmptyMVar
-  c <- view $ aiDispatch . execService
+  c <- view $ aiDispatch . dispExecService
   liftIO $ writeComm c (Exec.ExecLocal cmd mv)
   r <- liftIO $ takeMVar mv
   writeResponse $ ApiSuccess $ r
@@ -176,7 +176,7 @@ sendPrivateBatch = do
       Right (Pact.Payload{..} :: Pact.Payload (PactRPC T.Text)) -> case _pAddress of
         Nothing -> die $ "sendPrivateBatch: missing address in payload: " ++ show c
         Just Pact.Address{..} -> do
-          pchan <- view (aiDispatch.privateChannel)
+          pchan <- view (aiDispatch.dispPrivateChannel)
           if _aFrom `Set.member` _aTo || _aFrom /= (_elName $ _ecLocal$ _entity conf)
             then die $ "sendPrivateBatch: invalid address in payload: " ++ show c
             else do
@@ -217,7 +217,7 @@ scrToAr cr = case cr of
 
 checkHistoryForResult :: HashSet RequestKey -> Api PossiblyIncompleteResults
 checkHistoryForResult rks = do
-  hChan <- view (aiDispatch.historyChannel)
+  hChan <- view (aiDispatch.dispHistoryChannel)
   m <- liftIO $ newEmptyMVar
   liftIO $ writeComm hChan $ QueryForResults (rks,m)
   liftIO $ readMVar m
@@ -253,7 +253,7 @@ writeResponse j = setJSON >> writeLBS (encode j)
 
 listenFor :: ListenerRequest -> Api ClusterChangeResult
 listenFor (ListenerRequest rk) = do
-  hChan <- view (aiDispatch.historyChannel)
+  hChan <- view (aiDispatch.dispHistoryChannel)
   m <- liftIO $ newEmptyMVar
   liftIO $ writeComm hChan $ RegisterListener (HashMap.fromList [(rk,m)])
   log $ "listenFor -- registered Listener for: " ++ show rk
@@ -269,7 +269,7 @@ listenFor (ListenerRequest rk) = do
 registerListener :: Api ()
 registerListener = do
   (ListenerRequest rk) <- readJSON
-  hChan <- view (aiDispatch.historyChannel)
+  hChan <- view (aiDispatch.dispHistoryChannel)
   m <- liftIO $ newEmptyMVar
   liftIO $ writeComm hChan $ RegisterListener (HashMap.fromList [(rk,m)])
   log $ "Registered Listener for: " ++ show rk

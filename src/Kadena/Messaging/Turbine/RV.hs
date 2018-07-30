@@ -1,4 +1,3 @@
-
 module Kadena.Messaging.Turbine.RV
   ( rvAndRvrTurbine
   ) where
@@ -10,16 +9,20 @@ import Control.Lens
 import Control.Monad
 import Control.Monad.Reader
 
-import Kadena.Message
-import Kadena.Types hiding (debugPrint)
-import Kadena.Messaging.Turbine.Types
+import Kadena.Message (signedRPCtoRPC)
+import Kadena.Types.Event (Event(..), ConsensusEvent(..))
+import Kadena.Types.Message.Signed (SignedRPC(..), Digest(..))
+import Kadena.Types.Comms (InboundRVorRVR(..), Comms(..))
+import Kadena.Types.Dispatch (dispInboundRVorRVR, dispConsensusEvent)
+import Kadena.Types.Turbine (ReceiverEnv(..), turbineDebugPrint, turbineKeySet, turbineDebugPrint, turbineDispatch)
+import Kadena.Messaging.Turbine.Util
 
 rvAndRvrTurbine :: ReaderT ReceiverEnv IO ()
 rvAndRvrTurbine = do
-  getRvAndRVRs' <- view (dispatch.inboundRVorRVR)
-  enqueueEvent <- view (dispatch.consensusEvent)
-  debug <- view debugPrint
-  ks <- view keySet
+  getRvAndRVRs' <- view (turbineDispatch . dispInboundRVorRVR)
+  enqueueEvent <- view (turbineDispatch . dispConsensusEvent)
+  debug <- view turbineDebugPrint
+  ks <- view turbineKeySet
   liftIO $ forever $ do
     (ts, msg) <- _unInboundRVorRVR <$> readComm getRvAndRVRs'
     case signedRPCtoRPC (Just ts) ks msg of

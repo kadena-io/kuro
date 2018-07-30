@@ -37,7 +37,7 @@ import Kadena.Types.Base
 import Kadena.Types.Metric
 import Kadena.Config.ClusterMembership
 import Kadena.Types.Message
-import Kadena.Evidence.Types
+import Kadena.Types.Evidence
 import Kadena.Types.Event (ResetLeaderNoFollowersTimeout)
 import Kadena.Log.Types (LogServiceChannel)
 

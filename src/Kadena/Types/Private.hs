@@ -8,7 +8,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-module Kadena.Private.Types
+module Kadena.Types.Private
   ( EntityName(..)
   ,Label(..)
   ,Labeler(..)

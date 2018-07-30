@@ -1,15 +1,14 @@
 {-# LANGUAGE TemplateHaskell #-}
-
-module Kadena.Messaging.Turbine.Types
-  ( ReceiverEnv(..), dispatch, keySet, debugPrint, restartTurbo
-  , turbineRv, turbineAer, turbineCmd, turbineGeneral
+module Kadena.Messaging.Turbine.Util
+  ( turbineRv
+  , turbineAer
+  , turbineCmd
+  , turbineGeneral
   , parallelVerify
   , parSeqToList
   , processMsg
   ) where
 
-import Control.Concurrent (MVar)
-import Control.Lens
 import Control.Parallel.Strategies
 
 import Data.Sequence (Seq)
@@ -18,14 +17,6 @@ import qualified Data.Sequence as Seq
 import Kadena.Message
 import Kadena.Types hiding (debugPrint)
 import Kadena.Types.KeySet
-
-data ReceiverEnv = ReceiverEnv
-  { _dispatch :: Dispatch
-  , _keySet :: KeySet
-  , _debugPrint :: String -> IO ()
-  , _restartTurbo :: MVar String
-  }
-makeLenses ''ReceiverEnv
 
 turbineRv, turbineAer, turbineCmd, turbineGeneral :: String
 turbineRv = "[Turbine|Rv]: "

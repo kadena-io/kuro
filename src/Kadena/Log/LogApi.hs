@@ -32,7 +32,7 @@ import Kadena.Log.Types
 import Kadena.Log
 import Kadena.Types.Log
 import Kadena.Log.Persistence
-import Kadena.Sender.Types (ServiceRequest'(..))
+import Kadena.Types.Sender (ServiceRequest'(..))
 
 lastPersisted :: LogThread LogIndex
 lastPersisted = use lsLastPersisted

@@ -2,13 +2,12 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
-module Kadena.PreProc.Types
+module Kadena.Types.PreProc
   ( ProcessRequest(..)
   , ProcessRequestEnv(..)
-  , processRequestChannel, debugPrint, getTimestamp, threadCount, usePar
+  , preProcessRequestChannel, preDebugPrint, preGetTimestamp, preThreadCount, preUsePar
   , ProcessRequestChannel(..)
   , ProcessRequestService
-  , module X
   ) where
 
 import Control.Lens hiding (Index)
@@ -20,14 +19,14 @@ import Control.Concurrent.STM
 import Data.Sequence (Seq)
 import Data.Thyme.Clock (UTCTime)
 
-import Kadena.Types.Command as X
-import Kadena.Types.Comms as X
-import Kadena.Types.Event
+import Kadena.Types.Command
+import Kadena.Types.Comms
+import Kadena.Types.Event (Beat)
 
 data ProcessRequest =
   CommandPreProc
   { _cmdPreProc :: !RunPreProc } |
-  Heart Beat
+  PreProcBeat Beat
 
 newtype ProcessRequestChannel = ProcessRequestChannel (Chan ProcessRequest, TVar (Seq ProcessRequest))
 
@@ -46,11 +45,11 @@ instance BatchedComms ProcessRequest ProcessRequestChannel where
   {-# INLINE writeComms #-}
 
 data ProcessRequestEnv = ProcessRequestEnv
-  { _processRequestChannel :: !ProcessRequestChannel
-  , _threadCount :: !Int
-  , _debugPrint :: !(String -> IO ())
-  , _getTimestamp :: !(IO UTCTime)
-  , _usePar :: !Bool
+  { _preProcessRequestChannel :: !ProcessRequestChannel
+  , _preThreadCount :: !Int
+  , _preDebugPrint :: !(String -> IO ())
+  , _preGetTimestamp :: !(IO UTCTime)
+  , _preUsePar :: !Bool
   }
 makeLenses ''ProcessRequestEnv
 

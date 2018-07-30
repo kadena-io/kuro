@@ -51,11 +51,11 @@ runMsgServer :: Dispatch
              -> GlobalConfigTMVar
              -> IO ()
 runMsgServer dispatch me addrList debug gcm = forever $ do
-  inboxWrite <- return $ dispatch ^. inboundGeneral
-  cmdInboxWrite <- return $ dispatch ^. inboundCMD
-  aerInboxWrite <- return $ dispatch ^. inboundAER
-  rvAndRvrWrite <- return $ dispatch ^. inboundRVorRVR
-  outboxRead <- return $ dispatch ^. outboundGeneral
+  inboxWrite <- return $ dispatch ^. dispInboundGeneral
+  cmdInboxWrite <- return $ dispatch ^. dispInboundCMD
+  aerInboxWrite <- return $ dispatch ^. dispInboundAER
+  rvAndRvrWrite <- return $ dispatch ^. dispInboundRVorRVR
+  outboxRead <- return $ dispatch ^. dispOutboundGeneral
 
   semephory <- newEmptyMVar -- this MVar is for coordinating the lighting of ZMQ. There's an annoying segfault/malloc error that I think is caused by ZMQ.
   shutdownPub <- newEmptyMVar

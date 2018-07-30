@@ -47,10 +47,10 @@ import Kadena.Types.Message
 import Kadena.Types.Metric
 import Kadena.Types.Comms
 import Kadena.Types.Dispatch
-import Kadena.Sender.Types (SenderServiceChannel, ServiceRequest')
+import Kadena.Types.Sender (SenderServiceChannel, ServiceRequest')
 import Kadena.Log.Types (QueryApi(..))
 import Kadena.Types.History (History(..))
-import Kadena.Evidence.Types (PublishedEvidenceState, Evidence(ClearConvincedNodes))
+import Kadena.Types.Evidence (PublishedEvidenceState, Evidence(ClearConvincedNodes))
 
 data PublishedConsensus = PublishedConsensus
     { _pcLeader :: !(Maybe NodeId)
@@ -183,12 +183,12 @@ mkConsensusEnv conf' rSpec dispatch timerTarget' timeCache' mEs mResetLeaderNoFo
     , _mPubConsensus = mPubConsensus'
     }
   where
-    g' = dispatch ^. senderService
-    cog' = dispatch ^. outboundGeneral
-    ls' = dispatch ^. logService
-    hs' = dispatch ^. historyChannel
-    ie' = dispatch ^. consensusEvent
-    ev' = dispatch ^. evidence
+    g' = dispatch ^. dispSenderService
+    cog' = dispatch ^. dispOutboundGeneral
+    ls' = dispatch ^. dispLogService
+    hs' = dispatch ^. dispHistoryChannel
+    ie' = dispatch ^. dispConsensusEvent
+    ev' = dispatch ^. dispEvidence
 
 sendMsg :: SenderServiceChannel -> ServiceRequest' -> IO ()
 sendMsg outboxWrite og = do

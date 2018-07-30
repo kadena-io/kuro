@@ -14,7 +14,7 @@ import Kadena.Config.TMVar
 import Kadena.Types.Base (_alias)
 import Kadena.Types.Comms (readComm,writeComm)
 
-import Kadena.Private.Types
+import Kadena.Types.Private
 import Kadena.Private.Private
 import Kadena.Types.Entity
 
@@ -22,7 +22,7 @@ runPrivateService :: Dispatch -> Config -> (String -> IO ()) -> EntityConfig -> 
 runPrivateService Dispatch{..} Config{..} logFn EntityConfig{..} = do
   ps <- PrivateState <$> initSessions _ecLocal _ecRemotes
   let pe = PrivateEnv _ecLocal _ecRemotes (_alias _nodeId)
-  void $ runPrivate pe ps (handle _privateChannel (\s -> liftIO $ logFn $ "[Service|Private] " ++ s))
+  void $ runPrivate pe ps (handle _dispPrivateChannel (\s -> liftIO $ logFn $ "[Service|Private] " ++ s))
 
 handle :: PrivateChannel -> (String -> Private ()) -> Private ()
 handle chan logFn = do

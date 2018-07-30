@@ -45,7 +45,7 @@ initHistoryEnv
   -> Config
   -> HistoryEnv
 initHistoryEnv dispatch' debugPrint' getTimestamp' rconf = HistoryEnv
-  { _henvHistoryChannel = dispatch' ^. D.historyChannel
+  { _henvHistoryChannel = dispatch' ^. D.dispHistoryChannel
   , _henvDebugPrint = debugPrint'
   , _henvGetTimestamp = getTimestamp'
   , _henvDbPath = if rconf ^. enablePersistence

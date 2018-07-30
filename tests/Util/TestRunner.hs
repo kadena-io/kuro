@@ -5,12 +5,11 @@
 
 module Util.TestRunner
   ( delTempFiles
-  , gatherMetrics
+  , gatherMetric
   , testDir
   , testConfDir
   , runClientCommands
   , runServers
-  , stopProcesses
   , TestMetric(..)
   , TestMetricResult(..)
   , TestRequest(..)
@@ -18,6 +17,7 @@ module Util.TestRunner
   , TestResult(..)) where
 
 import Apps.Kadena.Client
+import qualified Apps.Kadena.Server as App
 import Control.Concurrent
 import Control.Lens
 import Control.Monad
@@ -38,7 +38,9 @@ import Pact.ApiReq
 import Pact.Types.API
 import System.Command
 import System.Console.GetOpt
+import System.Environment
 import System.Time.Extra
+import Test.Hspec
 import Text.Trifecta (ErrInfo(..), parseString, Result(..))
 
 testDir, testConfDir, _testLogDir :: String
@@ -51,7 +53,7 @@ data TestRequest = TestRequest
   , matchCmd :: String -- used when the command as processed differs from the original command issued
                        -- e.g., the command "load myFile.yaml" is processed as "myFile.yaml"
                        -- FIXME: really need to find a better way to match these...
-  , eval :: TestResponse -> Bool
+  , eval :: TestResponse -> Expectation
   , displayStr :: String
   }
 
@@ -92,31 +94,27 @@ delTempFiles = do
     _ <- createProcess p
     return ()
 
-runServers :: IO [ProcessHandle]
-runServers =
-  foldM f [] serverArgs where
-    f acc x = do
-        h <- runServer x
-        return $ h : acc
+-- | Returns a list of IO actions that kill all the servers
+runServers :: IO ()
+runServers = do
+  sleep 1
+  mapM_ runServer serverArgs
 
-runServer :: String -> IO ProcessHandle
+-- | Returns an IO action that kills the thread.
+runServer :: String -> IO ()
 runServer args = do
-    let p = proc "kadenaserver" $ words args
-    (_, _, _, procHandle) <- createProcess p
+    _ <- forkIO (withArgs (words args) App.main)
     sleep 1
-    return procHandle
-
-stopProcesses :: [ProcessHandle] -> IO ()
-stopProcesses handles = mapM_ terminateProcess handles
+    return ()
 
 serverArgs :: [String]
 serverArgs = [serverArgs0, serverArgs1, serverArgs2, serverArgs3]
 
 serverArgs0, serverArgs1, serverArgs2, serverArgs3 :: String
-serverArgs0 = "+RTS -N4 -RTS -c " ++ testConfDir ++ "10000-cluster.yaml"
-serverArgs1 = "+RTS -N4 -RTS -c " ++ testConfDir ++ "10001-cluster.yaml"
-serverArgs2 = "+RTS -N4 -RTS -c " ++ testConfDir ++ "10002-cluster.yaml"
-serverArgs3 = "+RTS -N4 -RTS -c " ++ testConfDir ++ "10003-cluster.yaml"
+serverArgs0 = "-c " ++ testConfDir ++ "10000-cluster.yaml"
+serverArgs1 = "-c " ++ testConfDir ++ "10001-cluster.yaml"
+serverArgs2 = "-c " ++ testConfDir ++ "10002-cluster.yaml"
+serverArgs3 = "-c " ++ testConfDir ++ "10003-cluster.yaml"
 
 runClientCommands :: [String] ->  [TestRequest] -> IO [TestResult]
 runClientCommands args testRequests =
@@ -208,11 +206,11 @@ simpleRunREPL (x:xs) = do
       handleCmd c reqStr
       simpleRunREPL xs
 
-gatherMetrics :: [TestMetric] -> IO [TestMetricResult]
-gatherMetrics tms = mapM (\tm -> do
+gatherMetric :: TestMetric -> IO TestMetricResult
+gatherMetric tm = do
     let name = metricNameTm tm
     value <- getMetric name
-    return $ TestMetricResult { requestTmr = tm, valueTmr = value}) tms
+    return $ TestMetricResult { requestTmr = tm, valueTmr = value}
 
 getMetric :: String -> IO (Maybe String)
 getMetric path = do

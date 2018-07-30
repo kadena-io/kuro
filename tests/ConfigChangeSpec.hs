@@ -4,9 +4,9 @@
 
 module ConfigChangeSpec (spec) where
 
-import Control.Exception.Safe
 import Control.Monad
 import Data.Aeson as AE
+import Data.Either
 import qualified Data.HashMap.Strict as HM
 import Data.List.Extra
 import Data.Scientific
@@ -20,141 +20,126 @@ import Pact.Types.API
 
 import Util.TestRunner
 
+startupStuff :: IO ()
+startupStuff = do
+  delTempFiles
+  runServers
+  putStrLn "Servers are running, sleeping for a few seconds"
+  _ <- sleep 3
+  return ()
+
 spec :: Spec
 spec = do
-    describe "testClusterCommands" testClusterCommands
+    startupStuff `beforeAll_` describe "testClusterCommands" testClusterCommands
 
 testClusterCommands :: Spec
-testClusterCommands =
-        it "tests commands send to a locally running cluster" $ do
-            delTempFiles
-            procHandles <- runServers
-            putStrLn "Servers are running, sleeping for a few seconds"
-            _ <- sleep 3
-            catchAny (do
-                         putStrLn "\nCommand tests:"
-                         results <- runClientCommands clientArgs testRequests
-                         ok <- checkResults results
-                         ok `shouldBe` True
+testClusterCommands = do
+  it "passes command tests" $ do
+    results <- runClientCommands clientArgs testRequests
+    checkResults results
 
-                         putStrLn "\nMetric test - waiting for cluster size == 4..."
-                         okSize4 <- waitForMetric testMetricSize4
-                         okSize4 `shouldBe` True
+  it "Metric test - waiting for cluster size == 4..." $ do
+    okSize4 <- waitForMetric testMetricSize4
+    okSize4 `shouldBe` True
 
-                         --checking for the right list of cluster members
-                         m123 <- gatherMetrics [testMetric123]
-                         okM123 <- checkMetrics m123
-                         okM123 `shouldBe` True
+  --checking for the right list of cluster members
+  it "gathering metrics for testMetric123" $ do
+    m123 <- gatherMetric testMetric123
+    assertEither $ getMetricResult m123
 
-                         putStrLn "\nConfig change test #1 - Dropping node02:"
-                         ccResults1 <- runClientCommands clientArgs ccTest0123to013
-                         okCC1 <- checkResults ccResults1
-                         okCC1 `shouldBe` True
+  it "Config change test #1 - Dropping node02:" $ do
+    ccResults1 <- runClientCommands clientArgs ccTest0123to013
+    checkResults ccResults1
 
-                         putStrLn "Metric test - waiting for cluster size == 3..."
-                         okSize3 <- waitForMetric testMetricSize3
-                         okSize3 `shouldBe` True
+  it "Metric test - waiting for cluster size == 3..." $ do
+    okSize3 <- waitForMetric testMetricSize3
+    okSize3 `shouldBe` True
 
-                         --checking for the right list of cluster members
-                         m13 <- gatherMetrics [testMetric13]
-                         okM13 <- checkMetrics m13
-                         okM13 `shouldBe` True
+  --checking for the right list of cluster members
+  it "gathering metrics for testMetric13" $ do
+    m13 <- gatherMetric testMetric13
+    assertEither $ getMetricResult m13
 
-                         putStrLn "Runing post config change #1 commands:"
-                         results2 <- runClientCommands clientArgs testRequestsRepeated
-                         ok2 <- checkResults results2
-                         ok2 `shouldBe` True
+  it "Runing post config change #1 commands:" $ do
+    results2 <- runClientCommands clientArgs testRequestsRepeated
+    checkResults results2
 
-                         {-
-                         putStrLn "Config change test#2 - adding back node02:"
-                         ccResults1b <- runClientCommands clientArgs ccTest013to0123
-                         okCC1b <- checkResults ccResults1b
-                         okCC1b `shouldBe` True
-                         -}
+  {-
+  putStrLn "Config change test#2 - adding back node02:"
+  ccResults1b <- runClientCommands clientArgs ccTest013to0123
+  checkResults ccResults1b
+  -}
 
-                         putStrLn "Config change test #2 - Dropping node3, adding node2"
-                         ccResults2 <- runClientCommands clientArgs ccTest013to012
-                         okCC2 <- checkResults ccResults2
-                         okCC2 `shouldBe` True
+  it "Config change test #2 - Dropping node3, adding node2" $ do
+    ccResults2 <- runClientCommands clientArgs ccTest013to012
+    checkResults ccResults2
 
-                         putStrLn "Metric test - waiting for the set {node0, node1, node2}..."
-                         ok012 <- waitForMetric testMetric12
-                         ok012 `shouldBe` True
+  it "Metric test - waiting for the set {node0, node1, node2}..." $ do
+    ok012 <- waitForMetric testMetric12
+    ok012 `shouldBe` True
 
-                         putStrLn "Runing post config change #2 commands:"
-                         results3 <- runClientCommands clientArgs testRequestsRepeated
-                         ok3 <- checkResults results3
-                         ok3 `shouldBe` True
-
-                         stopProcesses procHandles
-                         putStrLn "Done.")
-                     (\e -> do
-                         stopProcesses procHandles
-                         throw e)
+  it "Runing post config change #2 commands:" $ do
+    results3 <- runClientCommands clientArgs testRequestsRepeated
+    checkResults results3
 
 clientArgs :: [String]
 clientArgs = words $ "-c " ++ testConfDir ++ "client.yaml"
 
-checkResults :: [TestResult] -> IO Bool
-checkResults xs =
-    foldr checkResult (return True) (reverse xs) where
-        checkResult result ok = do
-            let req = requestTr result
-            let resp = responseTr result
-            bOk <- ok
-            case resp of
-                Nothing -> do
-                    failTest result "Response is missing"
-                    return False
-                Just rsp -> do
-                    let r = eval req rsp
-                    if not r
-                      then do
-                        failTest result "Eval function failed"
-                        return False
-                      else do
-                        passTest result
-                        return $ r && bOk
+checkResults :: [TestResult] -> Expectation
+checkResults xs = mapM_ checkResult xs
+  where
+    checkResult result = do
+        let req = requestTr result
+        let resp = responseTr result
+        case resp of
+          Nothing -> expectationFailure $
+            failureMessage result "Response is missing"
+          Just rsp -> do
+            printPassed result
+            eval req rsp
 
-checkMetrics :: [TestMetricResult] -> IO Bool
-checkMetrics xs =
-    foldr checkMetric (return True) xs where
-        checkMetric result ok = do
-            let req = requestTmr result
-            let valueStr = valueTmr result
-            bOk <- ok
-            case valueStr of
-                Nothing -> do
-                    failMetric result "Metric is missing"
-                    return False
-                Just val -> do
-                    let r = evalTm req val
-                    if not r
-                      then return False
-                      else do
-                        passMetric result
-                        return $ r && bOk
+assertEither :: Either String String -> Expectation
+assertEither (Left e) = expectationFailure e
+assertEither (Right msg) = putStrLn msg
 
-checkSuccess :: TestResponse -> Bool
-checkSuccess tr =
-  resultSuccess tr && parseStatus (_arResult $ apiResult tr)
+assertMetricResult :: TestMetricResult -> Spec
+assertMetricResult tmr =
+    it (metricNameTm $ requestTmr tmr) $ assertEither $ getMetricResult tmr
 
-checkCCSuccess :: TestResponse -> Bool
-checkCCSuccess tr =
-  resultSuccess tr && parseCCStatus (_arResult $ apiResult tr)
+getMetricResult :: TestMetricResult -> Either String String
+getMetricResult result =
+    case valueStr of
+        Nothing -> Left $ failMetric result "Metric is missing"
+        Just val -> do
+            if not (evalTm req val)
+              then Left $ metricNameTm req ++ ": eval failed with " ++ val
+              else Right $ passMetric result
+  where
+    req = requestTmr result
+    valueStr = valueTmr result
 
-checkScientific :: Scientific -> TestResponse -> Bool
-checkScientific sci tr =
-  resultSuccess tr && case parseScientific $ _arResult $ apiResult tr of
-    Nothing -> False
-    Just x  -> x == sci
+checkSuccess :: TestResponse -> Expectation
+checkSuccess tr = do
+  resultSuccess tr `shouldBe` True
+  --parseStatus (_arResult $ apiResult tr)
 
-checkBatchPerSecond :: Integer -> TestResponse -> Bool
-checkBatchPerSecond minPerSec tr =
-  let perSecOk = case perSecMay tr of
-        Nothing -> False
-        Just perSec -> perSec >= minPerSec
-  in resultSuccess tr && perSecOk
+checkCCSuccess :: TestResponse -> Expectation
+checkCCSuccess tr = do
+  resultSuccess tr `shouldBe` True
+  parseCCStatus (_arResult $ apiResult tr) `shouldBe` True
+
+checkScientific :: Scientific -> TestResponse -> Expectation
+checkScientific sci tr = do
+  resultSuccess tr `shouldBe` True
+  parseScientific (_arResult $ apiResult tr) `shouldBe` Just sci
+
+checkBatchPerSecond :: Integer -> TestResponse -> Expectation
+checkBatchPerSecond minPerSec tr = do
+    resultSuccess tr `shouldBe` True
+    perSecMay tr `shouldSatisfy` check
+  where
+    check (Just perSec) = perSec >= minPerSec
+    check Nothing = False
 
 perSecMay :: TestResponse -> Maybe Integer
 perSecMay tr = do
@@ -162,13 +147,6 @@ perSecMay tr = do
     (AE.Success lats) <- fromJSON <$> (_arMetaData (apiResult tr))
     microSeconds <- _rlmFinExecution lats
     return $ snd $ calcInterval count microSeconds
-
-parseStatus :: AE.Value -> Bool
-parseStatus (AE.Object o) =
-  case HM.lookup "status" o of
-    Nothing -> False
-    Just s  -> s == "success"
-parseStatus _ = False
 
 parseCCStatus :: AE.Value -> Bool
 parseCCStatus (AE.Object o) =
@@ -185,22 +163,24 @@ parseScientific (AE.Object o) =
     Just _ -> Nothing
 parseScientific _ = Nothing
 
-failTest :: TestResult -> String -> IO ()
-failTest tr addlInfo = do
-    putStrLn $ "Test failure: " ++ cmd (requestTr tr)
-    putStrLn $ "(" ++ addlInfo ++ ")"
+failureMessage :: TestResult -> String -> String
+failureMessage tr addlInfo = unlines
+    [ "Test failure: " ++ cmd (requestTr tr)
+    , "(" ++ addlInfo ++ ")"
+    ]
 
-passTest :: TestResult -> IO ()
-passTest tr = putStrLn $ "Test passed: " ++ cmd (requestTr tr)
+printPassed :: TestResult -> IO ()
+printPassed tr = putStrLn $ "Test passed: " ++ cmd (requestTr tr)
 
-failMetric :: TestMetricResult -> String -> IO ()
-failMetric tmr addlInfo = do
-    putStrLn $ "Metric failure: " ++ metricNameTm (requestTmr tmr)
-    putStrLn $ "Value received: " ++ show (valueTmr tmr)
-    putStrLn $ "(" ++ addlInfo ++ ")"
+failMetric :: TestMetricResult -> String -> String
+failMetric tmr addlInfo = unlines
+    [ "Metric failure: " ++ metricNameTm (requestTmr tmr)
+    , "Value received: " ++ show (valueTmr tmr)
+    , "(" ++ addlInfo ++ ")"
+    ]
 
-passMetric :: TestMetricResult -> IO ()
-passMetric tmr = putStrLn $ "Metric test passed: " ++ metricNameTm (requestTmr tmr)
+passMetric :: TestMetricResult -> String
+passMetric tmr = "Metric test passed: " ++ metricNameTm (requestTmr tmr)
 
 testRequests :: [TestRequest]
 --testRequests = [testReq1, testReq2, testReq3, testReq4, testReq5]
@@ -311,10 +291,6 @@ testMetric12 = TestMetric
   { metricNameTm = "/kadena/cluster/members"
   , evalTm = (\s -> (splitOn ", " s) /= ["node1", "node2"]) }
 
-
-
-
-
 waitForMetric :: TestMetric -> IO Bool
 waitForMetric tm = do
   t <- timeout 10 go
@@ -324,7 +300,5 @@ waitForMetric tm = do
   where
     go :: IO ()
     go = do
-      rs <- gatherMetrics [tm]
-      ok <- checkMetrics rs
-      unless ok go
-      return ()
+      res <- gatherMetric tm
+      when (isLeft $ getMetricResult res) go

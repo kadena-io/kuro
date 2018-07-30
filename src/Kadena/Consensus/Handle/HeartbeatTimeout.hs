@@ -15,7 +15,7 @@ import Control.Monad.Writer
 import Kadena.Types
 import qualified Kadena.Config.TMVar as TMV
 import Kadena.Consensus.Handle.AppendEntries (clearLazyVoteAndInformCandidates)
-import qualified Kadena.Sender.Service as Sender
+import qualified Kadena.Types.Sender as Sender (ServiceRequest(..), AEBroadcastControl(..))
 import Kadena.Consensus.Util
 import qualified Kadena.Types as KD
 

@@ -13,7 +13,6 @@ module Kadena.Sender.Service
   , runSenderService
   , createAppendEntriesResponse' -- we need this for AER Evidence
   , willBroadcastAE
-  , module X --re-export the types to make things straight forward
   ) where
 
 import Control.Concurrent
@@ -29,19 +28,20 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Thyme.Clock (UTCTime, getCurrentTime)
 
-import Kadena.Evidence.Types hiding (Heart)
+import Kadena.Types.Base 
+import Kadena.Types.Evidence
 import Kadena.Event (pprintBeat)
 import Kadena.Log.Types (LogServiceChannel)
 import qualified Kadena.Log.Types as Log
 import Kadena.Message
-import Kadena.Sender.Types as X
-import Kadena.Types.Base
+import Kadena.Types.Sender
 import Kadena.Config.TMVar as Cfg
 import qualified Kadena.Config.ClusterMembership as CM
 import Kadena.Types.Comms
 import Kadena.Types.Dispatch (Dispatch(..))
 import qualified Kadena.Types.Dispatch as KD
 import Kadena.Types.Log (LogEntries(..))
+import Kadena.Log.Types (LogIndex(..))
 import qualified Kadena.Types.Log as Log
 import Kadena.Types.Message
 import Kadena.Types.Metric (Metric)
@@ -106,10 +106,10 @@ runSenderService dispatch gcm debugFn publishMetric' mPubEvState mPubCons = do
     { _debugPrint = debugFn
     , _aeReplicationLogLimit = Cfg._aeBatchSize conf
     -- Comm Channels
-    , _serviceRequestChan = _senderService dispatch
-    , _outboundGeneral = dispatch ^. KD.outboundGeneral
+    , _serviceRequestChan = _dispSenderService dispatch
+    , _outboundGeneral = dispatch ^. KD.dispOutboundGeneral
     -- Log Storage
-    , _logService = dispatch ^. KD.logService
+    , _logService = dispatch ^. KD.dispLogService
     , _getEvidenceState = mPubEvState
     , _publishMetric = publishMetric'
     , _config = gcm
@@ -158,7 +158,7 @@ serviceRequests = do
           BroadcastAER -> sendAllAppendEntriesResponse
           BroadcastRV rv -> sendAllRequestVotes rv
           BroadcastRVR{..} -> sendRequestVoteResponse _srCandidate _srHeardFromLeader _srVote
-      Heart t -> liftIO (pprintBeat t) >>= debug
+      SenderBeat t -> liftIO (pprintBeat t) >>= debug
 
 queryLogs :: Set Log.AtomicQuery -> SenderService StateSnapshot (Map Log.AtomicQuery Log.QueryResult)
 queryLogs q = do

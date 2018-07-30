@@ -10,8 +10,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-
-module Kadena.Sender.Types
+module Kadena.Types.Sender
   ( SenderServiceChannel(..)
   , ServiceRequest'(..)
   , ServiceRequest(..)
@@ -42,7 +41,7 @@ data ServiceRequest' =
   { _srLastLogHash :: !LogIndex
   , _srMaxIndex :: !Hash
   , _srIssuedTime :: !UTCTime} |
-  Heart Beat
+  SenderBeat Beat
   deriving (Eq, Show)
 
 newtype SenderServiceChannel = SenderServiceChannel (Chan ServiceRequest')

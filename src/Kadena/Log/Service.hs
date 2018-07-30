@@ -31,9 +31,9 @@ import Kadena.Types.Log
 import Kadena.Log
 import Kadena.Log.Types
 import Kadena.Log.LogApi as X
-import qualified Kadena.Evidence.Types as Ev
+import qualified Kadena.Types.Evidence as Ev
 import qualified Kadena.Types.Dispatch as Dispatch
-import qualified Kadena.Execution.Types as Exec
+import qualified Kadena.Types.Execution as Exec
 import Kadena.Types (Dispatch)
 import Kadena.Event (pprintBeat)
 
@@ -52,18 +52,18 @@ runLogService dispatch dbg publishMetric' rconf = do
       dbg "[Service|Log] Persistence Disabled"
       return Nothing
   env <- return LogEnv
-    { _logQueryChannel = dispatch ^. Dispatch.logService
-    , _consensusEvent = dispatch ^. Dispatch.consensusEvent
-    , _execChannel = dispatch ^. Dispatch.execService
-    , _evidence = dispatch ^. Dispatch.evidence
-    , _senderChannel = dispatch ^. Dispatch.senderService
+    { _logQueryChannel = dispatch ^. Dispatch.dispLogService
+    , _consensusEvent = dispatch ^. Dispatch.dispConsensusEvent
+    , _execChannel = dispatch ^. Dispatch.dispExecService
+    , _evidence = dispatch ^. Dispatch.dispEvidence
+    , _senderChannel = dispatch ^. Dispatch.dispSenderService
     , _debugPrint = dbg
     , _persistedLogEntriesToKeepInMemory = (rconf ^. inMemTxCache)
     , _dbConn = dbConn'
     , _publishMetric = publishMetric'
     }
   initLogState' <- case dbConn' of
-    Just conn' -> syncLogsFromDisk (env ^. persistedLogEntriesToKeepInMemory) (dispatch ^. Dispatch.execService) conn'
+    Just conn' -> syncLogsFromDisk (env ^. persistedLogEntriesToKeepInMemory) (dispatch ^. Dispatch.dispExecService) conn'
     Nothing -> return initLogState
   void $ runRWST handle env initLogState'
 

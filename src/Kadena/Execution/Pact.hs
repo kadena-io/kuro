@@ -37,7 +37,7 @@ import Pact.Types.Runtime
 
 import Kadena.Types.PactDB
 import Kadena.Consensus.Publish
-import Kadena.Execution.Types
+import Kadena.Types.Execution
 import Kadena.Types.Entity
 import Kadena.Util.Util (linkAsyncTrack)
 
@@ -74,12 +74,12 @@ logInit l = logLog l "INIT"
 
 initPactService :: ExecutionEnv -> Publish -> IO (CommandExecInterface (PactRPC ParsedCode))
 initPactService ExecutionEnv{..} pub = do
-  let PactPersistConfig{..} = _pactPersistConfig
-      logger = newLogger _execLoggers "PactService"
-      initCI = initCommandInterface _entityConfig pub logger _execLoggers
+  let PactPersistConfig{..} = _eenvPactPersistConfig
+      logger = newLogger _eenvExecLoggers "PactService"
+      initCI = initCommandInterface _eenvEntityConfig pub logger _eenvExecLoggers
       initWB p db = if _ppcWriteBehind
         then do
-          wb <- initPureCacheWB p db  _execLoggers
+          wb <- initPureCacheWB p db  _eenvExecLoggers
           linkAsyncTrack "WriteBehindThread" (WB.runWBService wb)
           initCI WB.persister wb
         else initCI p db
@@ -91,10 +91,10 @@ initPactService ExecutionEnv{..} pub = do
       dbExists <- doesFileExist dbFile
       when dbExists $ logInit logger "Deleting Existing Pact DB File" >> removeFile dbFile
       logInit logger "Initializing SQLite"
-      initWB SQLite.persister =<< SQLite.initSQLite conf _execLoggers
+      initWB SQLite.persister =<< SQLite.initSQLite conf _eenvExecLoggers
     PPBMSSQL conf connStr -> do
       logInit logger "Initializing MSSQL"
-      initWB MSSQL.persister =<< MSSQL.initMSSQL connStr conf _execLoggers
+      initWB MSSQL.persister =<< MSSQL.initMSSQL connStr conf _eenvExecLoggers
 
 initCommandInterface :: EntityConfig -> Publish -> Logger -> Loggers -> Persister w -> w ->
                         IO (CommandExecInterface (PactRPC ParsedCode))

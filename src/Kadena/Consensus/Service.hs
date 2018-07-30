@@ -18,15 +18,16 @@ import Kadena.Event (foreverHeart)
 import Kadena.Types
 import Kadena.Types.Entity
 import Kadena.Types.KeySet
-
+import Kadena.Types.Execution
 import Kadena.Messaging.Turbine
-import qualified Kadena.Messaging.Turbine as Turbine
+import qualified Kadena.Types.Turbine as Turbine
 import qualified Kadena.Execution.Service as Exec
+import qualified Kadena.Types.Sender as Sender
 import qualified Kadena.Sender.Service as Sender
 import qualified Kadena.Types.Log as Log
 import qualified Kadena.Log.Types as Log
 import qualified Kadena.Log.Service as Log
-import qualified Kadena.Evidence.Types as Ev
+import qualified Kadena.Types.Evidence as Ev
 import qualified Kadena.Evidence.Service as Ev
 import qualified Kadena.PreProc.Service as PreProc
 import qualified Kadena.History.Service as History
@@ -52,7 +53,7 @@ launchHistoryService :: Dispatch
   -> IO ()
 launchHistoryService dispatch' dbgPrint' getTimestamp' rconf = do
   linkAsyncTrack "HistoryThread" (History.runHistoryService (History.initHistoryEnv dispatch' dbgPrint' getTimestamp' rconf) Nothing)
-  linkAsyncTrack "HistoryHB" (foreverHeart (_historyChannel dispatch') 1000000 HistoryBeat)
+  linkAsyncTrack "HistoryHB" (foreverHeart (_dispHistoryChannel dispatch') 1000000 HistoryBeat)
 
 launchPreProcService :: Dispatch
   -> (String -> IO ())
@@ -61,7 +62,7 @@ launchPreProcService :: Dispatch
   -> IO ()
 launchPreProcService dispatch' dbgPrint' getTimestamp' Config{..} = do
   linkAsyncTrack "PreProcThread" (PreProc.runPreProcService (PreProc.initPreProcEnv dispatch' _preProcThreadCount dbgPrint' getTimestamp' _preProcUsePar))
-  linkAsyncTrack "PreProcHB" (foreverHeart (_processRequestChannel dispatch') 1000000 PreProc.Heart)
+  linkAsyncTrack "PreProcHB" (foreverHeart (_dispProcessRequestChannel dispatch') 1000000 PreProcBeat)
 
 launchEvidenceService :: Dispatch
   -> (String -> IO ())
@@ -72,7 +73,7 @@ launchEvidenceService :: Dispatch
   -> IO ()
 launchEvidenceService dispatch' dbgPrint' publishMetric' mEvState rconf' mLeaderNoFollowers = do
   linkAsyncTrack "EvidenceThread" (Ev.runEvidenceService $! Ev.initEvidenceEnv dispatch' dbgPrint' rconf' mEvState mLeaderNoFollowers publishMetric')
-  linkAsyncTrack "EvidenceHB" $ foreverHeart (_evidence dispatch') 1000000 Ev.Heart
+  linkAsyncTrack "EvidenceHB" $ foreverHeart (_dispEvidence dispatch') 1000000 EvidenceBeat
 
 launchExecutionService :: Dispatch
   -> (String -> IO ())
@@ -91,7 +92,7 @@ launchExecutionService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTim
       (_logRules rconf') publishMetric' getTimestamp' gcm' ent
   pub <- return $! Publish pubConsensus dispatch' getTimestamp' nodeId'
   linkAsyncTrack "ExecutionThread" (Exec.runExecutionService execEnv pub nodeId' keySet')
-  linkAsyncTrack "ExecutionHB" $ foreverHeart (_execService dispatch') 1000000 Exec.Heart
+  linkAsyncTrack "ExecutionHB" $ foreverHeart (_dispExecService dispatch') 1000000 ExecutionBeat
 
 launchLogService :: Dispatch
   -> (String -> IO ())
@@ -100,7 +101,7 @@ launchLogService :: Dispatch
   -> IO ()
 launchLogService dispatch' dbgPrint' publishMetric' rconf = do
   linkAsyncTrack "LogThread" (Log.runLogService dispatch' dbgPrint' publishMetric' rconf)
-  linkAsyncTrack "LogHB" $ (foreverHeart (_logService dispatch') 1000000 Log.Heart)
+  linkAsyncTrack "LogHB" $ (foreverHeart (_dispLogService dispatch') 1000000 Log.Heart)
 
 launchSenderService :: Dispatch
   -> (String -> IO ())
@@ -111,7 +112,7 @@ launchSenderService :: Dispatch
   -> IO ()
 launchSenderService dispatch' dbgPrint' publishMetric' mEvState mPubCons rconf = do
   linkAsyncTrack "SenderThread" (Sender.runSenderService dispatch' rconf dbgPrint' publishMetric' mEvState mPubCons)
-  linkAsyncTrack "SenderHB" $ foreverHeart (_senderService dispatch') 1000000 Sender.Heart
+  linkAsyncTrack "SenderHB" $ foreverHeart (_dispSenderService dispatch') 1000000 Sender.SenderBeat
 
 runConsensusService :: ReceiverEnv -> GlobalConfigTMVar -> ConsensusSpec -> ConsensusState ->
                             IO UTCTime -> MVar PublishedConsensus -> IO ()
@@ -123,10 +124,10 @@ runConsensusService renv gcm spec rstate timeCache' mPubConsensus' = do
       changeToSize = CM.countTransitional members
       changeToQuorum = CM.minQuorumTransitional members
       publishMetric' = (spec ^. publishMetric)
-      dispatch' = _dispatch renv
-      dbgPrint' = Turbine._debugPrint renv
+      dispatch' = Turbine._turbineDispatch renv
+      dbgPrint' = Turbine._turbineDebugPrint renv
       getTimestamp' = spec ^. getTimestamp
-      keySet' = Turbine._keySet renv
+      keySet' = Turbine._turbineKeySet renv
       nodeId' = rconf ^. nodeId
 
   publishMetric' $ MetricClusterSize csize
@@ -148,7 +149,7 @@ runConsensusService renv gcm spec rstate timeCache' mPubConsensus' = do
   launchEvidenceService dispatch' dbgPrint' publishMetric' mEvState gcm mLeaderNoFollowers
   launchLogService dispatch' dbgPrint' publishMetric' rconf
   launchApiService dispatch' gcm dbgPrint' mPubConsensus' getTimestamp'
-  linkAsyncTrack "ConsensusHB" (foreverHeart (_consensusEvent dispatch') 1000000 (ConsensusEvent . Heart))
+  linkAsyncTrack "ConsensusHB" (foreverHeart (_dispConsensusEvent dispatch') 1000000 (ConsensusEvent . Heart))
   catchAndRethrow "ConsensusThread" $ runRWS_
     kadena
     (mkConsensusEnv gcm spec dispatch'

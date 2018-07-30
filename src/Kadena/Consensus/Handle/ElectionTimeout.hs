@@ -19,7 +19,7 @@ import qualified Data.Set as Set
 import Kadena.Config.ClusterMembership
 import qualified Kadena.Config.TMVar as TMV
 import Kadena.Types
-import qualified Kadena.Sender.Service as Sender
+import qualified Kadena.Types.Sender as Sender (ServiceRequest(..))
 import qualified Kadena.Types.Log as Log
 import Kadena.Consensus.Util
 

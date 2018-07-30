@@ -48,7 +48,7 @@ import GHC.Generics
 import GHC.Int (Int64)
 
 import Kadena.Types.Base
-import Kadena.Private.Types (PrivateCiphertext,PrivateResult)
+import Kadena.Types.Private (PrivateCiphertext,PrivateResult)
 
 import qualified Pact.ApiReq as Pact
 import qualified Pact.Types.Command as Pact

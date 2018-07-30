@@ -14,7 +14,7 @@ import Data.Set as Set
 
 import qualified Kadena.Config.ClusterMembership as CM
 import qualified Kadena.Config.TMVar as TMV
-import qualified Kadena.Sender.Service as Sender
+import qualified Kadena.Types.Sender as Sender
 import qualified Kadena.Types.Log as Log
 import qualified Kadena.Types as KD
 import Kadena.Types

@@ -11,6 +11,7 @@ bin/*
 .dir-locals.el
 .stack-work/
 .stack-work*
+submodules/
 submodules/*
 stack-docker.yaml
 *~

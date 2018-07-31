@@ -58,8 +58,10 @@ git fetch && git checkout 6ee9fcb026ebdb49b810802a981d166680d867c9
 NB: we do this because it's easier than fighting with either submodules or getting docker to be able to clone on it's own
 
 ### Automated Part
-Make sure that `kadena` is building by running `stack build` and `stack test`.
+Make sure that `kadena` is building and all tests are passing.
+
 Start Docker with a memory allowance of at least 4 GB.
+
 Run `./scripts/build-beta-distro.sh`, go get a coffee because it'll take a while.
 
 When it's done, add a version number to the kadena-beta.tgz that's created.

@@ -12,6 +12,7 @@ bin/*
 .stack-work/
 .stack-work*
 submodules/*
+stack-docker.yaml
 *~
 log/*
 test-files/log*/node*

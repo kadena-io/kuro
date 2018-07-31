@@ -26,6 +26,6 @@ RUN bash -c "mkdir -p /kadena/log && \
 
 
 RUN mkdir -p /centos-6.8 && \
-    cp ~/.local/bin/* /centos-6.8
+    cp kadena/bin/* /centos-6.8
 
 CMD ["/bin/bash"]

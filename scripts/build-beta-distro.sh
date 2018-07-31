@@ -72,6 +72,7 @@ if [ -z "$target" -o "$target" = "perfmon" ]; then
     chirp "Builing and Copying: Performance Monitor"
     rm -rf ./kadena-beta/static/monitor/*
     safe cd ./monitor
+    safe npm install
     safe npm run build
     safe cd ..
     safe cp -R monitor/public/* ./kadena-beta/static/monitor/

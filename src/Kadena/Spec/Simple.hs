@@ -144,7 +144,7 @@ runServer = do
   rconf <- getConfig
   gcm <- initGlobalConfigTMVar rconf
 #if WITH_KILL_SWITCH
-  when (Set.size (_cmOtherNodes (_clusterMembers rconf))) >= 16) $
+  when ((CM.countOthers (_clusterMembers rconf)) >= 16) $
     error $ "Beta versions of Kadena are limited to 16 consensus nodes."
 #endif
   utcTimeCache' <- utcTimeCache

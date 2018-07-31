@@ -4,8 +4,9 @@
 
 ### Manual Part
 
-1. Create a submodules directory
-2. Checkout the correct version of everything found in `stack.yaml` packages section (example):
+1. Create a `submodules` directory
+2. Inside the `submodule/` directory, git clone all packages found in `stack.yaml`
+3. Checkout the correct version of everything found in the `stack.yaml` packages section (example):
 
 ```
 # stack.yaml
@@ -39,7 +40,7 @@ cd ../thyme
 git fetch && git checkout 6ee9fcb026ebdb49b810802a981d166680d867c9
 ```
 
-3. Upgrade the stack-docker.yaml file:
+4. Create a stack-docker.yaml file as follows:
 
 ```
 > cp stack.yaml stack-docker.yaml
@@ -50,16 +51,17 @@ git fetch && git checkout 6ee9fcb026ebdb49b810802a981d166680d867c9
     commit: 6ee9fcb026ebdb49b810802a981d166680d867c9
   extra-dep: true
 # ...to be these
-- './submodules/thyme'
+- location: submodules/thyme
   extra-dep: true
-
-
 ```
 
 NB: we do this because it's easier than fighting with either submodules or getting docker to be able to clone on it's own
 
 ### Automated Part
+Make sure that `kadena` is building and all tests are passing.
 
-Start Docker, run `./scripts/build-beta-distro.sh`, go get a coffee because it'll take a while.
+Start Docker with a memory allowance of at least 4 GB.
 
-When it's done, add a version number the kadena-beta.tgz that's created
+Run `./scripts/build-beta-distro.sh`, go get a coffee because it'll take a while.
+
+When it's done, add a version number to the kadena-beta.tgz that's created.

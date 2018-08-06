@@ -73,7 +73,7 @@ handleConfUpdate = do
   let clusterMembersChanged =  otherNodes (_esClusterMembers es) /= otherNodes _clusterMembers ||
                     transitionalNodes (_esClusterMembers es) /= transitionalNodes _clusterMembers
   if not maxTimeoutChanged && not clusterMembersChanged
-    then do -- ^ No update needed
+    then do -- No update needed
       debug "Config update received but no action required"
       return ()
   else do

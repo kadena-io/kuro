@@ -85,7 +85,10 @@ in
             }) {};
           };
     packages = {
-      kadena = ./.;
+      kadena = builtins.filterSource
+        (path: type: !(builtins.elem (baseNameOf path)
+           ["result" "dist" "dist-ghcjs" ".git"]))
+        ./.;
     };
     
     shells = {

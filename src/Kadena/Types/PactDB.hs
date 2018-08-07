@@ -1,3 +1,4 @@
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -8,8 +9,10 @@ module Kadena.Types.PactDB
   , PactPersistConfig(..)
   , PPBType(..) ) where
 
+import Database.MySQL.Base (ConnectInfo(..), Option(..), SSLInfo(..), Protocol(..))
 import Data.Aeson
 import qualified Data.Aeson as A
+import qualified Data.ByteString as B (ByteString)
 import GHC.Generics
 
 import Pact.Persist.MSSQL (MSSQLConfig(..))
@@ -20,7 +23,8 @@ data PactPersistBackend =
     PPBInMemory |
     PPBSQLite { _ppbSqliteConfig :: SQLiteConfig } |
     PPBMSSQL { _ppbMssqlConfig :: Maybe MSSQLConfig,
-               _ppbMssqlConnStr :: String }
+               _ppbMssqlConnStr :: String } |
+    PPBMySQL { _ppbMysqlConfig :: ConnectInfo}
     deriving (Show,Generic)
 
 data PactPersistConfig = PactPersistConfig {
@@ -30,7 +34,7 @@ data PactPersistConfig = PactPersistConfig {
 instance ToJSON PactPersistConfig where toJSON = lensyToJSON 4
 instance FromJSON PactPersistConfig where parseJSON = lensyParseJSON 4
 
-data PPBType = SQLITE|MSSQL|INMEM deriving (Eq,Show,Read,Generic,FromJSON,ToJSON)
+data PPBType = MYSQL|SQLITE|MSSQL|INMEM deriving (Eq,Show,Read,Generic,FromJSON,ToJSON)
 
 instance FromJSON PactPersistBackend where
   parseJSON = A.withObject "PactPersistBackend" $ \o -> do
@@ -38,9 +42,32 @@ instance FromJSON PactPersistBackend where
     case ty of
       SQLITE -> PPBSQLite <$> o .: "config"
       MSSQL -> PPBMSSQL <$> o .:? "config" <*> o .: "connStr"
+      MYSQL -> PPBMySQL <$> o .: "config"
       INMEM -> return PPBInMemory
 instance ToJSON PactPersistBackend where
   toJSON p = A.object $ case p of
     PPBInMemory -> [ "type" .= INMEM ]
     PPBSQLite {..} -> [ "type" .= SQLITE, "config" .= _ppbSqliteConfig ]
     PPBMSSQL {..} -> [ "type" .= MSSQL, "config" .= _ppbMssqlConfig, "connStr" .= _ppbMssqlConnStr ]
+    PPBMySQL {..} -> [ "type" .= MYSQL, "config" .= _ppbMysqlConfig ]
+
+-- Orphan instances for ConnectInfo
+deriving instance Generic ConnectInfo
+deriving instance Generic Option
+deriving instance Generic SSLInfo
+deriving instance Generic Protocol
+
+instance ToJSON B.ByteString where toJSON = toB16JSON
+instance FromJSON B.ByteString where parseJSON = parseB16JSON
+
+instance ToJSON Protocol where toJSON = lensyToJSON 4
+instance FromJSON Protocol where parseJSON = lensyParseJSON 4
+
+instance ToJSON SSLInfo where toJSON = lensyToJSON 4
+instance FromJSON SSLInfo where parseJSON = lensyParseJSON 4
+
+instance ToJSON Option where toJSON = lensyToJSON 4
+instance FromJSON Option where parseJSON = lensyParseJSON 4
+
+instance ToJSON ConnectInfo where toJSON = lensyToJSON 4
+instance FromJSON ConnectInfo where parseJSON = lensyParseJSON 4

@@ -157,6 +157,7 @@ library
                      , monad-par
                      , mtl
                      , mtl-compat
+                     , mysql >= 0.1 && < 0.2
                      , network
                      , pact == 2.4.*
                      , pact-persist == 1.0.*

@@ -238,6 +238,34 @@ executable kadenaclient
   ghc-prof-options:    -fprof-auto -fprof-auto-calls
   default-language:    Haskell2010
 
+executable bolosim
+  main-is:       Main.hs
+  other-modules: Util.TestRunner
+
+  build-depends: aeson
+               , base
+               , cmdargs
+               , bytestring
+               , data-default
+               , extra
+               , hspec
+               , HUnit
+               , kadena
+               , lens
+               , pact
+               , system-command
+               , text
+               , transformers
+               , trifecta
+               , unordered-containers
+               , wreq
+               , yaml
+  hs-source-dirs: executables/bolosim
+                , tests
+  ghc-options: -Wall -threaded -rtsopts
+  default-language: Haskell2010
+
+
 test-suite hspec
   type: exitcode-stdio-1.0
   main-is: hspec.hs

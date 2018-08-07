@@ -45,17 +45,6 @@ delBoloTempFiles = do
 
 runNoBatch :: Int -> IO Bool
 runNoBatch _nTrans = undefined
-{-
-  putStrLn $ "Running " ++ show nTrans ++ " transactions without batching"
-  initResults <- runClientCommands clientArgs initialRequests
-  let initOk = checkResults initResults
-  case initOk of
-    False -> return False
-    True -> do
-      let mainCommands = repeatRequest nTrans
-      mainResults <- runClientCommands clientArgs mainCommands
-      return $ checkResults mainResults
--}
 
 runWithBatch :: Int -> Int -> IO Bool
 runWithBatch nTransactions batchSz = do
@@ -79,22 +68,8 @@ runWithBatch nTransactions batchSz = do
         putStrLn $ show nDone ++ " completed -- this batch of " ++ show sz ++ " transactions "
                    ++ "completed in: " ++ show seconds ++ " seconds "
                    ++ "(" ++ tPerSec ++ " per second)" 
-        -- putStrLn $ show nDone ++ " completed -- this batch of " ++ show sz ++ " transactions "
-                   -- ++ "completed in: " ++ show sec ++ " seconds "
-                   -- ++ "(" ++ show (sec/fromIntegral sz) ++ " per second)" 
         loop (totalRemaining-sz) (allOk && ok)
   
-
-{-
-duration :: IO a -> IO (Seconds, a)
-
-Record how long a computation takes in Seconds.
-
-do (a,_) <- duration $ sleep 1; return $ a >= 1 && a <= 1.1
--}
-
-
-
 checkResults :: [TestResult] -> Bool
 checkResults xs = and $ fmap checkResult xs
 

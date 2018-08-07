@@ -132,6 +132,7 @@ data CliCmd =
   Poll String |
   PollMetrics String |
   Send Mode String |
+  Multiple String |
   Private EntityName [EntityName] String |
   Server (Maybe String) |
   Sleep Int |
@@ -234,6 +235,15 @@ sendCmd m cmd replCmd = do
       y <- postAPI "local" e
       handleResp (\(resp :: Value) -> putJSON resp) y
 
+sendMultiple :: String -> String -> Repl ()
+sendMultiple cmdLines replCmd = do
+  j <- use cmdData
+  let cmds = lines cmdLines
+  xs <- sequence $ fmap (\cmd -> mkExec cmd j Nothing) cmds
+  resp <- postAPI "send" (SubmitBatch xs)
+  tellKeys resp replCmd
+  handleResp handleBatchResp resp
+  
 sendConfigChangeCmd :: ConfigChangeApiReq -> String -> Repl ()
 sendConfigChangeCmd ccApiReq@ConfigChangeApiReq{..} fileName = do
   execs <- liftIO $ mkConfigChangeExecs ccApiReq
@@ -496,7 +506,9 @@ cliCmds = [
   ("private","TO [FROM1 FROM2...] CMD","Send private transactional command to server addressed with entity names",
    parsePrivate),
   ("configChange", "YAMLFILE", "Load and submit transactionally a yaml configuration change file",
-   ConfigChange <$> some anyChar)
+   ConfigChange <$> some anyChar),
+  ("multiple", "[COMMAND]", "Batch multiple commands togehter and send transactionally to the server",
+   Multiple <$> some anyChar)
   ]
 
 parsePrivate :: TF.Parser CliCmd
@@ -537,6 +549,7 @@ handleCmd cmd reqStr = case cmd of
   Cmd Nothing -> use batchCmd >>= flushStrLn
   Cmd (Just c) -> batchCmd .= c
   Send m c -> sendCmd m c reqStr
+  Multiple c -> sendMultiple c reqStr 
   Server Nothing -> do
     use server >>= \s -> flushStrLn $ "Current server: " ++ s
     flushStrLn "Servers:"

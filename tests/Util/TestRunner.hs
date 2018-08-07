@@ -10,6 +10,7 @@ module Util.TestRunner
   , testConfDir
   , runClientCommands
   , runServers
+  , runServers'
   , TestMetric(..)
   , TestMetricResult(..)
   , TestRequest(..)
@@ -96,12 +97,15 @@ delTempFiles = do
 
 -- | Returns a list of IO actions that kill all the servers
 runServers :: IO ()
-runServers = do
-  sleep 1
-  mapM_ runServer serverArgs
+runServers = runServers' serverArgs 
 
+runServers' :: [String] -> IO ()
+runServers' svrArgList = do
+  sleep 1
+  mapM_ runServer svrArgList
+  
 -- | Returns an IO action that kills the thread.
-runServer :: String -> IO ()
+runServer ::  String -> IO ()
 runServer args = do
     _ <- forkIO (withArgs (words args) App.main)
     sleep 1

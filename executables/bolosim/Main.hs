@@ -7,10 +7,10 @@ module Main
   ) where
 
 import Data.List.Extra
-import Debug.Trace
 import System.Command
 import System.Console.CmdArgs
 import System.Time.Extra
+import Text.Printf
 import Util.TestRunner
 
 main :: IO ()
@@ -26,9 +26,8 @@ main = do
 
 data BoloArgs = BoloArgs {numTransactions :: Int, batchSize :: Int} deriving (Show, Data, Typeable)
 
---MLN: make these defaults more reasonable after testing
 boloArgs :: BoloArgs
-boloArgs = BoloArgs {numTransactions = 10, batchSize = 5}
+boloArgs = BoloArgs {numTransactions = 12000, batchSize = 4000}
 
 startupStuff :: IO ()
 startupStuff = do
@@ -69,13 +68,32 @@ runWithBatch nTransactions batchSz = do
       loop :: Int -> Bool -> IO Bool
       loop 0 allOk = return allOk -- all done
       loop totalRemaining allOk = do -- do next batch
-        let thisBatch = min totalRemaining batchSz
-        let startNum = nTransactions - totalRemaining
-        let batchReq = createOrdersReq startNum thisBatch
-        res <- runClientCommands clientArgs [batchReq]
-        putStrLn $ "runWith Batch: " ++ show (startNum + thisBatch ) ++ " completed"
-        let ok = checkResults res
-        loop (totalRemaining-thisBatch) (allOk && ok)
+        (sec, (ok, nDone, sz)) <- duration $ do 
+          let thisBatch = min totalRemaining batchSz
+          let startNum = nTransactions - totalRemaining
+          let batchReq = createOrdersReq startNum thisBatch
+          _res <- runClientCommands clientArgs [batchReq]
+          return (True, startNum+thisBatch, thisBatch) -- checkResults res
+        let seconds = printf "%.2f" sec :: String
+        let tPerSec = printf "%.2f" (fromIntegral sz / sec) :: String
+        putStrLn $ show nDone ++ " completed -- this batch of " ++ show sz ++ " transactions "
+                   ++ "completed in: " ++ show seconds ++ " seconds "
+                   ++ "(" ++ tPerSec ++ " per second)" 
+        -- putStrLn $ show nDone ++ " completed -- this batch of " ++ show sz ++ " transactions "
+                   -- ++ "completed in: " ++ show sec ++ " seconds "
+                   -- ++ "(" ++ show (sec/fromIntegral sz) ++ " per second)" 
+        loop (totalRemaining-sz) (allOk && ok)
+  
+
+{-
+duration :: IO a -> IO (Seconds, a)
+
+Record how long a computation takes in Seconds.
+
+do (a,_) <- duration $ sleep 1; return $ a >= 1 && a <= 1.1
+-}
+
+
 
 checkResults :: [TestResult] -> Bool
 checkResults xs = and $ fmap checkResult xs
@@ -157,7 +175,6 @@ createOrders start = fmap createOrder [start+1,(start+2)..]
 
 createOrder :: Int -> String
 createOrder n =
-  trace  ("createOrder - order number " ++ show n) $
   "(orders.create-order"
   ++ " " ++ escN n "order-id-"
   ++ " " ++ esc "some-keyset"

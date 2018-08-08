@@ -91,7 +91,7 @@ launchExecutionService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTim
     dispatch' dbgPrint' (_pactPersist rconf')
       (_logRules rconf') publishMetric' getTimestamp' gcm' ent
   pub <- return $! Publish pubConsensus dispatch' getTimestamp' nodeId'
-  linkAsyncTrack "ExecutionThread" (Exec.runExecutionService execEnv pub nodeId' keySet')
+  linkAsyncBoundTrack "ExecutionThread" (Exec.runExecutionService execEnv pub nodeId' keySet')
   linkAsyncTrack "ExecutionHB" $ foreverHeart (_dispExecService dispatch') 1000000 ExecutionBeat
 
 launchLogService :: Dispatch

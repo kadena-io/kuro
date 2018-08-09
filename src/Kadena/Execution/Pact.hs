@@ -26,6 +26,7 @@ import Pact.Types.Logger (logLog,Logger,Loggers,newLogger)
 import qualified Pact.Persist.SQLite as SQLite
 import qualified Pact.Persist.Pure as Pure
 import qualified Pact.Persist.MSSQL as MSSQL
+import qualified Pact.Persist.MySQL as MySQL
 import qualified Pact.Persist.WriteBehind as WB
 import Pact.Persist.CacheAdapter (initPureCacheWB)
 import Pact.Interpreter
@@ -95,6 +96,9 @@ initPactService ExecutionEnv{..} pub = do
     PPBMSSQL conf connStr -> do
       logInit logger "Initializing MSSQL"
       initWB MSSQL.persister =<< MSSQL.initMSSQL connStr conf _eenvExecLoggers
+    PPBMySQL conf -> do
+      logInit logger "Initializing MySQL"
+      initWB MySQL.persister =<< MySQL.initMySQL conf _eenvExecLoggers
 
 initCommandInterface :: EntityConfig -> Publish -> Logger -> Loggers -> Persister w -> w ->
                         IO (CommandExecInterface (PactRPC ParsedCode))

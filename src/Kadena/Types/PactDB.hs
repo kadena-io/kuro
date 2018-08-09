@@ -148,8 +148,6 @@ instance FromJSON Protocol where
         "Memory" -> return Memory
         _ -> fail "Invalid Protocol value"
 
-instance ToJSON B.ByteString where toJSON = toB16JSON
-instance FromJSON B.ByteString where parseJSON = parseB16JSON
 instance ToJSON SSLInfo where
   toJSON SSLInfo{..} = A.object ["key" .= sslKey, "cert" .= sslCert,
                                  "CA" .= sslCA, "CAPath" .= sslCAPath,

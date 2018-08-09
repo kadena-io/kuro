@@ -51,6 +51,7 @@ import qualified Data.Vector as V
 import qualified Data.Yaml as Y
 
 import GHC.Generics (Generic)
+import Network.HTTP.Client hiding (responseBody)
 import Network.Wreq hiding (Raw, get)
 import System.Console.GetOpt
 import System.Environment
@@ -84,6 +85,9 @@ coptions =
            (ReqArg (\fp -> set oConfig fp) "config")
            "Configuration File"
   ]
+
+maxRetries :: Int
+maxRetries = 20
 
 data Node = Node
   { _nEntity :: EntityName
@@ -132,7 +136,7 @@ data CliCmd =
   Poll String |
   PollMetrics String |
   Send Mode String |
-  Multiple String |
+  Multiple Int String |
   Private EntityName [EntityName] String |
   Server (Maybe String) |
   Sleep Int |
@@ -199,17 +203,44 @@ mkExec code mdata addy = do
     (T.pack $ show rid)
     (Exec (ExecMsg (T.pack code) mdata))
 
-postAPI :: (ToJSON req,FromJSON resp) => String -> req -> Repl (Response resp)
-postAPI ep rq = do
+postAPI :: (ToJSON req,FromJSON (ApiResponse t))
+        => String -> req -> Repl (Response (ApiResponse t))
+postAPI ep rq = postAPI' ep rq 30 maxRetries 
+
+-- | Same as postAPI but with additional timeout parameter and excpeption retry
+postAPI' :: (ToJSON req,FromJSON (ApiResponse t))
+         => String -> req -> Int -> Int -> Repl (Response (ApiResponse t))
+postAPI' ep rq retryMax timeoutSecs = do
   use echo >>= \e -> when e $ putJSON rq
   s <- getServer
-  liftIO $ postSpecifyServerAPI ep s rq
+  liftIO $ postSpecifyServerAPI' ep s rq retryMax timeoutSecs
 
-postSpecifyServerAPI :: (ToJSON req,FromJSON resp) => String -> String -> req -> IO (Response resp)
-postSpecifyServerAPI ep server' rq = do
-  let url = "http://" ++ server' ++ "/api/v1/" ++ ep
-  r <- liftIO $ post url (toJSON rq)
-  asJSON r
+postSpecifyServerAPI :: (ToJSON req,FromJSON (ApiResponse t))
+                     => String -> String -> req -> IO (Response (ApiResponse t))
+postSpecifyServerAPI ep server' rq = postSpecifyServerAPI' ep server' rq 30 maxRetries 
+
+-- | Sames as postSpecifyServerAPI but with additional timeout parameter and excpeption retry
+postSpecifyServerAPI' :: (ToJSON req,FromJSON (ApiResponse t))
+                      => String -> String -> req -> Int -> Int -> IO (Response (ApiResponse t))
+postSpecifyServerAPI' ep server' rq retryMax timeoutSecs = loop retryMax where
+  loop :: (FromJSON (ApiResponse t))
+       => Int -> IO (Response (ApiResponse t))
+  loop retryCount = do
+    let url = "http://" ++ server' ++ "/api/v1/" ++ ep
+    let opts = defaults & manager .~ Left (defaultManagerSettings
+          { managerResponseTimeout = responseTimeoutMicro (timeoutSecs * 1000000) } )
+    r <- liftIO $ postWith opts url (toJSON rq)
+    resp <- asJSON r
+    case resp ^. responseBody of
+      ApiFailure{..} -> case retryCount of
+        0 -> do
+          flushStrLn $ "postSpecifyServerAPI - failing after " ++ show retryMax ++ "retries"
+          return resp
+        n -> loop (n-1)
+      ApiSuccess{..} -> do 
+        when (retryMax /= retryCount) $  
+          flushStrLn $  "(succeeded with " ++ show (retryMax - retryCount) ++ " retries)"
+        return resp
 
 handleResp :: (t -> Repl ()) -> Response (ApiResponse t) -> Repl ()
 handleResp a r =
@@ -235,12 +266,12 @@ sendCmd m cmd replCmd = do
       y <- postAPI "local" e
       handleResp (\(resp :: Value) -> putJSON resp) y
 
-sendMultiple :: String -> String -> Repl ()
-sendMultiple cmdLines replCmd = do
+sendMultiple :: String -> String -> Int -> Repl ()
+sendMultiple cmdLines replCmd timeoutSecs = do
   j <- use cmdData
   let cmds = lines cmdLines
   xs <- sequence $ fmap (\cmd -> mkExec cmd j Nothing) cmds
-  resp <- postAPI "send" (SubmitBatch xs)
+  resp <- postAPI' "send" (SubmitBatch xs) maxRetries timeoutSecs
   tellKeys resp replCmd
   handleResp handleBatchResp resp
   
@@ -507,8 +538,8 @@ cliCmds = [
    parsePrivate),
   ("configChange", "YAMLFILE", "Load and submit transactionally a yaml configuration change file",
    ConfigChange <$> some anyChar),
-  ("multiple", "[COMMAND]", "Batch multiple commands togehter and send transactionally to the server",
-   Multiple <$> some anyChar)
+  ("multiple", "TIMEOUT_SECS [COMMAND]", "Batch multiple commands togehter and send transactionally to the server",
+   Multiple <$> (fromIntegral <$> integer) <*> some anyChar)
   ]
 
 parsePrivate :: TF.Parser CliCmd
@@ -549,7 +580,7 @@ handleCmd cmd reqStr = case cmd of
   Cmd Nothing -> use batchCmd >>= flushStrLn
   Cmd (Just c) -> batchCmd .= c
   Send m c -> sendCmd m c reqStr
-  Multiple c -> sendMultiple c reqStr 
+  Multiple n c -> sendMultiple c reqStr n
   Server Nothing -> do
     use server >>= \s -> flushStrLn $ "Current server: " ++ s
     flushStrLn "Servers:"

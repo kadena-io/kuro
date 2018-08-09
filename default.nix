@@ -1,4 +1,4 @@
-{ killSwitch ? false
+{  killSwitcs ? false
 , rpRef ? "80236ad3769602813d1c963e2bd90edd3147734b"
 , rpSha ?  "13l46z12i1bdwl9w76vl0cw860syvjkm8a4zgc0610f98h18dqh1" }:
 
@@ -52,6 +52,8 @@ in
               ref = "pact-2.4.x-upgrade";
               # This rev must be on the above branch ref
               rev = "d0657343da4347637e9419096e324edf66a7c543";
+              # Uncomment when nix and mysql branch merged into master.
+              # rev = "1db11ffbc806b2e75b63ff64a7fcf6b29f4f073d"
             }) {};
 
             sbv = self.callCabal2nix "sbv" (pkgs.fetchFromGitHub {

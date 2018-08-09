@@ -40,7 +40,7 @@ import Kadena.Types.PactDB
 import Kadena.Consensus.Publish
 import Kadena.Types.Execution
 import Kadena.Types.Entity
-import Kadena.Util.Util (linkAsyncTrack)
+import Kadena.Util.Util (linkAsyncBoundTrack)
 
 data Pact = Pact
   { _pTxId :: TxId
@@ -81,7 +81,7 @@ initPactService ExecutionEnv{..} pub = do
       initWB p db = if _ppcWriteBehind
         then do
           wb <- initPureCacheWB p db  _eenvExecLoggers
-          linkAsyncTrack "WriteBehindThread" (WB.runWBService wb)
+          linkAsyncBoundTrack "WriteBehindThread" (WB.runWBService wb)
           initCI WB.persister wb
         else initCI p db
   case _ppcBackend of

@@ -9,6 +9,7 @@ module Kadena.Util.Util
   , fromMaybeM
   , foreverRetry
   , linkAsyncTrack
+  , linkAsyncBoundTrack
   , seqIndex
   ) where
 
@@ -73,3 +74,6 @@ catchAndRethrow loc fn = fn `catches` [Handler (\(e@TrackedError{..} :: TrackedE
 --   where to look after it's thrown.
 linkAsyncTrack :: String -> IO a -> IO ()
 linkAsyncTrack loc fn = link =<< (async $ catchAndRethrow loc fn)
+
+linkAsyncBoundTrack :: String -> IO a -> IO ()
+linkAsyncBoundTrack loc fn = link =<< (asyncBound $ catchAndRethrow loc fn)

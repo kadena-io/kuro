@@ -39,7 +39,9 @@ publish :: MonadIO m => Publish -> (forall a . String -> m a) -> [(RequestKey,CM
 publish Publish{..} die rpcs = do
   PublishedConsensus{..} <- liftIO (tryReadMVar pConsensus) >>=
     fromMaybeM (die "Invariant error: consensus unavailable")
-  ldr <- fromMaybeM (die "System unavaiable, please try again later") _pcLeader
+  ldr <- fromMaybeM
+    (die (show pNodeId ++ ": There is no current leader. System unavaiable, please try again later"))
+    _pcLeader
   rAt <- ReceivedAt <$> liftIO pNow
   cmds' <- return $! snd <$> rpcs
   rks' <- return $ RequestKeys $! fst <$> rpcs

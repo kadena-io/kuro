@@ -9,6 +9,7 @@ module Util.TestRunner
   , testDir
   , testConfDir
   , runClientCommands
+  , runClientCommands'
   , runServers
   , runServers'
   , TestMetric(..)
@@ -120,8 +121,12 @@ serverArgs1 = "-c " ++ testConfDir ++ "10001-cluster.yaml"
 serverArgs2 = "-c " ++ testConfDir ++ "10002-cluster.yaml"
 serverArgs3 = "-c " ++ testConfDir ++ "10003-cluster.yaml"
 
-runClientCommands :: [String] ->  [TestRequest] -> IO [TestResult]
-runClientCommands args testRequests =
+runClientCommands :: [String] -> [TestRequest] -> IO [TestResult]
+runClientCommands args testRequests = runClientCommands' args testRequests 30
+
+-- | Similar to runClientCommands, but with additional arg for http timeout
+runClientCommands' :: [String] ->  [TestRequest] -> Int -> IO [TestResult]
+runClientCommands' args testRequests timeoutSecs =
   case getOpt Permute coptions args of
     (_,_,es@(_:_)) -> print es >> exitFailure
     (o,_,_) -> do
@@ -129,7 +134,7 @@ runClientCommands args testRequests =
       i <- newMVar =<< initRequestId
       (conf :: ClientConfig) <- either (\e -> print e >> exitFailure) return
         =<< Y.decodeFileEither (_oConfig opts)
-      (_, _, w) <- runRWST (simpleRunREPL testRequests) conf ReplState
+      (_, _, w) <- runRWST (simpleRunREPL testRequests timeoutSecs) conf ReplState
         { _server = fst (minimum $ HM.toList (_ccEndpoints conf))
         , _batchCmd = "\"Hello Kadena\""
         , _requestId = i
@@ -198,9 +203,9 @@ isRequest :: ReplApiData -> Bool
 isRequest (ReplApiRequest _ _) = True
 isRequest ReplApiResponse{} = False
 
-simpleRunREPL :: [TestRequest] -> Repl ()
-simpleRunREPL [] = return ()
-simpleRunREPL (x:xs) = do
+simpleRunREPL :: [TestRequest] -> Int -> Repl ()
+simpleRunREPL [] _ = return ()
+simpleRunREPL (x:xs) timeoutSecs = do
   let reqStr = cmd x
   case parseString parseCliCmd mempty reqStr of
     Failure (ErrInfo e _) -> do
@@ -208,7 +213,7 @@ simpleRunREPL (x:xs) = do
       return ()
     Success c -> do
       handleCmd c reqStr
-      simpleRunREPL xs
+      simpleRunREPL xs timeoutSecs
 
 gatherMetric :: TestMetric -> IO TestMetricResult
 gatherMetric tm = do

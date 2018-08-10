@@ -15,6 +15,8 @@ import System.Command
 import System.Console.CmdArgs
 import System.Time.Extra
 import Text.Printf
+
+import Apps.Kadena.Client (replaceCounters, esc) 
 import Util.TestRunner
 
 main :: IO ()
@@ -216,22 +218,17 @@ createOrders start = fmap createOrder [start+1,(start+2)..]
 
 createOrder :: Int -> String
 createOrder n =
-  "(orders.create-order"
-  ++ " " ++ escN n "order-id-"
-  ++ " " ++ esc "some-keyset"
-  ++ " " ++ escN n "record-id-"
-  ++ " " ++ escN n "hash-"
-  ++ " " ++ escN n "npi-"
-  ++ " " ++ "(time " ++ esc "2015-01-01T00:00:00Z" ++ ")"
-  ++ " " ++ escN n "CHANNEL_"
-  ++ " " ++ esc ( takeEnd 4 (show (1000 + n)))
-  ++ " " ++ escN n "user-id-"
-  ++ " " ++ escN n "Comment number "
-  ++ " " ++ "(time " ++ esc "2018-01-01T00:00:00Z" ++ ")"
-  ++ ")"
-
-esc :: String -> String
-esc s = "\"" ++ s ++ "\""
-
-escN :: Int -> String -> String
-escN n s = "\"" ++ s ++ show n ++ "\""
+  replaceCounters n $
+    "(orders.create-order"
+    ++ " " ++ esc "order-id-${count}"
+    ++ " " ++ esc "some-keyset"
+    ++ " " ++ esc "record-id-${count}"
+    ++ " " ++ esc "hash-${count}"
+    ++ " " ++ esc "npi-${count}"
+    ++ " " ++ "(time " ++ esc "2015-01-01T00:00:00Z" ++ ")"
+    ++ " " ++ esc "CHANNEL_${count}"
+    ++ " " ++ esc ( takeEnd 4 (show (1000 + n)))
+    ++ " " ++ esc "user-id-${count}"
+    ++ " " ++ esc "Comment number ${count}"
+    ++ " " ++ "(time " ++ esc "2018-01-01T00:00:00Z" ++ ")"
+    ++ ")"

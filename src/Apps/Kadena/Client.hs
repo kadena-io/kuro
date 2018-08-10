@@ -8,11 +8,20 @@
 
 module Apps.Kadena.Client
   ( main
+  , calcInterval
+  , CliCmd(..)
   , ClientConfig(..), ccSecretKey, ccPublicKey, ccEndpoints
+  , ClientOpts(..), coptions, flushStrLn
+  , esc
+  , Formatter(..), getServer, handleCmd
+  , initRequestId
   , Node(..)
-  -- exported for testing
-  , CliCmd(..), ClientOpts(..), coptions, flushStrLn, Formatter(..), getServer, handleCmd
-  , initRequestId, parseCliCmd, Repl, ReplApiData(..), ReplState(..), runREPL, calcInterval
+  , parseCliCmd
+  , Repl
+  , replaceCounters
+  , ReplApiData(..)
+  , ReplState(..)
+  , runREPL
   ) where
 
 import qualified Control.Exception as Exception
@@ -40,7 +49,7 @@ import Data.Function
 import qualified Data.HashMap.Strict as HM
 import Data.Int
 import Data.Maybe
-import Data.List
+import Data.List.Extra hiding (chunksOf)
 import qualified Data.Set as S
 import Data.String
 import qualified Data.Text as T
@@ -683,3 +692,10 @@ main = do
           _echo = False
         }
       return ()
+
+esc :: String -> String
+esc s = "\"" ++ s ++ "\""
+
+-- | replaces occurrances of ${count} with the specied number
+replaceCounters :: Int -> String -> String
+replaceCounters n s = replace "${count}" (show n) s

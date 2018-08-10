@@ -141,6 +141,7 @@ library
                      , ekg-json
                      , enclosed-exceptions
                      , exceptions
+                     , extra
                      , fast-logger
                      , filepath
                      , ghc-prim
@@ -235,6 +236,7 @@ executable kadenaclient
   build-depends:       base < 5
                      , kadena
                      , base16-bytestring
+                     , extra
   hs-source-dirs:      executables
   ghc-options:         -Wall -threaded -O3 -rtsopts -with-rtsopts=-N4
   ghc-prof-options:    -fprof-auto -fprof-auto-calls

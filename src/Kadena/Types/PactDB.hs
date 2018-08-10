@@ -14,6 +14,7 @@ import Database.MySQL.Base (ConnectInfo(..), Option(..), SSLInfo(..), Protocol(.
 import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 import Data.Aeson
 import qualified Data.Aeson as A
+
 import GHC.Generics
 
 import Pact.Persist.MSSQL (MSSQLConfig(..))

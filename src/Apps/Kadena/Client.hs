@@ -710,4 +710,3 @@ replaceCounters start nRepeats cmdTemplate =
 
 replaceCounter :: Int -> String -> String
 replaceCounter n s = replace "${count}" (show n) s
-

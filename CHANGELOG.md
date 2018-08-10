@@ -1,3 +1,6 @@
+# Version 1.1.3.0
+* Added MySQL adapter to pact-persist
+
 # Version 1.1.2.0
 * Pact 2.4
 * Early release of Prometheus integration

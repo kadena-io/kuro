@@ -1,3 +1,5 @@
+(OSX is also assumed here for alternate OS instructions see Kadena-README.md)
+
 # Using Grafana with Kadena
 
 ## Instalation required
@@ -8,21 +10,20 @@
 ## Start the Kadena demo
 The instructions that follow assume your current directory is the Kadena root directory.
 
-
-(OSX is also assumed here for alternate OS instructions see Kadena-README.md)
-
 `$ tmux`
 
-`$ demo/start.sh`
+`$ bin/osx/start.sh`
 
 Hit `return` when the command `./kadenaclient.sh` appears at the prompt in the left window.
+
+To exit the demo, run `exit`. To exit tmux, run `tmux kill-session`.
 
 ## Start Prometheus
 Start a new terminal session and enter:
 
 `$ cd YOUR_KADENA_DIRECTORY`
 
-`$ prometheus --config.file=monitor/prometheus.yml`
+`$ prometheus --config.file=static/monitor/prometheus.yml`
 
 ## Verfify Prometheus is running
 Open a browser to the url http://localhost:9090
@@ -81,7 +82,7 @@ Click on the "+" icon, then "Import"
 
 Click on "Upload .json File"
 
-Load "monitor/grafana-dashboard.json" from your Kadena directory.
+Load "static/monitor/grafana-dashboard.json" from your Kadena directory.
 
 In the following "Options" screen, set "kadena" (which refers to the desired data source) to kadena, from the dropdown.
 

@@ -1,3 +1,6 @@
+# Version 1.1.3.1
+* Includes Kadena Grafana dashboard
+
 # Version 1.1.3.0
 * Added MySQL adapter to pact-persist
 

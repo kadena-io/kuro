@@ -20,24 +20,26 @@ logRules:
     enable: null
     exclude:
     - DEBUG
+clusterMembers:
+  changeToNodes: []
+  otherNodes:
+  - alias: node0
+    fullAddr: tcp://127.0.0.1:10000
+    host: '127.0.0.1'
+    port: 10000
+  - alias: node1
+    fullAddr: tcp://127.0.0.1:10001
+    host: '127.0.0.1'
+    port: 10001
+  - alias: node3
+    fullAddr: tcp://127.0.0.1:10003
+    host: '127.0.0.1'
+    port: 10003
 preProcThreadCount: 10
 hostStaticDir: true
 electionTimeoutRange:
 - 3000000
 - 6000000
-otherNodes:
-- alias: node0
-  fullAddr: tcp://127.0.0.1:10000
-  host: '127.0.0.1'
-  port: 10000
-- alias: node1
-  fullAddr: tcp://127.0.0.1:10001
-  host: '127.0.0.1'
-  port: 10001
-- alias: node3
-  fullAddr: tcp://127.0.0.1:10003
-  host: '127.0.0.1'
-  port: 10003
 inMemTxCache: 200000
 myPublicKey: bf77d5479108c041bd3fc5f7fd92cf156e6121bbfd8e341f30307cadce5c03e8
 nodeId:

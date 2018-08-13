@@ -8,7 +8,7 @@ scrape_configs:
   - job_name: 'kadena'
 
     # Override the global default and scrape targets from this job every 5 seconds.
-    scrape_interval: 5s
+    scrape_interval: 1s
 
     static_configs:
       - targets: ['localhost:10336','localhost:10337','localhost:10338','localhost:10339']

@@ -98,6 +98,9 @@ coptions =
 maxRetries :: Int
 maxRetries = 20
 
+timeoutSeconds :: Int
+timeoutSeconds = 30
+
 data Node = Node
   { _nEntity :: EntityName
   , _nURL :: String
@@ -145,7 +148,7 @@ data CliCmd =
   Poll String |
   PollMetrics String |
   Send Mode String |
-  Multiple Int String |
+  Multiple Int Int String |
   Private EntityName [EntityName] String |
   Server (Maybe String) |
   Sleep Int |
@@ -214,7 +217,7 @@ mkExec code mdata addy = do
 
 postAPI :: (ToJSON req,FromJSON (ApiResponse t))
         => String -> req -> Repl (Response (ApiResponse t))
-postAPI ep rq = postAPI' ep rq 30 maxRetries 
+postAPI ep rq = postAPI' ep rq 30 maxRetries
 
 -- | Same as postAPI but with additional timeout parameter and excpeption retry
 postAPI' :: (ToJSON req,FromJSON (ApiResponse t))
@@ -226,7 +229,7 @@ postAPI' ep rq retryMax timeoutSecs = do
 
 postSpecifyServerAPI :: (ToJSON req,FromJSON (ApiResponse t))
                      => String -> String -> req -> IO (Response (ApiResponse t))
-postSpecifyServerAPI ep server' rq = postSpecifyServerAPI' ep server' rq 30 maxRetries 
+postSpecifyServerAPI ep server' rq = postSpecifyServerAPI' ep server' rq 30 maxRetries
 
 -- | Sames as postSpecifyServerAPI but with additional timeout parameter and excpeption retry
 postSpecifyServerAPI' :: (ToJSON req,FromJSON (ApiResponse t))
@@ -246,8 +249,8 @@ postSpecifyServerAPI' ep server' rq retryMax timeoutSecs = loop retryMax where
           flushStrLn $ "postSpecifyServerAPI - failing after " ++ show retryMax ++ "retries"
           return resp
         n -> loop (n-1)
-      ApiSuccess{..} -> do 
-        when (retryMax /= retryCount) $  
+      ApiSuccess{..} -> do
+        when (retryMax /= retryCount) $
           flushStrLn $  "(succeeded with " ++ show (retryMax - retryCount) ++ " retries)"
         return resp
 
@@ -275,15 +278,15 @@ sendCmd m cmd replCmd = do
       y <- postAPI "local" e
       handleResp (\(resp :: Value) -> putJSON resp) y
 
-sendMultiple :: String -> String -> Int -> Repl ()
-sendMultiple cmdLines replCmd timeoutSecs = do
+sendMultiple :: String -> String -> Int -> Int -> Repl ()
+sendMultiple templateCmd replCmd startCount nRepeats  = do
   j <- use cmdData
-  let cmds = lines cmdLines
+  let cmds = replaceCounters startCount nRepeats templateCmd
   xs <- sequence $ fmap (\cmd -> mkExec cmd j Nothing) cmds
-  resp <- postAPI' "send" (SubmitBatch xs) maxRetries timeoutSecs
+  resp <- postAPI' "send" (SubmitBatch xs) maxRetries timeoutSeconds
   tellKeys resp replCmd
   handleResp handleBatchResp resp
-  
+
 sendConfigChangeCmd :: ConfigChangeApiReq -> String -> Repl ()
 sendConfigChangeCmd ccApiReq@ConfigChangeApiReq{..} fileName = do
   execs <- liftIO $ mkConfigChangeExecs ccApiReq
@@ -547,8 +550,8 @@ cliCmds = [
    parsePrivate),
   ("configChange", "YAMLFILE", "Load and submit transactionally a yaml configuration change file",
    ConfigChange <$> some anyChar),
-  ("multiple", "TIMEOUT_SECS [COMMAND]", "Batch multiple commands togehter and send transactionally to the server",
-   Multiple <$> (fromIntegral <$> integer) <*> some anyChar)
+  ("multiple", "START_COUNT REPEAT_TIMES COMMAND", "Batch multiple commands togehter and send transactionally to the server",
+   Multiple <$> (fromIntegral <$> integer) <*> (fromIntegral <$> integer) <*> some anyChar)
   ]
 
 parsePrivate :: TF.Parser CliCmd
@@ -589,7 +592,7 @@ handleCmd cmd reqStr = case cmd of
   Cmd Nothing -> use batchCmd >>= flushStrLn
   Cmd (Just c) -> batchCmd .= c
   Send m c -> sendCmd m c reqStr
-  Multiple n c -> sendMultiple c reqStr n
+  Multiple m n c -> sendMultiple c reqStr m n
   Server Nothing -> do
     use server >>= \s -> flushStrLn $ "Current server: " ++ s
     flushStrLn "Servers:"
@@ -697,5 +700,14 @@ esc :: String -> String
 esc s = "\"" ++ s ++ "\""
 
 -- | replaces occurrances of ${count} with the specied number
-replaceCounters :: Int -> String -> String
-replaceCounters n s = replace "${count}" (show n) s
+replaceCounters :: Int -> Int -> String -> [String]
+replaceCounters start nRepeats cmdTemplate =
+  let counts = [(nRepeats-start-1), (start-nRepeats-2)..]
+      commands = foldr f [] counts where
+        f :: Int -> [String] -> [String]
+        f x r = replaceCounter x cmdTemplate : ("\n" : r)
+  in take nRepeats commands
+
+replaceCounter :: Int -> String -> String
+replaceCounter n s = replace "${count}" (show n) s
+

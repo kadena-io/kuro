@@ -9,14 +9,13 @@ module Main
 
 import Control.Monad
 import Data.Either
-import Data.List.Extra
 import Safe
 import System.Command
 import System.Console.CmdArgs
 import System.Time.Extra
 import Text.Printf
 
-import Apps.Kadena.Client (replaceCounters, esc) 
+import Apps.Kadena.Client (esc) 
 import Util.TestRunner
 
 main :: IO ()
@@ -125,8 +124,8 @@ runWithBatch theArgs@BoloArgs{..} = do
         (sec, (ok, nDone, sz)) <- duration $ do 
           let thisBatch = min totalRemaining batchSize
           let startNum = transactions - totalRemaining
-          let batchReq = createOrdersReq startNum thisBatch secondsTimeout
-          _res <- runClientCommands' (clientArgs theArgs) [batchReq] secondsTimeout
+          let batchReq = createOrdersReq startNum thisBatch
+          _res <- runClientCommands (clientArgs theArgs) [batchReq]
           return (True, startNum+thisBatch, thisBatch) -- checkResults res
         let seconds = printf "%.2f" sec :: String
         let tPerSec = printf "%.2f" (fromIntegral sz / sec) :: String
@@ -203,22 +202,16 @@ createOrdersTbl = TestRequest
   , eval = printEval 
   , displayStr = "Creates the Orders table" }
 
-createOrdersReq :: Int -> Int -> Int -> TestRequest
-createOrdersReq startNum numOrders timeoutSecs =
-  let orders = take numOrders (createOrders startNum)
-  in TestRequest
-       { cmd = "multiple " ++ show timeoutSecs ++ " " ++ intercalate "\n" orders
+createOrdersReq :: Int -> Int -> TestRequest
+createOrdersReq startNum numOrders  =
+  TestRequest
+       { cmd = "multiple " ++ show startNum ++ " " ++ show numOrders ++ orderTemplate
        , matchCmd = "TBD" -- MLN: need to find what the match str format is
        , eval = \_ -> return () -- not used in this sim
        , displayStr = "Creates an order." }
 
-createOrders :: Int -> [String]
-createOrders 0 = fmap createOrder [1,2..]
-createOrders start = fmap createOrder [start+1,(start+2)..]
-
-createOrder :: Int -> String
-createOrder n =
-  replaceCounters n $
+orderTemplate :: String
+orderTemplate =
     "(orders.create-order"
     ++ " " ++ esc "order-id-${count}"
     ++ " " ++ esc "some-keyset"
@@ -227,7 +220,7 @@ createOrder n =
     ++ " " ++ esc "npi-${count}"
     ++ " " ++ "(time " ++ esc "2015-01-01T00:00:00Z" ++ ")"
     ++ " " ++ esc "CHANNEL_${count}"
-    ++ " " ++ esc ( takeEnd 4 (show (1000 + n)))
+    ++ " " ++ esc "1234"
     ++ " " ++ esc "user-id-${count}"
     ++ " " ++ esc "Comment number ${count}"
     ++ " " ++ "(time " ++ esc "2018-01-01T00:00:00Z" ++ ")"

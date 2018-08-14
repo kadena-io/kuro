@@ -210,23 +210,8 @@ createOrdersReq startNum numOrders  =
        , eval = \_ -> return () -- not used in this sim
        , displayStr = "Creates an order." }
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 orderTemplate :: String
 orderTemplate =
-=======
-createOrders :: Int -> [String]
-createOrders 0 = fmap createOrder [1,2..]
-createOrders start = fmap createOrder [start+1,(start+2)..]
-
-createOrder :: Int -> String
-createOrder n =
-  replaceCounters n $
->>>>>>> WIP checkpoint
-=======
-orderTemplate :: String
-orderTemplate =
->>>>>>> WIP checkpoint
     "(orders.create-order"
     ++ " " ++ esc "order-id-${count}"
     ++ " " ++ esc "some-keyset"
@@ -235,15 +220,7 @@ orderTemplate =
     ++ " " ++ esc "npi-${count}"
     ++ " " ++ "(time " ++ esc "2015-01-01T00:00:00Z" ++ ")"
     ++ " " ++ esc "CHANNEL_${count}"
-<<<<<<< HEAD
-<<<<<<< HEAD
     ++ " " ++ esc "1234"
-=======
-    ++ " " ++ esc ( takeEnd 4 (show (1000 + n)))
->>>>>>> WIP checkpoint
-=======
-    ++ " " ++ esc "1234"
->>>>>>> WIP checkpoint
     ++ " " ++ esc "user-id-${count}"
     ++ " " ++ esc "Comment number ${count}"
     ++ " " ++ "(time " ++ esc "2018-01-01T00:00:00Z" ++ ")"

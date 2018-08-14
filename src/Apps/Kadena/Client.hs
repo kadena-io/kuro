@@ -702,11 +702,11 @@ esc s = "\"" ++ s ++ "\""
 -- | replaces occurrances of ${count} with the specied number
 replaceCounters :: Int -> Int -> String -> [String]
 replaceCounters start nRepeats cmdTemplate =
-  let counts = [(nRepeats-start-1), (start-nRepeats-2)..]
+  let counts = [start, start+1..(start + nRepeats - 1)]
       commands = foldr f [] counts where
         f :: Int -> [String] -> [String]
-        f x r = replaceCounter x cmdTemplate : ("\n" : r)
-  in take nRepeats commands
+        f x r = replaceCounter x cmdTemplate : r
+  in commands
 
 replaceCounter :: Int -> String -> String
 replaceCounter n s = replace "${count}" (show n) s

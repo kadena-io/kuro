@@ -24,6 +24,7 @@ module Apps.Kadena.Client
   , runREPL
   ) where
 
+import Control.Exception (IOException)
 import qualified Control.Exception as Exception
 import Control.Monad.Reader
 import Control.Lens hiding (to,from)
@@ -66,7 +67,7 @@ import System.Console.GetOpt
 import System.Environment
 import System.Exit hiding (die)
 import System.IO
-import Text.Trifecta as TF hiding (err, rendered)
+import Text.Trifecta as TF hiding (err, rendered, try)
 
 import Kadena.Command
 import Kadena.ConfigChange (mkConfigChangeApiReq)
@@ -143,6 +144,7 @@ data CliCmd =
   Format (Maybe Formatter) |
   Help |
   Keys (Maybe (T.Text,Maybe T.Text)) |
+  LoadMultiple Int Int FilePath |
   Load FilePath Mode |
   ConfigChange FilePath |
   Poll String |
@@ -286,6 +288,18 @@ sendMultiple templateCmd replCmd startCount nRepeats  = do
   resp <- postAPI' "send" (SubmitBatch xs) maxRetries timeoutSeconds
   tellKeys resp replCmd
   handleResp handleBatchResp resp
+
+loadMultiple :: FilePath -> String -> Int -> Int -> Repl ()
+loadMultiple filePath replCmd startCount nRepeats = do
+  strOrErr <- liftIO $ try $ readFile filePath
+  case strOrErr of
+    Left (except :: IOException) -> liftIO $ die $ "Error reading template file " ++ show filePath
+                                                 ++ "\n" ++ show except
+    Right str -> do
+      let xs = lines str
+      let cmd = intercalate " " xs -- carriage returns in the file now replaced with spaces
+      let templateCmd = esc cmd -- escape quoted strings
+      sendMultiple templateCmd replCmd startCount nRepeats
 
 sendConfigChangeCmd :: ConfigChangeApiReq -> String -> Repl ()
 sendConfigChangeCmd ccApiReq@ConfigChangeApiReq{..} fileName = do
@@ -510,6 +524,9 @@ cliCmds = [
    Data <$> optional (some anyChar)),
   ("echo", "on|off", "Set message echoing on|off",
    Echo <$> ((symbol "on" >> pure True) <|> (symbol "off" >> pure False))),
+  ("loadMultiple", "START_COUNT REPEAT_TIMES TEMPLATE_TEXT_FILE",
+     "Batch multiple commands togehter and send transactionally to the server",
+   LoadMultiple <$> (fromIntegral <$> integer) <*> (fromIntegral <$> integer) <*> some anyChar),
   ("load","YAMLFILE [MODE]",
    "Load and submit yaml file with optional mode (transactional|local), defaults to transactional",
    Load <$> some anyChar <*> (fromMaybe Transactional <$> optional parseMode)),
@@ -593,6 +610,7 @@ handleCmd cmd reqStr = case cmd of
   Cmd (Just c) -> batchCmd .= c
   Send m c -> sendCmd m c reqStr
   Multiple m n c -> sendMultiple c reqStr m n
+  LoadMultiple m n fp -> loadMultiple fp reqStr m n
   Server Nothing -> do
     use server >>= \s -> flushStrLn $ "Current server: " ++ s
     flushStrLn "Servers:"

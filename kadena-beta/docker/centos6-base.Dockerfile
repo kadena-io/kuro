@@ -3,8 +3,15 @@ MAINTAINER Will <will@kadena.io>
 
 RUN yum -y upgrade && \
     find / -iname gmp && \
-    yum -y install wget which curl make uuid-devel pkgconfig libtool gcc-c++ glibc* perl make automake gcc gmp-devel libffi zlib xz tar git gnupg zlib-devel&& \
+    yum -y install wget which curl make uuid-devel pkgconfig libtool gcc-c++ glibc* perl make automake gcc gmp-devel libffi zlib xz tar git gnupg zlib-devel ncurses-term ncurses ncurses-devel && \
     yum -y groupinstall "development tools"
+
+RUN yum -y install pcre pcre-devel
+
+RUN wget http://repo.mysql.com/mysql57-community-release-el6-7.noarch.rpm && \
+    rpm -ivh mysql57-community-release-el6-7.noarch.rpm && \
+    yum -y install mysql-devel && \
+    yum -y update
 
 RUN mkdir -p /tmp && \
     cd /tmp && \

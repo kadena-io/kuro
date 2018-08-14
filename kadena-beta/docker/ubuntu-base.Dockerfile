@@ -7,7 +7,16 @@ RUN apt-get -y update && \
 RUN apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 575159689BEFB442 && \
     echo 'deb http://download.fpcomplete.com/ubuntu xenial main' >> /etc/apt/sources.list.d/fpco.list && \
     apt-get -y update && \
-    apt-get install -y libtool pkg-config build-essential autoconf automake rlwrap htop tmux libevent-dev libncurses-dev stack wget curl
+    apt-get install -y libtool pkg-config build-essential autoconf automake rlwrap htop tmux libevent-dev libncurses-dev stack wget curl lsb-release libpcre++-dev
+
+ENV MYSQL_PWD kadena
+RUN echo "mysql-server mysql-server/root_password password $MYSQL_PWD" | debconf-set-selections && \
+    echo "mysql-server mysql-server/root_password_again password $MYSQL_PWD" | debconf-set-selections
+
+RUN wget http://dev.mysql.com/get/mysql-apt-config_0.8.10-1_all.deb && \
+    dpkg -i mysql-apt-config_0.8.10-1_all.deb && \
+    apt-get -y update && \
+    apt-get -y install mysql-server-5.7 libmysqlclient-dev
 
 RUN wget https://github.com/tmux/tmux/releases/download/2.0/tmux-2.0.tar.gz && \
     tar -xvzf tmux-2.0.tar.gz && \

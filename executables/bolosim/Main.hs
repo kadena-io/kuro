@@ -32,13 +32,13 @@ main = do
 data BoloArgs = BoloArgs
   { transactions :: Int
   , batchSize :: Int
-  , secondsTimeout :: Int
+  , cmdFile :: String
   , noRunServer :: Bool
   , configFile :: String
   , dirForConfig :: String } deriving (Show, Data, Typeable)
 
 boloArgs :: BoloArgs
-boloArgs = BoloArgs { transactions = 12000, batchSize = 3000, secondsTimeout = 30
+boloArgs = BoloArgs { transactions = 12000, batchSize = 3000, cmdFile = ""
                     , noRunServer = False, configFile = "client.yaml"
                     , dirForConfig = "executables/bolosim/conf/" }
 
@@ -113,35 +113,29 @@ runNoBatch BoloArgs{..} = undefined
 runWithBatch :: BoloArgs -> IO Bool
 runWithBatch theArgs@BoloArgs{..} = do
   putStrLn $ "Running " ++ show transactions ++ " transactions in batches of " ++ show batchSize
-  initResults <- runClientCommands (clientArgs theArgs) initialRequests 
-  let initOk = checkResults initResults
-  case initOk of
-    False -> return False
-    True -> loop transactions True where
-      loop :: Int -> Bool -> IO Bool
-      loop 0 allOk = return allOk -- all done
-      loop totalRemaining allOk = do -- do next batch
-        (sec, (ok, nDone, sz)) <- duration $ do 
-          let thisBatch = min totalRemaining batchSize
-          let startNum = transactions - totalRemaining
-          let batchReq = createOrdersReq startNum thisBatch
-          _res <- runClientCommands (clientArgs theArgs) [batchReq]
-          return (True, startNum+thisBatch, thisBatch) -- checkResults res
-        let seconds = printf "%.2f" sec :: String
-        let tPerSec = printf "%.2f" (fromIntegral sz / sec) :: String
-        putStrLn $ show nDone ++ " completed -- this batch of " ++ show sz ++ " transactions " 
-                   ++ "completed in: " ++ show seconds ++ " seconds "
-                   ++ "(" ++ tPerSec ++ " per second)" 
-        loop (totalRemaining-sz) (allOk && ok)
+  -- if a template command file is not supplied, the hard-coded order insert example will be used and
+  -- so we must run the related create table commands, etc.
+  when (null cmdFile) $ do
+    void $ runClientCommands (clientArgs theArgs) initialRequests 
+  batchCmds theArgs transactions True 
   
-checkResults :: [TestResult] -> Bool
-checkResults xs = and $ fmap checkResult xs
-
-checkResult :: TestResult -> Bool
-checkResult x =
-  case responseTr x of
-    Nothing -> False
-    Just resp -> resultSuccess resp
+batchCmds :: BoloArgs -> Int -> Bool -> IO Bool
+batchCmds _ 0 allOk = return allOk -- all done
+batchCmds theArgs@BoloArgs{..} totalRemaining allOk = do -- do next batch
+  (sec, (ok, nDone, sz)) <- duration $ do 
+    let thisBatch = min totalRemaining batchSize
+    let startNum = transactions - totalRemaining
+    let batchReq = createMultiReq cmdFile startNum thisBatch
+    putStrLn $ "batchCmds - multi-request created: " 
+           ++ "\n\r" ++ show batchReq
+    _res <- runClientCommands (clientArgs theArgs) [batchReq]
+    return (True, startNum+thisBatch, thisBatch) -- checkResults res
+  let seconds = printf "%.2f" sec :: String
+  let tPerSec = printf "%.2f" (fromIntegral sz / sec) :: String
+  putStrLn $ show nDone ++ " completed -- this batch of " ++ show sz ++ " transactions " 
+              ++ "completed in: " ++ show seconds ++ " seconds "
+              ++ "(" ++ tPerSec ++ " per second)" 
+  batchCmds theArgs (totalRemaining-sz) (allOk && ok)
 
 clientArgs :: BoloArgs -> [String]
 clientArgs BoloArgs{..} = words $ "-c " ++ dirForConfig ++ configFile 
@@ -202,13 +196,16 @@ createOrdersTbl = TestRequest
   , eval = printEval 
   , displayStr = "Creates the Orders table" }
 
-createOrdersReq :: Int -> Int -> TestRequest
-createOrdersReq startNum numOrders  =
-  TestRequest
-       { cmd = "multiple " ++ show startNum ++ " " ++ show numOrders ++ orderTemplate
+createMultiReq :: FilePath -> Int -> Int -> TestRequest
+createMultiReq cmdFile startNum numOrders =
+  let theCmd = case cmdFile of
+        [] -> "multiple " ++ show startNum ++ " " ++ show numOrders ++ " " ++ orderTemplate  
+        fp -> "loadMultiple " ++ show startNum ++ " " ++ show numOrders ++ " " ++ fp 
+  in TestRequest
+       { cmd = theCmd 
        , matchCmd = "TBD" -- MLN: need to find what the match str format is
        , eval = \_ -> return () -- not used in this sim
-       , displayStr = "Creates an order." }
+       , displayStr = "Creates an a request for multiple commands" }
 
 orderTemplate :: String
 orderTemplate =

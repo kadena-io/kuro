@@ -284,6 +284,7 @@ sendMultiple :: String -> String -> Int -> Int -> Repl ()
 sendMultiple templateCmd replCmd startCount nRepeats  = do
   j <- use cmdData
   let cmds = replaceCounters startCount nRepeats templateCmd
+  flushStrLn $ "sendMultiple: " ++ show cmds
   xs <- sequence $ fmap (\cmd -> mkExec cmd j Nothing) cmds
   resp <- postAPI' "send" (SubmitBatch xs) maxRetries timeoutSeconds
   tellKeys resp replCmd
@@ -298,8 +299,7 @@ loadMultiple filePath replCmd startCount nRepeats = do
     Right str -> do
       let xs = lines str
       let cmd = intercalate " " xs -- carriage returns in the file now replaced with spaces
-      let templateCmd = esc cmd -- escape quoted strings
-      sendMultiple templateCmd replCmd startCount nRepeats
+      sendMultiple cmd replCmd startCount nRepeats
 
 sendConfigChangeCmd :: ConfigChangeApiReq -> String -> Repl ()
 sendConfigChangeCmd ccApiReq@ConfigChangeApiReq{..} fileName = do

@@ -8,13 +8,23 @@
 
 module Apps.Kadena.Client
   ( main
+  , calcInterval
+  , CliCmd(..)
   , ClientConfig(..), ccSecretKey, ccPublicKey, ccEndpoints
+  , ClientOpts(..), coptions, flushStrLn
+  , esc
+  , Formatter(..), getServer, handleCmd
+  , initRequestId
   , Node(..)
-  -- exported for testing
-  , CliCmd(..), ClientOpts(..), coptions, flushStrLn, Formatter(..), getServer, handleCmd
-  , initRequestId, parseCliCmd, Repl, ReplApiData(..), ReplState(..), runREPL, calcInterval
+  , parseCliCmd
+  , Repl
+  , replaceCounters
+  , ReplApiData(..)
+  , ReplState(..)
+  , runREPL
   ) where
 
+import Control.Exception (IOException)
 import qualified Control.Exception as Exception
 import Control.Monad.Reader
 import Control.Lens hiding (to,from)
@@ -40,7 +50,7 @@ import Data.Function
 import qualified Data.HashMap.Strict as HM
 import Data.Int
 import Data.Maybe
-import Data.List
+import Data.List.Extra hiding (chunksOf)
 import qualified Data.Set as S
 import Data.String
 import qualified Data.Text as T
@@ -57,7 +67,7 @@ import System.Console.GetOpt
 import System.Environment
 import System.Exit hiding (die)
 import System.IO
-import Text.Trifecta as TF hiding (err, rendered)
+import Text.Trifecta as TF hiding (err, rendered, try)
 
 import Kadena.Command
 import Kadena.ConfigChange (mkConfigChangeApiReq)
@@ -88,6 +98,9 @@ coptions =
 
 maxRetries :: Int
 maxRetries = 20
+
+timeoutSeconds :: Int
+timeoutSeconds = 30
 
 data Node = Node
   { _nEntity :: EntityName
@@ -131,12 +144,13 @@ data CliCmd =
   Format (Maybe Formatter) |
   Help |
   Keys (Maybe (T.Text,Maybe T.Text)) |
+  LoadMultiple Int Int FilePath |
   Load FilePath Mode |
   ConfigChange FilePath |
   Poll String |
   PollMetrics String |
   Send Mode String |
-  Multiple Int String |
+  Multiple Int Int String |
   Private EntityName [EntityName] String |
   Server (Maybe String) |
   Sleep Int |
@@ -205,7 +219,7 @@ mkExec code mdata addy = do
 
 postAPI :: (ToJSON req,FromJSON (ApiResponse t))
         => String -> req -> Repl (Response (ApiResponse t))
-postAPI ep rq = postAPI' ep rq 30 maxRetries 
+postAPI ep rq = postAPI' ep rq 30 maxRetries
 
 -- | Same as postAPI but with additional timeout parameter and excpeption retry
 postAPI' :: (ToJSON req,FromJSON (ApiResponse t))
@@ -217,7 +231,7 @@ postAPI' ep rq retryMax timeoutSecs = do
 
 postSpecifyServerAPI :: (ToJSON req,FromJSON (ApiResponse t))
                      => String -> String -> req -> IO (Response (ApiResponse t))
-postSpecifyServerAPI ep server' rq = postSpecifyServerAPI' ep server' rq 30 maxRetries 
+postSpecifyServerAPI ep server' rq = postSpecifyServerAPI' ep server' rq 30 maxRetries
 
 -- | Sames as postSpecifyServerAPI but with additional timeout parameter and excpeption retry
 postSpecifyServerAPI' :: (ToJSON req,FromJSON (ApiResponse t))
@@ -237,8 +251,8 @@ postSpecifyServerAPI' ep server' rq retryMax timeoutSecs = loop retryMax where
           flushStrLn $ "postSpecifyServerAPI - failing after " ++ show retryMax ++ "retries"
           return resp
         n -> loop (n-1)
-      ApiSuccess{..} -> do 
-        when (retryMax /= retryCount) $  
+      ApiSuccess{..} -> do
+        when (retryMax /= retryCount) $
           flushStrLn $  "(succeeded with " ++ show (retryMax - retryCount) ++ " retries)"
         return resp
 
@@ -266,15 +280,27 @@ sendCmd m cmd replCmd = do
       y <- postAPI "local" e
       handleResp (\(resp :: Value) -> putJSON resp) y
 
-sendMultiple :: String -> String -> Int -> Repl ()
-sendMultiple cmdLines replCmd timeoutSecs = do
+sendMultiple :: String -> String -> Int -> Int -> Repl ()
+sendMultiple templateCmd replCmd startCount nRepeats  = do
   j <- use cmdData
-  let cmds = lines cmdLines
+  let cmds = replaceCounters startCount nRepeats templateCmd
+  flushStrLn $ "sendMultiple: " ++ show cmds
   xs <- sequence $ fmap (\cmd -> mkExec cmd j Nothing) cmds
-  resp <- postAPI' "send" (SubmitBatch xs) maxRetries timeoutSecs
+  resp <- postAPI' "send" (SubmitBatch xs) maxRetries timeoutSeconds
   tellKeys resp replCmd
   handleResp handleBatchResp resp
-  
+
+loadMultiple :: FilePath -> String -> Int -> Int -> Repl ()
+loadMultiple filePath replCmd startCount nRepeats = do
+  strOrErr <- liftIO $ try $ readFile filePath
+  case strOrErr of
+    Left (except :: IOException) -> liftIO $ die $ "Error reading template file " ++ show filePath
+                                                 ++ "\n" ++ show except
+    Right str -> do
+      let xs = lines str
+      let cmd = intercalate " " xs -- carriage returns in the file now replaced with spaces
+      sendMultiple cmd replCmd startCount nRepeats
+
 sendConfigChangeCmd :: ConfigChangeApiReq -> String -> Repl ()
 sendConfigChangeCmd ccApiReq@ConfigChangeApiReq{..} fileName = do
   execs <- liftIO $ mkConfigChangeExecs ccApiReq
@@ -498,6 +524,9 @@ cliCmds = [
    Data <$> optional (some anyChar)),
   ("echo", "on|off", "Set message echoing on|off",
    Echo <$> ((symbol "on" >> pure True) <|> (symbol "off" >> pure False))),
+  ("loadMultiple", "START_COUNT REPEAT_TIMES TEMPLATE_TEXT_FILE",
+     "Batch multiple commands togehter and send transactionally to the server",
+   LoadMultiple <$> (fromIntegral <$> integer) <*> (fromIntegral <$> integer) <*> some anyChar),
   ("load","YAMLFILE [MODE]",
    "Load and submit yaml file with optional mode (transactional|local), defaults to transactional",
    Load <$> some anyChar <*> (fromMaybe Transactional <$> optional parseMode)),
@@ -538,8 +567,8 @@ cliCmds = [
    parsePrivate),
   ("configChange", "YAMLFILE", "Load and submit transactionally a yaml configuration change file",
    ConfigChange <$> some anyChar),
-  ("multiple", "TIMEOUT_SECS [COMMAND]", "Batch multiple commands togehter and send transactionally to the server",
-   Multiple <$> (fromIntegral <$> integer) <*> some anyChar)
+  ("multiple", "START_COUNT REPEAT_TIMES COMMAND", "Batch multiple commands togehter and send transactionally to the server",
+   Multiple <$> (fromIntegral <$> integer) <*> (fromIntegral <$> integer) <*> some anyChar)
   ]
 
 parsePrivate :: TF.Parser CliCmd
@@ -580,7 +609,8 @@ handleCmd cmd reqStr = case cmd of
   Cmd Nothing -> use batchCmd >>= flushStrLn
   Cmd (Just c) -> batchCmd .= c
   Send m c -> sendCmd m c reqStr
-  Multiple n c -> sendMultiple c reqStr n
+  Multiple m n c -> sendMultiple c reqStr m n
+  LoadMultiple m n fp -> loadMultiple fp reqStr m n
   Server Nothing -> do
     use server >>= \s -> flushStrLn $ "Current server: " ++ s
     flushStrLn "Servers:"
@@ -683,3 +713,18 @@ main = do
           _echo = False
         }
       return ()
+
+esc :: String -> String
+esc s = "\"" ++ s ++ "\""
+
+-- | replaces occurrances of ${count} with the specied number
+replaceCounters :: Int -> Int -> String -> [String]
+replaceCounters start nRepeats cmdTemplate =
+  let counts = [start, start+1..(start + nRepeats - 1)]
+      commands = foldr f [] counts where
+        f :: Int -> [String] -> [String]
+        f x r = replaceCounter x cmdTemplate : r
+  in commands
+
+replaceCounter :: Int -> String -> String
+replaceCounter n s = replace "${count}" (show n) s

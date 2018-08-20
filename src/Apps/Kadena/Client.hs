@@ -26,6 +26,7 @@ module Apps.Kadena.Client
 
 import Control.Exception (IOException)
 import qualified Control.Exception as Exception
+import Control.Monad.Extra
 import Control.Monad.Reader
 import Control.Lens hiding (to,from)
 import Control.Monad.Catch
@@ -67,6 +68,7 @@ import System.Console.GetOpt
 import System.Environment
 import System.Exit hiding (die)
 import System.IO
+import System.Time.Extra
 import Text.Trifecta as TF hiding (err, rendered, try)
 
 import Kadena.Command
@@ -262,12 +264,16 @@ handleResp a r =
           ApiFailure{..} -> flushStrLn $ "Apps.Kadena.Client.handleResp - failure in API Send: " ++ show _apiError
           ApiSuccess{..} -> a _apiResponse
 
-handleBatchResp :: RequestKeys -> Repl ()
-handleBatchResp resp = do
-        -- rk <- return $ head $ _rkRequestKeys resp
-        --listenForResults 10000 [rk] Nothing
-        rks <- return $ _rkRequestKeys resp
-        pollForResults True rks
+handleBatchResp :: RequestKeys -> Repl () 
+handleBatchResp resp = handleBatchResp' False resp
+
+
+handleBatchResp' :: Bool -> RequestKeys -> Repl ()
+handleBatchResp' showDetails resp = do 
+  -- rk <- return $ head $ _rkRequestKeys resp
+  --listenForResults 10000 [rk] Nothing
+  rks <- return $ _rkRequestKeys resp
+  pollForResults showDetails rks
   
 sendCmd :: Mode -> String -> String -> Repl ()
 sendCmd m cmd replCmd = do
@@ -289,7 +295,7 @@ sendMultiple templateCmd replCmd startCount nRepeats  = do
   xs <- sequence $ fmap (\cmd -> mkExec cmd j Nothing) cmds
   resp <- postAPI' "send" (SubmitBatch xs) maxRetries timeoutSeconds
   tellKeys resp replCmd
-  handleResp handleBatchResp resp
+  handleResp (handleBatchResp' False) resp 
 
 loadMultiple :: FilePath -> String -> Int -> Int -> Repl ()
 loadMultiple filePath replCmd startCount nRepeats = do
@@ -441,32 +447,72 @@ listenForResults tdelay rks countm = loop (0 :: Int)
                   Just n -> flushStrLn $ intervalOfNumerous cnt n
               Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
 
-pollForResults :: Bool -> [RequestKey] -> Repl ()
-pollForResults printMetrics rks = do
-  flushStrLn "Top of pollForResults..."
-  s <- getServer
-  eR <- liftIO $ Exception.try $ post ("http://" ++ s ++ "/api/v1/poll") (toJSON (Pact.Poll rks))
-  case eR of
-    Left (SomeException err) -> flushStrLn $ show err
-    Right r -> do
-      resp <- asJSON r
-      case resp ^. responseBody of
-        ApiFailure err -> flushStrLn $ "Error: no results received: " ++ show err
-        ApiSuccess (PollResponses prs) -> do
-          flushStrLn $ "pollForResults - ApiSuccess - printMetrics is: " ++ show printMetrics
-          flushStrLn $ "size of PollResponses hashmap: " ++ show (HM.size prs)
-          tell (fmap (\(k, v) -> ReplApiResponse { _apiResponseKey = k, _apiResult = v, _batchCnt = Nothing }) (HM.toList prs) )
-          forM_ (HM.elems prs) $ \ApiResult{..} -> do
-            putJSON _arResult
-            when printMetrics $
-                  case fromJSON <$>_arMetaData of
-                    Nothing -> flushStrLn "Metrics Unavailable"
-                    Just (A.Success lats@CmdResultLatencyMetrics{..}) -> pprintLatency lats
-                    Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
-
 pollForResult :: Bool -> RequestKey -> Repl ()
 pollForResult printMetrics rk = pollForResults printMetrics [rk] 
 
+pollForResults :: Bool -> [RequestKey] -> Repl ()
+pollForResults printMetrics rks = do
+  s <- getServer
+  mResp <- liftIO $ pollWithTimeout s rks
+  case mResp of
+    Nothing -> return () 
+    Just r -> do
+      resp <- asJSON r
+      case resp ^. responseBody of
+        ApiFailure err -> flushStrLn $ "Error: no results received: " ++ show err
+        ApiSuccess prs@(PollResponses theMap) -> do
+          let (good, bad) = countResponses prs
+          let strGood = if good > 0 then "\n\r" ++ show good ++ " successful" else ""
+          let strBad = if bad > 0 then "\n\r" ++ show bad ++ " failed" else ""
+          flushStrLn $ "Done.\n\r" ++ strGood + strBad ++ "\n\r(Out of " ++ show (HM.size theMap)
+            ++ " total transactions"
+          tell (fmap (\(k, v) -> ReplApiResponse
+            { _apiResponseKey = k, _apiResult = v, _batchCnt = Nothing }) (HM.toList theMap) )
+          forM_ (HM.elems theMap) $ \ApiResult{..} -> do
+            -- putJSON _arResult
+            when printMetrics $ do 
+              case fromJSON <$>_arMetaData of
+                Nothing -> flushStrLn "Metrics Unavailable"
+                Just (A.Success lats@CmdResultLatencyMetrics{..}) -> pprintLatency lats
+                Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
+
+countResponses :: PollResponses -> (Integer, Integer)
+countResponses (PollResponses theMap) =
+  foldr f (0, 0) (keys theMap) where
+    f :: RequestKey -> (Integer, Integer) -> (Integer, Integer) 
+    f rk (yes, no) =
+      case HM.lookup rk theMap of
+        Just _  -> (yes+1, no)
+        Nothing -> (yes, no+1)
+    
+pollWithTimeout :: String -> [RequestKey] -> IO (Maybe (Response BSL.ByteString))
+pollWithTimeout svr rks = do
+  t <- liftIO $ timeout 10 go
+  case t of
+    Nothing -> do
+      putStrLn $ "Error: ApiSuccess, but no results were returned from polling - timeout reached"
+      return Nothing
+    Just x -> return x 
+  where 
+    go :: IO (Maybe (Response BSL.ByteString))
+    go = do 
+      eR <- Exception.try $ post ("http://" ++ svr ++ "/api/v1/poll") (toJSON (Pact.Poll rks))
+      case eR of
+        Left (SomeException err) -> do
+          putStrLn $ show err
+          return Nothing 
+        Right r -> do
+          resp <- asJSON r
+          case resp ^. responseBody of
+            ApiSuccess (PollResponses prs)
+              | HM.null prs -> go -- on APISuccess but 0 results, keep trying for a while
+                  -- do 
+                  -- putStrLn "Empty results map, retrying..."
+                  -- go 
+              | otherwise -> 
+                 return $ Just r
+            ApiFailure _ -> return $ Just r
+  
 printLatTime :: (Num a, Ord a, Show a) => a -> String
 printLatTime s
   | s >= 1000000 =

@@ -21,7 +21,7 @@
         monitoring: no
         instance_tags:
           Name: kadena_server
-        exact_count: 1
+        exact_count: 4
         count_tag:
           Name: kadena_server
       register: ec2_servers_out
@@ -56,13 +56,19 @@
         - "{{ ec2_servers_out.instances }}"
         - "{{ ec2_client_out.instances }}"
 
-- name: Terminate all Kadena Servers and Client Instances
-  hosts: kadena_all
+- name: Terminate EC2 Instances
+  hosts: localhost
   connection: local
-  gather_facts: False
+  vars:
+    region: us-west-2
   tasks:
-    - ec2_metadata_facts:
-    - ec2:
+    - name: Terminate Kadena Server(s)
+      ec2:
         state: absent
-        region: "{{ ansible_ec2_placement_region }}"
-        instance_ids: "{{ ansible_ec2_instance_id }}"
+        region: "{{ region }}"
+        instance_ids: "{{ ec2_servers_out.instance_ids }}"
+    - name: Terminate Kadena Client(s)
+      ec2:
+        state: absent
+        region: "{{ region }}"
+        instance_ids: "{{ ec2_client_out.instance_ids }}"

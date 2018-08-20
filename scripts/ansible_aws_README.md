@@ -1,13 +1,33 @@
 # Ansible and AWS
 
+## Spin up Monitor Instance
+Run Ansible from here.
+Make AMI user to get AWS keys safely.
+Security group - default (allows all traffic from others in security group)
+and ssh from current ip address.
+To ssh into AWS instance, click on "Connect" in the Console and look at the suggested ssh command.
+But instead of SSH-ing with -i, add key to ssh agent. and log in like so:
+`ssh -A < rest of aws ssh instructions >`
+Example: TBD
+
 ## Setup 
 Download ansible and boto in all servers.
 For Ubuntu: 
 <https://docs.ansible.com/ansible/latest/installation_guide/intro_installation.html#latest-releases-via-apt-ubuntu>
+```
+$ sudo apt-get update
+$ sudo apt-get install software-properties-common
+$ sudo apt-add-repository ppa:ansible/ansible
+$ sudo apt-get update
+$ sudo apt-get install ansible
+```
 `sudo apt-get install python-boto`
 
 Download [ec2.py](https://raw.githubusercontent.com/ansible/ansible/devel/contrib/inventory/ec2.py)
 and [ec2.ini](https://raw.githubusercontent.com/ansible/ansible/devel/contrib/inventory/ec2.ini) and save both in /etc/ansible/.
+Then make ec2.py executable: `sudo chmod +x ec2.py`
+
+Should probably save this into image.
 
 ## Other
 Use ssh-agent to transfer ssh permissions. 
@@ -23,6 +43,8 @@ export AWS_SECRET_ACCESS_KEY='123'
 
 export EC2_INI_PATH=/etc/ansible/ec2.ini
 export ANSIBLE_INVENTORY=/etc/ansible/ec2.py
+
+TBD - Look into gathering facts
 
 To terminate instance from terminal:
 ansible localhost -m ec2 -a "state=absent region=us-west-2 instance_ids=example_id"

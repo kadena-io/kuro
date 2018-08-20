@@ -12,6 +12,7 @@
   tasks:
     - name: Launch Kadena Server Instances
       ec2:
+        key_name: wizard-example-key
         group: "{{ security }}"
         instance_type: "{{ type }}"
         image: "{{ image }}"
@@ -21,13 +22,14 @@
         monitoring: no
         instance_tags:
           Name: kadena_server
-        exact_count: 4
+        exact_count: 1
         count_tag:
           Name: kadena_server
       register: ec2_servers_out
 
     - name: Launch Kadena Client Instance
       ec2:
+        key_name: wizard-example-key
         group: "{{ security }}"
         instance_type: "{{ type }}"
         image: "{{ image }}"
@@ -55,6 +57,15 @@
       with_items:
         - "{{ ec2_servers_out.instances }}"
         - "{{ ec2_client_out.instances }}"
+
+- name: Configure instance(s)
+  hosts: kadena_all
+  become: True
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+  gather_facts: True
+  tasks:
+    - command: echo "Inside the instances!"
 
 - name: Terminate EC2 Instances
   hosts: localhost

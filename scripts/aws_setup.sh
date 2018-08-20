@@ -9,6 +9,7 @@ sudo apt-get -y update
 sudo apt-get -y install ansible
 
 sudo apt-get -y install python-boto
+sudo apt-get -y install python-boto3
 
 ## Downloads EC2 python scripts
 cd /etc/ansible/
@@ -22,3 +23,4 @@ export AWS_ACCESS_KEY_ID=$1
 export AWS_SECRET_ACCESS_KEY=$2
 export EC2_INI_PATH='/etc/ansible/ec2.ini'
 export ANSIBLE_INVENTORY='/etc/ansible/ec2.py'
+export ANSIBLE_HOST_KEY_CHECKING='False'

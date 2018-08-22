@@ -16,6 +16,7 @@ module Kadena.HTTP.ApiServer
 import Prelude hiding (log)
 import Control.Lens
 import Control.Concurrent
+import Control.Exception.Lifted (SomeException, throw, try)
 import Control.Monad.Reader
 
 import Data.Aeson hiding (defaultOptions, Result(..))
@@ -266,20 +267,30 @@ listenFor (ListenerRequest rk) = do
       log $ "listenFor -- Listener Serviced for: " ++ show rk
       return $ _concrResult cr
 
+listenerTimeout :: Int
+listenerTimeout = 120
+
 registerListener :: Api ()
 registerListener = do
-  (ListenerRequest rk) <- readJSON
-  hChan <- view (aiDispatch.dispHistoryChannel)
-  m <- liftIO $ newEmptyMVar
-  liftIO $ writeComm hChan $ RegisterListener (HashMap.fromList [(rk,m)])
-  log $ "Registered Listener for: " ++ show rk
-  res <- liftIO $ readMVar m
-  case res of
-    History.GCed msg -> do
-      log $ "Listener GCed for: " ++ show rk ++ " because " ++ msg
-      die msg
-    History.ListenerResult scr -> do
-      log $ "Listener Serviced for: " ++ show rk
-      setJSON
-      ls <- return $ ApiSuccess $ scrToAr scr
-      writeLBS $ encode ls
+  extendTimeout listenerTimeout
+  (theEither :: Either SomeException ()) <- try $ do 
+    (ListenerRequest rk) <- readJSON
+    hChan <- view (aiDispatch.dispHistoryChannel)
+    m <- liftIO $ newEmptyMVar
+    liftIO $ writeComm hChan $ RegisterListener (HashMap.fromList [(rk,m)])
+    log $ "Registered Listener for: " ++ show rk
+    res <- liftIO $ readMVar m
+    case res of
+      History.GCed msg -> do
+        log $ "Listener GCed for: " ++ show rk ++ " because " ++ msg
+        die msg
+      History.ListenerResult scr -> do
+        log $ "Listener Serviced for: " ++ show rk
+        setJSON
+        ls <- return $ ApiSuccess $ scrToAr scr
+        writeLBS $ encode ls
+  case theEither of
+    Left e -> do
+      liftIO $ putStrLn $ "Exception in registerListener: " ++ show e 
+      throw e
+    Right y -> return y

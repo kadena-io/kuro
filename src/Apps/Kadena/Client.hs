@@ -26,6 +26,7 @@ module Apps.Kadena.Client
 
 import Control.Exception (IOException)
 import qualified Control.Exception as Exception
+import Control.Monad.Extra
 import Control.Monad.Reader
 import Control.Lens hiding (to,from)
 import Control.Monad.Catch
@@ -67,6 +68,7 @@ import System.Console.GetOpt
 import System.Environment
 import System.Exit hiding (die)
 import System.IO
+
 import Text.Trifecta as TF hiding (err, rendered, try)
 
 import Kadena.Command
@@ -96,11 +98,9 @@ coptions =
            "Configuration File"
   ]
 
-maxRetries :: Int
+maxRetries, timeoutSeconds :: Int
 maxRetries = 20
-
-timeoutSeconds :: Int
-timeoutSeconds = 30
+timeoutSeconds = 60
 
 data Node = Node
   { _nEntity :: EntityName
@@ -219,30 +219,30 @@ mkExec code mdata addy = do
 
 postAPI :: (ToJSON req,FromJSON (ApiResponse t))
         => String -> req -> Repl (Response (ApiResponse t))
-postAPI ep rq = postAPI' ep rq 30 maxRetries
+postAPI ep rq = postAPI' ep rq maxRetries
 
 -- | Same as postAPI but with additional timeout parameter and excpeption retry
 postAPI' :: (ToJSON req,FromJSON (ApiResponse t))
-         => String -> req -> Int -> Int -> Repl (Response (ApiResponse t))
-postAPI' ep rq retryMax timeoutSecs = do
+         => String -> req -> Int -> Repl (Response (ApiResponse t))
+postAPI' ep rq retryMax = do
   use echo >>= \e -> when e $ putJSON rq
   s <- getServer
-  liftIO $ postSpecifyServerAPI' ep s rq retryMax timeoutSecs
+  liftIO $ postSpecifyServerAPI' ep s rq retryMax
 
 postSpecifyServerAPI :: (ToJSON req,FromJSON (ApiResponse t))
                      => String -> String -> req -> IO (Response (ApiResponse t))
-postSpecifyServerAPI ep server' rq = postSpecifyServerAPI' ep server' rq 30 maxRetries
+postSpecifyServerAPI ep server' rq = postSpecifyServerAPI' ep server' rq maxRetries
 
--- | Sames as postSpecifyServerAPI but with additional timeout parameter and excpeption retry
+-- | Sames as postSpecifyServerAPI but with additional excpeption retry parameter
 postSpecifyServerAPI' :: (ToJSON req,FromJSON (ApiResponse t))
-                      => String -> String -> req -> Int -> Int -> IO (Response (ApiResponse t))
-postSpecifyServerAPI' ep server' rq retryMax timeoutSecs = loop retryMax where
+                      => String -> String -> req -> Int -> IO (Response (ApiResponse t))
+postSpecifyServerAPI' ep server' rq retryMax = loop retryMax where
   loop :: (FromJSON (ApiResponse t))
        => Int -> IO (Response (ApiResponse t))
   loop retryCount = do
     let url = "http://" ++ server' ++ "/api/v1/" ++ ep
     let opts = defaults & manager .~ Left (defaultManagerSettings
-          { managerResponseTimeout = responseTimeoutMicro (timeoutSecs * 1000000) } )
+          { managerResponseTimeout = responseTimeoutMicro (timeoutSeconds * 1000000) } )
     r <- liftIO $ postWith opts url (toJSON rq)
     resp <- asJSON r
     case resp ^. responseBody of
@@ -264,8 +264,8 @@ handleResp a r =
 
 handleBatchResp :: RequestKeys -> Repl ()
 handleBatchResp resp = do
-        rk <- return $ head $ _rkRequestKeys resp
-        showResult 10000 [rk] Nothing
+  rk <- return $ head $ _rkRequestKeys resp
+  listenForResults 10000 [rk] Nothing
 
 sendCmd :: Mode -> String -> String -> Repl ()
 sendCmd m cmd replCmd = do
@@ -284,11 +284,10 @@ sendMultiple :: String -> String -> Int -> Int -> Repl ()
 sendMultiple templateCmd replCmd startCount nRepeats  = do
   j <- use cmdData
   let cmds = replaceCounters startCount nRepeats templateCmd
-  flushStrLn $ "sendMultiple: " ++ show cmds
   xs <- sequence $ fmap (\cmd -> mkExec cmd j Nothing) cmds
-  resp <- postAPI' "send" (SubmitBatch xs) maxRetries timeoutSeconds
+  resp <- postAPI' "send" (SubmitBatch xs) maxRetries 
   tellKeys resp replCmd
-  handleResp handleBatchResp resp
+  handleResp handleBatchResp resp 
 
 loadMultiple :: FilePath -> String -> Int -> Int -> Repl ()
 loadMultiple filePath replCmd startCount nRepeats = do
@@ -344,7 +343,7 @@ batchTest n cmd = do
       rk <- return $ last $ _rkRequestKeys _apiResponse
       tell [ReplApiRequest {_apiRequestKey = rk, _replCmd = cmd}]
       flushStrLn $ "Polling for RequestKey: " ++ show rk
-      showResult 10000 [rk] (Just (fromIntegral n))
+      listenForResults 10000 [rk] (Just (fromIntegral n))
 
 chunksOf :: Int -> [e] -> [[e]]
 chunksOf i ls = map (take i) (build (splitter ls)) where
@@ -416,9 +415,9 @@ loadConfigChange fp = do
   ccApiReq <- liftIO $ mkConfigChangeApiReq fp
   sendConfigChangeCmd ccApiReq fp
 
-showResult :: Int -> [RequestKey] -> Maybe Int64 -> Repl ()
-showResult _ [] _ = return ()
-showResult tdelay rks countm = loop (0 :: Int)
+listenForResults :: Int -> [RequestKey] -> Maybe Int64 -> Repl ()
+listenForResults _ [] _ = return ()
+listenForResults tdelay rks countm = loop (0 :: Int)
   where
     loop c = do
       threadDelay tdelay
@@ -443,7 +442,9 @@ showResult tdelay rks countm = loop (0 :: Int)
 pollForResult :: Bool -> RequestKey -> Repl ()
 pollForResult printMetrics rk = do
   s <- getServer
-  eR <- liftIO $ Exception.try $ post ("http://" ++ s ++ "/api/v1/poll") (toJSON (Pact.Poll [rk]))
+  let opts = defaults & manager .~ Left (defaultManagerSettings
+        { managerResponseTimeout = responseTimeoutMicro (timeoutSeconds * 1000000) } )
+  eR <- liftIO $ Exception.try $ postWith opts ("http://" ++ s ++ "/api/v1/poll") (toJSON (Pact.Poll [rk]))
   case eR of
     Left (SomeException err) -> flushStrLn $ show err
     Right r -> do

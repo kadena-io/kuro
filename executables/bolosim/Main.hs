@@ -8,6 +8,7 @@ module Main
   ) where
 
 import Control.Monad
+import Control.Monad.Catch
 import Data.Either
 import Safe
 import System.Command
@@ -128,8 +129,11 @@ batchCmds theArgs@BoloArgs{..} totalRemaining allOk = do -- do next batch
     let batchReq = createMultiReq cmdFile startNum thisBatch
     putStrLn $ "batchCmds - multi-request created: " 
            ++ "\n\r" ++ show batchReq
-    _res <- runClientCommands (clientArgs theArgs) [batchReq]
-    return (True, startNum+thisBatch, thisBatch) -- checkResults res
+
+    let run = do
+         _res <- runClientCommands (clientArgs theArgs) [batchReq]
+         return (True, startNum+thisBatch, thisBatch) -- checkResults res
+    catch run (\(SomeException e) -> putStrLn $ "batchCmds - exception: " ++ show e)
   let seconds = printf "%.2f" sec :: String
   let tPerSec = printf "%.2f" (fromIntegral sz / sec) :: String
   putStrLn $ show nDone ++ " completed -- this batch of " ++ show sz ++ " transactions " 

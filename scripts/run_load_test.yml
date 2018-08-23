@@ -22,7 +22,7 @@
         monitoring: no
         instance_tags:
           Name: kadena_server
-        exact_count: 1
+        exact_count: 2
         count_tag:
           Name: kadena_server
       register: ec2_servers_out
@@ -39,7 +39,7 @@
         monitoring: no
         instance_tags:
           Name: kadena_client
-        exact_count: 1
+        exact_count: 0
         count_tag:
           Name: kadena_client
       register: ec2_client_out
@@ -58,6 +58,17 @@
         - "{{ ec2_servers_out.instances }}"
         - "{{ ec2_client_out.instances }}"
 
+- name: Create IP Addresses File
+  hosts: localhost
+  vars:
+    ipList: "{{ ec2_servers_out.instances }}"
+  tasks:
+    - name: Template loop for file creation
+      template:
+        src: /home/ubuntu/kadena/scripts/ipAddr.j2
+        dest: /home/ubuntu/ipAddr.yml
+        mode: 0777
+
 - name: Configure instance(s)
   hosts: kadena_all
   become: True
@@ -65,7 +76,10 @@
     ansible_python_interpreter: /usr/bin/python3
   gather_facts: True
   tasks:
-    - command: echo "Inside the instances!"
+    - file:
+        path: /home/ubuntu/log/
+        state: directory
+        mode: 0755
 
 - name: Terminate EC2 Instances
   hosts: localhost

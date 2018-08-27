@@ -100,7 +100,11 @@ coptions =
 
 maxRetries, timeoutSeconds :: Int
 maxRetries = 20
+<<<<<<< HEAD
 timeoutSeconds = 300
+=======
+timeoutSeconds = 120
+>>>>>>> 9ee59df5e81b93ca33922c30e0d005e43591c37b
 
 data Node = Node
   { _nEntity :: EntityName

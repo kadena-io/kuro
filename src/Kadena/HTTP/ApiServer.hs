@@ -268,7 +268,7 @@ listenFor (ListenerRequest rk) = do
       return $ _concrResult cr
 
 listenerTimeout :: Int
-listenerTimeout = 120
+listenerTimeout = 300 
 
 registerListener :: Api ()
 registerListener = do

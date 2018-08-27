@@ -133,7 +133,9 @@ batchCmds theArgs@BoloArgs{..} totalRemaining allOk = do -- do next batch
     let run = do
          _res <- runClientCommands (clientArgs theArgs) [batchReq]
          return (True, startNum+thisBatch, thisBatch) -- checkResults res
-    catch run (\(SomeException e) -> putStrLn $ "batchCmds - exception: " ++ show e)
+    catch run (\(SomeException e) -> do
+                  putStrLn $ "batchCmds - exception: " ++ show e
+                  return (False, startNum+thisBatch, thisBatch))
   let seconds = printf "%.2f" sec :: String
   let tPerSec = printf "%.2f" (fromIntegral sz / sec) :: String
   putStrLn $ show nDone ++ " completed -- this batch of " ++ show sz ++ " transactions " 

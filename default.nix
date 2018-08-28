@@ -49,11 +49,13 @@ in
 
             pact-persist = self.callCabal2nix "pact-persist" (builtins.fetchGit {
               url = "ssh://git@github.com/kadena-io/pact-persist.git";
-              ref = "pact-2.4.x-upgrade";
+              # ref = "pact-2.4.x-upgrade";
               # This rev must be on the above branch ref
-              rev = "d0657343da4347637e9419096e324edf66a7c543";
+              # rev = "d0657343da4347637e9419096e324edf66a7c543";
               # Uncomment when nix and mysql branch merged into master.
               # rev = "1db11ffbc806b2e75b63ff64a7fcf6b29f4f073d"
+              ref = "mysql-nix-merge";
+              rev = "f6a650200a7937a84011dfe54873924d2e8445bc";
             }) {};
 
             sbv = self.callCabal2nix "sbv" (pkgs.fetchFromGitHub {
@@ -92,11 +94,11 @@ in
            ["result" "dist" "dist-ghcjs" ".git"]))
         ./.;
     };
-    
+
     shells = {
       ghc = ["kadena"];
     };
-  
+
     toolOverrides = ghc: super: {
       z3 = pkgs.z3;
       stack = pkgs.stack;

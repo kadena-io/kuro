@@ -4,33 +4,35 @@
 
 module ConfigChangeSpec (spec) where
 
-import Control.Monad
-import Data.Aeson as AE
-import Data.Either
+import           Control.Concurrent (threadDelay)
+import           Control.Concurrent.Async (race)
+import           Control.Error.Util (hush)
+import           Control.Monad
+import           Data.Aeson as AE
+import           Data.Either
 import qualified Data.HashMap.Strict as HM
-import Data.List.Extra
-import Data.Scientific
-import Safe
-import System.Time.Extra (sleep, timeout)
-import Test.Hspec
+import           Data.List.Extra
+import           Data.Scientific
+import           Safe
+import           System.Time.Extra (sleep)
+import           Test.Hspec
 
-import Apps.Kadena.Client
-import Kadena.Types.Command hiding (result)
-import Pact.Types.API
+import           Apps.Kadena.Client
+import           Kadena.Types.Command hiding (result)
+import           Pact.Types.API
 
-import Util.TestRunner
+import           Util.TestRunner
 
 startupStuff :: IO ()
 startupStuff = do
   delTempFiles
   runServers
   putStrLn "Servers are running, sleeping for a few seconds"
-  _ <- sleep 10
-  return ()
+  sleep 10
 
 spec :: Spec
 spec = do
-    startupStuff `beforeAll_` describe "testClusterCommands" testClusterCommands
+  startupStuff `beforeAll_` describe "testClusterCommands" testClusterCommands
 
 testClusterCommands :: Spec
 testClusterCommands = do
@@ -298,14 +300,15 @@ testMetric12 = TestMetric
   { metricNameTm = "/kadena/cluster/members"
   , evalTm = (\s -> (splitOn ", " s) /= ["node1", "node2"]) }
 
+-- | Adding `sleep` between failures prevents the metrics server
+-- from being hammered.
 waitForMetric :: TestMetric -> IO Bool
-waitForMetric tm = do
-  t <- timeout 10 go
-  return $ case t of
-    Nothing -> False
-    Just _ -> True
+waitForMetric tm = maybe False (const True) <$> timeout 30 go
   where
     go :: IO ()
     go = do
       res <- gatherMetric tm
-      when (isLeft $ getMetricResult res) go
+      when (isLeft $ getMetricResult res) $ sleep 1 >> go
+
+timeout :: Int -> IO a -> IO (Maybe a)
+timeout n io = hush <$> race (threadDelay $ n * 1000000) io

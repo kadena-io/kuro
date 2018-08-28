@@ -284,6 +284,7 @@ test-suite hspec
                , Util.TestRunner
                , WireFormatSpec
   build-depends: aeson
+               , async
                , base
                , base16-bytestring
                , bytestring
@@ -292,6 +293,7 @@ test-suite hspec
                , data-default
                , deepseq
                , ed25519-donna
+               , errors
                , exceptions
                , extra
                , hspec

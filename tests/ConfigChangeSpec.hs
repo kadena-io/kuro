@@ -11,7 +11,7 @@ import qualified Data.HashMap.Strict as HM
 import Data.List.Extra
 import Data.Scientific
 import Safe
-import System.Time.Extra
+import System.Time.Extra (sleep, timeout)
 import Test.Hspec
 
 import Apps.Kadena.Client
@@ -25,7 +25,7 @@ startupStuff = do
   delTempFiles
   runServers
   putStrLn "Servers are running, sleeping for a few seconds"
-  _ <- sleep 3
+  _ <- sleep 10
   return ()
 
 spec :: Spec
@@ -61,6 +61,7 @@ testClusterCommands = do
     assertEither $ getMetricResult m13
 
   it "Runing post config change #1 commands:" $ do
+    sleep 3
     results2 <- runClientCommands clientArgs testRequestsRepeated
     checkResults results2
 
@@ -71,6 +72,7 @@ testClusterCommands = do
   -}
 
   it "Config change test #2 - Dropping node3, adding node2" $ do
+    sleep 3
     ccResults2 <- runClientCommands clientArgs ccTest013to012
     checkResults ccResults2
 
@@ -79,6 +81,7 @@ testClusterCommands = do
     ok012 `shouldBe` True
 
   it "Runing post config change #2 commands:" $ do
+    sleep 3
     results3 <- runClientCommands clientArgs testRequestsRepeated
     checkResults results3
 

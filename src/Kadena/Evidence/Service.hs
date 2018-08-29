@@ -78,9 +78,9 @@ handleConfUpdate = do
       return ()
   else do
     let newEs= case (maxTimeoutChanged, clusterMembersChanged) of
-          (True, False) -> changeMaxTimeoutES es (snd _electionTimeoutRange) -- ^ Only max-timeout needs updating
+          (True, False) -> changeMaxTimeoutES es (snd _electionTimeoutRange) -- Only max-timeout needs updating
           (False, True) -> changeNodesES es _clusterMembers _nodeId
-          (_, _)        -> do -- ^ Both the max-timeout and the cluster members require updating
+          (_, _)        -> do -- Both the max-timeout and the cluster members require updating
             let newEs' = changeMaxTimeoutES es (snd _electionTimeoutRange)
             changeNodesES newEs' _clusterMembers _nodeId
     put newEs -- MLN: original code calls publish evidence with the original es (prior to updating)...

@@ -112,29 +112,3 @@
       async: 300
       poll: 0
       register: active_servers
-
-- name: Run Load Test
-  hosts: localhost
-  tasks:
-    - name: Make bolosim executable
-      file:
-        path: /home/ubuntu/kadena-beta/bin/ubuntu-16.04/bolosim
-        mode: a+x
-    - name: Run bolosim test
-      command: rlwrap -A ./../kadena-beta/bin/ubuntu-16.04/bolosim --transactions=120  --batchsize=30 --norunserver --configfile=client.yaml --dirforconfig=../conf/
-      args:
-        chdir: /home/ubuntu/kadena
-      register: test_result
-    - name: Write result of bolosim load test to file
-      copy: content={{ test_result }} dest=/home/ubuntu/bolosim-res.log
-
-- name: Terminate all Kadena server EC2 instances
-  hosts: localhost
-  connection: local
-  vars:
-    region: us-west-2
-  tasks:
-    - ec2:
-        state: absent
-        region: "{{ region }}"
-        instance_ids: "{{ ec2_servers_out.instance_ids }}"

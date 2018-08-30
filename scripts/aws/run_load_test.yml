@@ -23,14 +23,14 @@
         monitoring: no
         instance_tags:
           Name: kadena_server
-        exact_count: 2
+        exact_count: 4
         count_tag:
           Name: kadena_server
       register: ec2_servers_out
 
     - name: Add Instances to 'kadena_all' Host Group
       add_host:
-        hostname: "{{ item.public_ip }}"
+        hostname: "{{ item.private_ip }}"
         groupname: kadena_all
       with_items: 
         - "{{ ec2_servers_out.instances }}"
@@ -99,7 +99,7 @@
         src: /home/ubuntu/kadena-beta/bin/ubuntu-16.04/kadenaserver
         dest: /home/ubuntu/kadenaserver
         owner: ubuntu
-        mode: ugo+x
+        mode: a+x
 
 - name: Start Kadena Servers
   hosts: kadena_all
@@ -109,11 +109,11 @@
   gather_facts: True
   tasks:
     - shell: ./kadenaserver +RTS -N4 -RTS -c conf-cluster.yaml 2>&1 | tee -a log/node.log
-      async: 90
+      async: 300
       poll: 0
       register: active_servers
 
-- name: Run load-test program
+- name: Run Load Test
   hosts: localhost
   tasks:
     - name: Make bolosim executable
@@ -121,7 +121,9 @@
         path: /home/ubuntu/kadena-beta/bin/ubuntu-16.04/bolosim
         mode: a+x
     - name: Run bolosim test
-      command: rlwrap -A ./home/ubuntu/kadena-beta/bin/ubuntu-16.04/bolosim --transactions=120  --batchsize=30 --norunserver --configfile=client.yaml --dirforconfig=/home/ubuntu/conf/  
+      command: rlwrap -A ./../kadena-beta/bin/ubuntu-16.04/bolosim --transactions=120  --batchsize=30 --norunserver --configfile=client.yaml --dirforconfig=../conf/
+      args:
+        chdir: /home/ubuntu/kadena
 
 - name: Terminate all Kadena server EC2 instances
   hosts: localhost

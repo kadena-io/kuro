@@ -9,7 +9,6 @@ module Util.TestRunner
   , testDir
   , testConfDir
   , runClientCommands
-  , runClientCommands'
   , runServers
   , runServers'
   , TestMetric(..)
@@ -18,32 +17,32 @@ module Util.TestRunner
   , TestResponse(..)
   , TestResult(..)) where
 
-import Apps.Kadena.Client
+import           Apps.Kadena.Client
 import qualified Apps.Kadena.Server as App
-import Control.Concurrent
-import Control.Lens
-import Control.Monad
-import Control.Monad.Trans.RWS.Lazy
-import Data.Aeson hiding (Success)
+import           Control.Concurrent
+import           Control.Lens
+import           Control.Monad
+import           Control.Monad.Trans.RWS.Lazy
+import           Data.Aeson hiding (Success)
 import qualified Data.ByteString.Lazy.Char8 as C8
-import Data.Default
-import Data.Int
-import Data.List
-import Data.List.Extra
+import           Data.Default
 import qualified Data.HashMap.Strict as HM
+import           Data.Int
+import           Data.List
+import           Data.List.Extra
 import qualified Data.Text as T
 import qualified Data.Yaml as Y
-import GHC.Generics (Generic)
-import Network.Wreq
+import           GHC.Generics (Generic)
+import           Network.Wreq
 import qualified Network.Wreq as WR (getWith)
-import Pact.ApiReq
-import Pact.Types.API
-import System.Command
-import System.Console.GetOpt
-import System.Environment
-import System.Time.Extra
-import Test.Hspec
-import Text.Trifecta (ErrInfo(..), parseString, Result(..))
+import           Pact.ApiReq
+import           Pact.Types.API
+import           System.Command
+import           System.Console.GetOpt
+import           System.Environment
+import           System.Time.Extra
+import           Test.Hspec
+import           Text.Trifecta (ErrInfo(..), parseString, Result(..))
 
 testDir, testConfDir, _testLogDir :: String
 testDir = "test-files/"
@@ -78,6 +77,7 @@ data TestResult = TestResult
   , responseTr :: Maybe TestResponse
   } deriving Show
 
+-- TODO Make `metricNameTm` a path type from `paths`
 data TestMetric = TestMetric
   { metricNameTm :: String
   , evalTm :: String -> Bool
@@ -98,13 +98,13 @@ delTempFiles = do
 
 -- | Returns a list of IO actions that kill all the servers
 runServers :: IO ()
-runServers = runServers' serverArgs 
+runServers = runServers' serverArgs
 
 runServers' :: [String] -> IO ()
 runServers' svrArgList = do
   sleep 1
   mapM_ runServer svrArgList
-  
+
 -- | Returns an IO action that kills the thread.
 runServer ::  String -> IO ()
 runServer args = do
@@ -121,12 +121,8 @@ serverArgs1 = "-c " ++ testConfDir ++ "10001-cluster.yaml"
 serverArgs2 = "-c " ++ testConfDir ++ "10002-cluster.yaml"
 serverArgs3 = "-c " ++ testConfDir ++ "10003-cluster.yaml"
 
-runClientCommands :: [String] -> [TestRequest] -> IO [TestResult]
-runClientCommands args testRequests = runClientCommands' args testRequests 30
-
--- | Similar to runClientCommands, but with additional arg for http timeout
-runClientCommands' :: [String] ->  [TestRequest] -> Int -> IO [TestResult]
-runClientCommands' args testRequests timeoutSecs =
+runClientCommands :: [String] ->  [TestRequest] -> IO [TestResult]
+runClientCommands args testRequests =
   case getOpt Permute coptions args of
     (_,_,es@(_:_)) -> print es >> exitFailure
     (o,_,_) -> do
@@ -134,7 +130,7 @@ runClientCommands' args testRequests timeoutSecs =
       i <- newMVar =<< initRequestId
       (conf :: ClientConfig) <- either (\e -> print e >> exitFailure) return
         =<< Y.decodeFileEither (_oConfig opts)
-      (_, _, w) <- runRWST (simpleRunREPL testRequests timeoutSecs) conf ReplState
+      (_, _, w) <- runRWST (simpleRunREPL testRequests) conf ReplState
         { _server = fst (minimum $ HM.toList (_ccEndpoints conf))
         , _batchCmd = "\"Hello Kadena\""
         , _requestId = i
@@ -203,9 +199,9 @@ isRequest :: ReplApiData -> Bool
 isRequest (ReplApiRequest _ _) = True
 isRequest ReplApiResponse{} = False
 
-simpleRunREPL :: [TestRequest] -> Int -> Repl ()
-simpleRunREPL [] _ = return ()
-simpleRunREPL (x:xs) timeoutSecs = do
+simpleRunREPL :: [TestRequest] -> Repl ()
+simpleRunREPL [] = return ()
+simpleRunREPL (x:xs) = do
   let reqStr = cmd x
   case parseString parseCliCmd mempty reqStr of
     Failure (ErrInfo e _) -> do
@@ -213,18 +209,19 @@ simpleRunREPL (x:xs) timeoutSecs = do
       return ()
     Success c -> do
       handleCmd c reqStr
-      simpleRunREPL xs timeoutSecs
+      simpleRunREPL xs
 
 gatherMetric :: TestMetric -> IO TestMetricResult
 gatherMetric tm = do
     let name = metricNameTm tm
     value <- getMetric name
-    return $ TestMetricResult { requestTmr = tm, valueTmr = value}
+    return $ TestMetricResult { requestTmr = tm, valueTmr = Just value}
 
-getMetric :: String -> IO (Maybe String)
+-- TODO Use `lens-aeson` to grab the correct `val`
+getMetric :: String -> IO String
 getMetric path = do
   let opts = defaults & header "Accept" .~ ["application/json"]
-  rbs <- WR.getWith opts ("http://0.0.0.0:10080" ++ path)
+  rbs <- WR.getWith opts $ "http://0.0.0.0:10080" ++ path
   let str = C8.unpack $ rbs ^. responseBody
-  let val = takeWhile (/= '}') $ takeWhileEnd (/= ':') str
-  return $ Just val
+      val = takeWhile (/= '}') $ takeWhileEnd (/= ':') str
+  pure val

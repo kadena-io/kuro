@@ -497,6 +497,36 @@ account | amount | balance   | data
 
 NB: The result of the first send shows you the result of the first part of the multi-phase tx, thus the "success"/"Write succeeded" status. Querying the database reveals the rollback which occurred two transactions later.
 
+#### Sample Usage: Inserting multiple records
+You can test inserting multiple records into a sample client database with the following commands:
+
+```
+node0> load demo/orders.yaml
+  
+This creates an 'orders' table into which records can be inserted.
+```
+
+The command:
+
+```
+node0> loadMultiple 0 3000 demo/orders.txt 
+```
+
+will insert 3000 records into the orders table.  The file orders.txt serves as a template for the order records, and contains special strings of the form "${count}" that will be replaced with the numbers
+from 0 through 2999 as the records are inserted.  All 3000 records are sent in a single HTTP 'batch' command.
+
+You can run additional loadMultiple commands, but the initial 'count' (0 in the last example) must be chosen to not overlap with previously inserted rows.  So subsequent commands could be:
+```
+node0> loadMultiple 3000 3000 
+
+node0> loadMultiple 6000 3000
+
+node0> loadMultiple 9000 3000
+
+```
+etc.
+
+
 
 #### Sample Usage: Viewing the Performance Monitor
 

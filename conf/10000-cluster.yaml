@@ -15,6 +15,9 @@ heartbeatTimeout: 1000000
 logDir: ./log
 apiPort: 8000
 logRules:
+  PactPersist:
+    exclude:
+    - DEBUG
   PactService:
     include: null
     enable: null

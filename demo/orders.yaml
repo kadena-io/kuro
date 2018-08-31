@@ -1,0 +1,8 @@
+data:
+  orders-admin-keyset:
+    "keys": ["ordersadmin"]
+    "pred": ">"
+codeFile: "./orders.pact"
+keyPairs:
+  - public: "59fd964117f7599fb672df85dc891ab636d035fb20190bb227d07d282167dcc3"
+    secret: "113047abfdca47d94d462bd59fb51b266e3526e88390c14692b2204a5d110ead"

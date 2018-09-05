@@ -1,78 +1,28 @@
-### Load Test Playbook (Ubuntu)
-# Runs the AWS Kadena load test
-
-- name: Spin up EC2 Instances
-  hosts: localhost
-  gather_facts: True
-  vars:
-    type: t2.micro
-    # the kadena-ubuntu-base image
-    image: ami-0709eacb612a326cb
-    security: kadena_beta
-    region: us-west-2
-  tasks:
-    - name: Launch Kadena Server Instances
-      ec2:
-        key_name: wizard-example-key
-        group: "{{ security }}"
-        instance_type: "{{ type }}"
-        image: "{{ image }}"
-        wait: true
-        wait_timeout: 500
-        region: "{{ region }}"
-        monitoring: no
-        instance_tags:
-          Name: kadena_server
-        exact_count: 4
-        count_tag:
-          Name: kadena_server
-      register: ec2_servers_out
-
-    - name: Add Instances to 'kadena_all' Host Group
-      add_host:
-        hostname: "{{ item.private_ip }}"
-        groupname: kadena_all
-      with_items: 
-        - "{{ ec2_servers_out.instances }}"
-
-    - name: Wait for SSH to come up
-      wait_for: host={{ item.public_dns_name }} port=22 delay=60 timeout=320 state=started
-      with_items:
-        - "{{ ec2_servers_out.instances }}"
-
-- name: Create node configurations
-  hosts: localhost
-  vars:
-    ipList: "{{ ec2_servers_out.instances }}"
-  tasks:
-    - name: Create file of Kadena server(s)' IP addresses
-      template:
-        src: /home/ubuntu/kadena/scripts/aws/ipAddr.j2
-        dest: /home/ubuntu/ipAddr.yml
-        mode: 0777
-    - name: Create 'conf' directory to store nodes' configuration file 
-      file:
-        path: /home/ubuntu/conf/
-        state: directory
-        mode: 0755
-    - name: Generate the node configuration for the Kadena servers
-      shell: yes '' | /home/ubuntu/kadena-beta/bin/ubuntu-16.04/genconfs --distributed /home/ubuntu/ipAddr.yml
-      args:
-        chdir: /home/ubuntu/
+### (Re)start Kadena Servers
 
 - name: Configure instance(s)
   hosts: kadena_all
   become: True
   vars:
     ansible_python_interpreter: /usr/bin/python3
-  gather_facts: True
+  gather_facts: False
   tasks:
+    - name: Identify Thread Running Kadena Server (if running)
+      command: pgrep kadenaserver
+      register: server_thread
+
+    - name: Terminate Kadena Server Thread (if running)
+      become: True
+      command: kill "{{ server_thread.stdout }}"
+      when: "server_thread.stdout"
+
     - name: Create log directory (if it doesn't exist) in server nodes
       file:
         path: /home/ubuntu/log/
         state: directory
         owner: ubuntu
         mode: 0755
+
     - name: Remove Kadena server logs
       file: 
         path: "{{ item }}"
@@ -80,6 +30,7 @@
       with_items:
           - "/home/ubuntu/log/*.sqlite*"
           - "/home/ubuntu/log/*.log"
+
     - name: Create necessary log files
       file:
         path: "{{ item }}"
@@ -89,11 +40,13 @@
         - "/home/ubuntu/log/access.log"
         - "/home/ubuntu/log/error.log"
         - "/home/ubuntu/log/node.log"
+
     - name: Copy node conf file to server
       copy:
         src: /home/ubuntu/conf/{{inventory_hostname}}-cluster.yaml
         dest: /home/ubuntu/conf-cluster.yaml
         owner: ubuntu
+
     - name: Copy `kadenaserver` executable to server
       copy:
         src: /home/ubuntu/kadena-beta/bin/ubuntu-16.04/kadenaserver
@@ -109,6 +62,8 @@
   gather_facts: True
   tasks:
     - shell: ./kadenaserver +RTS -N4 -RTS -c conf-cluster.yaml 2>&1 | tee -a log/node.log && sleep 1
-      async: 300
+      async: 1200
       poll: 0
       register: active_servers
+    - pause:
+        seconds: 2

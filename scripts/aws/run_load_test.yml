@@ -61,11 +61,11 @@
         chdir: /home/ubuntu/
 
 - name: Configure instance(s)
-  hosts: kadena_all
+  hosts: tag_Name_kadena_server
   become: True
   vars:
     ansible_python_interpreter: /usr/bin/python3
-  gather_facts: True
+  gather_facts: False
   tasks:
     - name: Create log directory (if it doesn't exist) in server nodes
       file:
@@ -112,6 +112,8 @@
       async: 300
       poll: 0
       register: active_servers
+    - pause:
+        seconds: 2
 
 - name: Run Load Test
   hosts: localhost
@@ -127,14 +129,3 @@
       register: test_result
     - name: Write result of bolosim load test to file
       copy: content={{ test_result }} dest=/home/ubuntu/bolosim-res.log
-
-- name: Terminate all Kadena server EC2 instances
-  hosts: localhost
-  connection: local
-  vars:
-    region: us-west-2
-  tasks:
-    - ec2:
-        state: absent
-        region: "{{ region }}"
-        instance_ids: "{{ ec2_servers_out.instance_ids }}"

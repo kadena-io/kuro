@@ -7,23 +7,30 @@
     ansible_python_interpreter: /usr/bin/python3
   gather_facts: False
   tasks:
-    - name: Identify Thread Running Kadena Server (if running)
-      shell: pgrep kadenaserver
-      register: server_thread
-      ignore_errors: yes
+    - name: Identify Threads Running Kadena Server (if running)
+      shell: "ps -ef | grep -v grep | grep -w kadenaserver | awk '{print $2}'"
+      register: running
 
-    - name: Terminate Kadena Server Thread (if running)
-      become: True
-      command: kill "{{ server_thread.stdout }}"
-      when: "server_thread.stdout"
+    - debug:
+        msg: Threads "{{ running }}"
 
-    - name: Remove Kadena server logs
-      file: 
-        path: "{{ item }}"
+    - name: Kill Running Threads
+      shell: "kill {{ item }}"
+      with_items: "{{ running.stdout_lines }}"
+
+    - wait_for:
+        path: "/proc/{{ item }}/status"
         state: absent
-      with_items:
-          - "/home/ubuntu/log/*.sqlite*"
-          - "/home/ubuntu/log/*.log"
+      with_items: "{{ running.stdout_lines }}"
+      ignore_errors: yes
+      register: killed
+
+    - name: Force Kill Stuck Threads
+      shell: "kill -9 {{ item }}"
+      with_items: "{{ killed.results | select('failed') | map(attribute='item') | list }}"
+
+    - name: Remove Kadena Server Logs
+      shell: rm -rf /home/ubuntu/log/*     
 
     - name: Create necessary log files
       file:

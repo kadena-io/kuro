@@ -3,9 +3,23 @@
 - name: Run Load Test
   hosts: localhost
   vars:
-    total: 12000
-    size: 1000   
+    total: 120
+    size: 5   
   tasks:
+    - name: Create result directory
+      file:
+        path: /home/ubuntu/result/
+        state: directory
+        owner: ubuntu
+        mode: 0755
+    
+    - name: Clean up result directory
+      file:
+        path: "{{ item }}"
+        state: absent
+      with_fileglob:
+        - /home/ubuntu/result/*
+ 
     - name: Make Bolosim Executable
       file:
         path: /home/ubuntu/kadena-beta/bin/ubuntu-16.04/bolosim
@@ -18,4 +32,16 @@
       register: result
 
     - name: Write Result of Bolosim Load Test to File
-      copy: content={{ result.stdout }} dest=/home/ubuntu/result.log
+      copy: content={{ result.stdout }} dest=/home/ubuntu/result/result.log
+
+- name: Fetch Kadena Servers' log files
+  hosts: tag_Name_kadena_server
+  become: True
+  gather_facts: True
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+  tasks:
+    - copy:
+        src: /home/ubuntu/log/*
+        dest: /home/ubuntu/result/log-{{ inventory_hostname }}/
+        remote_src: yes

@@ -58,3 +58,40 @@
       shell: yes '' | /home/ubuntu/kadena-beta/bin/ubuntu-16.04/genconfs --distributed /home/ubuntu/ipAddr.yml
       args:
         chdir: /home/ubuntu/
+
+- name: Configure instance(s)
+  hosts: kadena_all
+  become: True
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+  gather_facts: False
+  tasks:
+    - name: Create log directory in server nodes
+      file:
+        path: /home/ubuntu/log/
+        state: directory
+        owner: ubuntu
+        mode: 0755
+
+    - name: Copy node conf file to server
+      copy:
+        src: /home/ubuntu/conf/{{inventory_hostname}}-cluster.yaml
+        dest: /home/ubuntu/conf-cluster.yaml
+        owner: ubuntu
+
+    - name: Copy `kadenaserver` executable to server
+      copy:
+        src: /home/ubuntu/kadena-beta/bin/ubuntu-16.04/kadenaserver
+        dest: /home/ubuntu/kadenaserver
+        owner: ubuntu
+        mode: a+x
+
+- name: Refresh Inventory
+  hosts: localhost
+  connection: local
+  gather_facts: True
+  tasks:
+    - name: Refresh EC2 cache
+      command: /etc/ansible/ec2.py --refresh-cache
+    - name: Refresh in-memory EC2 cache
+      meta: refresh_inventory

@@ -1,27 +1,21 @@
 ### (Re)start Kadena Servers
 
-- name: Configure instance(s)
-  hosts: kadena_all
+- name: Clean up Kadena Server(s)
+  hosts: tag_Name_kadena_server
   become: True
   vars:
     ansible_python_interpreter: /usr/bin/python3
   gather_facts: False
   tasks:
     - name: Identify Thread Running Kadena Server (if running)
-      command: pgrep kadenaserver
+      shell: pgrep kadenaserver
       register: server_thread
+      ignore_errors: yes
 
     - name: Terminate Kadena Server Thread (if running)
       become: True
       command: kill "{{ server_thread.stdout }}"
       when: "server_thread.stdout"
-
-    - name: Create log directory (if it doesn't exist) in server nodes
-      file:
-        path: /home/ubuntu/log/
-        state: directory
-        owner: ubuntu
-        mode: 0755
 
     - name: Remove Kadena server logs
       file: 
@@ -41,21 +35,8 @@
         - "/home/ubuntu/log/error.log"
         - "/home/ubuntu/log/node.log"
 
-    - name: Copy node conf file to server
-      copy:
-        src: /home/ubuntu/conf/{{inventory_hostname}}-cluster.yaml
-        dest: /home/ubuntu/conf-cluster.yaml
-        owner: ubuntu
-
-    - name: Copy `kadenaserver` executable to server
-      copy:
-        src: /home/ubuntu/kadena-beta/bin/ubuntu-16.04/kadenaserver
-        dest: /home/ubuntu/kadenaserver
-        owner: ubuntu
-        mode: a+x
-
 - name: Start Kadena Servers
-  hosts: kadena_all
+  hosts: tag_Name_kadena_server
   become: True
   vars:
     ansible_python_interpreter: /usr/bin/python3

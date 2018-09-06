@@ -2,6 +2,7 @@
 
 - name: Terminate all Kadena server EC2 instances
   hosts: localhost
+  gather_facts: False
   connection: local
   vars:
     region: us-west-2

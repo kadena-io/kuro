@@ -54,4 +54,4 @@
       poll: 0
       register: active_servers
     - pause:
-        seconds: 2
+        seconds: 15

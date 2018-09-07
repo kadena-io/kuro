@@ -44,6 +44,14 @@
   vars:
     ipList: "{{ ec2_servers_out.instances }}"
   tasks:
+    - name: Clean up Configuration Files
+      file:
+        path: "{{ item }}"
+        state: absent
+      with_fileglob:
+        - /home/ubuntu/conf/*
+        - /home/ubuntu/ipAddr.yml 
+    
     - name: Create file of Kadena server(s)' IP addresses
       template:
         src: /home/ubuntu/kadena/scripts/aws/ipAddr.j2

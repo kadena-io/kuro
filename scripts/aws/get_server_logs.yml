@@ -1,10 +1,7 @@
-# Runs the AWS Kadena load test
+# Retrives the sqlite and log files produced by Kadena Servers
 
 - name: Run Load Test
   hosts: localhost
-  vars:
-    total: 1200
-    size: 100 
   tasks:
     - name: Clean up result directory (if it exists)
       file:
@@ -18,23 +15,6 @@
         owner: ubuntu
         mode: 0755
     
-    - name: Make Bolosim Executable
-      file:
-        path: /home/ubuntu/kadena-beta/bin/ubuntu-16.04/bolosim
-        mode: a+x
-
-    - name: Run Bolosim Test
-      command: rlwrap -A /home/ubuntu/kadena-beta/bin/ubuntu-16.04/bolosim --transactions={{ total }}  --batchsize={{ size }} --norunserver --configfile=client.yaml --dirforconfig=/home/ubuntu/conf/
-      args:
-        chdir: /home/ubuntu/kadena
-      register: result
-
-    - name: Write Result of Bolosim Load Test to File
-      copy: content={{ result.stdout }} dest=/home/ubuntu/result/result.log
-
-    - pause:
-        seconds: 2
-
 - name: Fetch Kadena Servers' log files
   hosts: tag_Name_kadena_server
   become: True

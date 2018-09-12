@@ -44,6 +44,12 @@
   vars:
     ipList: "{{ ec2_servers_out.instances }}"
   tasks:
+    - name: Create 'conf' directory to store nodes' configuration file 
+      file:
+        path: /home/ubuntu/conf/
+        state: directory
+        mode: 0755
+
     - name: Clean up Configuration Files
       file:
         path: "{{ item }}"
@@ -57,11 +63,7 @@
         src: /home/ubuntu/kadena/scripts/aws/ipAddr.j2
         dest: /home/ubuntu/ipAddr.yml
         mode: 0777
-    - name: Create 'conf' directory to store nodes' configuration file 
-      file:
-        path: /home/ubuntu/conf/
-        state: directory
-        mode: 0755
+
     - name: Generate the node configuration for the Kadena servers
       shell: yes '' | /home/ubuntu/kadena-beta/bin/ubuntu-16.04/genconfs --distributed /home/ubuntu/ipAddr.yml
       args:

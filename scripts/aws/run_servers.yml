@@ -31,6 +31,8 @@
 
     - name: Remove Kadena Server Logs
       shell: rm -rf /home/ubuntu/log/*     
+      args: 
+        warn: False
 
     - name: Create necessary log files
       file:

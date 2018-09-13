@@ -8,6 +8,8 @@
 ;sample transfer
 (begin-tx "Single Dollar Transfer")
 (use 'demo)
+(create-account "Acct1" 1.0)
+(create-account "Acct2" 0.0)
 (transfer "Acct1" "Acct2" 1.0)
 (read-account "Acct1")
 (read-account "Acct2")

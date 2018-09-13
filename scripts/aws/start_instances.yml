@@ -6,7 +6,7 @@
   vars:
     type: t2.micro
     # the kadena-ubuntu-base image
-    image: ami-0709eacb612a326cb
+    image: ami-03210f1c8a84ba9c0
     security: kadena_beta
     region: us-west-2
   tasks:

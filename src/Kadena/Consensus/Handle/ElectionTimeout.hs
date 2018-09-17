@@ -3,18 +3,22 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Kadena.Consensus.Handle.ElectionTimeout
     (handle)
     where
 
+import Control.Exception (Exception)
 import Control.Lens
+import Control.Monad.Catch (MonadThrow, throwM)
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer
 
 import Data.Set (Set)
 import qualified Data.Set as Set
+import Data.String (IsString)
 
 import Kadena.Config.ClusterMembership
 import qualified Kadena.Config.TMVar as TMV
@@ -34,6 +38,7 @@ data ElectionTimeoutEnv = ElectionTimeoutEnv {
     , _leaderWithoutFollowers :: Bool
     , _myPrivateKey :: PrivateKey
     , _myPublicKey :: PublicKey
+    , _eteEnableDiagnostics :: Bool
     }
 makeLenses ''ElectionTimeoutEnv
 
@@ -57,8 +62,11 @@ data ElectionTimeoutOut =
     , _yesVotes :: Set RequestVoteResponse
     }
 
-handleElectionTimeout :: (MonadReader ElectionTimeoutEnv m, MonadWriter [String] m) => String -> m ElectionTimeoutOut
+handleElectionTimeout :: (MonadReader ElectionTimeoutEnv m, MonadWriter [String] m, MonadThrow m)
+                      => String -> m ElectionTimeoutOut
 handleElectionTimeout s = do
+  diagnostics <- view eteEnableDiagnostics
+  throwDiagnostics diagnostics "election timeout triggered"
   tell ["election timeout: " ++ s]
   r <- view nodeRole
   leaderWithoutFollowers' <- view leaderWithoutFollowers
@@ -77,6 +85,26 @@ handleElectionTimeout s = do
                 return $ AbdicateAndLazyVote (_lvVoteFor ^. rvTerm) (_lvVoteFor ^. rvCandidateId) True
               Nothing -> becomeCandidate
        else return AlreadyLeader
+
+
+{-
+class Monad m => MonadThrow m where
+
+throwM :: Exception e => e -> m a 
+-}
+
+-- MLN: TODO - find the right home for this
+throwDiagnostics :: MonadThrow m => Bool -> String -> m ()
+throwDiagnostics diagnostics str = do
+  if diagnostics
+    then throwM $ DiagnosticException str
+    else return ()
+
+-- MLN: TODO -- find the right home for this
+newtype DiagnosticException = DiagnosticException String
+  deriving (Eq,Show,Ord,IsString)
+instance Exception DiagnosticException
+  
 
 -- THREAD: SERVER MAIN. updates state
 becomeCandidate :: (MonadReader ElectionTimeoutEnv m, MonadWriter [String] m) => m ElectionTimeoutOut
@@ -119,6 +147,7 @@ handle msg = do
              leaderWithoutFollowers'
              (TMV._myPrivateKey c)
              (TMV._myPublicKey c)
+             (TMV._enableDiagnostics c)
   mapM_ debug l
   case out of
     AlreadyLeader -> return ()

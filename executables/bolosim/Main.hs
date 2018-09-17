@@ -36,12 +36,18 @@ data BoloArgs = BoloArgs
   , cmdFile :: String
   , noRunServer :: Bool
   , configFile :: String
-  , dirForConfig :: String } deriving (Show, Data, Typeable)
+  , dirForConfig :: String
+  , enableDiagnostics } deriving (Show, Data, Typeable)
 
 boloArgs :: BoloArgs
-boloArgs = BoloArgs { transactions = 12000, batchSize = 3000, cmdFile = ""
-                    , noRunServer = False, configFile = "client.yaml"
-                    , dirForConfig = "executables/bolosim/conf/" }
+boloArgs = BoloArgs
+  { transactions = 12000 &= name "t" &= help "Number of transactions to run"
+  , batchSize = 3000 &= name "b" &= name "batchsize" &= help "Number of transactions in each batch"
+  , cmdFile = "" &= name "c" &= name "cmdfile" &= help "File with templated Pact command"
+  , noRunServer = False &= name "n" &= name "norunserver" &= help "Flag specifying this exe should not launch Kadena server instances"
+  , configFile = "client.yaml" &= name "c" &= name "configfile" &= help "Kadena config file"
+  , dirForConfig = "executables/bolosim/conf/" &= name "d" &= name "dirForConfig" &= help "Location of config files" 
+  , enableDiagnostics = False &= name "e" &= name "enablediagnostics" &= help "Enable diagnostic exceptions" }
 
 startupStuff :: BoloArgs -> IO ()
 startupStuff theArgs = do

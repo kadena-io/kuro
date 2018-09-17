@@ -5,7 +5,7 @@ module Kadena.Config.TMVar
   ( Config(..), clusterMembers, nodeId, publicKeys, adminKeys, myPrivateKey, myPublicKey
   , electionTimeoutRange, heartbeatTimeout, enableDebug, apiPort, entity, logDir, enablePersistence
   , pactPersist, aeBatchSize, preProcThreadCount, preProcUsePar, inMemTxCache, hostStaticDir
-  , nodeClass, logRules
+  , nodeClass, logRules, enableDiagnostics
   , checkVoteQuorum
   , initGlobalConfigTMVar
   , GlobalConfig(..), gcVersion, gcConfig
@@ -49,6 +49,7 @@ data Config = Config
   , _hostStaticDir        :: !Bool
   , _nodeClass            :: !NodeClass
   , _logRules             :: !LogRules
+  , _enableDiagnostics    :: !Bool
   }
   deriving (Show, Generic)
 makeLenses ''Config

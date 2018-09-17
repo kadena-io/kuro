@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE CPP #-}
 
@@ -48,10 +49,13 @@ import Kadena.Types.Turbine (ReceiverEnv(..))
 data Options = Options
   {  optConfigFile :: FilePath
    , optDisablePersistence :: Bool
+   , optEnableDiagnostics :: Bool
   } deriving Show
 
 defaultOptions :: Options
-defaultOptions = Options { optConfigFile = "", optDisablePersistence = False}
+defaultOptions = Options { optConfigFile = ""
+                         , optDisablePersistence = False
+                         , optEnableDiagnostics = False }
 
 options :: [OptDescr (Options -> Options)]
 options =
@@ -63,6 +67,10 @@ options =
            ["disablePersistence"]
            (OptArg (\_ opts -> opts { optDisablePersistence = True }) "DISABLE_PERSISTENCE" )
             "Disable Persistence (run entirely in memory)"
+  , Option ['e']
+           ["enableDiagnostics"]
+           (NoArg (\opts -> opts {optEnableDiagnostics = True }))
+           "Enable diagnositc excpetions to be thrown"
   ]
 
 getConfig :: IO Config
@@ -76,9 +84,25 @@ getConfig = do
         Left err -> putStrLn (Y.prettyPrintParseException err) >> exitFailure
         Right conf' -> return $ conf'
           { _enablePersistence = not $ optDisablePersistence opts
+          , _electionTimeoutRange = timeoutRange conf'  
           }
     (_,_,errs)     -> mapM_ putStrLn errs >> exitFailure
 
+
+-- | Use a long election timeout if diagnostics are enabled (since an exception will be thrown
+--   on election timeout)
+timeoutRange :: Config -> (Int, Int)
+timeoutRange Config{..} =
+  if _enableDiagnostics
+    then
+      let hb = _heartbeatTimeout
+          longHb = 5 * hb
+          minTime = 5 * longHb
+          maxTime = minTime + (longHb * ( CM.countOthers _clusterMembers + 1))
+      in (minTime, maxTime )
+    else _electionTimeoutRange 
+  
+  
 showDebug :: TimedFastLogger -> String -> IO ()
 showDebug fs m = fs (\t -> toLogStr t <> " " <> toLogStr (BSC.pack m) <> "\n")
 

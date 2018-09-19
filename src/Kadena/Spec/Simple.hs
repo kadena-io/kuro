@@ -24,7 +24,6 @@ import qualified Data.ByteString.Char8 as BSC
 import qualified Data.Set as Set
 import qualified Data.Yaml as Y
 import qualified Data.Text.IO as T
-import Debug.Trace
 
 import System.Console.GetOpt
 import System.Environment
@@ -85,24 +84,9 @@ getConfig = do
         Left err -> putStrLn (Y.prettyPrintParseException err) >> exitFailure
         Right conf' -> return $ conf'
           { _enablePersistence = not $ optDisablePersistence opts
-          , _electionTimeoutRange = timeoutRange conf' (optEnableDiagnostics opts) 
+          , _enableDiagnostics = optEnableDiagnostics opts
           }
     (_,_,errs)     -> mapM_ putStrLn errs >> exitFailure
-
-
--- | Use a long election timeout if diagnostics are enabled (since an exception will be thrown
---   on election timeout)
-timeoutRange :: Config -> Bool -> (Int, Int)
-timeoutRange Config{..} enableDiagnosticsFlag =
-  -- case enableDiagnosticsFlag of
-  case False of
-    False -> trace ("leaving original range: " ++ show _electionTimeoutRange) _electionTimeoutRange
-    True ->
-      let hb = _heartbeatTimeout
-          longHb = 5 * hb
-          minTime = 5 * longHb
-          maxTime = minTime + (longHb * ( CM.countOthers _clusterMembers + 1))
-      in trace ("timeoutRange set to: " ++ show (minTime, maxTime)) (minTime, maxTime) 
 
 showDebug :: TimedFastLogger -> String -> IO ()
 showDebug fs m = fs (\t -> toLogStr t <> " " <> toLogStr (BSC.pack m) <> "\n")

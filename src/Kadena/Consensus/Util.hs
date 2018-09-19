@@ -39,7 +39,6 @@ import Data.HashSet (HashSet)
 import Data.Set (Set)
 import Data.Map.Strict (Map)
 import Data.Thyme.Clock
-import Debug.Trace 
 import qualified System.Random as R
 
 import qualified Kadena.Config.ClusterMembership as CM
@@ -49,6 +48,7 @@ import qualified Kadena.Types.Sender as Sender
 import qualified Kadena.Log.Types as Log
 import qualified Kadena.Types.Log as Log
 import qualified Kadena.Types.History as History
+import Kadena.Util.Util
 
 getNewElectionTimeout :: Consensus Int
 getNewElectionTimeout = do
@@ -60,12 +60,17 @@ resetElectionTimer = do
   debug $ "Reset Election Timeout: " ++ show (timeout `div` 1000) ++ "ms"
   setTimedEvent (ElectionTimeout $ show (timeout `div` 1000) ++ "ms") timeout
 
--- | If a leader hasn't heard from a follower in longer than 2x max election timeouts, he should step down.
+-- | If a leader hasn't heard from a follower in longer than 2x max election timeouts, he should
+--   step down.
 hasElectionTimerLeaderFired :: Consensus Bool
 hasElectionTimerLeaderFired = do
   maxTimeout <- ((*2) . snd) <$> viewConfig electionTimeoutRange
   timeSinceLastAER' <- use csTimeSinceLastAER
-  return $ timeSinceLastAER' >= maxTimeout
+  let leaderTimeout = timeSinceLastAER' >= maxTimeout
+  theConfig <- readConfig
+  when leaderTimeout $
+    throwDiagnostics (_enableDiagnostics theConfig) "The leader has timed out"
+  return leaderTimeout
 
 resetElectionTimerLeader :: Consensus ()
 resetElectionTimerLeader = csTimeSinceLastAER .= 0
@@ -92,9 +97,9 @@ setTimedEvent e t = do
 
 becomeFollower :: Consensus ()
 becomeFollower = do
-  tebug "becoming follower"
+  debug "becoming follower"
   setRole Follower
-  trace "becomeFollower - calling resetElectionTimer" resetElectionTimer
+  resetElectionTimer
 
 queryLogs :: Set Log.AtomicQuery -> Consensus (Map Log.AtomicQuery Log.QueryResult)
 queryLogs q = do
@@ -117,16 +122,6 @@ debug s = do
     Follower -> liftIO $! dbg $! "[Kadena|\ESC[0;32mFOLLOWER\ESC[0m]: " ++ s
     Candidate -> liftIO $! dbg $! "[Kadena|\ESC[1;33mCANDIDATE\ESC[0m]: " ++ s
   
-tebug :: String -> Consensus ()
-tebug s = do
-  dbg <- view (rs.debugPrint)
-  role' <- use csNodeRole
-  let str = case role' of
-        Leader -> "[Kadena|\ESC[0;34mLEADER\ESC[0m]: " ++ s
-        Follower -> "[Kadena|\ESC[0;32mFOLLOWER\ESC[0m]: " ++ s
-        Candidate -> "[Kadena|\ESC[1;33mCANDIDATE\ESC[0m]: " ++ s
-  trace (str) $ liftIO $! dbg $! str
-
 randomRIO :: R.Random a => (a,a) -> Consensus a
 randomRIO rng = view (rs.random) >>= \f -> liftIO $! f rng -- R.randomRIO
 

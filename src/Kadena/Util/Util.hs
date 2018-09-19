@@ -1,9 +1,11 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Kadena.Util.Util
-  ( TrackedError(..)
+  ( DiagnosticException(..)
+  , TrackedError(..)
   , awsDashVar
   , catchAndRethrow
   , fromMaybeM
@@ -11,6 +13,7 @@ module Kadena.Util.Util
   , linkAsyncTrack
   , linkAsyncBoundTrack
   , seqIndex
+  , throwDiagnostics
   ) where
 
 import Control.Concurrent (forkFinally, putMVar, takeMVar, newEmptyMVar, forkIO)
@@ -18,6 +21,7 @@ import Control.Concurrent.Async
 import Control.Monad
 import Control.Monad.Catch
 import Data.List (intersperse)
+import Data.String (IsString)
 import Data.Typeable
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
@@ -77,3 +81,13 @@ linkAsyncTrack loc fn = link =<< (async $ catchAndRethrow loc fn)
 
 linkAsyncBoundTrack :: String -> IO a -> IO ()
 linkAsyncBoundTrack loc fn = link =<< (asyncBound $ catchAndRethrow loc fn)
+
+throwDiagnostics :: MonadThrow m => Bool -> String -> m ()
+throwDiagnostics diagnostics str = do
+  if diagnostics
+    then throwM $ DiagnosticException str
+    else return ()
+
+newtype DiagnosticException = DiagnosticException String
+  deriving (Eq,Show,Ord,IsString)
+instance Exception DiagnosticException

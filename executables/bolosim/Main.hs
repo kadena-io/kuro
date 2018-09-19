@@ -55,8 +55,6 @@ startupStuff theArgs = do
   when (runServer theArgs) $ do
     delBoloTempFiles
     runServers' (boloServerArgs theArgs)
-    -- putStrLn "Servers are running, sleeping for a few seconds"
-    -- _ <- sleep 3
     putStrLn $ "Waiting for confirmation that cluster size == 4..."
     _ <- waitForMetric testMetricSize4
     return ()

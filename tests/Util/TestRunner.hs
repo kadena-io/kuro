@@ -101,6 +101,7 @@ runServers = runServers' serverArgs
 
 runServers' :: [String] -> IO ()
 runServers' svrArgList = do
+  sleep 1
   mapM_ runServer svrArgList
 
 -- | Returns an IO action that kills the thread.

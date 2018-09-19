@@ -11,7 +11,6 @@ import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer.Strict
 import Data.Set as Set
-import Debug.Trace
 
 import qualified Kadena.Config.ClusterMembership as CM
 import qualified Kadena.Config.TMVar as TMV
@@ -142,4 +141,4 @@ revertToLastQuorumState = do
   csYesVotes .= Set.empty
   csPotentialVotes .= Set.empty
   view KD.informEvidenceServiceOfElection >>= liftIO
-  trace "revertToLastQuorumState - calling resetElectionTimer" resetElectionTimer
+  resetElectionTimer

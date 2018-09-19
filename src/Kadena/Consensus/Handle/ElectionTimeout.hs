@@ -19,6 +19,7 @@ import Control.Monad.Writer
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.String (IsString)
+import Debug.Trace
 
 import Kadena.Config.ClusterMembership
 import qualified Kadena.Config.TMVar as TMV
@@ -86,12 +87,6 @@ handleElectionTimeout s = do
               Nothing -> becomeCandidate
        else return AlreadyLeader
 
-
-{-
-class Monad m => MonadThrow m where
-
-throwM :: Exception e => e -> m a 
--}
 
 -- MLN: TODO - find the right home for this
 throwDiagnostics :: MonadThrow m => Bool -> String -> m ()
@@ -164,7 +159,8 @@ handle msg = do
       csInvalidCandidateResults .= Just (InvalidCandidateResults sigForRV Set.empty)
       enqueueRequest $ Sender.BroadcastRV rv
       view KD.informEvidenceServiceOfElection >>= liftIO
-      resetElectionTimer
+      trace "handle in electionTimeout.hs, case BecomeCandidate -- calling resetElectionTimer" $
+        resetElectionTimer
 
 castLazyVote :: Term -> NodeId -> KD.Consensus ()
 castLazyVote lazyTerm' lazyCandidate' = do

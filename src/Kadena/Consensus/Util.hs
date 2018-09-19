@@ -39,6 +39,7 @@ import Data.HashSet (HashSet)
 import Data.Set (Set)
 import Data.Map.Strict (Map)
 import Data.Thyme.Clock
+import Debug.Trace 
 import qualified System.Random as R
 
 import qualified Kadena.Config.ClusterMembership as CM
@@ -50,8 +51,9 @@ import qualified Kadena.Types.Log as Log
 import qualified Kadena.Types.History as History
 
 getNewElectionTimeout :: Consensus Int
-getNewElectionTimeout = viewConfig electionTimeoutRange >>= randomRIO
-
+getNewElectionTimeout = do
+  viewConfig electionTimeoutRange >>= randomRIO
+  
 resetElectionTimer :: Consensus ()
 resetElectionTimer = do
   timeout <- getNewElectionTimeout
@@ -90,9 +92,9 @@ setTimedEvent e t = do
 
 becomeFollower :: Consensus ()
 becomeFollower = do
-  debug "becoming follower"
+  tebug "becoming follower"
   setRole Follower
-  resetElectionTimer
+  trace "becomeFollower - calling resetElectionTimer" resetElectionTimer
 
 queryLogs :: Set Log.AtomicQuery -> Consensus (Map Log.AtomicQuery Log.QueryResult)
 queryLogs q = do
@@ -114,6 +116,16 @@ debug s = do
     Leader -> liftIO $! dbg $! "[Kadena|\ESC[0;34mLEADER\ESC[0m]: " ++ s
     Follower -> liftIO $! dbg $! "[Kadena|\ESC[0;32mFOLLOWER\ESC[0m]: " ++ s
     Candidate -> liftIO $! dbg $! "[Kadena|\ESC[1;33mCANDIDATE\ESC[0m]: " ++ s
+  
+tebug :: String -> Consensus ()
+tebug s = do
+  dbg <- view (rs.debugPrint)
+  role' <- use csNodeRole
+  let str = case role' of
+        Leader -> "[Kadena|\ESC[0;34mLEADER\ESC[0m]: " ++ s
+        Follower -> "[Kadena|\ESC[0;32mFOLLOWER\ESC[0m]: " ++ s
+        Candidate -> "[Kadena|\ESC[1;33mCANDIDATE\ESC[0m]: " ++ s
+  trace (str) $ liftIO $! dbg $! str
 
 randomRIO :: R.Random a => (a,a) -> Consensus a
 randomRIO rng = view (rs.random) >>= \f -> liftIO $! f rng -- R.randomRIO

@@ -11,6 +11,7 @@ import Control.Lens
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer
+import Debug.Trace
 
 import Kadena.Types
 import qualified Kadena.Config.TMVar as TMV
@@ -29,7 +30,7 @@ data HeartbeatTimeoutOut = IsLeader | NotLeader | NoFollowers
 
 handleHeartbeatTimeout :: (MonadReader HeartbeatTimeoutEnv m, MonadWriter [String] m) => String -> m HeartbeatTimeoutOut
 handleHeartbeatTimeout s = do
-  tell ["heartbeat timeout: " ++ s]
+  trace ("heartbeat timeout: " ++ s) (tell ["heartbeat timeout: " ++ s])
   role' <- view nodeRole
   leaderWithoutFollowers' <- view leaderWithoutFollowers
   case role' of

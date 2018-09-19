@@ -37,13 +37,14 @@ data BoloArgs = BoloArgs
   , noRunServer :: Bool
   , configFile :: String
   , dirForConfig :: String
-  , enableDiagnostics } deriving (Show, Data, Typeable)
+  , enableDiagnostics :: Bool }
+  deriving (Show, Data, Typeable)
 
 boloArgs :: BoloArgs
 boloArgs = BoloArgs
   { transactions = 12000 &= name "t" &= help "Number of transactions to run"
   , batchSize = 3000 &= name "b" &= name "batchsize" &= help "Number of transactions in each batch"
-  , cmdFile = "" &= name "c" &= name "cmdfile" &= help "File with templated Pact command"
+  , cmdFile = "" &= name "p" &= name "cmdfile" &= help "File with templated Pact command"
   , noRunServer = False &= name "n" &= name "norunserver" &= help "Flag specifying this exe should not launch Kadena server instances"
   , configFile = "client.yaml" &= name "c" &= name "configfile" &= help "Kadena config file"
   , dirForConfig = "executables/bolosim/conf/" &= name "d" &= name "dirForConfig" &= help "Location of config files" 
@@ -54,8 +55,8 @@ startupStuff theArgs = do
   when (runServer theArgs) $ do
     delBoloTempFiles
     runServers' (boloServerArgs theArgs)
-    putStrLn "Servers are running, sleeping for a few seconds"
-    _ <- sleep 3
+    -- putStrLn "Servers are running, sleeping for a few seconds"
+    -- _ <- sleep 3
     putStrLn $ "Waiting for confirmation that cluster size == 4..."
     _ <- waitForMetric testMetricSize4
     return ()
@@ -159,10 +160,14 @@ boloServerArgs :: BoloArgs -> [String]
 boloServerArgs theArgs = [boloServerArgs0 theArgs, boloServerArgs1 theArgs, boloServerArgs2 theArgs, boloServerArgs3 theArgs]
 
 boloServerArgs0, boloServerArgs1, boloServerArgs2, boloServerArgs3 :: BoloArgs -> String
-boloServerArgs0 BoloArgs{..} = "-c " ++ dirForConfig ++ "10000-cluster.yaml"
-boloServerArgs1 BoloArgs{..} = "-c " ++ dirForConfig ++ "10001-cluster.yaml"
-boloServerArgs2 BoloArgs{..} = "-c " ++ dirForConfig ++ "10002-cluster.yaml"
-boloServerArgs3 BoloArgs{..} = "-c " ++ dirForConfig ++ "10003-cluster.yaml"
+boloServerArgs0 a@BoloArgs{..} = "-c " ++ dirForConfig ++ "10000-cluster.yaml" ++ diagnostics a
+boloServerArgs1 a@BoloArgs{..} = "-c " ++ dirForConfig ++ "10001-cluster.yaml" ++ diagnostics a
+boloServerArgs2 a@BoloArgs{..} = "-c " ++ dirForConfig ++ "10002-cluster.yaml" ++ diagnostics a
+boloServerArgs3 a@BoloArgs{..} = "-c " ++ dirForConfig ++ "10003-cluster.yaml" ++ diagnostics a
+
+diagnostics :: BoloArgs -> String
+diagnostics BoloArgs{..} =
+  if enableDiagnostics then " --enableDiagnostics" else ""
 
 initialRequests :: [TestRequest]
 initialRequests = [initAccounts, initOrders, createAcctTbl, createOrdersTbl]

@@ -9,6 +9,7 @@ import Control.Monad
 
 import qualified Data.Set as Set
 import Data.Thyme.Clock (UTCTime)
+import Debug.Trace
 
 import qualified Kadena.Config.ClusterMembership as CM
 import Kadena.Config.TMVar
@@ -162,5 +163,5 @@ kadena = do
   la <- Log.hasQueryResult Log.LastApplied <$> queryLogs (Set.singleton Log.GetLastApplied)
   when (startIndex /= la) $ debug $ "Launch Sequence: disk sync replayed, Commit Index now " ++ show la
   logStaticMetrics
-  resetElectionTimer
+  trace "kadena :: Consensus -- calling resetElectionTimer" resetElectionTimer
   handleEvents

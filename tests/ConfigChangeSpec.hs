@@ -25,7 +25,7 @@ startupStuff = do
   delTempFiles
   runServers
   putStrLn "Servers are running, sleeping for a few seconds"
-  _ <- sleep 3
+  -- _ <- sleep 3
   return ()
 
 spec :: Spec

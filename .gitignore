@@ -42,6 +42,8 @@ stuff.json
 /.dir-locals.el
 /TAGS
 /tags/
+/ctags
+/th
 CabalInspector.hs
 .stylish-haskell.yaml
 DASBIGPrettytestrun.json

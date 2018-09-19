@@ -68,7 +68,8 @@ import System.Console.GetOpt
 import System.Environment
 import System.Exit hiding (die)
 import System.IO
-
+import System.Time.Extra
+  
 import Text.Trifecta as TF hiding (err, rendered, try)
 
 import Kadena.Command
@@ -98,8 +99,8 @@ coptions =
            "Configuration File"
   ]
 
-maxRetries, timeoutSeconds :: Int
-maxRetries = 20
+--MLN replace original 30, allow longer when running diagnostics mode
+timeoutSeconds :: Int
 timeoutSeconds = 300
 
 data Node = Node
@@ -217,6 +218,7 @@ mkExec code mdata addy = do
     (T.pack $ show rid)
     (Exec (ExecMsg (T.pack code) mdata))
 
+{-
 postAPI :: (ToJSON req,FromJSON (ApiResponse t))
         => String -> req -> Repl (Response (ApiResponse t))
 postAPI ep rq = postAPI' ep rq maxRetries
@@ -228,7 +230,15 @@ postAPI' ep rq retryMax = do
   use echo >>= \e -> when e $ putJSON rq
   s <- getServer
   liftIO $ postSpecifyServerAPI' ep s rq retryMax
+-}
+postAPI :: (ToJSON req,FromJSON (ApiResponse t))
+         => String -> req -> Repl (Response (ApiResponse t))
+postAPI ep rq = do
+  use echo >>= \e -> when e $ putJSON rq
+  s <- getServer
+  liftIO $ postSpecifyServerAPI ep s rq
 
+{-
 postSpecifyServerAPI :: (ToJSON req,FromJSON (ApiResponse t))
                      => String -> String -> req -> IO (Response (ApiResponse t))
 postSpecifyServerAPI ep server' rq = postSpecifyServerAPI' ep server' rq maxRetries
@@ -255,6 +265,27 @@ postSpecifyServerAPI' ep server' rq retryMax = loop retryMax where
         when (retryMax /= retryCount) $
           flushStrLn $  "(succeeded with " ++ show (retryMax - retryCount) ++ " retries)"
         return resp
+-}
+
+postSpecifyServerAPI :: (ToJSON req,FromJSON (ApiResponse t))
+                      => String -> String -> req -> IO (Response (ApiResponse t))
+postSpecifyServerAPI ep server' rq = do
+  -- timeout :: Seconds -> IO a -> IO (Maybe a) 
+  t <- timeout (fromIntegral timeoutSeconds) loop
+  case t of
+    Nothing -> die "postServerApi - timeout: no successful response received"
+    Just x -> return x
+  where
+    loop :: (FromJSON (ApiResponse t)) => IO (Response (ApiResponse t))
+    loop = do
+      let url = "http://" ++ server' ++ "/api/v1/" ++ ep
+      let opts = defaults & manager .~ Left (defaultManagerSettings
+            { managerResponseTimeout = responseTimeoutMicro (timeoutSeconds * 1000000) } )
+      r <- liftIO $ postWith opts url (toJSON rq)
+      resp <- asJSON r 
+      case resp ^. responseBody of
+        ApiFailure{..} -> loop 
+        ApiSuccess{..} -> return resp
 
 handleResp :: (t -> Repl ()) -> Response (ApiResponse t) -> Repl ()
 handleResp a r =
@@ -285,7 +316,7 @@ sendMultiple templateCmd replCmd startCount nRepeats  = do
   j <- use cmdData
   let cmds = replaceCounters startCount nRepeats templateCmd
   xs <- sequence $ fmap (\cmd -> mkExec cmd j Nothing) cmds
-  resp <- postAPI' "send" (SubmitBatch xs) maxRetries 
+  resp <- postAPI "send" (SubmitBatch xs) 
   tellKeys resp replCmd
   handleResp handleBatchResp resp 
 

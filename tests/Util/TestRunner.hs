@@ -17,32 +17,32 @@ module Util.TestRunner
   , TestResponse(..)
   , TestResult(..)) where
 
-import Apps.Kadena.Client
+import           Apps.Kadena.Client
 import qualified Apps.Kadena.Server as App
-import Control.Concurrent
-import Control.Lens
-import Control.Monad
-import Control.Monad.Trans.RWS.Lazy
-import Data.Aeson hiding (Success)
+import           Control.Concurrent
+import           Control.Lens
+import           Control.Monad
+import           Control.Monad.Trans.RWS.Lazy
+import           Data.Aeson hiding (Success)
 import qualified Data.ByteString.Lazy.Char8 as C8
-import Data.Default
-import Data.Int
-import Data.List
-import Data.List.Extra
+import           Data.Default
 import qualified Data.HashMap.Strict as HM
+import           Data.Int
+import           Data.List
+import           Data.List.Extra
 import qualified Data.Text as T
 import qualified Data.Yaml as Y
-import GHC.Generics (Generic)
-import Network.Wreq
+import           GHC.Generics (Generic)
+import           Network.Wreq
 import qualified Network.Wreq as WR (getWith)
-import Pact.ApiReq
-import Pact.Types.API
-import System.Command
-import System.Console.GetOpt
-import System.Environment
-import System.Time.Extra
-import Test.Hspec
-import Text.Trifecta (ErrInfo(..), parseString, Result(..))
+import           Pact.ApiReq
+import           Pact.Types.API
+import           System.Command
+import           System.Console.GetOpt
+import           System.Environment
+import           System.Time.Extra
+import           Test.Hspec
+import           Text.Trifecta (ErrInfo(..), parseString, Result(..))
 
 testDir, testConfDir, _testLogDir :: String
 testDir = "test-files/"
@@ -77,6 +77,7 @@ data TestResult = TestResult
   , responseTr :: Maybe TestResponse
   } deriving Show
 
+-- TODO Make `metricNameTm` a path type from `paths`
 data TestMetric = TestMetric
   { metricNameTm :: String
   , evalTm :: String -> Bool
@@ -214,12 +215,13 @@ gatherMetric :: TestMetric -> IO TestMetricResult
 gatherMetric tm = do
     let name = metricNameTm tm
     value <- getMetric name
-    return $ TestMetricResult { requestTmr = tm, valueTmr = value}
+    return $ TestMetricResult { requestTmr = tm, valueTmr = Just value}
 
-getMetric :: String -> IO (Maybe String)
+-- TODO Use `lens-aeson` to grab the correct `val`
+getMetric :: String -> IO String
 getMetric path = do
   let opts = defaults & header "Accept" .~ ["application/json"]
-  rbs <- WR.getWith opts ("http://0.0.0.0:10080" ++ path)
+  rbs <- WR.getWith opts $ "http://0.0.0.0:10080" ++ path
   let str = C8.unpack $ rbs ^. responseBody
-  let val = takeWhile (/= '}') $ takeWhileEnd (/= ':') str
-  return $ Just val
+      val = takeWhile (/= '}') $ takeWhileEnd (/= ':') str
+  pure val

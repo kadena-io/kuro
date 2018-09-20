@@ -19,6 +19,7 @@ import qualified Kadena.Types.Log as Log
 import qualified Kadena.Types as KD
 import Kadena.Types
 import Kadena.Consensus.Util
+import Kadena.Util.Util
 
 data RequestVoteResponseEnv = RequestVoteResponseEnv {
       _myNodeId :: NodeId
@@ -131,6 +132,8 @@ becomeLeader = do
 
 revertToLastQuorumState :: KD.Consensus ()
 revertToLastQuorumState = do
+  theCfg <- readConfig
+  throwDiagnostics (TMV._enableDiagnostics theCfg) "revertToLastQuorumState called" 
   setRole Follower
   setCurrentLeader Nothing
   csIgnoreLeader .= False

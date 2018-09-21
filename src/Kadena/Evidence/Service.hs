@@ -207,8 +207,9 @@ updateLogs q = do
 
 debug :: String -> EvidenceService EvidenceState ()
 debug s = do
-  debugFn' <- view debugFn
-  liftIO $ debugFn' $ "[Service|Evidence]: " ++ s
+  when (not (null s)) $ do
+    debugFn' <- view debugFn
+    liftIO $ debugFn' $ "[Service|Evidence]: " ++ s
 
 garbageCollectCache :: EvidenceState -> EvidenceState
 garbageCollectCache es =

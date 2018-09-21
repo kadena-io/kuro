@@ -95,8 +95,9 @@ runExecutionService env pub nodeId' keySet' = do
 
 debug :: String -> ExecutionService ()
 debug s = do
-  dbg <- view eenvDebugPrint
-  liftIO $! dbg $ "[Service|Execution] " ++ s
+  when (not (null s)) $ do
+    dbg <- view eenvDebugPrint
+    liftIO $! dbg $ "[Service|Execution] " ++ s
 
 now :: ExecutionService UTCTime
 now = view eenvGetTimestamp >>= liftIO

@@ -169,8 +169,9 @@ queryLogs q = do
 
 debug :: String -> SenderService StateSnapshot ()
 debug s = do
-  dbg <- view debugPrint
-  liftIO $ dbg $ "[Service|Sender] " ++ s
+  when (not (null s)) $ do
+    dbg <- view debugPrint
+    liftIO $ dbg $ "[Service|Sender] " ++ s
 
 -- views state, but does not update
 sendAllRequestVotes :: RequestVote -> SenderService StateSnapshot ()

@@ -78,7 +78,6 @@ resetElectionTimerLeader = csTimeSinceLastAER .= 0
 resetHeartbeatTimer :: Consensus ()
 resetHeartbeatTimer = do
   timeout <- viewConfig heartbeatTimeout
-  debug $ "Reset Heartbeat Timeout: " ++ show (timeout `div` 1000) ++ "ms"
   setTimedEvent (HeartbeatTimeout $ show (timeout `div` 1000) ++ "ms") timeout
 
 cancelTimer :: Consensus ()
@@ -115,12 +114,13 @@ updateLogs q = do
 
 debug :: String -> Consensus ()
 debug s = do
-  dbg <- view (rs.debugPrint)
-  role' <- use csNodeRole
-  case role' of
-    Leader -> liftIO $! dbg $! "[Kadena|\ESC[0;34mLEADER\ESC[0m]: " ++ s
-    Follower -> liftIO $! dbg $! "[Kadena|\ESC[0;32mFOLLOWER\ESC[0m]: " ++ s
-    Candidate -> liftIO $! dbg $! "[Kadena|\ESC[1;33mCANDIDATE\ESC[0m]: " ++ s
+  when (not (null s)) $ do
+    dbg <- view (rs.debugPrint)
+    role' <- use csNodeRole
+    case role' of
+      Leader -> liftIO $! dbg $! "[Kadena|\ESC[0;34mLEADER\ESC[0m]: " ++ s
+      Follower -> liftIO $! dbg $! "[Kadena|\ESC[0;32mFOLLOWER\ESC[0m]: " ++ s
+      Candidate -> liftIO $! dbg $! "[Kadena|\ESC[1;33mCANDIDATE\ESC[0m]: " ++ s
   
 randomRIO :: R.Random a => (a,a) -> Consensus a
 randomRIO rng = view (rs.random) >>= \f -> liftIO $! f rng -- R.randomRIO

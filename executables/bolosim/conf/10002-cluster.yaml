@@ -20,6 +20,11 @@ logRules:
     enable: null
     exclude:
     - DEBUG
+  PactPersist:
+    include: null
+    enable: null
+    exclude:
+    - DEBUG
 preProcThreadCount: 10
 hostStaticDir: true
 electionTimeoutRange:

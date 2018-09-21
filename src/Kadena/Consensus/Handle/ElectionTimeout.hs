@@ -9,6 +9,7 @@ module Kadena.Consensus.Handle.ElectionTimeout
     where
 
 import Control.Lens
+import Control.Monad
 import Control.Monad.Catch (MonadThrow)
 import Control.Monad.Reader
 import Control.Monad.State
@@ -24,6 +25,7 @@ import qualified Kadena.Types.Sender as Sender (ServiceRequest(..))
 import qualified Kadena.Types.Log as Log
 import Kadena.Consensus.Util
 import qualified Kadena.Types as KD
+import Kadena.Util.Util
 
 data ElectionTimeoutEnv = ElectionTimeoutEnv {
       _nodeRole :: Role
@@ -110,6 +112,9 @@ handle msg = do
   c <- KD.readConfig
   s <- get
   leaderWithoutFollowers' <- hasElectionTimerLeaderFired
+  Term t <- use csTerm
+  when (t > 0) $ do
+    liftIO (throwDiagnostics (TMV._enableDiagnostics c) "Election timeout has occurred")
   (out,l) <- runReaderT (runWriterT (handleElectionTimeout msg)) $
              ElectionTimeoutEnv
              (_csNodeRole s)

@@ -17,10 +17,10 @@ info:
     host: '127.0.0.1'
     port: 10003
   addedNodes:
-  - alias: node0
-    fullAddr: tcp://127.0.0.1:10000
+  - alias: node3
+    fullAddr: tcp://127.0.0.1:10003
     host: '127.0.0.1'
-    port: 10000
+    port: 10003
   removedNodes: []
   state: Transitional
 keyPairs:

@@ -48,7 +48,7 @@ testClusterCommands = do
     assertEither $ getMetricResult m123
 
   it "Config change test #1 - Dropping node02:" $ do
-    ccResults1 <- runClientCommands clientArgs ccTest0123to013
+    ccResults1 <- runClientCommands clientArgs [cfg0123to013]
     checkResults ccResults1
 
   it "Metric test - waiting for cluster size == 3..." $ do
@@ -62,18 +62,12 @@ testClusterCommands = do
 
   it "Runing post config change #1 commands:" $ do
     sleep 3
-    results2 <- runClientCommands clientArgs testRequestsRepeated
-    checkResults results2
-
-  {-
-  putStrLn "Config change test#2 - adding back node02:"
-  ccResults1b <- runClientCommands clientArgs ccTest013to0123
-  checkResults ccResults1b
-  -}
+    results1b <- runClientCommands clientArgs testRequestsRepeated
+    checkResults results1b
 
   it "Config change test #2 - Dropping node3, adding node2" $ do
     sleep 3
-    ccResults2 <- runClientCommands clientArgs ccTest013to012
+    ccResults2 <- runClientCommands clientArgs [cfg013to012]
     checkResults ccResults2
 
   it "Metric test - waiting for the set {node0, node1, node2}..." $ do
@@ -82,8 +76,22 @@ testClusterCommands = do
 
   it "Runing post config change #2 commands:" $ do
     sleep 3
-    results3 <- runClientCommands clientArgs testRequestsRepeated
-    checkResults results3
+    results2b <- runClientCommands clientArgs testRequestsRepeated
+    checkResults results2b
+
+  it "Config change test #3 - adding back node3" $ do
+    sleep 3
+    ccResults3 <- runClientCommands clientArgs [cfg012to0123] 
+    checkResults ccResults3
+
+  it "Metric test - waiting for cluster size == 4..." $ do
+    okSize4b <- waitForMetric testMetricSize4
+    okSize4b `shouldBe` True
+
+  it "Runing post config change #3 commands:" $ do
+    sleep 3
+    results3b <- runClientCommands clientArgs testRequestsRepeated
+    checkResults results3b
 
 clientArgs :: [String]
 clientArgs = words $ "-c " ++ testConfDir ++ "client.yaml"
@@ -192,18 +200,6 @@ testRequests :: [TestRequest]
 --testRequests = [testReq1, testReq2, testReq3, testReq4, testReq5]
 testRequests = [testReq1, testReq2, testReq3] -- , testReq4]
 
-_ccTestRequests0 :: [TestRequest]
-_ccTestRequests0 = [_testCfgChange0]
-
-ccTest0123to013 :: [TestRequest]
-ccTest0123to013 = [cfg0123to013]
-
-ccTest013to0123 :: [TestRequest]
-ccTest013to0123 = [cfg013to0123]
-
-ccTest013to012:: [TestRequest]
-ccTest013to012 = [cfg013to012]
-
 -- tests that can be repeated
 -- TODO ditto for `testReq4` here.
 testRequestsRepeated :: [TestRequest]
@@ -273,6 +269,13 @@ cfg013to012 = TestRequest
   , eval = checkCCSuccess
   , displayStr = "Adds back node2 and removes node3 from the cluster" }
 
+cfg012to0123 :: TestRequest
+cfg012to0123 = TestRequest
+  { cmd = "configChange test-files/conf/config-change-03.yaml"
+  , matchCmd = "test-files/conf/config-change-03.yaml"
+  , eval = checkCCSuccess
+  , displayStr = "Replaces node3 back into the cluster" }
+  
 testMetricSize4 :: TestMetric
 testMetricSize4 = TestMetric
   { metricNameTm = "/kadena/cluster/size"

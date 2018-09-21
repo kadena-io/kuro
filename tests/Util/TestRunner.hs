@@ -6,6 +6,7 @@
 module Util.TestRunner
   ( delTempFiles
   , gatherMetric
+  , gatherMetric'
   , testDir
   , testConfDir
   , runClientCommands
@@ -212,16 +213,20 @@ simpleRunREPL (x:xs) = do
       simpleRunREPL xs
 
 gatherMetric :: TestMetric -> IO TestMetricResult
-gatherMetric tm = do
+gatherMetric tm = gatherMetric' tm 0
+
+-- Version of gatherMetric that takes a node number (0-3) as additional param
+gatherMetric' :: TestMetric -> Int -> IO TestMetricResult
+gatherMetric' tm node = do
     let name = metricNameTm tm
-    value <- getMetric name
+    value <- getMetric name node
     return $ TestMetricResult { requestTmr = tm, valueTmr = Just value}
 
--- TODO Use `lens-aeson` to grab the correct `val`
-getMetric :: String -> IO String
-getMetric path = do
+getMetric :: String -> Int -> IO String
+getMetric path node = do
   let opts = defaults & header "Accept" .~ ["application/json"]
-  rbs <- WR.getWith opts $ "http://0.0.0.0:10080" ++ path
+  let portStr = show $ (10080 + node)
+  rbs <- WR.getWith opts $ "http://0.0.0.0:" ++ portStr ++ path
   let str = C8.unpack $ rbs ^. responseBody
       val = takeWhile (/= '}') $ takeWhileEnd (/= ':') str
   pure val

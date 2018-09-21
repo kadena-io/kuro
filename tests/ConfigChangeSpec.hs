@@ -81,7 +81,7 @@ testClusterCommands = do
 
   it "Config change test #3 - adding back node3" $ do
     sleep 3
-    ccResults3 <- runClientCommands clientArgs [cfg012to0123] 
+    ccResults3 <- runClientCommands clientArgs [cfg012to0123]
     checkResults ccResults3
 
   it "Metric test - waiting for cluster size == 4..." $ do
@@ -92,6 +92,14 @@ testClusterCommands = do
     sleep 3
     results3b <- runClientCommands clientArgs testRequestsRepeated
     checkResults results3b
+
+  it "Changes the current server to node1:" $ do
+    resultsNode1 <- runClientCommands clientArgs [serverCmd 1]
+    checkResults resultsNode1
+
+  it "Runs test commands from node1:" $ do
+    results3c <- runClientCommands clientArgs testRequestsRepeated
+    checkResults results3c
 
 clientArgs :: [String]
 clientArgs = words $ "-c " ++ testConfDir ++ "client.yaml"
@@ -275,7 +283,15 @@ cfg012to0123 = TestRequest
   , matchCmd = "test-files/conf/config-change-03.yaml"
   , eval = checkCCSuccess
   , displayStr = "Replaces node3 back into the cluster" }
-  
+
+serverCmd :: Int -> TestRequest
+serverCmd n =
+  TestRequest
+  { cmd = "server node" ++ show n
+  , matchCmd = "server node" ++ show n
+  , eval = checkSuccess
+  , displayStr = "Changes the current server that accepts commands" }
+
 testMetricSize4 :: TestMetric
 testMetricSize4 = TestMetric
   { metricNameTm = "/kadena/cluster/size"
@@ -304,11 +320,16 @@ testMetric12 = TestMetric
 -- | Adding `sleep` between failures prevents the metrics server
 -- from being hammered.
 waitForMetric :: TestMetric -> IO Bool
-waitForMetric tm = maybe False (const True) <$> timeout 30 go
+waitForMetric tm = waitForMetric' tm 0
+
+-- Version of waitForMetric that takes node number (0-3) as additional param
+waitForMetric' :: TestMetric -> Int -> IO Bool
+waitForMetric' tm node =
+  maybe False (const True) <$> timeout 30 go
   where
     go :: IO ()
     go = do
-      res <- gatherMetric tm
+      res <- gatherMetric' tm node
       when (isLeft $ getMetricResult res) $ sleep 1 >> go
 
 timeout :: Int -> IO a -> IO (Maybe a)

@@ -8,7 +8,6 @@ module Main
   ) where
 
 import Control.Monad
-import Control.Monad.Catch
 import Data.Either
 import Safe
 import System.Command
@@ -16,7 +15,7 @@ import System.Console.CmdArgs
 import System.Time.Extra
 import Text.Printf
 
-import Apps.Kadena.Client (esc) 
+import Apps.Kadena.Client (esc)
 import Util.TestRunner
 
 main :: IO ()
@@ -47,7 +46,7 @@ boloArgs = BoloArgs
   , cmdFile = "" &= name "p" &= name "cmdfile" &= help "File with templated Pact command"
   , noRunServer = False &= name "n" &= name "norunserver" &= help "Flag specifying this exe should not launch Kadena server instances"
   , configFile = "client.yaml" &= name "c" &= name "configfile" &= help "Kadena config file"
-  , dirForConfig = "executables/bolosim/conf/" &= name "d" &= name "dirForConfig" &= help "Location of config files" 
+  , dirForConfig = "executables/bolosim/conf/" &= name "d" &= name "dirForConfig" &= help "Location of config files"
   , enableDiagnostics = False &= name "e" &= name "enablediagnostics" &= help "Enable diagnostic exceptions" }
 
 startupStuff :: BoloArgs -> IO ()
@@ -62,7 +61,7 @@ startupStuff theArgs = do
 
 -- clean up the double-negative -- since 'noRunServer' makes the most sense as an option ...
 runServer :: BoloArgs -> Bool
-runServer BoloArgs{..} = not noRunServer 
+runServer BoloArgs{..} = not noRunServer
 
 ----------------------------------------------------------------------------------------------------
 -- TODO: After integrating the config change branch with develop, move these to
@@ -78,7 +77,7 @@ waitForMetric tm = do
     go = do
       res <- gatherMetric tm
       when (isLeft $ getMetricResult res) go
-  
+
 getMetricResult :: TestMetricResult -> Either String String
 getMetricResult result =
     case valueStr of
@@ -106,7 +105,7 @@ testMetricSize4 = TestMetric
   { metricNameTm = "/kadena/cluster/size"
   , evalTm = (\s -> readDef (0.0 :: Float) s == 4.0) }
 ----------------------------------------------------------------------------------------------------
-  
+
 delBoloTempFiles :: IO ()
 delBoloTempFiles = do
    let p = shell $ boloDir ++ "deleteFiles.sh"
@@ -122,29 +121,29 @@ runWithBatch theArgs@BoloArgs{..} = do
   -- if a template command file is not supplied, the hard-coded order insert example will be used and
   -- so we must run the related create table commands, etc.
   when (null cmdFile) $ do
-    void $ runClientCommands (clientArgs theArgs) initialRequests 
-  batchCmds theArgs transactions True 
-  
+    void $ runClientCommands (clientArgs theArgs) initialRequests
+  batchCmds theArgs transactions True
+
 batchCmds :: BoloArgs -> Int -> Bool -> IO Bool
 batchCmds _ 0 allOk = return allOk -- all done
 batchCmds theArgs@BoloArgs{..} totalRemaining allOk = do -- do next batch
-  (sec, (ok, nDone, sz)) <- duration $ do 
+  (sec, (ok, nDone, sz)) <- duration $ do
       let thisBatch = min totalRemaining batchSize
       let startNum = transactions - totalRemaining
       let batchReq = createMultiReq cmdFile startNum thisBatch
-      putStrLn $ "batchCmds - multi-request created: " 
+      putStrLn $ "batchCmds - multi-request created: "
             ++ "\n\r" ++ show batchReq
       _res <- runClientCommands (clientArgs theArgs) [batchReq]
       return (True, startNum+thisBatch, thisBatch) -- checkResults res
   let seconds = printf "%.2f" sec :: String
   let tPerSec = printf "%.2f" (fromIntegral sz / sec) :: String
-  putStrLn $ show nDone ++ " completed -- this batch of " ++ show sz ++ " transactions " 
+  putStrLn $ show nDone ++ " completed -- this batch of " ++ show sz ++ " transactions "
               ++ "completed in: " ++ show seconds ++ " seconds "
-              ++ "(" ++ tPerSec ++ " per second)" 
+              ++ "(" ++ tPerSec ++ " per second)"
   batchCmds theArgs (totalRemaining-sz) (allOk && ok)
 
 clientArgs :: BoloArgs -> [String]
-clientArgs BoloArgs{..} = words $ "-c " ++ dirForConfig ++ configFile 
+clientArgs BoloArgs{..} = words $ "-c " ++ dirForConfig ++ configFile
 
 boloDir :: String
 boloDir = "executables/bolosim/"
@@ -182,37 +181,37 @@ initOrders :: TestRequest
 initOrders = TestRequest
   { cmd = "load executables/bolosim/conf/initialize_orders.yml"
   , matchCmd = "executables/bolosim/conf/initialize_orders.yml"
-  , eval = printEval 
+  , eval = printEval
   , displayStr = "Loads the initialize orders yaml file." }
 
 initAccounts :: TestRequest
 initAccounts = TestRequest
   { cmd = "load executables/bolosim/conf/initialize_accounts.yml"
   , matchCmd = "executables/bolosim/conf/initialize_accounts.yml"
-  , eval = printEval 
+  , eval = printEval
   , displayStr = "Loads the initialize accounts yaml file." }
 
 createAcctTbl :: TestRequest
 createAcctTbl = TestRequest
   { cmd = "exec (create-table accounts.accounts)"
   , matchCmd = "exec (create-table accounts.accounts)"
-  , eval = printEval 
+  , eval = printEval
   , displayStr = "Creates the Accounts table" }
 
 createOrdersTbl :: TestRequest
 createOrdersTbl = TestRequest
   { cmd = "exec (create-table orders.orders)"
   , matchCmd = "exec (create-table orders.orders)"
-  , eval = printEval 
+  , eval = printEval
   , displayStr = "Creates the Orders table" }
 
 createMultiReq :: FilePath -> Int -> Int -> TestRequest
 createMultiReq cmdFile startNum numOrders =
   let theCmd = case cmdFile of
-        [] -> "multiple " ++ show startNum ++ " " ++ show numOrders ++ " " ++ orderTemplate  
-        fp -> "loadMultiple " ++ show startNum ++ " " ++ show numOrders ++ " " ++ fp 
+        [] -> "multiple " ++ show startNum ++ " " ++ show numOrders ++ " " ++ orderTemplate
+        fp -> "loadMultiple " ++ show startNum ++ " " ++ show numOrders ++ " " ++ fp
   in TestRequest
-       { cmd = theCmd 
+       { cmd = theCmd
        , matchCmd = "TBD" -- MLN: need to find what the match str format is
        , eval = \_ -> return () -- not used in this sim
        , displayStr = "Creates an a request for multiple commands" }

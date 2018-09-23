@@ -11,9 +11,6 @@
       shell: "ps -ef | grep -v grep | grep -w kadenaserver | awk '{print $2}'"
       register: running
 
-    - debug:
-        msg: Threads "{{ running }}"
-
     - name: Kill Running Threads
       shell: "kill {{ item }}"
       with_items: "{{ running.stdout_lines }}"
@@ -52,7 +49,7 @@
   gather_facts: True
   tasks:
     - shell: ./kadenaserver +RTS -N4 -RTS -c conf-cluster.yaml 2>&1 | tee -a log/node.log && sleep 1
-      async: 1200
+      async: 86400
       poll: 0
       register: active_servers
     - pause:

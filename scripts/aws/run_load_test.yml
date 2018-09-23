@@ -1,10 +1,11 @@
 # Runs the AWS Kadena load test
+- import_playbook: run_servers.yml
 
 - name: Run Load Test
   hosts: localhost
   vars:
-    total: 1200
-    size: 100 
+    total: 120000
+    size: 3000
   tasks:
     - name: Clean up result directory (if it exists)
       file:

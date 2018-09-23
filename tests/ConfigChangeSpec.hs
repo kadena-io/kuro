@@ -101,6 +101,20 @@ testClusterCommands = do
     results3c <- runClientCommands clientArgs testRequestsRepeated
     checkResults results3c
 
+  it "Config change test #4 - dropping the leader (node0)" $ do
+    sleep 3
+    ccResults4 <- runClientCommands clientArgs [cfg0123to123]
+    checkResults ccResults4
+
+  it "Metric test - waiting for cluster size == 3..." $ do
+    okSize3b <- waitForMetric' testMetricSize3 1 -- cant use node0 for the metrics now...
+    okSize3b `shouldBe` True
+
+  it "Runing post config change #4 commands:" $ do
+    sleep 3
+    results4b <- runClientCommands clientArgs testRequestsRepeated
+    checkResults results4b
+
 clientArgs :: [String]
 clientArgs = words $ "-c " ++ testConfDir ++ "client.yaml"
 
@@ -262,6 +276,13 @@ cfg0123to013 = TestRequest
   , matchCmd = "test-files/conf/config-change-01.yaml"
   , eval = checkCCSuccess
   , displayStr = "Removes node2 from the cluster" }
+
+cfg0123to123 :: TestRequest
+cfg0123to123 = TestRequest
+  { cmd = "configChange test-files/conf/config-change-04.yaml"
+  , matchCmd = "test-files/conf/config-change-04.yaml"
+  , eval = checkCCSuccess
+  , displayStr = "Removes the leader (node0) from the cluster" }
 
 cfg013to0123 :: TestRequest
 cfg013to0123 = TestRequest

@@ -274,8 +274,15 @@ sendMultiple templateCmd replCmd startCount nRepeats  = do
   let cmds = replaceCounters startCount nRepeats templateCmd
   xs <- sequence $ fmap (\cmd -> mkExec cmd j Nothing) cmds
   resp <- postAPI "send" (SubmitBatch xs) 
-  tellKeys resp replCmd
-  handleResp handleBatchResp resp 
+  case resp ^. responseBody of
+    ApiFailure{..} ->
+      flushStrLn $ "Failure: " ++ show _apiError
+    ApiSuccess{..} -> do
+      rk <- return $ last $ _rkRequestKeys _apiResponse
+      tell [ReplApiRequest {_apiRequestKey = rk, _replCmd = replCmd}]
+      flushStrLn $ "Polling for RequestKey: " ++ show rk
+      listenForResults 10000 [rk] (Just (fromIntegral nRepeats))
+  
 
 loadMultiple :: FilePath -> String -> Int -> Int -> Repl ()
 loadMultiple filePath replCmd startCount nRepeats = do

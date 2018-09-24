@@ -20,11 +20,6 @@ logRules:
     enable: null
     exclude:
     - DEBUG
-  PactPersist:
-    include: null
-    enable: null
-    exclude:
-    - DEBUG
 preProcThreadCount: 10
 hostStaticDir: true
 electionTimeoutRange:
@@ -52,7 +47,7 @@ nodeId:
   fullAddr: tcp://127.0.0.1:10002
   host: '127.0.0.1'
   port: 10002
-enableDebug: true
+enableDebug: false 
 entity:
   signer:
     private: 0a995cb198b22a5480b31dc6a32b07d19f81efdea02dbcad0df36ac8ec961d2b

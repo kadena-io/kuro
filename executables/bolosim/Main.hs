@@ -135,11 +135,6 @@ batchCmds theArgs@BoloArgs{..} totalRemaining allOk = do -- do next batch
             ++ "\n\r" ++ show batchReq
       _res <- runClientCommands (clientArgs theArgs) [batchReq]
       return (True, startNum+thisBatch, thisBatch) -- checkResults res
-  let seconds = printf "%.2f" sec :: String
-  let tPerSec = printf "%.2f" (fromIntegral sz / sec) :: String
-  putStrLn $ show nDone ++ " completed -- this batch of " ++ show sz ++ " transactions "
-              ++ "completed in: " ++ show seconds ++ " seconds "
-              ++ "(" ++ tPerSec ++ " per second)"
   batchCmds theArgs (totalRemaining-sz) (allOk && ok)
 
 clientArgs :: BoloArgs -> [String]

@@ -13,7 +13,6 @@ import Safe
 import System.Command
 import System.Console.CmdArgs
 import System.Time.Extra
-import Text.Printf
 
 import Apps.Kadena.Client (esc)
 import Util.TestRunner
@@ -127,7 +126,7 @@ runWithBatch theArgs@BoloArgs{..} = do
 batchCmds :: BoloArgs -> Int -> Bool -> IO Bool
 batchCmds _ 0 allOk = return allOk -- all done
 batchCmds theArgs@BoloArgs{..} totalRemaining allOk = do -- do next batch
-  (sec, (ok, nDone, sz)) <- duration $ do
+  (_sec, (ok, _nDone, sz)) <- duration $ do
       let thisBatch = min totalRemaining batchSize
       let startNum = transactions - totalRemaining
       let batchReq = createMultiReq cmdFile startNum thisBatch

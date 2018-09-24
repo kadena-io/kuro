@@ -80,6 +80,7 @@ dummyConfig = do
                                          exclude = Just (HS.singleton "DEBUG")
                                        })]
 
+    , _enableDiagnostics    = False
     }
 
 testConfigRT :: Spec

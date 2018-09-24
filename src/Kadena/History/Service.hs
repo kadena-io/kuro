@@ -68,8 +68,9 @@ runHistoryService env mState = catchAndRethrow "historyService" $ do
 
 debug :: String -> HistoryService ()
 debug s = do
-  dbg <- view henvDebugPrint
-  liftIO $! dbg $ "[Service|History] " ++ s
+  when (not (null s)) $ do
+    dbg <- view henvDebugPrint
+    liftIO $! dbg $ "[Service|History] " ++ s
 
 now :: HistoryService UTCTime
 now = view henvGetTimestamp >>= liftIO

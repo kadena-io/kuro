@@ -251,6 +251,7 @@ executable bolosim
                , cmdargs
                , bytestring
                , data-default
+               , exceptions
                , extra
                , hspec
                , http-client

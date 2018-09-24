@@ -61,8 +61,9 @@ runPreProcService env = do
 
 debug :: String -> ProcessRequestService ()
 debug s = do
-  dbg <- view preDebugPrint
-  liftIO $! dbg $ "[Service|PreProc] " ++ s
+  when (not (null s)) $ do
+    dbg <- view preDebugPrint
+    liftIO $! dbg $ "[Service|PreProc] " ++ s
 
 now :: ProcessRequestService UTCTime
 now = view preGetTimestamp >>= liftIO

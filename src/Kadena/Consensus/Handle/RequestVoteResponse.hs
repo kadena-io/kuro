@@ -131,6 +131,7 @@ becomeLeader = do
 
 revertToLastQuorumState :: KD.Consensus ()
 revertToLastQuorumState = do
+  debug "*** revertToLastQuorumState ***"
   setRole Follower
   setCurrentLeader Nothing
   csIgnoreLeader .= False

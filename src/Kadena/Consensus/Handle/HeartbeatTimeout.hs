@@ -28,8 +28,7 @@ makeLenses ''HeartbeatTimeoutEnv
 data HeartbeatTimeoutOut = IsLeader | NotLeader | NoFollowers
 
 handleHeartbeatTimeout :: (MonadReader HeartbeatTimeoutEnv m, MonadWriter [String] m) => String -> m HeartbeatTimeoutOut
-handleHeartbeatTimeout s = do
-  tell ["heartbeat timeout: " ++ s]
+handleHeartbeatTimeout _s = do
   role' <- view nodeRole
   leaderWithoutFollowers' <- view leaderWithoutFollowers
   case role' of

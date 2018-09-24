@@ -69,8 +69,9 @@ runLogService dispatch dbg publishMetric' rconf = do
 
 debug :: String -> LogThread ()
 debug s = do
-  dbg <- view debugPrint
-  liftIO $ dbg $ "[Service|Log]: " ++ s
+  when (not (null s)) $ do
+    dbg <- view debugPrint
+    liftIO $ dbg $ "[Service|Log]: " ++ s
 
 handle :: LogThread ()
 handle = do

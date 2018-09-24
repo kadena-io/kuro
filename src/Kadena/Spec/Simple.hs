@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE CPP #-}
 
@@ -48,10 +49,13 @@ import Kadena.Types.Turbine (ReceiverEnv(..))
 data Options = Options
   {  optConfigFile :: FilePath
    , optDisablePersistence :: Bool
+   , optEnableDiagnostics :: Bool
   } deriving Show
 
 defaultOptions :: Options
-defaultOptions = Options { optConfigFile = "", optDisablePersistence = False}
+defaultOptions = Options { optConfigFile = ""
+                         , optDisablePersistence = False
+                         , optEnableDiagnostics = False }
 
 options :: [OptDescr (Options -> Options)]
 options =
@@ -63,6 +67,10 @@ options =
            ["disablePersistence"]
            (OptArg (\_ opts -> opts { optDisablePersistence = True }) "DISABLE_PERSISTENCE" )
             "Disable Persistence (run entirely in memory)"
+  , Option ['e']
+           ["enableDiagnostics"]
+           (NoArg (\opts -> opts {optEnableDiagnostics = True }))
+           "Enable diagnositc excpetions to be thrown"
   ]
 
 getConfig :: IO Config
@@ -76,6 +84,7 @@ getConfig = do
         Left err -> putStrLn (Y.prettyPrintParseException err) >> exitFailure
         Right conf' -> return $ conf'
           { _enablePersistence = not $ optDisablePersistence opts
+          , _enableDiagnostics = optEnableDiagnostics opts
           }
     (_,_,errs)     -> mapM_ putStrLn errs >> exitFailure
 

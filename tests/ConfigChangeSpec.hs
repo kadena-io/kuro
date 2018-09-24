@@ -27,8 +27,6 @@ startupStuff :: IO ()
 startupStuff = do
   delTempFiles
   runServers
-  putStrLn "Servers are running, sleeping for a few seconds"
-  sleep 10
 
 spec :: Spec
 spec = do
@@ -50,7 +48,7 @@ testClusterCommands = do
     assertEither $ getMetricResult m123
 
   it "Config change test #1 - Dropping node02:" $ do
-    ccResults1 <- runClientCommands clientArgs ccTest0123to013
+    ccResults1 <- runClientCommands clientArgs [cfg0123to013]
     checkResults ccResults1
 
   it "Metric test - waiting for cluster size == 3..." $ do
@@ -64,18 +62,12 @@ testClusterCommands = do
 
   it "Runing post config change #1 commands:" $ do
     sleep 3
-    results2 <- runClientCommands clientArgs testRequestsRepeated
-    checkResults results2
-
-  {-
-  putStrLn "Config change test#2 - adding back node02:"
-  ccResults1b <- runClientCommands clientArgs ccTest013to0123
-  checkResults ccResults1b
-  -}
+    results1b <- runClientCommands clientArgs testRequestsRepeated
+    checkResults results1b
 
   it "Config change test #2 - Dropping node3, adding node2" $ do
     sleep 3
-    ccResults2 <- runClientCommands clientArgs ccTest013to012
+    ccResults2 <- runClientCommands clientArgs [cfg013to012]
     checkResults ccResults2
 
   it "Metric test - waiting for the set {node0, node1, node2}..." $ do
@@ -84,8 +76,44 @@ testClusterCommands = do
 
   it "Runing post config change #2 commands:" $ do
     sleep 3
-    results3 <- runClientCommands clientArgs testRequestsRepeated
-    checkResults results3
+    results2b <- runClientCommands clientArgs testRequestsRepeated
+    checkResults results2b
+
+  it "Config change test #3 - adding back node3" $ do
+    sleep 3
+    ccResults3 <- runClientCommands clientArgs [cfg012to0123]
+    checkResults ccResults3
+
+  it "Metric test - waiting for cluster size == 4..." $ do
+    okSize4b <- waitForMetric testMetricSize4
+    okSize4b `shouldBe` True
+
+  it "Runing post config change #3 commands:" $ do
+    sleep 3
+    results3b <- runClientCommands clientArgs testRequestsRepeated
+    checkResults results3b
+
+  -- MLN: Checking these in as xit === pending until they are working correctly
+  xit "Changes the current server to node1:" $ do
+    resultsNode1 <- runClientCommands clientArgs [serverCmd 1]
+    checkResults resultsNode1
+
+  xit "Runs test commands from node1:" $ do
+    results3c <- runClientCommands clientArgs testRequestsRepeated
+    checkResults results3c
+
+  xit "Config change test #4 - dropping the leader (node0)" $ do
+    sleep 3
+    ccResults4 <- runClientCommands clientArgs [cfg0123to123]
+    checkResults ccResults4
+  xit "Metric test - waiting for cluster size == 3..." $ do
+    okSize3b <- waitForMetric' testMetricSize3 1 -- cant use node0 for the metrics now...
+    okSize3b `shouldBe` True
+
+  xit "Runing post config change #4 commands:" $ do
+    sleep 3
+    results4b <- runClientCommands clientArgs testRequestsRepeated
+    checkResults results4b
 
 clientArgs :: [String]
 clientArgs = words $ "-c " ++ testConfDir ++ "client.yaml"
@@ -194,18 +222,6 @@ testRequests :: [TestRequest]
 --testRequests = [testReq1, testReq2, testReq3, testReq4, testReq5]
 testRequests = [testReq1, testReq2, testReq3] -- , testReq4]
 
-_ccTestRequests0 :: [TestRequest]
-_ccTestRequests0 = [_testCfgChange0]
-
-ccTest0123to013 :: [TestRequest]
-ccTest0123to013 = [cfg0123to013]
-
-ccTest013to0123 :: [TestRequest]
-ccTest013to0123 = [cfg013to0123]
-
-ccTest013to012:: [TestRequest]
-ccTest013to012 = [cfg013to012]
-
 -- tests that can be repeated
 -- TODO ditto for `testReq4` here.
 testRequestsRepeated :: [TestRequest]
@@ -261,6 +277,13 @@ cfg0123to013 = TestRequest
   , eval = checkCCSuccess
   , displayStr = "Removes node2 from the cluster" }
 
+cfg0123to123 :: TestRequest
+cfg0123to123 = TestRequest
+  { cmd = "configChange test-files/conf/config-change-04.yaml"
+  , matchCmd = "test-files/conf/config-change-04.yaml"
+  , eval = checkCCSuccess
+  , displayStr = "Removes the leader (node0) from the cluster" }
+
 cfg013to0123 :: TestRequest
 cfg013to0123 = TestRequest
   { cmd = "configChange test-files/conf/config-change-01b.yaml"
@@ -274,6 +297,21 @@ cfg013to012 = TestRequest
   , matchCmd = "test-files/conf/config-change-02.yaml"
   , eval = checkCCSuccess
   , displayStr = "Adds back node2 and removes node3 from the cluster" }
+
+cfg012to0123 :: TestRequest
+cfg012to0123 = TestRequest
+  { cmd = "configChange test-files/conf/config-change-03.yaml"
+  , matchCmd = "test-files/conf/config-change-03.yaml"
+  , eval = checkCCSuccess
+  , displayStr = "Replaces node3 back into the cluster" }
+
+serverCmd :: Int -> TestRequest
+serverCmd n =
+  TestRequest
+  { cmd = "server node" ++ show n
+  , matchCmd = "server node" ++ show n
+  , eval = checkSuccess
+  , displayStr = "Changes the current server that accepts commands" }
 
 testMetricSize4 :: TestMetric
 testMetricSize4 = TestMetric
@@ -303,11 +341,16 @@ testMetric12 = TestMetric
 -- | Adding `sleep` between failures prevents the metrics server
 -- from being hammered.
 waitForMetric :: TestMetric -> IO Bool
-waitForMetric tm = maybe False (const True) <$> timeout 30 go
+waitForMetric tm = waitForMetric' tm 0
+
+-- Version of waitForMetric that takes node number (0-3) as additional param
+waitForMetric' :: TestMetric -> Int -> IO Bool
+waitForMetric' tm node =
+  maybe False (const True) <$> timeout 30 go
   where
     go :: IO ()
     go = do
-      res <- gatherMetric tm
+      res <- gatherMetric' tm node
       when (isLeft $ getMetricResult res) $ sleep 1 >> go
 
 timeout :: Int -> IO a -> IO (Maybe a)

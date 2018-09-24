@@ -48,22 +48,29 @@ import qualified Kadena.Types.Sender as Sender
 import qualified Kadena.Log.Types as Log
 import qualified Kadena.Types.Log as Log
 import qualified Kadena.Types.History as History
+import Kadena.Util.Util
 
 getNewElectionTimeout :: Consensus Int
-getNewElectionTimeout = viewConfig electionTimeoutRange >>= randomRIO
-
+getNewElectionTimeout = do
+  viewConfig electionTimeoutRange >>= randomRIO
+  
 resetElectionTimer :: Consensus ()
 resetElectionTimer = do
   timeout <- getNewElectionTimeout
   debug $ "Reset Election Timeout: " ++ show (timeout `div` 1000) ++ "ms"
   setTimedEvent (ElectionTimeout $ show (timeout `div` 1000) ++ "ms") timeout
 
--- | If a leader hasn't heard from a follower in longer than 2x max election timeouts, he should step down.
+-- | If a leader hasn't heard from a follower in longer than 2x max election timeouts, he should
+--   step down.
 hasElectionTimerLeaderFired :: Consensus Bool
 hasElectionTimerLeaderFired = do
   maxTimeout <- ((*2) . snd) <$> viewConfig electionTimeoutRange
   timeSinceLastAER' <- use csTimeSinceLastAER
-  return $ timeSinceLastAER' >= maxTimeout
+  let leaderTimeout = timeSinceLastAER' >= maxTimeout
+  theConfig <- readConfig
+  when leaderTimeout $
+    throwDiagnostics (_enableDiagnostics theConfig) "The leader has timed out"
+  return leaderTimeout
 
 resetElectionTimerLeader :: Consensus ()
 resetElectionTimerLeader = csTimeSinceLastAER .= 0
@@ -71,7 +78,6 @@ resetElectionTimerLeader = csTimeSinceLastAER .= 0
 resetHeartbeatTimer :: Consensus ()
 resetHeartbeatTimer = do
   timeout <- viewConfig heartbeatTimeout
-  debug $ "Reset Heartbeat Timeout: " ++ show (timeout `div` 1000) ++ "ms"
   setTimedEvent (HeartbeatTimeout $ show (timeout `div` 1000) ++ "ms") timeout
 
 cancelTimer :: Consensus ()
@@ -108,13 +114,14 @@ updateLogs q = do
 
 debug :: String -> Consensus ()
 debug s = do
-  dbg <- view (rs.debugPrint)
-  role' <- use csNodeRole
-  case role' of
-    Leader -> liftIO $! dbg $! "[Kadena|\ESC[0;34mLEADER\ESC[0m]: " ++ s
-    Follower -> liftIO $! dbg $! "[Kadena|\ESC[0;32mFOLLOWER\ESC[0m]: " ++ s
-    Candidate -> liftIO $! dbg $! "[Kadena|\ESC[1;33mCANDIDATE\ESC[0m]: " ++ s
-
+  when (not (null s)) $ do
+    dbg <- view (rs.debugPrint)
+    role' <- use csNodeRole
+    case role' of
+      Leader -> liftIO $! dbg $! "[Kadena|\ESC[0;34mLEADER\ESC[0m]: " ++ s
+      Follower -> liftIO $! dbg $! "[Kadena|\ESC[0;32mFOLLOWER\ESC[0m]: " ++ s
+      Candidate -> liftIO $! dbg $! "[Kadena|\ESC[1;33mCANDIDATE\ESC[0m]: " ++ s
+  
 randomRIO :: R.Random a => (a,a) -> Consensus a
 randomRIO rng = view (rs.random) >>= \f -> liftIO $! f rng -- R.randomRIO
 

@@ -47,7 +47,7 @@ nodeId:
   fullAddr: tcp://127.0.0.1:10002
   host: '127.0.0.1'
   port: 10002
-enableDebug: false
+enableDebug: false 
 entity:
   signer:
     private: 0a995cb198b22a5480b31dc6a32b07d19f81efdea02dbcad0df36ac8ec961d2b
@@ -74,3 +74,4 @@ nodeClass: active
 enablePersistence: true
 myPrivateKey: 84e6b8503273f69d86e71d6ed6d020abee8af7f8efa4f4f173ff95bcff57a56e
 preProcUsePar: true
+enableDiagnostics: false

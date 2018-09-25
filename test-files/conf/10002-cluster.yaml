@@ -12,6 +12,11 @@ heartbeatTimeout: 1000000
 logDir: ./test-files/log2
 apiPort: 8002
 logRules:
+  PactPersist:
+    include: null
+    enable: null
+    exclude:
+    - DEBUG
   PactService:
     include: null
     enable: null

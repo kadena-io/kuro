@@ -84,7 +84,10 @@ getConfig = do
         Left err -> putStrLn (Y.prettyPrintParseException err) >> exitFailure
         Right conf' -> return $ conf'
           { _enablePersistence = not $ optDisablePersistence opts
-          , _enableDiagnostics = optEnableDiagnostics opts
+          -- enableDiagnositcs is set to true if either:
+          --   enableDiagnostics is set to true in the config file
+          --   or, if the -e flag exists in the command line arg
+          , _enableDiagnostics = (_enableDiagnostics conf') || (optEnableDiagnostics opts)
           }
     (_,_,errs)     -> mapM_ putStrLn errs >> exitFailure
 

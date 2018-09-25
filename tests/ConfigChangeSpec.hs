@@ -94,23 +94,24 @@ testClusterCommands = do
     checkResults results3b
 
   -- MLN: Checking these in as xit === pending until they are working correctly
-  xit "Changes the current server to node1:" $ do
+  it "Changes the current server to node1:" $ do
     resultsNode1 <- runClientCommands clientArgs [serverCmd 1]
     checkResults resultsNode1
 
-  xit "Runs test commands from node1:" $ do
+  it "Runs test commands from node1:" $ do
     results3c <- runClientCommands clientArgs testRequestsRepeated
     checkResults results3c
 
-  xit "Config change test #4 - dropping the leader (node0)" $ do
+  it "Config change test #4 - dropping the leader (node0)" $ do
     sleep 3
     ccResults4 <- runClientCommands clientArgs [cfg0123to123]
     checkResults ccResults4
-  xit "Metric test - waiting for cluster size == 3..." $ do
+
+  it "Metric test - waiting for cluster size == 3..." $ do
     okSize3b <- waitForMetric' testMetricSize3 1 -- cant use node0 for the metrics now...
     okSize3b `shouldBe` True
 
-  xit "Runing post config change #4 commands:" $ do
+  it "Runing post config change #4 commands:" $ do
     sleep 3
     results4b <- runClientCommands clientArgs testRequestsRepeated
     checkResults results4b
@@ -219,14 +220,12 @@ passMetric tmr = "Metric test passed: " ++ metricNameTm (requestTmr tmr)
 -- They've been worked-around on Linux via the strategic `sleep`
 -- calls before certain tests.
 testRequests :: [TestRequest]
---testRequests = [testReq1, testReq2, testReq3, testReq4, testReq5]
-testRequests = [testReq1, testReq2, testReq3] -- , testReq4]
+testRequests = [testReq1, testReq2, testReq3, testReq4, testReq5]
 
 -- tests that can be repeated
 -- TODO ditto for `testReq4` here.
 testRequestsRepeated :: [TestRequest]
--- testRequestsRepeated = [testReq1, testReq4, testReq5]
-testRequestsRepeated = [testReq1] -- , testReq4]
+testRequestsRepeated = [testReq1, testReq4, testReq5]
 
 testReq1 :: TestRequest
 testReq1 = TestRequest

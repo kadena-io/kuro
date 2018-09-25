@@ -49,7 +49,7 @@ nodeId:
   fullAddr: tcp://127.0.0.1:10001
   host: '127.0.0.1'
   port: 10001
-enableDebug: false
+enableDebug: true
 entity:
   signer:
     private: 0a995cb198b22a5480b31dc6a32b07d19f81efdea02dbcad0df36ac8ec961d2b

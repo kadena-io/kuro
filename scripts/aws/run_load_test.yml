@@ -3,9 +3,16 @@
 
 - name: Run Load Test
   hosts: localhost
-  vars:
-    total: 120000
-    size: 3000
+  gather_facts: False
+  vars_prompt:
+    - name: "total"
+      prompt: "Total number of transactions:"
+      default: "120000"
+      private: no
+    - name: "size"
+      prompt: "Batch size:"
+      default: "3000"
+      private: no
   tasks:
     - name: Clean up result directory (if it exists)
       file:
@@ -25,7 +32,7 @@
         mode: a+x
 
     - name: Run Bolosim Test
-      command: rlwrap -A /home/ubuntu/kadena-beta/bin/ubuntu-16.04/bolosim --transactions={{ total }}  --batchsize={{ size }} --norunserver --configfile=client.yaml --dirforconfig=/home/ubuntu/conf/
+      command: rlwrap -A /home/ubuntu/kadena-beta/bin/ubuntu-16.04/bolosim -e --transactions={{total}}  --batchsize={{size}} --norunserver --configfile=client.yaml --dirforconfig=/home/ubuntu/conf/
       args:
         chdir: /home/ubuntu/kadena
       register: result
@@ -39,7 +46,7 @@
 - name: Fetch Kadena Servers' log files
   hosts: tag_Name_kadena_server
   become: True
-  gather_facts: True
+  gather_facts: False
   vars:
     ansible_python_interpreter: /usr/bin/python3
   tasks:

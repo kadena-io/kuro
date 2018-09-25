@@ -27,22 +27,26 @@
           Name: kadena_server
       register: ec2_servers_out
 
-    - name: Add Instances to 'kadena_all' Host Group
-      add_host:
-        hostname: "{{ item.private_ip }}"
-        groupname: kadena_all
-      with_items: 
-        - "{{ ec2_servers_out.instances }}"
-
     - name: Wait for SSH to come up
       wait_for: host={{ item.public_dns_name }} port=22 delay=60 timeout=320 state=started
       with_items:
         - "{{ ec2_servers_out.instances }}"
 
+- name: Refresh Inventory
+  hosts: localhost
+  connection: local
+  gather_facts: False
+  tasks:
+    - name: Refresh EC2 cache
+      command: /etc/ansible/ec2.py --refresh-cache
+    - name: Refresh in-memory EC2 cache
+      meta: refresh_inventory
+
 - name: Create node configurations
   hosts: localhost
+  gather_facts: False
   vars:
-    ipList: "{{ ec2_servers_out.instances }}"
+    ipList: "{{ hostvars[inventory_hostname].groups.tag_Name_kadena_server }}"
   tasks:
     - name: Create 'conf' directory to store nodes' configuration file 
       file:
@@ -64,13 +68,13 @@
         dest: /home/ubuntu/ipAddr.yml
         mode: 0777
 
-    - name: Generate the node configuration for the Kadena servers
+    - name: Generate default node configuration for the Kadena servers
       shell: yes '' | /home/ubuntu/kadena-beta/bin/ubuntu-16.04/genconfs --distributed /home/ubuntu/ipAddr.yml
       args:
         chdir: /home/ubuntu/
 
 - name: Configure instance(s)
-  hosts: kadena_all
+  hosts: tag_Name_kadena_server
   become: True
   vars:
     ansible_python_interpreter: /usr/bin/python3
@@ -96,12 +100,3 @@
         owner: ubuntu
         mode: a+x
 
-- name: Refresh Inventory
-  hosts: localhost
-  connection: local
-  gather_facts: True
-  tasks:
-    - name: Refresh EC2 cache
-      command: /etc/ansible/ec2.py --refresh-cache
-    - name: Refresh in-memory EC2 cache
-      meta: refresh_inventory

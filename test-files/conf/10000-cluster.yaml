@@ -1,10 +1,7 @@
 pactPersist:
-  writeBehind: true
+  writeBehind: false
   backend:
-    config:
-      dbFile: ./test-files/log0/node0-pact.sqlite
-      pragmas: []
-    type: SQLITE
+    type: INMEM
 publicKeys:
   node0: 9679fc966039bc2f0720d7b14e9bfd0afe9ea46125ee57c625be6706e4cce411
   node1: ee6d87802deabf0abd2dc1215a12b0f00eecbaac3dd5ed387d45c89a8dd786bf

@@ -25,7 +25,6 @@ import Data.String (IsString)
 import Data.Typeable
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
-import Debug.Trace
 import System.Process (system)
 
 --TODO: this is pretty ghetto, there has to be a better/cleaner way
@@ -87,9 +86,7 @@ throwDiagnostics :: MonadThrow m => Bool -> String -> m ()
 throwDiagnostics diagnostics str = do
   if diagnostics
     then throwM $ DiagnosticException str
-    else do
-      let s = "&&&&& If enableDiagnostics were set, and exception would have been thrown! &&&&&"
-      trace s (return ())
+    else return ()
 
 newtype DiagnosticException = DiagnosticException String
   deriving (Eq,Show,Ord,IsString)

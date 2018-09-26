@@ -1,10 +1,7 @@
 pactPersist:
-  writeBehind: true
+  writeBehind: false
   backend:
-    config:
-      dbFile: ./test-files/log2/node2-pact.sqlite
-      pragmas: []
-    type: SQLITE
+    type: INMEM
 publicKeys:
   node0: 9679fc966039bc2f0720d7b14e9bfd0afe9ea46125ee57c625be6706e4cce411
   node1: ee6d87802deabf0abd2dc1215a12b0f00eecbaac3dd5ed387d45c89a8dd786bf
@@ -15,6 +12,11 @@ heartbeatTimeout: 1000000
 logDir: ./test-files/log2
 apiPort: 8002
 logRules:
+  PactPersist:
+    include: null
+    enable: null
+    exclude:
+    - DEBUG
   PactService:
     include: null
     enable: null
@@ -47,7 +49,7 @@ nodeId:
   fullAddr: tcp://127.0.0.1:10002
   host: '127.0.0.1'
   port: 10002
-enableDebug: false 
+enableDebug: false
 entity:
   signer:
     private: 0a995cb198b22a5480b31dc6a32b07d19f81efdea02dbcad0df36ac8ec961d2b
@@ -74,4 +76,4 @@ nodeClass: active
 enablePersistence: true
 myPrivateKey: 84e6b8503273f69d86e71d6ed6d020abee8af7f8efa4f4f173ff95bcff57a56e
 preProcUsePar: true
-enableDiagnostics: false
+enableDiagnostics: false 

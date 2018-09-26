@@ -22,8 +22,11 @@ module Apps.Kadena.Client
   , ReplApiData(..)
   , ReplState(..)
   , runREPL
+  , timeout
   ) where
 
+import Control.Concurrent.Async (race)
+import Control.Error.Util (hush)
 import Control.Exception (IOException)
 import qualified Control.Exception as Exception
 import Control.Monad.Extra
@@ -68,7 +71,6 @@ import System.Console.GetOpt
 import System.Environment
 import System.Exit hiding (die)
 import System.IO
-import System.Time.Extra
   
 import Text.Trifecta as TF hiding (err, rendered, try)
 
@@ -724,3 +726,6 @@ replaceCounters start nRepeats cmdTemplate =
 
 replaceCounter :: Int -> String -> String
 replaceCounter n s = replace "${count}" (show n) s
+
+timeout :: Int -> IO a -> IO (Maybe a)
+timeout n io = hush <$> race (threadDelay $ n * 1000000) io

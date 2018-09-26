@@ -140,6 +140,7 @@ library
                      , ekg-core >= 0.1.1.0 && < 0.2
                      , ekg-json
                      , enclosed-exceptions
+                     , errors
                      , exceptions
                      , extra
                      , fast-logger

@@ -4,9 +4,6 @@
 
 module ConfigChangeSpec (spec) where
 
-import           Control.Concurrent (threadDelay)
-import           Control.Concurrent.Async (race)
-import           Control.Error.Util (hush)
 import           Control.Monad
 import           Data.Aeson as AE
 import           Data.Either
@@ -106,6 +103,7 @@ testClusterCommands = do
     sleep 3
     ccResults4 <- runClientCommands clientArgs [cfg0123to123]
     checkResults ccResults4
+
   xit "Metric test - waiting for cluster size == 3..." $ do
     okSize3b <- waitForMetric' testMetricSize3 1 -- cant use node0 for the metrics now...
     okSize3b `shouldBe` True
@@ -215,18 +213,11 @@ failMetric tmr addlInfo = unlines
 passMetric :: TestMetricResult -> String
 passMetric tmr = "Metric test passed: " ++ metricNameTm (requestTmr tmr)
 
--- TODO `testReq4` causes strange failures on Mac.
--- They've been worked-around on Linux via the strategic `sleep`
--- calls before certain tests.
 testRequests :: [TestRequest]
---testRequests = [testReq1, testReq2, testReq3, testReq4, testReq5]
-testRequests = [testReq1, testReq2, testReq3] -- , testReq4]
+testRequests = [testReq1, testReq2, testReq3, testReq4, testReq5]
 
--- tests that can be repeated
--- TODO ditto for `testReq4` here.
 testRequestsRepeated :: [TestRequest]
--- testRequestsRepeated = [testReq1, testReq4, testReq5]
-testRequestsRepeated = [testReq1] -- , testReq4]
+testRequestsRepeated = [testReq1, testReq4, testReq5]
 
 testReq1 :: TestRequest
 testReq1 = TestRequest
@@ -353,5 +344,3 @@ waitForMetric' tm node =
       res <- gatherMetric' tm node
       when (isLeft $ getMetricResult res) $ sleep 1 >> go
 
-timeout :: Int -> IO a -> IO (Maybe a)
-timeout n io = hush <$> race (threadDelay $ n * 1000000) io

@@ -31,14 +31,12 @@
 - name: Clean up Kadena Server(s) Logs and Configs
   hosts: tag_Name_kadena_server
   become: True
-  vars:
-    ansible_python_interpreter: /usr/bin/python3
   gather_facts: False
-  tags:
-    - cleanup
+  vars_files:
+    - ansible_vars.yml
   tasks:
     - name: Remove Kadena Server Logs
-      shell: rm -rf /home/ubuntu/log/*     
+      shell: rm -rf log/*
       args: 
         warn: False
 
@@ -46,23 +44,19 @@
       file:
         path: "{{ item }}"
         state: touch
-        owner: ubuntu
       with_items:
-        - "/home/ubuntu/log/access.log"
-        - "/home/ubuntu/log/error.log"
-        - "/home/ubuntu/log/node.log"
+        - "log/access.log"
+        - "log/error.log"
+        - "log/node.log"
     
     - name: Copy node conf file to server (if it is a new conf)
       copy:
-        src: /home/ubuntu/conf/{{inventory_hostname}}-cluster.yaml
-        dest: /home/ubuntu/conf-cluster.yaml
-        owner: ubuntu
+        src: "{{ conf_path }}/conf/{{inventory_hostname}}-cluster.yaml"
+        dest: conf-cluster.yaml
 
 - name: Start Kadena Servers
   hosts: tag_Name_kadena_server
   become: True
-  vars:
-    ansible_python_interpreter: /usr/bin/python3
   gather_facts: False
   tasks:
     - shell: ./kadenaserver +RTS -N4 -RTS -c conf-cluster.yaml 2>&1 | tee -a log/node.log && sleep 1

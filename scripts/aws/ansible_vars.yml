@@ -1,0 +1,29 @@
+# Absolute path to kadena-beta executables directory
+bin_path: ~/kadena-beta/bin/ubuntu-16.04
+
+# Absolute path to conf/ directory used to configure Kadena Servers
+# Note: Using `~` or `~/` throws error with Ansible.
+conf_path: ~/kadena-beta
+
+# ----------- EC2 Kadena Server Instances Specifications ---------------
+# The following specifications will be used to create all EC2 instances that will run
+# the kadena servers.
+instance_type: t2.micro
+instance_region: us-west-2
+instance_key_name: wizard-example-key
+
+# The AWS image id. Image requirements:
+#  a. Should be able to run the kadena-beta executables. Refer to the kadena-beta README for
+#     the software requirements. 
+#  b. Have ansible 2.6+ installed. See https://docs.ansible.com/ansible/latest/installation_guide/intro_installation.html for instructions.
+#  c. Have Python 2 installed.
+#  d. Setup Ansible to use EC2's external inventory script. See https://docs.ansible.com/ansible/latest/user_guide/intro_dynamic_inventory.html#example-aws-ec2-external-inventory-script for instructions.
+instance_image: ami-03210f1c8a84ba9c0
+
+# AWS security group name or id. Security group requirements:
+#  a. The Ansible monitor instance (the one running the playbooks) should be able to ssh into
+#     all of the Kadena Server instances it will create.
+#  b. The Kadena Server instances should be able to communicate via 10000 port.
+#  c. The Kadena Server instances should be able to receive HTTP connections via the 8000 port from
+#     any instance running the Kadena Client.
+instance_security_group: kadena_beta

@@ -3,30 +3,27 @@
 - name: Run Load Test
   hosts: localhost
   tasks:
-    - name: Clean up result directory (if it exists)
+    - name: Clean up logs directory (if it exists)
       file:
-        path: /home/ubuntu/result/
+        path: logs/
         state: absent
 
-    - name: Create result directory
+    - name: Create logs directory
       file:
-        path: /home/ubuntu/result/
+        path: logs/
         state: directory
-        owner: ubuntu
         mode: 0755
     
 - name: Fetch Kadena Servers' log files
   hosts: tag_Name_kadena_server
   become: True
   gather_facts: True
-  vars:
-    ansible_python_interpreter: /usr/bin/python3
   tasks:
     - synchronize:
-        src: /home/ubuntu/log/*sqlite
-        dest: /home/ubuntu/result/{{ hostvars[inventory_hostname].ec2_private_ip_address }}-log/
+        src: log/*sqlite
+        dest: logs/{{ hostvars[inventory_hostname].ec2_private_ip_address }}-log/
         mode: pull
     - synchronize:
-        src: /home/ubuntu/log/*log
-        dest: /home/ubuntu/result/{{ hostvars[inventory_hostname].ec2_private_ip_address }}-log/
+        src: log/*log
+        dest: logs/{{ hostvars[inventory_hostname].ec2_private_ip_address }}-log/
         mode: pull

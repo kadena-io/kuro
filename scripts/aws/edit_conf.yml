@@ -1,89 +1,92 @@
 # Edit node configs
 
-- name: Reset conf to default
-  hosts: localhost
-  tags:
-    - default
-  gather_facts: False
-  tasks:
-    - name: Reset node conf to default
-      shell: yes '' | /home/ubuntu/kadena-beta/bin/ubuntu-16.04/genconfs --distributed /home/ubuntu/ipAddr.yml
-      args:
-        chdir: /home/ubuntu/
 
 - name: Turn off write-behind
   hosts: localhost
   gather_facts: False
+  vars_files:
+    - ansible_vars.yml
   tags:
     - no_wb
   tasks:
     - name: Get contents of node's conf files
-      shell: cat /home/ubuntu/conf/{{item}}-cluster.yaml
+      shell: cat "{{ conf_path | expanduser }}"/conf/{{item}}-cluster.yaml
       register: all_conf
       with_items: "{{ hostvars[inventory_hostname].groups.tag_Name_kadena_server }}"
 
     - name: Set writeBehind to False
       template:
-        src: /home/ubuntu/kadena/scripts/aws/conf.j2
-        dest: /home/ubuntu/conf/{{item.item}}-cluster.yaml
+        src: templates/conf.j2
+        dest: "{{ conf_path | expanduser }}/conf/{{item.item}}-cluster.yaml"
       vars:
         conf: "{{item.stdout | from_yaml | combine({'pactPersist': {'writeBehind': false}}, recursive=True)}}"
       with_items: "{{ all_conf.results }}"
+
 
 - name: Turn off all PactPersist logging
   hosts: localhost
   gather_facts: False
   tags:
     - no_pactPersist_log
+  vars_files:
+    - ansible_vars.yml
   tasks:
     - name: Get contents of node's conf files
-      shell: cat /home/ubuntu/conf/{{item}}-cluster.yaml
+      shell: cat "{{ conf_path | expanduser }}"/conf/{{item}}-cluster.yaml
       register: all_conf
       with_items: "{{ hostvars[inventory_hostname].groups.tag_Name_kadena_server }}"
 
     - name: Exclude DEBUG statements from PactPersist in logRules
       template:
-        src: /home/ubuntu/kadena/scripts/aws/conf.j2
-        dest: /home/ubuntu/conf/{{item.item}}-cluster.yaml
+        src: templates/conf.j2
+        dest: "{{ conf_path | expanduser }}/conf/{{item.item}}-cluster.yaml"
       vars:
         pactPersist: {'PactPersist': {'include': null, 'enable': null, 'exclude': [DEBUG]}}
         conf: "{{item.stdout | from_yaml | combine({'logRules': pactPersist}, recursive=True)}}"
       with_items: "{{ all_conf.results }}"
+
 
 - name: Turn off all debugging
   hosts: localhost
   gather_facts: False
   tags:
     - no_debug
+  vars_files:
+    - ansible_vars.yml
   tasks:
     - name: Get contents of node's conf files
-      shell: cat /home/ubuntu/conf/{{item}}-cluster.yaml
+      shell: cat "{{ conf_path | expanduser }}"/conf/{{item}}-cluster.yaml
       register: all_conf
       with_items: "{{ hostvars[inventory_hostname].groups.tag_Name_kadena_server }}"
 
     - name: Set enableDebug to false
       template:
-        src: /home/ubuntu/kadena/scripts/aws/conf.j2
-        dest: /home/ubuntu/conf/{{item.item}}-cluster.yaml
+        src: templates/conf.j2
+        dest: "{{ conf_path | expanduser }}/conf/{{item.item}}-cluster.yaml"
       vars:
         conf: "{{item.stdout | from_yaml | combine({'enableDebug': false}, recursive=True)}}"
       with_items: "{{ all_conf.results }}"
+
+
+# ---- CHANGE BACKEND  ----
 
 - name: Use in-memory backend
   hosts: localhost
   gather_facts: False
   tags:
     - inmem
+  vars_files:
+    - ansible_vars.yml
   tasks:
     - name: Get contents of node's conf files
-      shell: cat /home/ubuntu/conf/{{item}}-cluster.yaml
+      shell: cat "{{ conf_path | expanduser }}"/conf/{{item}}-cluster.yaml
       register: all_conf
       with_items: "{{ hostvars[inventory_hostname].groups.tag_Name_kadena_server }}"
 
     - name: Set PactPersist backend to use INMEM
       template:
-        src: /home/ubuntu/kadena/scripts/aws/conf.j2
-        dest: /home/ubuntu/conf/{{item.item}}-cluster.yaml
+        src: templates/conf.j2
+        dest: "{{ conf_path | expanduser }}/conf/{{item.item}}-cluster.yaml"
       vars:
         inMem: {'config': null, 'type': INMEM}
         conf: "{{item.stdout | from_yaml | combine({'pactPersist': {'backend': inMem}}, recursive=True)}}"

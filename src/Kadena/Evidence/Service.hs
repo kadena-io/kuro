@@ -72,11 +72,7 @@ handleConfUpdate = do
   let maxTimeoutChanged = (snd _electionTimeoutRange) /= (_esMaxElectionTimeout es)
   let clusterMembersChanged =  otherNodes (_esClusterMembers es) /= otherNodes _clusterMembers ||
                     transitionalNodes (_esClusterMembers es) /= transitionalNodes _clusterMembers
-  if not maxTimeoutChanged && not clusterMembersChanged
-    then do -- No update needed
-      debug "Config update received but no action required"
-      return ()
-  else do
+  when (maxTimeoutChanged || clusterMembersChanged)  $ do
     let newEs= case (maxTimeoutChanged, clusterMembersChanged) of
           (True, False) -> changeMaxTimeoutES es (snd _electionTimeoutRange) -- Only max-timeout needs updating
           (False, True) -> changeNodesES es _clusterMembers _nodeId

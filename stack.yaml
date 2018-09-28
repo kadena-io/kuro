@@ -5,51 +5,34 @@ build:
 
 # Local packages, usually specified by relative directory name
 packages:
-- '.'
-- location:
-    git: https://github.com/kadena-io/pact.git
-    commit: 9635c9472ad0ea79437cd780b655c195ce101d7e
-  extra-dep: true
-- location:
-    git: git@github.com:kadena-io/pact-persist.git
-    commit: 1db11ffbc806b2e75b63ff64a7fcf6b29f4f073d
-  extra-dep: true
-- location:
-    git: https://github.com/abbradar/hdbc-odbc.git
-    commit: 79ffd1f5060d2c8b5cbdfd4eba8ae6414372d6b7
-  extra-dep: true
-- location:
-    git: https://github.com/kadena-io/thyme.git
-    commit: 6ee9fcb026ebdb49b810802a981d166680d867c9
-  extra-dep: true
-- location:
-    git: https://github.com/LeventErkok/sbv.git
-    commit: dbbdd396d069dc8235f5c8cf58209886318f6525 # with symbolic string support
-  extra-dep: true
-
+  - '.'
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)
 extra-deps:
-- cacophony-0.8.0
-- cryptonite-0.23
-- ed25519-donna-0.1.1
-- bound-2
-- kan-extensions-5.0.1
-- lz4-0.2.3.1
-- unagi-chan-0.4.0.0
-- bloomfilter-2.0.1.0
-- concurrent-extra-0.7.0.10
-- ridley-0.3.1.2
-- ekg-prometheus-adapter-0.1.0.3
-- prometheus-0.4.2
-- system-command-0.0.10
-- monad-gen-0.3.0.1
-
-# Override default flag values for local packages and extra-deps
-flags: {}
-
-# Extra package databases containing global packages
-extra-package-dbs: []
+  - bloomfilter-2.0.1.0
+  - bound-2
+  - cacophony-0.8.0
+  - concurrent-extra-0.7.0.10
+  - cryptonite-0.23
+  - ed25519-donna-0.1.1
+  - ekg-prometheus-adapter-0.1.0.3
+  - kan-extensions-5.0.1
+  - lz4-0.2.3.1
+  - monad-gen-0.3.0.1
+  - prometheus-0.4.2
+  - ridley-0.3.1.2
+  - system-command-0.0.10
+  - unagi-chan-0.4.0.0
+  - git: https://github.com/kadena-io/pact.git
+    commit: 9635c9472ad0ea79437cd780b655c195ce101d7e
+  - git: git@github.com:kadena-io/pact-persist.git
+    commit: 1db11ffbc806b2e75b63ff64a7fcf6b29f4f073d
+  - git: https://github.com/abbradar/hdbc-odbc.git
+    commit: 79ffd1f5060d2c8b5cbdfd4eba8ae6414372d6b7
+  - git: https://github.com/kadena-io/thyme.git
+    commit: 6ee9fcb026ebdb49b810802a981d166680d867c9
+  - git: https://github.com/LeventErkok/sbv.git
+    commit: dbbdd396d069dc8235f5c8cf58209886318f6525 # with symbolic string support
 
 local-bin-path: ./bin
 # Extra directories used by stack for building

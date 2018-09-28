@@ -210,6 +210,7 @@ createMultiReq cmdFile startNum numOrders =
        , eval = \_ -> return () -- not used in this sim
        , displayStr = "Creates an a request for multiple commands" }
 
+{-
 orderTemplate :: String
 orderTemplate =
     "(orders.create-order"
@@ -224,4 +225,11 @@ orderTemplate =
     ++ " " ++ esc "user-id-${count}"
     ++ " " ++ esc "Comment number ${count}"
     ++ " " ++ "(time " ++ esc "2018-01-01T00:00:00Z" ++ ")"
+    ++ ")"
+-}
+orderTemplate :: String
+orderTemplate = 
+    "(demo.create-account"
+    ++ " " ++ esc "Acct${count}"
+    ++ " " ++ esc "100000${count}.0"
     ++ ")"

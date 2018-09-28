@@ -1,0 +1,29 @@
+# Retrives the sqlite and log files produced by Kadena Servers
+
+- name: Run Load Test
+  hosts: localhost
+  tasks:
+    - name: Clean up logs directory (if it exists)
+      file:
+        path: logs/
+        state: absent
+
+    - name: Create logs directory
+      file:
+        path: logs/
+        state: directory
+        mode: 0755
+    
+- name: Fetch Kadena Servers' log files
+  hosts: tag_Name_kadena_server
+  become: True
+  gather_facts: True
+  tasks:
+    - synchronize:
+        src: log/*sqlite
+        dest: logs/{{ hostvars[inventory_hostname].ec2_private_ip_address }}-log/
+        mode: pull
+    - synchronize:
+        src: log/*log
+        dest: logs/{{ hostvars[inventory_hostname].ec2_private_ip_address }}-log/
+        mode: pull

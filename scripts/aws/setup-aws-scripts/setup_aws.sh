@@ -19,8 +19,6 @@ aws configure &&
 #    via HTTP, 8000 port (required)
 # d. Allow developers to ssh into all instances created for debugging and 
 #    monitoring (room for impovement)
-# e. The Ansible playbooks to use the same security group name, 'testenv-sg', when 
-#    creating instances (required)
 echo "Creating Security Group" &&
 aws ec2 create-security-group --group-name $SECURITY_GROUP_NAME --description "security group for testing kadena_beta" &&
 aws ec2 authorize-security-group-ingress --group-name $SECURITY_GROUP_NAME --protocol all --source-group $SECURITY_GROUP_NAME &&
@@ -29,7 +27,7 @@ aws ec2 authorize-security-group-ingress --group-name $SECURITY_GROUP_NAME --ip-
 echo "Security Group $SECURITY_GROUP_NAME Created" &&
 
 
-# Creates key pair, 'testenv-key', that Ansible will
+# Creates key pair that Ansible will
 # use when creating all instances (required). This allows Ansible
 # to securely ssh into the intances.
 # Save in secure location.

@@ -53,15 +53,6 @@ certain tasks via the use of `tags`.
 `get_server_logs.yml` : This playbook retrieves all of the Kadena Servers' logs
                         and sqlite files, deleting all previous retrieved logs.
 
-`edit_conf.yml` : This playbook edits all of the configurations in the specified
-                  configuration directory (conf/) on the monitor instance. To
-                  change specific components, run the playbook with their tags:
-                  `ansible-playbook /path/to/edit_conf.yml --tags "tag1, tag2"`.
-                  Below are all the changes supported and their tags:
-                  - no_wb : Disables write-behind, 
-                  - no_pactPersist_log : Disables PactPersist logging
-                  - no_debug : Disables all DEBUG logging
-                  - inmem : Changes backend to in-memory
 
 ## Launching the Demo
 The demo script assumes that the `start_instances.yml` playbook has been run and only

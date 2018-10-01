@@ -18,8 +18,8 @@ stack-docker.yaml
 log/*
 test-files/log*/node*
 test-files/log*/*.log
-executables/bolosim/log*/node*
-executables/bolosim/log*/*.log
+executables/inserts/log*/node*
+executables/inserts/log*/*.log
 dist/*
 sample-data/*
 datadump

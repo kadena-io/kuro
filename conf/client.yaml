@@ -3,5 +3,17 @@ secretKey: 21b55b8fe05437b5f08033711c7b8de1cfdfd758cf290b056adf692b1fa4535c
 endpoints:
   node0:
     sender: true
-    uRL: 127.0.0.1:8080
+    uRL: 127.0.0.1:8000
     entity: Alice
+  node1:
+    sender: true
+    uRL: 127.0.0.1:8001
+    entity: Bob
+  node2:
+    sender: true
+    uRL: 127.0.0.1:8002
+    entity: Carol
+  node3:
+    sender: true
+    uRL: 127.0.0.1:8003
+    entity: Dinesh

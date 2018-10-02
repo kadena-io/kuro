@@ -1,6 +1,6 @@
 # Retrives the sqlite and log files produced by Kadena Servers
 
-- name: Run Load Test
+- name: Cleans up Ansible Monitor's logs/ directory
   hosts: localhost
   tasks:
     - name: Clean up logs directory (if it exists)

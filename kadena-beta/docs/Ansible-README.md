@@ -1,7 +1,7 @@
 # Ansible and AWS
 
 ## QuickStart
-1. Spin up an EC2 instance with the desired configurations (See [Instance Requirements](#instance-req)).
+1. Spin up an EC2 instance with the desired configurations (See [Instance Requirements](#instance-requirements)).
    This will serve as the ansible monitor instance.
 2. Ensure that the key pair(s) of the monitor and kadena server instances are not publically
    viewable: `chmod 400 /path/to/keypair.pem`. Otherwise, SSH and any service that rely on it (i.e. Ansible) 
@@ -14,7 +14,7 @@
    the kadena server node configurations, and the ansible playbooks. 
 6. Edit the `ansible_vars.yml` to indicate the path to the kadena-beta executables and the node configurations.
    Also indicate the number of EC2 instances designated as kadena servers to launch as well as how to configure
-   them. See [Instance Requirements](#instance-req) and [Security Group Requirements](#sg-req) for instance image 
+   them. See [Instance Requirements](#instance-requirements) and [Security Group Requirements](#security-group-requirements) for instance image 
    and security group specifics.
 7. Grant Ansible the ability to make API calls to AWS on your behalf. To do this, launch the monitor instance with
    Power User IAM role or export AWS security credentials as environment variables:
@@ -31,8 +31,7 @@ Ansible playbooks are in YAML format and can be executed as follows:
 `ansible-playbook /path/to/playbook.yml`
 
 Playbooks are composed of `plays`, which are then composed of `tasks`. Plays
-and tasks are executed sequentially. But it is possible to only execute
-certain tasks via the use of `tags`.
+and tasks are executed sequentially.
 
 `start_instances.yml` : This playbook launches EC2 instances that have the
                         necessary files and directories to run the Kadena 
@@ -45,10 +44,12 @@ certain tasks via the use of `tags`.
 
 `run_servers.yml` : This playbooks runs the Kadena Server executable. If the
                     servers were already running, it terminates them as well
-                    as clean up their sqlite and log files before launching 
+                    as cleans up their sqlite and log files before launching 
                     the server again. This playbook also updates the server's
                     configuration if it has changed in the specified
                     configuration directory (conf/) on the monitor instance.
+                    To change this, edit the `Start Kadena Servers` async
+                    section in this playbook.
 
 `get_server_logs.yml` : This playbook retrieves all of the Kadena Servers' logs
                         and sqlite files, deleting all previous retrieved logs.
@@ -75,8 +76,8 @@ Press ENTER to run the commands that populates the shell. This will start the Ka
 
 To exit the Kadena Client, type `exit`. To kill the tmux sessions, type `tmux kill-session`.
 
-## Instance Requirements {#instance-req}
-The instances used as both ansible monitors and kadena servers should be configured as follows:
+## Instance Requirements
+The ansible monitor instance and the kadena server instances should be configured as follows:
 a. Install all kadena-beta software requirements. Refer to `kadena-beta/docs/Kadena-README.md` for specifics.
 b. Have Ansible 2.6+ installed. 
    See <https://docs.ansible.com/ansible/latest/installation_guide/intro_installation.html> for instructions.
@@ -90,7 +91,7 @@ See `scripts/setup-ubuntu-base.sh` for an example on how to configure EC2's free
 the kadena-beta executables and ansible.
 
 
-## Security Group Requirements {#sg-req}
+## Security Group Requirements
 Ansible needs to be able to communicate with the AWS instances it manages, and the Kadena Servers need to communicate
 with each other. Therefore, the security group (firewall) assigned to the kadena server instances
 should allow for the following:

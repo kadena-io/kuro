@@ -12,5 +12,5 @@ instance_kadena_server_count: 4
 instance_type: t2.micro
 instance_region: us-west-2
 instance_key_name: testenv-key
-instance_image: ami-03210f1c8a84ba9c0
+instance_image: ami-044b98bd59d694167
 instance_security_group: testenv-sg

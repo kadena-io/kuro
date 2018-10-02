@@ -1,0 +1,16 @@
+# Absolute path to kadena-beta executables directory
+bin_path: ~/kadena-beta/bin/ubuntu-16.04
+
+# Absolute path to conf/ directory used to configure Kadena Servers
+# Note: Using `~` or `~/` throws an error with Ansible.
+conf_path: ~/kadena-beta
+
+# ----------- EC2 Kadena Server Instances Specifications ---------------
+# The following specifications will be used to create all EC2 instances that will run
+# the kadena servers.
+instance_kadena_server_count: 4
+instance_type: t2.micro
+instance_region: us-west-2
+instance_key_name: testenv-key
+instance_image: ami-044b98bd59d694167
+instance_security_group: testenv-sg

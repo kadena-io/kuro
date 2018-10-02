@@ -80,6 +80,7 @@ if [ -z "$target" -o "$target" = "dist" ]; then
     chirp "Copying Scripts"
     rm ./kadena-beta/scripts/{servers.sh,create_aws_confs.sh}
     safe cp ./scripts/{servers.sh,create_aws_confs.sh} ./kadena-beta/scripts
+    safe cp ./demo/{demo.repl,demo.pact,demo.yaml} ./kadena-beta/payments
 
     safe cp CHANGELOG.md kadena-beta/
 

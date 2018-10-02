@@ -1,3 +1,5 @@
+ipAddr.yml
+scripts/aws/logs
 data/*
 kadena-beta/log/*
 kadena-beta/bin/*

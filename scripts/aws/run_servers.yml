@@ -59,7 +59,7 @@
   become: True
   gather_facts: False
   tasks:
-    - shell: ./kadenaserver +RTS -N4 -RTS -c conf-cluster.yaml 2>&1 | tee -a log/node.log && sleep 1
+    - shell: ./kadenaserver -c conf-cluster.yaml 2>&1 | tee -a log/node.log && sleep 1
       async: 86400
       poll: 0
       register: active_servers

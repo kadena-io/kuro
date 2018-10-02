@@ -1,8 +1,0 @@
-data:
-  accounts-admin-keyset:
-    "keys": ["accountssadmin"]
-    "pred": ">"
-codeFile: "../pact/accounts.pact"
-keyPairs:
-  - public: "3922c4efa570c7d2250567505fd4e79f0f19764a93a44a31aa46b3d701b89269"
-    secret: "ee3fc627d59d31cdbaeb7f77b8941a6265d06571521c3a2b292c6f2d585cc2ff"

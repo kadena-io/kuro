@@ -2,7 +2,7 @@ pactPersist:
   writeBehind: true
   backend:
     config:
-      dbFile: ./executables/bolosim/log2/node2-pact.sqlite
+      dbFile: ./executables/inserts/log3/node3-pact.sqlite
       pragmas: []
     type: SQLITE
 publicKeys:
@@ -12,8 +12,8 @@ publicKeys:
   node3: 0c297d59fccf78661f88b0b29d91c7931c30894dbdcc33bfa59dd83dd37cc834
 aeBatchSize: 20000
 heartbeatTimeout: 1000000
-logDir: ./executables/bolosim/log2
-apiPort: 8002
+logDir: ./executables/inserts/log3
+apiPort: 8003
 logRules:
   PactService:
     include: null
@@ -41,17 +41,17 @@ clusterMembers:
     fullAddr: tcp://127.0.0.1:10001
     host: '127.0.0.1'
     port: 10001
-  - alias: node3
-    fullAddr: tcp://127.0.0.1:10003
+  - alias: node2
+    fullAddr: tcp://127.0.0.1:10002
     host: '127.0.0.1'
-    port: 10003
+    port: 10002
 inMemTxCache: 200000
-myPublicKey: bf77d5479108c041bd3fc5f7fd92cf156e6121bbfd8e341f30307cadce5c03e8
+myPublicKey: 0c297d59fccf78661f88b0b29d91c7931c30894dbdcc33bfa59dd83dd37cc834
 nodeId:
-  alias: node2
-  fullAddr: tcp://127.0.0.1:10002
+  alias: node3
+  fullAddr: tcp://127.0.0.1:10003
   host: '127.0.0.1'
-  port: 10002
+  port: 10003
 enableDebug: false
 entity:
   signer:
@@ -59,24 +59,24 @@ entity:
     public: b6ea927cd205e1369c35e5f9974c5847eafb62c16e3472eb298f20608847953f
   local:
     ephemeral:
-      secret: 2fe4e5c6cc4f0f970ea67e12815e223b70a684f093926801ee9040817c70caf4
-      public: 11162c15b942f1f3367586753483d989f4356064f3a9e7916bef7393309a8d11
+      secret: 79720c55bd5604d9e5b8cbfac932574595c88c2d7c571fe19c481cc9211e2eed
+      public: 075f36171daabae5d0f0ad4f5c07a9d5849d138372f20ac1e3ee9419fa54bf35
     static:
-      secret: e52172dcee07a86babcf0b50d88d7da9b888b1ae2d17b9458b383fdefa159cc2
-      public: 67a83131293ae6ffe36d0812f1c9f876cab4f90d595034acd00460dbc2696076
-    name: Carol
+      secret: 2c269038a00219437b01dcbc309d1200105c956b9ef45e1dbb13d9cdbeb77629
+      public: 721956f2b234845a69d080d42ed66657444b9bdf750d2e746acf86bcb9ed8b45
+    name: Dinesh
   sending: true
   remotes:
   - static: b6cf4f911dfdded4e6056e1a6f5dc71539ca5e4c81fa8b095cf872889e2d0214
     name: Alice
   - static: 4810f0e60119f49042257081879cabfbda7b876142cedc1abb592a28dce49149
     name: Bob
-  - static: 721956f2b234845a69d080d42ed66657444b9bdf750d2e746acf86bcb9ed8b45
-    name: Dinesh
+  - static: 67a83131293ae6ffe36d0812f1c9f876cab4f90d595034acd00460dbc2696076
+    name: Carol
 adminKeys:
   admin0: 31736b5c851176e5dff830df44bf0c88fb0da5522a9d9e3ac10ff0c433528c7d
 nodeClass: active
 enablePersistence: true
-myPrivateKey: 84e6b8503273f69d86e71d6ed6d020abee8af7f8efa4f4f173ff95bcff57a56e
+myPrivateKey: 2d90c6e7a5492d0f49f264dd80cc988e7bd76c8bec4385e79117d2cac18d22d8
 preProcUsePar: true
 enableDiagnostics: false

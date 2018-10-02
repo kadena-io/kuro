@@ -86,7 +86,7 @@ d. Setup Ansible to use EC2's external inventory script.
 An AWS image (AMI) created from this configured instance could be used to launch the Ansible monitor and kadena server 
 instances. For more information, see <https://docs.aws.amazon.com/toolkit-for-visual-studio/latest/user-guide/tkv-create-ami-from-instance.html>.
 
-See `setup-aws-scripts/setup-ubuntu-base.sh` for an example on how to configure EC2's free-tier ubuntu machine to run 
+See `scripts/setup-ubuntu-base.sh` for an example on how to configure EC2's free-tier ubuntu machine to run 
 the kadena-beta executables and ansible.
 
 

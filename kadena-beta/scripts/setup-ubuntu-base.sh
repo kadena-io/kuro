@@ -1,4 +1,7 @@
 #!/bin/bash
+# Installs software dependencies for kadena-beta 1.1.3.1 and ansible 2.6.2
+# in Ubuntu 16.04 distribution.
+# To run, `sudo /path/to/setup-ubuntu-base.sh`
 
 apt-get -y update && \
 apt-get -y upgrade
@@ -53,3 +56,23 @@ cd && wget http://dev.mysql.com/get/mysql-apt-config_0.6.0-1_all.deb && \
 stack --resolver lts-8.15 setup
 
 apt-get install -y build-essential wget libodbc1 unixodbc unixodbc-dev freetds-bin tdsodbc
+
+apt install -y sqlite3
+
+cd && apt-get -y update && \
+   apt-get -y install software-properties-common && \
+   apt-add-repository -y ppa:ansible/ansible && \
+   apt-get -y update && \
+   apt-get -y install ansible && \
+   apt-get -y install python-boto && \
+   apt-get -y install python-boto3 && \
+   cd /etc/ansible/ && \
+   wget 'https://raw.githubusercontent.com/ansible/ansible/devel/contrib/inventory/ec2.py' && \
+   wget 'https://raw.githubusercontent.com/ansible/ansible/devel/contrib/inventory/ec2.ini' && \
+   chmod +x ec2.py && \
+   perl -p -i -e 's/^vpc_destination_variable = .*/vpc_destination_variable = private_ip_address/' ec2.ini && \
+   perl -p -i -e 's/^destination_variable = .*/destination_variable = private_dns_name/' ec2.ini && \
+   echo "export EC2_INI_PATH=/etc/ansible/ec2.ini" >> ~/.bashrc && \
+   echo "export ANSIBLE_INVENTORY=/etc/ansible/ec2.py" >> ~/.bashrc && \
+   echo "export ANSIBLE_HOST_KEY_CHECKING=False" >> ~/.bashrc
+# run `source ~/.bashrc` when script completes

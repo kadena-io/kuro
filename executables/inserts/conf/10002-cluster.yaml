@@ -1,5 +1,5 @@
 pactPersist:
-  writeBehind: true
+  writeBehind: false
   backend:
     config:
       dbFile: ./executables/inserts/log2/node2-pact.sqlite

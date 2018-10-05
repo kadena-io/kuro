@@ -51,7 +51,7 @@ data RequestVoteOut =
 handleRequestVote :: (MonadWriter [String] m, MonadReader RequestVoteEnv m)
                   => RequestVote -> NodeId -> m RequestVoteOut
 handleRequestVote rv@RequestVote{..} _myId = do
-  tell ["got a requestVote RPC for " ++ show _rvTerm]
+  tell ["got a requestVote RPC for id: " ++ show _rvCandidateId ++ " and term: " ++ show _rvTerm]
   votedFor' <- view votedFor
   term' <- view term
   currentLeader' <- view currentLeader

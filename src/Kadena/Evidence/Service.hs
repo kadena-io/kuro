@@ -32,7 +32,7 @@ import Kadena.Types.Dispatch (Dispatch)
 import Kadena.Types.Event (ResetLeaderNoFollowersTimeout(..))
 import Kadena.Types.Evidence (Evidence(..), PublishedEvidenceState(..), CommitCheckResult (..))
 import Kadena.Types.Message (AppendEntriesResponse(..))
-import Kadena.Util.Util (linkAsyncTrack)
+import Kadena.Util.Util (linkAsyncTrack, throwDiagnostics)
 -- TODO: re-integrate EKG when Evidence Service is finished and hspec tests are written
 -- import Kadena.Types.Metric
 import qualified Kadena.Log.Types as Log
@@ -150,7 +150,11 @@ processCommitCkResult (SteadyState ci) = do
   updateCache
 processCommitCkResult (StrangeResultInProcessor ci) = do
   debug $ "CommitIndex still: " ++ show ci
-  debug $ "checkForNewCommitIndex is in a funny state likely because the cluster is under load, we'll see if it resolves itself: " ++ show ci
+  let funnyState = "checkForNewCommitIndex is in a funny state likely because the cluster is under"
+                   ++ " load, we'll see if it resolves itself: " ++ show ci
+  cfg <- view mConfig >>= liftIO . readCurrentConfig
+  liftIO $ throwDiagnostics (_enableDiagnostics cfg) funnyState
+  debug funnyState
 processCommitCkResult (NeedMoreEvidence i i') = do
   newEs <- get
   case Set.null $ newEs ^. esCacheMissAers of
@@ -161,7 +165,6 @@ processCommitCkResult (NeedMoreEvidence i i') = do
               ++ (show i') ++ " of " ++ show (1 + _esChangeToQuorumSize newEs) ++ ")"
     _ -> return ()
   updateCache
-
 processCommitCkResult(NewCommitIndex ci) = do
   now' <- liftIO $ getCurrentTime
   updateLogs $ Log.ULCommitIdx $ Log.UpdateCommitIndex ci now'

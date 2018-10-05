@@ -5,6 +5,8 @@ EC2_USER='ubuntu'
 
 sudo chmod +x bin/$OS/kadenaclient
 ansible-playbook aws/run_servers.yml &&
+STR_SERVERS=`cat aws/ipAddr.yml`
+SERVERS=( $STR_SERVERS )
 
 tmux new-window &&
 

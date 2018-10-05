@@ -235,10 +235,7 @@ insertOrderTemplate =
     ++ " " ++ esc "some-keyset"
     ++ " " ++ esc "record-id-${count}"
     ++ " " ++ esc "hash-${count}"
-    ++ " " ++ esc "npi-${count}"
     ++ " " ++ "(time " ++ esc "2015-01-01T00:00:00Z" ++ ")"
-    ++ " " ++ esc "CHANNEL_${count}"
-    ++ " " ++ esc "1234"
     ++ " " ++ esc "user-id-${count}"
     ++ " " ++ esc "Comment number ${count}"
     ++ " " ++ "(time " ++ esc "2018-01-01T00:00:00Z" ++ ")"
@@ -248,7 +245,7 @@ createAcctTemplate :: String
 createAcctTemplate =
     "(demo.create-account"
     ++ " " ++ esc "Acct${count}"
-    ++ " " ++ esc "100000${count}.0"
+    ++ " " ++ "100000${count}.0"
     ++ ")"
 
 acctTransferTemplate :: String

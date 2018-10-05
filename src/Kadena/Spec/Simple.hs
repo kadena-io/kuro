@@ -113,8 +113,8 @@ utcTimeCache = mkAutoUpdate defaultUpdateSettings
 initSysLog :: IO UTCTime -> IO TimedFastLogger
 initSysLog tc = do
   tz <- getCurrentTimeZone
-  cfg <- getConfig
-  let logFileName = "log/" ++ show (_port (_nodeId cfg)) ++ ".log" -- toto: config?
+  theCfg <- getConfig
+  let logFileName = "log/" ++ show (_port (_nodeId theCfg)) ++ ".log" -- toto: config?
   fst <$> newTimedFastLogger (join $ timeCache tz tc) (LogFileNoRotate logFileName defaultBufSize)
 
 simpleConsensusSpec

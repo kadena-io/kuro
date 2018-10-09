@@ -1,0 +1,23 @@
+### Shutdown Ec2 Instances Running Kadena Server
+
+- name: Terminate all Kadena server EC2 instances
+  hosts: localhost
+  gather_facts: False
+  connection: local
+  vars_files:
+    - ansible_vars.yml
+  tasks:
+    - name: Get EC2 Instance Id by 'kadena_server' Tag
+      ec2_instance_facts:
+        region: "{{ instance_region }}"
+        filters:
+          "tag:Name": kadena_server
+          instance-state-name: running
+      register: running_servers
+
+    - name: Terminate Instances
+      ec2:
+        state: absent
+        region: "{{ instance_region }}"
+        instance_id: "{{ item.instance_id }}"
+      with_items: "{{ running_servers.instances }}"

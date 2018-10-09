@@ -36,10 +36,11 @@ import Kadena.Config.TMVar
 import Kadena.Types.Base
 import Kadena.Types.Metric
 import Kadena.Config.ClusterMembership
+import Kadena.Log.Types (LogServiceChannel)
 import Kadena.Types.Message
 import Kadena.Types.Evidence
 import Kadena.Types.Event (ResetLeaderNoFollowersTimeout)
-import Kadena.Log.Types (LogServiceChannel)
+import Kadena.Util.Util
 
 data EvidenceEnv = EvidenceEnv
   { _logService :: !LogServiceChannel
@@ -110,8 +111,9 @@ getTimestamp ReceivedMsg{..} = case _pTimeStamp of
 checkEvidence :: Config -> EvidenceState -> AppendEntriesResponse -> IO Result
 checkEvidence cfg es aer@AppendEntriesResponse{..} = do
   let validNode = checkValidSender cfg _aerNodeId
-  if not validNode
-    then return $ InvalidNode _aerNodeId _aerIndex (getTimestamp _aerProvenance)
+  if not validNode then do
+    throwDiagnostics (_enableDiagnostics cfg) "checkEvidence = AER from invalid node"
+    return $ InvalidNode _aerNodeId _aerIndex (getTimestamp _aerProvenance)
   else return $ case Map.lookup _aerNodeId (_esNodeStates es) of
     Just (lastLogIndex', lastTimestamp')
       | fromIntegral (interval lastTimestamp' (getTimestamp _aerProvenance)) < (_esMaxElectionTimeout es)

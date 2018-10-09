@@ -4,12 +4,14 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# OPTIONS_GHC -fno-cse #-}
 
-module Main 
+module Main
   ( main
   ) where
 
 import Control.Monad
 import Data.Either
+import Data.List.Extra
+import Data.Maybe
 import Safe
 import System.Command
 import System.Console.CmdArgs
@@ -45,7 +47,7 @@ insertArgs = InsertArgs
   , batchType = enum
     [ InsertOrders &= help "Insert multiple orders" &= name "insertorders" &= name "io"
     , CreateAcct &= help "Create multiple accounts" &= name "createacct" &= name "ca"
-    , AcctTransfer &= help "Execute multiple acct transfers" &= name "accttransfer" &= name "at"  
+    , AcctTransfer &= help "Execute multiple acct transfers" &= name "accttransfer" &= name "at"
     , AcctTransferUnique &= help "Execute multiple acct transfers with unique transfer amounts"
       &= name "accttransferunique" &= name "atu" ]
   , noRunServer = False &= name "n" &= name "norunserver" &= help "Flag specifying this exe should not launch Kadena server instances"
@@ -119,9 +121,8 @@ delInsertsTempFiles = do
 runWithBatch :: InsertArgs -> IO Bool
 runWithBatch theArgs@InsertArgs{..} = do
   putStrLn $ "Running " ++ show transactions ++ " transactions in batches of " ++ show batchSize
-  when (runServer theArgs) $ do
-    -- required create table, etc. commands for the repeated batch commands
-    void $ runClientCommands (clientArgs theArgs) (getInitialRequests theArgs)
+  -- required create table, etc. commands for the repeated batch commands
+  void $ runClientCommands (clientArgs theArgs) (getInitialRequests theArgs)
   batchCmds theArgs transactions True
 
 batchCmds :: InsertArgs -> Int -> Bool -> IO Bool
@@ -138,7 +139,7 @@ batchCmds theArgs@InsertArgs{..} totalRemaining allOk = do -- do next batch
   batchCmds theArgs (totalRemaining-sz) (allOk && ok)
 
 clientArgs :: InsertArgs -> [String]
-clientArgs InsertArgs{..} = words $ "-c " ++ dirForConfig ++ configFile
+clientArgs a@InsertArgs{..} = words $ "-c " ++ getDirForConfig a ++ configFile
 
 insertsDir :: String
 insertsDir = "executables/inserts/"
@@ -148,21 +149,31 @@ insertsServerArgs theArgs = [ insertsServerArgs0 theArgs, insertsServerArgs1 the
                             , insertsServerArgs2 theArgs, insertsServerArgs3 theArgs]
 
 insertsServerArgs0, insertsServerArgs1, insertsServerArgs2, insertsServerArgs3 :: InsertArgs -> String
-insertsServerArgs0 a@InsertArgs{..} = "-c " ++ dirForConfig ++ "10000-cluster.yaml" ++ diagnostics a
-insertsServerArgs1 a@InsertArgs{..} = "-c " ++ dirForConfig ++ "10001-cluster.yaml" ++ diagnostics a
-insertsServerArgs2 a@InsertArgs{..} = "-c " ++ dirForConfig ++ "10002-cluster.yaml" ++ diagnostics a
-insertsServerArgs3 a@InsertArgs{..} = "-c " ++ dirForConfig ++ "10003-cluster.yaml" ++ diagnostics a
+insertsServerArgs0 a@InsertArgs{..} = "-c " ++ getDirForConfig a ++ "10000-cluster.yaml" ++ diagnostics a
+insertsServerArgs1 a@InsertArgs{..} = "-c " ++ getDirForConfig a ++ "10001-cluster.yaml" ++ diagnostics a
+insertsServerArgs2 a@InsertArgs{..} = "-c " ++ getDirForConfig a ++ "10002-cluster.yaml" ++ diagnostics a
+insertsServerArgs3 a@InsertArgs{..} = "-c " ++ getDirForConfig a ++ "10003-cluster.yaml" ++ diagnostics a
 
 diagnostics :: InsertArgs -> String
 diagnostics InsertArgs{..} =
   if enableDiagnostics then " --enableDiagnostics" else ""
+
+getDirForConfig :: InsertArgs -> String
+getDirForConfig a =
+  let orig = dirForConfig a
+  in (dropSuffix' "/" orig)  ++ "/" -- ensure always one '/' at the end
+
+-- this can be replaced with dropSuffix from Data.List.Extra when we upgrade the versions of
+-- external libraries
+dropSuffix' :: Eq a => [a] -> [a] -> [a]
+dropSuffix' a b = fromMaybe b $ stripSuffix a b
 
 getInitialRequests :: InsertArgs -> [TestRequest]
 getInitialRequests (batchType -> CreateAcct) = createAcctsInitReqs
 getInitialRequests (batchType -> AcctTransfer) = acctTransferInitReqs
 getInitialRequests (batchType -> AcctTransferUnique) = acctTransferInitReqs
 getInitialRequests (batchType -> _) = insertOrdersInitReqs -- InsertOrders is the default
-  
+
 insertOrdersInitReqs :: [TestRequest]
 insertOrdersInitReqs = [loadOrders]
 
@@ -195,7 +206,7 @@ createGlobalAccts = TestRequest
 
 printEval :: TestResponse -> IO ()
 printEval tr = if resultSuccess tr then return () else putStrLn $ "Evaluation failed"
-  
+
 _testReq :: TestRequest
 _testReq = TestRequest
   { cmd = "exec (+ 1 1)"
@@ -208,7 +219,7 @@ createMultiReq batchType startNum numOrders =
   let theTemplate = case batchType of
         CreateAcct -> createAcctTemplate
         AcctTransfer -> acctTransferTemplate
-        AcctTransferUnique -> acctTransferUniqueTemplate 
+        AcctTransferUnique -> acctTransferUniqueTemplate
         _ -> insertOrderTemplate -- InsertOrders is the default
       theCmd = "multiple " ++ show startNum ++ " " ++ show numOrders ++ " " ++ theTemplate
   in TestRequest
@@ -224,10 +235,7 @@ insertOrderTemplate =
     ++ " " ++ esc "some-keyset"
     ++ " " ++ esc "record-id-${count}"
     ++ " " ++ esc "hash-${count}"
-    ++ " " ++ esc "npi-${count}"
     ++ " " ++ "(time " ++ esc "2015-01-01T00:00:00Z" ++ ")"
-    ++ " " ++ esc "CHANNEL_${count}"
-    ++ " " ++ esc "1234"
     ++ " " ++ esc "user-id-${count}"
     ++ " " ++ esc "Comment number ${count}"
     ++ " " ++ "(time " ++ esc "2018-01-01T00:00:00Z" ++ ")"
@@ -237,7 +245,7 @@ createAcctTemplate :: String
 createAcctTemplate =
     "(demo.create-account"
     ++ " " ++ esc "Acct${count}"
-    ++ " " ++ esc "100000${count}.0"
+    ++ " " ++ "100000${count}.0"
     ++ ")"
 
 acctTransferTemplate :: String

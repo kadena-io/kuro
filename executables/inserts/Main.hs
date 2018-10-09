@@ -52,8 +52,12 @@ insertArgs = InsertArgs
       &= name "accttransferunique" &= name "atu" ]
   , noRunServer = False &= name "n" &= name "norunserver" &= help "Flag specifying this exe should not launch Kadena server instances"
   , configFile = "client.yaml" &= name "c" &= name "configfile" &= help "Kadena config file"
-  , dirForConfig = "executables/inserts/conf/" &= name "d" &= name "dirForConfig" &= help "Location of config files"
+  , dirForConfig = confDir &= name "d" &= name "dirForConfig" &= help "Location of config files"
   , enableDiagnostics = False &= name "e" &= name "enablediagnostics" &= help "Enable diagnostic exceptions" }
+
+confDir, logDir :: String
+confDir = "conf/"
+logDir = "log/"
 
 startupStuff :: InsertArgs -> IO ()
 startupStuff theArgs = do
@@ -114,7 +118,7 @@ testMetricSize4 = TestMetric
 
 delInsertsTempFiles :: IO ()
 delInsertsTempFiles = do
-   let p = shell $ insertsDir ++ "deleteFiles.sh"
+   let p = shell $ confDir ++ "deleteFiles.sh"
    _ <- createProcess p
    return ()
 
@@ -140,9 +144,6 @@ batchCmds theArgs@InsertArgs{..} totalRemaining allOk = do -- do next batch
 
 clientArgs :: InsertArgs -> [String]
 clientArgs a@InsertArgs{..} = words $ "-c " ++ getDirForConfig a ++ configFile
-
-insertsDir :: String
-insertsDir = "executables/inserts/"
 
 insertsServerArgs :: InsertArgs -> [String]
 insertsServerArgs theArgs = [ insertsServerArgs0 theArgs, insertsServerArgs1 theArgs

@@ -137,49 +137,64 @@ checkEvidence cfg es aer@AppendEntriesResponse{..} = do
 checkValidSender :: Config -> NodeId -> Bool
 checkValidSender cfg senderId = clusterMember (_clusterMembers cfg) senderId
 
-processResult :: MonadState EvidenceState m => Result -> m ()
-processResult Unconvinced{..} = do
-  esConvincedNodes %= Set.delete _rNodeId
-  esNodeStates %= Map.insert _rNodeId (_rLogIndex, _rReceivedAt)
-processResult Unsuccessful{..} = do
-  esConvincedNodes %= Set.insert _rNodeId
-  esNodeStates %= Map.insert _rNodeId (_rLogIndex, _rReceivedAt)
-  esResetLeaderNoFollowers .= True
-processResult Successful{..} = do
-  esConvincedNodes %= Set.insert _rNodeId
-  esMismatchNodes %= Set.delete _rNodeId
-  esResetLeaderNoFollowers .= True
-  lastIdx <- Map.lookup _rNodeId <$> use esNodeStates
-  -- this bit is important, we don't want to double count any node's evidence so we need to
-  -- decrement the old evidence (if any) and increment the new
-  -- Add the updated evidence
-  esPartialEvidence %= Map.insertWith Set.union _rLogIndex (Set.singleton _rNodeId)
-  esNodeStates %= Map.insert _rNodeId (_rLogIndex, _rReceivedAt)
-  case lastIdx of
-    Just (i,_) | i < _rLogIndex ->
-      -- Remove the previous evidence (i.e. removing the nodeId from the Set corresponding to lastIdx,
-      -- and removing the key if the resulting Set is empty)
-      esPartialEvidence %= Map.alter (maybe Nothing f) i where
-        f :: Set NodeId -> Maybe (Set NodeId)
-        f s = let deleted = Set.delete _rNodeId s
-              in if null s then Nothing else Just deleted
-    Just _ -> return ()
-    Nothing -> return ()
--- this one is interesting, we have an old but successful message... I think we just drop it
-processResult SuccessfulSteadyState{..} = do
-  -- basically, nothings going on and these are just heartbeats
-  esConvincedNodes %= Set.insert _rNodeId
-  esNodeStates %= Map.insert _rNodeId (_rLogIndex, _rReceivedAt)
-  esMismatchNodes %= Set.delete _rNodeId
-  esResetLeaderNoFollowers .= True
-processResult SuccessfulButCacheMiss{..} = do
-  esConvincedNodes %= Set.insert (_aerNodeId _rAer)
-  esCacheMissAers %= Set.insert _rAer
-processResult MisMatch{..} = do
-  esConvincedNodes %= Set.insert _rNodeId
-  esMismatchNodes %= Set.insert _rNodeId
-processResult Noop = return ()
-processResult InvalidNode{..} = do
-  esConvincedNodes %= Set.delete _rNodeId
-  esNodeStates %= Map.delete _rNodeId
+processResult :: Result -> EvidenceService EvidenceState ()
+processResult result = do
+  fn <- view debugFn
+  let debug s = liftIO $ fn s
+  case result of
+    Unconvinced{..} -> do
+      debug $ "processResult - Unconvinced - Leader's timeout value NOT reset" 
+      esConvincedNodes %= Set.delete _rNodeId
+      esNodeStates %= Map.insert _rNodeId (_rLogIndex, _rReceivedAt)
+    Unsuccessful{..} -> do
+      debug $ "processResult - Unsuccessful - Leader's timeout value IS reset" 
+      esConvincedNodes %= Set.insert _rNodeId
+      esNodeStates %= Map.insert _rNodeId (_rLogIndex, _rReceivedAt)
+      esResetLeaderNoFollowers .= True
+    Successful{..} -> do
+      debug $ "processResult - Successful - Leader's timeout value IS reset" 
+      esConvincedNodes %= Set.insert _rNodeId
+      esMismatchNodes %= Set.delete _rNodeId
+      esResetLeaderNoFollowers .= True
+      lastIdx <- Map.lookup _rNodeId <$> use esNodeStates
+      -- this bit is important, we don't want to double count any node's evidence so we need to
+      -- decrement the old evidence (if any) and increment the new
+      -- Add the updated evidence
+      esPartialEvidence %= Map.insertWith Set.union _rLogIndex (Set.singleton _rNodeId)
+      esNodeStates %= Map.insert _rNodeId (_rLogIndex, _rReceivedAt)
+      case lastIdx of
+        Just (i,_) | i < _rLogIndex ->
+          -- Remove the previous evidence (i.e. removing the nodeId from the Set corresponding to lastIdx,
+          -- and removing the key if the resulting Set is empty)
+          esPartialEvidence %= Map.alter (maybe Nothing f) i where
+            f :: Set NodeId -> Maybe (Set NodeId)
+            f s = let deleted = Set.delete _rNodeId s
+                  in if null s then Nothing else Just deleted
+        Just _ -> return ()
+        Nothing -> return ()
+    -- this one is interesting, we have an old but successful message... I think we just drop it
+    SuccessfulSteadyState{..} -> do
+      -- basically, nothings going on and these are just heartbeats
+      debug $ "processResult - SucessfulSteadyState - Leader's timeout value IS reset" 
+      esConvincedNodes %= Set.insert _rNodeId
+      esNodeStates %= Map.insert _rNodeId (_rLogIndex, _rReceivedAt)
+      esMismatchNodes %= Set.delete _rNodeId
+      esResetLeaderNoFollowers .= True
+    SuccessfulButCacheMiss{..} -> do
+      debug $ "processResult - SucessfulButCacheMiss - Leader's timeout value NOT reset" 
+      esConvincedNodes %= Set.insert (_aerNodeId _rAer)
+      esCacheMissAers %= Set.insert _rAer
+    MisMatch{..} -> do
+      debug $ "processResult - MisMatch - Leader's timeout value NOT reset" 
+      cfg <- view mConfig >>= liftIO . readCurrentConfig
+      liftIO $ throwDiagnostics (_enableDiagnostics cfg) "processResult -- MisMatch case hit"
+      esConvincedNodes %= Set.insert _rNodeId
+      esMismatchNodes %= Set.insert _rNodeId
+    Noop -> do
+      debug $ "processResult -  - Leader's timeout value NOT reset" 
+      return ()
+    InvalidNode{..} -> do
+      debug $ "processResult - InvalidNode - Leader's timeout value NOT reset" 
+      esConvincedNodes %= Set.delete _rNodeId
+      esNodeStates %= Map.delete _rNodeId
 {-# INLINE processResult #-}

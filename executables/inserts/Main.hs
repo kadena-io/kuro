@@ -261,5 +261,5 @@ acctTransferUniqueTemplate =
     "(demo.transfer"
     ++ " " ++ esc "Acct1"
     ++ " " ++ esc "Acct2"
-    ++ " " ++ "100${count}.0"
+    ++ " " ++ "0.${count}"
     ++ ")"

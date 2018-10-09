@@ -48,6 +48,7 @@ and tasks are executed sequentially.
                     the server again. This playbook also updates the server's
                     configuration if it has changed in the specified
                     configuration directory (conf/) on the monitor instance.
+                    The Kadena Servers will run for 24 hours after starting.
                     To change this, edit the `Start Kadena Servers` async
                     section in this playbook.
 

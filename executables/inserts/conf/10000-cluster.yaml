@@ -2,7 +2,7 @@ pactPersist:
   writeBehind: false
   backend:
     config:
-      dbFile: ./executables/inserts/log0/node0-pact.sqlite
+      dbFile: ./log/node0-pact.sqlite
       pragmas: []
     type: SQLITE
 publicKeys:
@@ -12,7 +12,7 @@ publicKeys:
   node3: 0c297d59fccf78661f88b0b29d91c7931c30894dbdcc33bfa59dd83dd37cc834
 aeBatchSize: 20000
 heartbeatTimeout: 1000000
-logDir: ./executables/inserts/log0
+logDir: ./log
 apiPort: 8000
 logRules:
   PactService:
@@ -52,7 +52,7 @@ nodeId:
   fullAddr: tcp://127.0.0.1:10000
   host: '127.0.0.1'
   port: 10000
-enableDebug: false
+enableDebug: true
 entity:
   signer:
     private: 0a995cb198b22a5480b31dc6a32b07d19f81efdea02dbcad0df36ac8ec961d2b

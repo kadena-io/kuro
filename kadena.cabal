@@ -243,10 +243,9 @@ executable kadenaclient
   ghc-prof-options:    -fprof-auto -fprof-auto-calls
   default-language:    Haskell2010
 
-executable inserts 
+executable inserts
   main-is:       Main.hs
   other-modules: Util.TestRunner
-
   build-depends:       base < 5
                      , aeson
                      , cmdargs
@@ -268,10 +267,10 @@ executable inserts
                      , unordered-containers
                      , wreq
                      , yaml
-
   hs-source-dirs:     executables/inserts
                     , tests
-  ghc-options:        -Wall -threaded -rtsopts
+  ghc-options:        -Wall -threaded -rtsopts -with-rtsopts=-N4
+
   default-language:   Haskell2010
 
 test-suite hspec

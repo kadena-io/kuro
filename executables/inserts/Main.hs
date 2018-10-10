@@ -52,17 +52,17 @@ insertArgs = InsertArgs
       &= name "accttransferunique" &= name "atu" ]
   , noRunServer = False &= name "n" &= name "norunserver" &= help "Flag specifying this exe should not launch Kadena server instances"
   , configFile = "client.yaml" &= name "c" &= name "configfile" &= help "Kadena config file"
-  , dirForConfig = confDir &= name "d" &= name "dirForConfig" &= help "Location of config files"
+  , dirForConfig = insertsConfDir &= name "d" &= name "dirForConfig" &= help "Location of config files"
   , enableDiagnostics = False &= name "e" &= name "enablediagnostics" &= help "Enable diagnostic exceptions" }
 
-confDir, logDir :: String
-confDir = "conf/"
-logDir = "log/"
+insertsConfDir,  kadenaDemoDir :: String
+insertsConfDir = "executables/inserts/conf/"
+kadenaDemoDir = "demo/"
 
 startupStuff :: InsertArgs -> IO ()
 startupStuff theArgs = do
   when (runServer theArgs) $ do
-    delInsertsTempFiles
+    delLogFiles
     runServers' (insertsServerArgs theArgs)
     putStrLn $ "Waiting for confirmation that cluster size == 4..."
     _ <- waitForMetric testMetricSize4
@@ -116,9 +116,9 @@ testMetricSize4 = TestMetric
   , evalTm = (\s -> readDef (0.0 :: Float) s == 4.0) }
 ----------------------------------------------------------------------------------------------------
 
-delInsertsTempFiles :: IO ()
-delInsertsTempFiles = do
-   let p = shell $ confDir ++ "deleteFiles.sh"
+delLogFiles :: IO ()
+delLogFiles = do
+   let p = shell $ kadenaDemoDir ++ "deleteLogFiles.sh"
    _ <- createProcess p
    return ()
 

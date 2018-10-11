@@ -184,6 +184,7 @@ processResult result = do
       debug $ "processResult - SucessfulButCacheMiss - Leader's timeout value NOT reset" 
       esConvincedNodes %= Set.insert (_aerNodeId _rAer)
       esCacheMissAers %= Set.insert _rAer
+      esResetLeaderNoFollowers .= True
     MisMatch{..} -> do
       debug $ "processResult - MisMatch - Leader's timeout value NOT reset" 
       cfg <- view mConfig >>= liftIO . readCurrentConfig

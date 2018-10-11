@@ -62,7 +62,7 @@ data ElectionTimeoutOut =
 handleElectionTimeout :: (MonadReader ElectionTimeoutEnv m, MonadWriter [String] m, MonadThrow m)
                       => String -> m ElectionTimeoutOut
 handleElectionTimeout s = do
-  tell ["election timeout: " ++ s]
+  tell ["***** election timeout!!: *****" ++ s]
   r <- view nodeRole
   leaderWithoutFollowers' <- view leaderWithoutFollowers
   if r /= Leader

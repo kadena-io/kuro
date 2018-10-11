@@ -84,17 +84,17 @@ runApiServer dispatch gcm logFn port mPubConsensus' timeCache' = do
         dispatch
         timeCache'
         (_nodeId rconf)
-  let logDir' = _logDir rconf
+  let logFilePrefix = _logDir rconf </> show (_alias (_nodeId rconf))
       hostStaticDir' = _hostStaticDir rconf
-  serverConf' <- serverConf port logFn logDir'
+  serverConf' <- serverConf port logFn logFilePrefix
   httpServe serverConf' $
     applyCORS defaultOptions $ methods [GET, POST] $
     route $ ("api/v1", runReaderT api conf'):(staticRoutes hostStaticDir')
 
-serverConf :: MonadSnap m => Int -> (String -> IO ()) -> FilePath -> IO (Snap.Config m a)
-serverConf port dbgFn logDir' = do
-  let errorLog = logDir' </> "error.log"
-  let accessLog = logDir' </> "access.log"
+serverConf :: MonadSnap m => Int -> (String -> IO ()) -> String -> IO (Snap.Config m a)
+serverConf port dbgFn logFilePrefix = do
+  let errorLog =  logFilePrefix ++ "-snap-error.log"
+  let accessLog = logFilePrefix ++ "-snap-access.log"
   doesFileExist errorLog >>= \x -> when x $ dbgFn ("Creating " ++ errorLog) >> writeFile errorLog ""
   doesFileExist accessLog >>= \x -> when x $ dbgFn ("Creating " ++ accessLog) >> writeFile accessLog ""
   return $ setErrorLog (ConfigFileLog errorLog) $
@@ -268,12 +268,12 @@ listenFor (ListenerRequest rk) = do
       return $ _concrResult cr
 
 listenerTimeout :: Int
-listenerTimeout = 300 
+listenerTimeout = 300
 
 registerListener :: Api ()
 registerListener = do
   extendTimeout listenerTimeout
-  (theEither :: Either SomeException ()) <- try $ do 
+  (theEither :: Either SomeException ()) <- try $ do
     (ListenerRequest rk) <- readJSON
     hChan <- view (aiDispatch.dispHistoryChannel)
     m <- liftIO $ newEmptyMVar
@@ -291,6 +291,6 @@ registerListener = do
         writeLBS $ encode ls
   case theEither of
     Left e -> do
-      liftIO $ putStrLn $ "Exception in registerListener: " ++ show e 
+      liftIO $ putStrLn $ "Exception in registerListener: " ++ show e
       throw e
     Right y -> return y

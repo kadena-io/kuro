@@ -114,7 +114,7 @@ initSysLog :: IO UTCTime -> IO TimedFastLogger
 initSysLog tc = do
   tz <- getCurrentTimeZone
   theCfg <- getConfig
-  let logFileName = "log/" ++ show (_port (_nodeId theCfg)) ++ ".log" -- toto: config?
+  let logFileName = "log/" ++ show (_alias (_nodeId theCfg)) ++ ".log" -- toto: config?
   fst <$> newTimedFastLogger (join $ timeCache tz tc) (LogFileNoRotate logFileName defaultBufSize)
 
 simpleConsensusSpec

@@ -71,6 +71,7 @@ import System.Console.GetOpt
 import System.Environment
 import System.Exit hiding (die)
 import System.IO
+import System.Time.Extra (sleep)
   
 import Text.Trifecta as TF hiding (err, rendered, try)
 
@@ -243,7 +244,9 @@ postSpecifyServerAPI ep server' rq = do
       r <- liftIO $ postWith opts url (toJSON rq)
       resp <- asJSON r 
       case resp ^. responseBody of
-        ApiFailure{..} -> loop 
+        ApiFailure{..} -> do
+          sleep 1
+          loop 
         ApiSuccess{..} -> return resp
 
 handleResp :: (t -> Repl ()) -> Response (ApiResponse t) -> Repl ()

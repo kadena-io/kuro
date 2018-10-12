@@ -24,8 +24,12 @@ pprintBeat :: Beat -> IO String
 pprintBeat Beat{..} = do
   t' <- getCurrentTime
   (delay :: Int) <- return $! (fromIntegral $ view microseconds $ t' .-. _tockStartTime)
+  let str = "Heartbeat delayed by " ++ show delay ++ " microseconds"
   let seconds :: Integer = round ((fromIntegral delay :: Double) / fromIntegral (1000000 :: Int))
-  return $! "Heartbeat delayed by " ++ show delay ++ " microseconds (" ++ show seconds ++ " second(s))"
+  let str' = if seconds > 0
+        then str ++ " (~ " ++ show seconds ++ " second(s))"
+        else str
+  return $! str'
 
 createBeat :: Int -> IO Beat
 createBeat delay = Beat <$> pure delay <*> getCurrentTime

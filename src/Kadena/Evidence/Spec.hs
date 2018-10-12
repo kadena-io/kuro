@@ -143,16 +143,16 @@ processResult result = do
   let debug s = liftIO $ fn s
   case result of
     Unconvinced{..} -> do
-      debug $ "processResult - Unconvinced - Leader's timeout value NOT reset" 
+      debug $ "processResult - Unconvinced - Leader's timeout value NOT reset"
       esConvincedNodes %= Set.delete _rNodeId
       esNodeStates %= Map.insert _rNodeId (_rLogIndex, _rReceivedAt)
     Unsuccessful{..} -> do
-      debug $ "processResult - Unsuccessful - Leader's timeout value IS reset" 
+      debug $ "processResult - Unsuccessful - Leader's timeout value IS reset"
       esConvincedNodes %= Set.insert _rNodeId
       esNodeStates %= Map.insert _rNodeId (_rLogIndex, _rReceivedAt)
       esResetLeaderNoFollowers .= True
     Successful{..} -> do
-      debug $ "processResult - Successful - Leader's timeout value IS reset" 
+      debug $ "processResult - Successful - Leader's timeout value IS reset"
       esConvincedNodes %= Set.insert _rNodeId
       esMismatchNodes %= Set.delete _rNodeId
       esResetLeaderNoFollowers .= True
@@ -175,26 +175,27 @@ processResult result = do
     -- this one is interesting, we have an old but successful message... I think we just drop it
     SuccessfulSteadyState{..} -> do
       -- basically, nothings going on and these are just heartbeats
-      debug $ "processResult - SucessfulSteadyState - Leader's timeout value IS reset" 
+      debug $ "processResult - SucessfulSteadyState - Leader's timeout value IS reset"
       esConvincedNodes %= Set.insert _rNodeId
       esNodeStates %= Map.insert _rNodeId (_rLogIndex, _rReceivedAt)
       esMismatchNodes %= Set.delete _rNodeId
       esResetLeaderNoFollowers .= True
     SuccessfulButCacheMiss{..} -> do
-      debug $ "processResult - SucessfulButCacheMiss - Leader's timeout value NOT reset" 
+      debug $ "processResult - SucessfulButCacheMiss - Leader's timeout value NOT reset"
       esConvincedNodes %= Set.insert (_aerNodeId _rAer)
       esCacheMissAers %= Set.insert _rAer
+      -- esResetLeaderNoFollowers .= True -- potential line to include, pending more discussion
     MisMatch{..} -> do
-      debug $ "processResult - MisMatch - Leader's timeout value NOT reset" 
+      debug $ "processResult - MisMatch - Leader's timeout value NOT reset"
       cfg <- view mConfig >>= liftIO . readCurrentConfig
       liftIO $ throwDiagnostics (_enableDiagnostics cfg) "processResult -- MisMatch case hit"
       esConvincedNodes %= Set.insert _rNodeId
       esMismatchNodes %= Set.insert _rNodeId
     Noop -> do
-      debug $ "processResult -  - Leader's timeout value NOT reset" 
+      debug $ "processResult -  - Leader's timeout value NOT reset"
       return ()
     InvalidNode{..} -> do
-      debug $ "processResult - InvalidNode - Leader's timeout value NOT reset" 
+      debug $ "processResult - InvalidNode - Leader's timeout value NOT reset"
       esConvincedNodes %= Set.delete _rNodeId
       esNodeStates %= Map.delete _rNodeId
 {-# INLINE processResult #-}

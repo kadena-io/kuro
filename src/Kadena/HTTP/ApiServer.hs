@@ -267,12 +267,8 @@ listenFor (ListenerRequest rk) = do
       log $ "listenFor -- Listener Serviced for: " ++ show rk
       return $ _concrResult cr
 
-listenerTimeout :: Int
-listenerTimeout = 300
-
 registerListener :: Api ()
 registerListener = do
-  extendTimeout listenerTimeout
   (theEither :: Either SomeException ()) <- try $ do
     (ListenerRequest rk) <- readJSON
     hChan <- view (aiDispatch.dispHistoryChannel)

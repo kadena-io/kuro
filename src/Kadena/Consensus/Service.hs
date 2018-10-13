@@ -50,18 +50,22 @@ launchHistoryService :: Dispatch
   -> (String -> IO ())
   -> IO UTCTime
   -> Config
+  -> GlobalConfigTMVar
   -> IO ()
-launchHistoryService dispatch' dbgPrint' getTimestamp' rconf = do
-  linkAsyncTrack "HistoryThread" (History.runHistoryService (History.initHistoryEnv dispatch' dbgPrint' getTimestamp' rconf) Nothing)
+launchHistoryService dispatch' dbgPrint' getTimestamp' rconf gCfg = do
+  linkAsyncTrack "HistoryThread" (History.runHistoryService (History.initHistoryEnv dispatch'
+    dbgPrint' getTimestamp' rconf gCfg) Nothing)
   linkAsyncTrack "HistoryHB" (foreverHeart (_dispHistoryChannel dispatch') 1000000 HistoryBeat)
 
 launchPreProcService :: Dispatch
   -> (String -> IO ())
   -> IO UTCTime
   -> Config
+  -> GlobalConfigTMVar
   -> IO ()
 launchPreProcService dispatch' dbgPrint' getTimestamp' Config{..} = do
-  linkAsyncTrack "PreProcThread" (PreProc.runPreProcService (PreProc.initPreProcEnv dispatch' _preProcThreadCount dbgPrint' getTimestamp' _preProcUsePar))
+  linkAsyncTrack "PreProcThread" (PreProc.runPreProcService (PreProc.initPreProcEnv dispatch'
+    _preProcThreadCount dbgPrint' getTimestamp' _preProcUsePar))
   linkAsyncTrack "PreProcHB" (foreverHeart (_dispProcessRequestChannel dispatch') 1000000 PreProcBeat)
 
 launchEvidenceService :: Dispatch

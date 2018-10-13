@@ -5,7 +5,7 @@
 module Kadena.Types.PreProc
   ( ProcessRequest(..)
   , ProcessRequestEnv(..)
-  , preProcessRequestChannel, preDebugPrint, preGetTimestamp, preThreadCount, preUsePar
+  , preProcessRequestChannel, preDebugPrint, preGetTimestamp, preThreadCount, preUsePar, preConfig
   , ProcessRequestChannel(..)
   , ProcessRequestService
   ) where
@@ -19,6 +19,7 @@ import Control.Concurrent.STM
 import Data.Sequence (Seq)
 import Data.Thyme.Clock (UTCTime)
 
+import Kadena.Config.TMVar as Cfg
 import Kadena.Types.Command
 import Kadena.Types.Comms
 import Kadena.Types.Event (Beat)
@@ -50,6 +51,7 @@ data ProcessRequestEnv = ProcessRequestEnv
   , _preDebugPrint :: !(String -> IO ())
   , _preGetTimestamp :: !(IO UTCTime)
   , _preUsePar :: !Bool
+  , _preConfig :: !Cfg.GlobalConfigTMVar
   }
 makeLenses ''ProcessRequestEnv
 

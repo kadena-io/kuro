@@ -8,6 +8,7 @@ import Control.Lens hiding ((:>))
 import Control.Monad
 import Control.Monad.IO.Class
 
+import Kadena.Config.TMVar as Cfg
 import Kadena.Event
 import Kadena.Types
 import Kadena.Consensus.Util
@@ -33,7 +34,10 @@ handleEvents = forever $ do
     NewCmd cmds                   -> PureCommand.handleBatch cmds
     ElectionTimeout s             -> PureElectionTimeout.handle s
     HeartbeatTimeout s            -> PureHeartbeatTimeout.handle s
-    Heart tock'                   -> liftIO (pprintBeat tock') >>= debug
+    Heart tock'  -> do
+      gCfg <- view cfg
+      conf <- liftIO $ Cfg.readCurrentConfig gCfg
+      liftIO (pprintBeat tock' conf) >>= debug
 
 -- TODO: prune out AER's from RPC if possible
 handleRPC :: RPC -> Consensus ()

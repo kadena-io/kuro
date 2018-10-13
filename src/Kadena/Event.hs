@@ -16,20 +16,26 @@ import Control.Concurrent (threadDelay)
 import Data.AffineSpace ((.-.))
 import Data.Thyme.Clock (UTCTime, microseconds, getCurrentTime)
 
+import Kadena.Config.TMVar (Config(..))
+import Kadena.Types.Base
 import Kadena.Types.Event
 import Kadena.Types.Comms
 
 -- Beats are useful for seeing how backed up things are
-pprintBeat :: Beat -> IO String
-pprintBeat Beat{..} = do
+pprintBeat :: Beat -> Config -> IO String
+pprintBeat b Config{..} = do
+  let nodeId = _alias _nodeId
   t' <- getCurrentTime
-  (delay :: Int) <- return $! (fromIntegral $ view microseconds $ t' .-. _tockStartTime)
-  let str = "Heartbeat delayed by " ++ show delay ++ " microseconds"
+  (delay :: Int) <- return $! (fromIntegral $ view microseconds $ t' .-. (_tockStartTime b))
+  let str = show nodeId ++ ": Heartbeat delayed by " ++ show delay ++ " microseconds"
   let seconds :: Integer = round ((fromIntegral delay :: Double) / fromIntegral (1000000 :: Int))
-  let str' = if seconds > 0
-        then str ++ " (~ " ++ show seconds ++ " second(s))"
-        else str
-  return $! str'
+  let str' = if seconds < 1 then str
+               else str ++ " (~ " ++ show seconds ++ " second(s))"
+  let electionMax = snd _electionTimeoutRange * 2
+  let str'' = if delay <= electionMax then str'
+                else str' ++ "\n ***** Warning: " ++ show nodeId
+                     ++ " contributing to possible election timeout *****"
+  return $! str''
 
 createBeat :: Int -> IO Beat
 createBeat delay = Beat <$> pure delay <*> getCurrentTime

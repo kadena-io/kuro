@@ -28,7 +28,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Thyme.Clock (UTCTime, getCurrentTime)
 
-import Kadena.Types.Base 
+import Kadena.Types.Base
 import Kadena.Types.Evidence
 import Kadena.Event (pprintBeat)
 import Kadena.Log.Types (LogServiceChannel)
@@ -158,7 +158,10 @@ serviceRequests = do
           BroadcastAER -> sendAllAppendEntriesResponse
           BroadcastRV rv -> sendAllRequestVotes rv
           BroadcastRVR{..} -> sendRequestVoteResponse _srCandidate _srHeardFromLeader _srVote
-      SenderBeat t -> liftIO (pprintBeat t) >>= debug
+      SenderBeat t -> do
+        gCfg <- view config
+        conf <- liftIO $ Cfg.readCurrentConfig gCfg
+        liftIO (pprintBeat t conf) >>= debug
 
 queryLogs :: Set Log.AtomicQuery -> SenderService StateSnapshot (Map Log.AtomicQuery Log.QueryResult)
 queryLogs q = do

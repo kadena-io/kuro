@@ -28,6 +28,7 @@ import Pact.Types.Logger (LogRules(..),initLoggers,doLog)
 
 import Kadena.Util.Util (linkAsyncTrack)
 import Kadena.Config
+import Kadena.Config.TMVar as Cfg
 import Kadena.Types.PactDB
 import Kadena.Config.TMVar
 import Kadena.Types.Base
@@ -114,7 +115,10 @@ handle = do
   forever $ do
     q <- liftIO $ readComm oChan
     case q of
-      ExecutionBeat t -> liftIO (pprintBeat t) >>= debug
+      ExecutionBeat t -> do
+        gCfg <- view eenvMConfig
+        conf <- liftIO $ Cfg.readCurrentConfig gCfg
+        liftIO (pprintBeat t conf) >>= debug
       ChangeNodeId{..} -> do
         prevNodeId <- use csNodeId
         unless (prevNodeId == newNodeId) $ do

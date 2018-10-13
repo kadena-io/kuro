@@ -9,7 +9,7 @@ module Kadena.Types.History
   , PossiblyIncompleteResults(..)
   , ListenerResult(..)
   , HistoryEnv(..)
-  , henvHistoryChannel, henvDebugPrint, henvGetTimestamp, henvDbPath
+  , henvHistoryChannel, henvDebugPrint, henvGetTimestamp, henvDbPath, henvConfig
   , HistoryState(..)
   , registeredListeners, persistence
   , PersistenceSystem(..)
@@ -30,6 +30,7 @@ import Data.Thyme.Clock (UTCTime)
 
 import Database.SQLite3.Direct
 
+import Kadena.Config.TMVar as Cfg
 import Kadena.Types.Base
 import Kadena.Types.Command
 import Kadena.Types.Comms
@@ -79,6 +80,7 @@ data HistoryEnv = HistoryEnv
   , _henvDebugPrint :: !(String -> IO ())
   , _henvGetTimestamp :: !(IO UTCTime)
   , _henvDbPath :: !(Maybe FilePath)
+  , _henvConfig :: !Cfg.GlobalConfigTMVar
   }
 makeLenses ''HistoryEnv
 

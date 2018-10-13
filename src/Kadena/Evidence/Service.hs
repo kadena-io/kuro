@@ -20,6 +20,7 @@ import Data.Thyme.Clock
 import Safe
 
 import Kadena.Config.ClusterMembership
+import Kadena.Config.TMVar as Cfg
 import Kadena.ConfigChange as CC
 import Kadena.Event (pprintBeat)
 import Kadena.Evidence.Spec as X
@@ -130,7 +131,9 @@ runEvidenceProcessor = do
       when (newEs ^. esResetLeaderNoFollowers) tellKadenaToResetLeaderNoFollowersTimeout
       processCommitCkResult res
     EvidenceBeat tock -> do
-      liftIO (pprintBeat tock) >>= debug
+      gCfg <- view mConfig
+      conf <- liftIO $ Cfg.readCurrentConfig gCfg
+      liftIO (pprintBeat tock conf) >>= debug
       put $ garbageCollectCache es
     EvidenceBounce -> do
       put $ garbageCollectCache es

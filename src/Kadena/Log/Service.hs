@@ -41,8 +41,9 @@ runLogService :: Dispatch
               -> (String -> IO())
               -> (Metric -> IO())
               -> Config
+              -> GlobalConfigTMVar
               -> IO ()
-runLogService dispatch dbg publishMetric' rconf = do
+runLogService dispatch dbg publishMetric' rconf gCfg = do
   dbConn' <- if rconf ^. enablePersistence
     then do
       let dbDir' = (rconf ^. logDir) </> (show $ _alias $ rconf ^. (nodeId)) ++ "-log.sqlite"
@@ -61,6 +62,7 @@ runLogService dispatch dbg publishMetric' rconf = do
     , _persistedLogEntriesToKeepInMemory = (rconf ^. inMemTxCache)
     , _dbConn = dbConn'
     , _publishMetric = publishMetric'
+    , _config = gCfg
     }
   initLogState' <- case dbConn' of
     Just conn' -> syncLogsFromDisk (env ^. persistedLogEntriesToKeepInMemory) (dispatch ^. Dispatch.dispExecService) conn'
@@ -114,7 +116,9 @@ runQuery (NeedCacheEvidence lis mv) = do
   liftIO $ putMVar mv $! qr
   debug $ "servicing cache miss pertaining to: " ++ show lis
 runQuery (Heart t) = do
-  t' <- liftIO $ pprintBeat t
+  gCfg <- view config
+  conf <- liftIO $ readCurrentConfig gCfg
+  t' <- liftIO $ pprintBeat t conf
   debug t'
   volLEs <- use lsVolatileLogEntries
   perLes@(PersistedLogEntries _perLes') <- use lsPersistedLogEntries

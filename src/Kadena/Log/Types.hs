@@ -20,6 +20,7 @@ module Kadena.Log.Types
   , logQueryChannel, execChannel, consensusEvent, senderChannel, debugPrint
   , dbConn, evidence, publishMetric
   , persistedLogEntriesToKeepInMemory
+  , config
   , LogThread
   , LogServiceChannel(..)
   , UpdateLogs(..)
@@ -44,6 +45,7 @@ import Database.SQLite.Simple (Connection(..))
 
 import GHC.Generics
 
+import qualified Kadena.Config.TMVar as Cfg
 import Kadena.Types.Base as X
 import Kadena.Types.Metric
 import Kadena.Types.KeySet
@@ -77,7 +79,8 @@ data LogEnv = LogEnv
   , _persistedLogEntriesToKeepInMemory :: !Int
   , _debugPrint :: !(String -> IO ())
   , _dbConn :: !(Maybe Connection)
-  , _publishMetric :: !(Metric -> IO ())}
+  , _publishMetric :: !(Metric -> IO ())
+  , _config :: !Cfg.GlobalConfigTMVar}
 makeLenses ''LogEnv
 
 data LogState = LogState

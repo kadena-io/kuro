@@ -25,7 +25,6 @@ import Kadena.ConfigChange as CC
 import Kadena.Event (pprintBeat)
 import Kadena.Evidence.Spec as X
 import Kadena.Types.Metric (Metric)
-import Kadena.Config.TMVar
 import Kadena.Types.Base
 import Kadena.Types.Comms
 import Kadena.Types.Config

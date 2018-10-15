@@ -30,7 +30,6 @@ import Kadena.Util.Util (linkAsyncTrack)
 import Kadena.Config
 import Kadena.Config.TMVar as Cfg
 import Kadena.Types.PactDB
-import Kadena.Config.TMVar
 import Kadena.Types.Base
 import Kadena.Types.Execution
 import Kadena.Types.Metric

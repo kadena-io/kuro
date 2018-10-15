@@ -63,9 +63,9 @@ launchPreProcService :: Dispatch
   -> Config
   -> GlobalConfigTMVar
   -> IO ()
-launchPreProcService dispatch' dbgPrint' getTimestamp' Config{..} = do
+launchPreProcService dispatch' dbgPrint' getTimestamp' Config{..} gCfg = do
   linkAsyncTrack "PreProcThread" (PreProc.runPreProcService (PreProc.initPreProcEnv dispatch'
-    _preProcThreadCount dbgPrint' getTimestamp' _preProcUsePar))
+    _preProcThreadCount dbgPrint' getTimestamp' _preProcUsePar gCfg))
   linkAsyncTrack "PreProcHB" (foreverHeart (_dispProcessRequestChannel dispatch') 1000000 PreProcBeat)
 
 launchEvidenceService :: Dispatch
@@ -102,9 +102,10 @@ launchLogService :: Dispatch
   -> (String -> IO ())
   -> (Metric -> IO ())
   -> Config
+  -> GlobalConfigTMVar
   -> IO ()
-launchLogService dispatch' dbgPrint' publishMetric' rconf = do
-  linkAsyncTrack "LogThread" (Log.runLogService dispatch' dbgPrint' publishMetric' rconf)
+launchLogService dispatch' dbgPrint' publishMetric' rconf gCfg = do
+  linkAsyncTrack "LogThread" (Log.runLogService dispatch' dbgPrint' publishMetric' rconf gCfg)
   linkAsyncTrack "LogHB" $ (foreverHeart (_dispLogService dispatch') 1000000 Log.Heart)
 
 launchSenderService :: Dispatch
@@ -146,12 +147,12 @@ runConsensusService renv gcm spec rstate timeCache' mPubConsensus' = do
   mEvState <- newEmptyMVar
   mLeaderNoFollowers <- newEmptyMVar
 
-  launchHistoryService dispatch' dbgPrint' getTimestamp' rconf
-  launchPreProcService dispatch' dbgPrint' getTimestamp' rconf
+  launchHistoryService dispatch' dbgPrint' getTimestamp' rconf gcm
+  launchPreProcService dispatch' dbgPrint' getTimestamp' rconf gcm
   launchSenderService dispatch' dbgPrint' publishMetric' mEvState mPubConsensus' gcm
   launchExecutionService dispatch' dbgPrint' publishMetric' keySet' nodeId' getTimestamp' gcm mPubConsensus' (_entity rconf)
   launchEvidenceService dispatch' dbgPrint' publishMetric' mEvState gcm mLeaderNoFollowers
-  launchLogService dispatch' dbgPrint' publishMetric' rconf
+  launchLogService dispatch' dbgPrint' publishMetric' rconf gcm
   launchApiService dispatch' gcm dbgPrint' mPubConsensus' getTimestamp'
   linkAsyncTrack "ConsensusHB" (foreverHeart (_dispConsensusEvent dispatch') 1000000 (ConsensusEvent . Heart))
   catchAndRethrow "ConsensusThread" $ runRWS_

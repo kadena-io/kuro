@@ -46,8 +46,11 @@ handle msg = do
              (_csNodeRole s)
              leaderWithoutFollowers'
   mapM_ debug l
+  theNodeId <- Kd.viewConfig TMV.nodeId
+  theAlais  = show (_alias theNodeId)
   case out of
     IsLeader -> do
+      (debug theAlias ++ ": (leader) enqueuing SendAERegardless")
       enqueueRequest $ Sender.BroadcastAE Sender.SendAERegardless
       enqueueRequest $ Sender.BroadcastAER
       clearLazyVoteAndInformCandidates
@@ -59,5 +62,6 @@ handle msg = do
         Just KD.ResetLeaderNoFollowersTimeout -> csTimeSinceLastAER .= 0
     NotLeader -> csTimeSinceLastAER .= 0 -- probably overkill, but nice to know this gets set to 0 if not leader
     NoFollowers -> do
+      debug (theAlias ++ ": (leader) enqueuing ElectionTimeout)
       timeout' <- return $ _csTimeSinceLastAER s
       enqueueEvent $ ElectionTimeout $ "Leader has not hear from followers in: " ++ show (timeout' `div` 1000) ++ "ms"

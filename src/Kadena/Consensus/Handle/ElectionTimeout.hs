@@ -114,7 +114,7 @@ handle msg = do
   leaderWithoutFollowers' <- hasElectionTimerLeaderFired
   Term t <- use csTerm
   when (t > 0) $ do
-    liftIO (throwDiagnostics (TMV._enableDiagnostics c) "Election timeout has occurred")
+    liftIO (throwDiagnostics (TMV._enableDiagnostics c) (show (_alias (TMV._nodeId c)) ++ ": Election timeout has occurred"))
   (out,l) <- runReaderT (runWriterT (handleElectionTimeout msg)) $
              ElectionTimeoutEnv
              (_csNodeRole s)

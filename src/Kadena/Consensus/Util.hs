@@ -56,8 +56,11 @@ getNewElectionTimeout = do
   
 resetElectionTimer :: Consensus ()
 resetElectionTimer = do
+  theCfg <- readConfig
+  let theNode = _alias (_nodeId theCfg)
   timeout <- getNewElectionTimeout
-  debug $ "Reset Election Timeout: " ++ show (timeout `div` 1000) ++ "ms"
+  debug $ (show theNode) ++ ": Resetting Election Timeout - setting a new timed event for "
+    ++ show (timeout `div` 1000) ++ "ms"
   setTimedEvent (ElectionTimeout $ show (timeout `div` 1000) ++ "ms") timeout
 
 -- | If a leader hasn't heard from a follower in longer than 2x max election timeouts, he should

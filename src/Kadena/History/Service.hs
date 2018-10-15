@@ -42,18 +42,19 @@ initHistoryEnv
   :: Dispatch
   -> (String -> IO ())
   -> IO UTCTime
-  -> Config
   -> GlobalConfigTMVar
-  -> HistoryEnv
-initHistoryEnv dispatch' debugPrint' getTimestamp' rconf cfgTmVar = HistoryEnv
-  { _henvHistoryChannel = dispatch' ^. D.dispHistoryChannel
-  , _henvDebugPrint = debugPrint'
-  , _henvGetTimestamp = getTimestamp'
-  , _henvDbPath = if rconf ^. enablePersistence
-              then Just $ (rconf ^. logDir) </> (show $ _alias $ rconf ^. (nodeId)) ++ "-logResult.sqlite"
-              else Nothing
-  , _henvConfig = cfgTmVar
-  }
+  -> IO HistoryEnv
+initHistoryEnv dispatch' debugPrint' getTimestamp' cfgTmVar = do
+  rconf <- readCurrentConfig cfgTmVar 
+  return $ HistoryEnv
+    { _henvHistoryChannel = dispatch' ^. D.dispHistoryChannel
+    , _henvDebugPrint = debugPrint'
+    , _henvGetTimestamp = getTimestamp'
+    , _henvDbPath = if rconf ^. enablePersistence
+                then Just $ (rconf ^. logDir) </> (show $ _alias $ rconf ^. (nodeId)) ++ "-logResult.sqlite"
+                else Nothing
+    , _henvConfig = cfgTmVar
+    }
 
 runHistoryService :: HistoryEnv -> Maybe HistoryState -> IO ()
 runHistoryService env mState = catchAndRethrow "historyService" $ do

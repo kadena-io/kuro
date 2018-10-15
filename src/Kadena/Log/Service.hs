@@ -40,10 +40,10 @@ import Kadena.Event (pprintBeat)
 runLogService :: Dispatch
               -> (String -> IO())
               -> (Metric -> IO())
-              -> Config
               -> GlobalConfigTMVar
               -> IO ()
-runLogService dispatch dbg publishMetric' rconf gCfg = do
+runLogService dispatch dbg publishMetric' gCfg = do
+  rconf <- readCurrentConfig gCfg
   dbConn' <- if rconf ^. enablePersistence
     then do
       let dbDir' = (rconf ^. logDir) </> (show $ _alias $ rconf ^. (nodeId)) ++ "-log.sqlite"

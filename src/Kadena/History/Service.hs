@@ -42,16 +42,19 @@ initHistoryEnv
   :: Dispatch
   -> (String -> IO ())
   -> IO UTCTime
-  -> Config
-  -> HistoryEnv
-initHistoryEnv dispatch' debugPrint' getTimestamp' rconf = HistoryEnv
-  { _henvHistoryChannel = dispatch' ^. D.dispHistoryChannel
-  , _henvDebugPrint = debugPrint'
-  , _henvGetTimestamp = getTimestamp'
-  , _henvDbPath = if rconf ^. enablePersistence
-              then Just $ (rconf ^. logDir) </> (show $ _alias $ rconf ^. (nodeId)) ++ "-logResult.sqlite"
-              else Nothing
-  }
+  -> GlobalConfigTMVar
+  -> IO HistoryEnv
+initHistoryEnv dispatch' debugPrint' getTimestamp' cfgTmVar = do
+  rconf <- readCurrentConfig cfgTmVar 
+  return $ HistoryEnv
+    { _henvHistoryChannel = dispatch' ^. D.dispHistoryChannel
+    , _henvDebugPrint = debugPrint'
+    , _henvGetTimestamp = getTimestamp'
+    , _henvDbPath = if rconf ^. enablePersistence
+                then Just $ (rconf ^. logDir) </> (show $ _alias $ rconf ^. (nodeId)) ++ "-logResult.sqlite"
+                else Nothing
+    , _henvConfig = cfgTmVar
+    }
 
 runHistoryService :: HistoryEnv -> Maybe HistoryState -> IO ()
 runHistoryService env mState = catchAndRethrow "historyService" $ do
@@ -101,7 +104,9 @@ handle oChan = do
   unless (q == Bounce) $ do
     case q of
       HistoryBeat t -> do
-        liftIO (pprintBeat t) >>= debug
+        gCfg <- view henvConfig
+        conf <- liftIO $ readCurrentConfig gCfg
+        liftIO (pprintBeat t conf) >>= debug
 #if WITH_KILL_SWITCH
         _k''
 #endif

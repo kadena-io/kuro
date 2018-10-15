@@ -42,9 +42,9 @@ depsample10000.json
 prettystuff.json
 stuff.json
 /.dir-locals.el
-/TAGS
-/tags/
-/ctags
+**/TAGS
+**/tags
+**/ctags
 /th
 CabalInspector.hs
 .stylish-haskell.yaml

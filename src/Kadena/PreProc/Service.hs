@@ -22,9 +22,10 @@ import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import Data.Foldable
 
-import Kadena.Types.Comms 
+import qualified Kadena.Config.TMVar as Cfg
+import Kadena.Types.Comms
 import Kadena.Types.Command (FinishedPreProc(..))
-import Kadena.Types.PreProc 
+import Kadena.Types.PreProc
 import Kadena.Types.Dispatch (Dispatch)
 import qualified Kadena.Types.Dispatch as D
 import Kadena.Event
@@ -37,13 +38,15 @@ initPreProcEnv
   -> (String -> IO ())
   -> IO UTCTime
   -> Bool
+  -> Cfg.GlobalConfigTMVar
   -> ProcessRequestEnv
-initPreProcEnv dispatch' threadCount' debugPrint' getTimestamp' usePar' = ProcessRequestEnv
+initPreProcEnv dispatch' threadCount' debugPrint' getTimestamp' usePar' gCfg' = ProcessRequestEnv
   { _preProcessRequestChannel = dispatch' ^. D.dispProcessRequestChannel
   , _preThreadCount = threadCount'
   , _preDebugPrint = debugPrint'
   , _preGetTimestamp = getTimestamp'
   , _preUsePar = usePar'
+  , _preConfig = gCfg'
   }
 
 runPreProcService :: ProcessRequestEnv -> IO ()
@@ -73,7 +76,10 @@ threadPool env@ProcessRequestEnv{..} = replicateM _preThreadCount $
   async $ forever $ runReaderT (handle _preProcessRequestChannel) env
 
 ppBeat :: Beat -> ProcessRequestService ()
-ppBeat b = liftIO (pprintBeat b) >>= debug
+ppBeat b = do
+  gCfg <- view preConfig
+  conf <- liftIO $ Cfg.readCurrentConfig gCfg
+  liftIO (pprintBeat b conf) >>= debug
 
 handle :: ProcessRequestChannel -> ProcessRequestService ()
 handle workChan = do

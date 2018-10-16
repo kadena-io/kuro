@@ -214,6 +214,7 @@ handle ae = do
   vc <- viewConfig clusterMembers
   let quorumSize' = CM.minQuorumOthers vc
   myId <- viewConfig nodeId
+  let myName = show $ _alias myId
   mv <- queryLogs $ Set.fromList [Log.GetSomeEntry (_prevLogIndex ae),Log.GetCommitIndex]
   logAtAEsLastLogIdx <- return $ Log.hasQueryResult (Log.SomeEntry $ _prevLogIndex ae) mv
   config <- view cfg
@@ -229,22 +230,30 @@ handle ae = do
   applyNewLeader _newLeaderAction
   case _result of
     Ignore -> do
-      let str = "appendEntries - Ignoring AE from: "
+      let str = myName ++ ": AppendEntries.handle - Ignoring AE from: "
                 ++ show (KD.unAlias $ _digNodeId $ _pDig $ _aeProvenance ae )
                 ++ " for " ++ show (_prevLogIndex $ ae)
                 ++ " with " ++ show (Log.lesCnt $ _aeEntries ae) ++ " entries."
       debug str
       return ()
-    SendUnconvincedResponse{..} -> enqueueRequest $ Sender.SingleAER _responseLeaderId False False
+    SendUnconvincedResponse{..} -> do
+      debug $ myName ++ ": AppendEntries.handle - SendUnconvincedResponse"
+      enqueueRequest $ Sender.SingleAER _responseLeaderId False False
     ValidLeaderAndTerm{..} -> do
       case _validReponse of
-        SendFailureResponse -> enqueueRequest $ Sender.SingleAER _responseLeaderId False True
+        SendFailureResponse -> do
+          debug $ myName ++ ": AppendEntries.handle - ValidLeaderAndTerm (SendFailureResonse...)"
+                         ++ "\n\t(election timer reset if not leader)"
+          enqueueRequest $ Sender.SingleAER _responseLeaderId False True
         (Commit rks rle) -> do
 -- MASSIVE TODO: analyze if this is the best thing to do. Another option would be to drop entries but then nodes could get out of sync, or should we have
 -- CryptoWorker also do this and take it out of consensus completely
 --          alreadyExist <- queryHistoryForPriorApplication rks
 --          if HashSet.null alreadyExist
 --          then do
+
+            debug $ myName ++ ": AppendEntries.handle - ValidLeaderAndTerm (Commit...)"
+                           ++ "\n\t(election timer reset if not leader)"
             end' <- now
             updateLogs $ Log.ULReplicate $ updateRleLats start' end' rle
             newMv <- queryLogs $ Set.singleton Log.GetLastLogHash
@@ -256,7 +265,10 @@ handle ae = do
 --            enqueueRequest $ Sender.SingleAER _responseLeaderId False True
 --            enqueueRequest Sender.BroadcastAER -- NB: this can only happen after `updateLogs` is complete, the tracer query makes sure of this
 --            debug $ "Failure! Leader sent us entries with logEntries that have already been committed"
-        DoNothing -> enqueueRequest Sender.BroadcastAER
+        DoNothing -> do
+          debug $ myName ++ ": AppendEntries.handle - ValidLeaderAndTerm (DoNothing...)"
+                         ++ "\n\t(election timer reset if not leader)"
+          enqueueRequest Sender.BroadcastAER
       clearLazyVoteAndInformCandidates
       -- This NEEDS to be last, otherwise we can have an election fire when we are are transmitting proof/accessing the logs
       -- It's rare but under load and given enough time, this will happen.

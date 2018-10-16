@@ -16,7 +16,7 @@ module Kadena.HTTP.ApiServer
 import Prelude hiding (log)
 import Control.Lens
 import Control.Concurrent
-import Control.Exception.Lifted (SomeException, throw, try)
+import Control.Exception.Lifted (catch, SomeException(..), throw, try)
 import Control.Monad.Reader
 
 import Data.Aeson hiding (defaultOptions, Result(..))
@@ -112,44 +112,52 @@ api = route [
       ]
 
 sendLocal :: Api ()
-sendLocal = do
-  (cmd :: Pact.Command BS.ByteString) <- fmap encodeUtf8 <$> readJSON
-  mv <- liftIO newEmptyMVar
-  c <- view $ aiDispatch . dispExecService
-  liftIO $ writeComm c (Exec.ExecLocal cmd mv)
-  r <- liftIO $ takeMVar mv
-  writeResponse $ ApiSuccess $ r
+
+sendLocal = catch (do
+    (cmd :: Pact.Command BS.ByteString) <- fmap encodeUtf8 <$> readJSON
+    mv <- liftIO newEmptyMVar
+    c <- view $ aiDispatch . dispExecService
+    liftIO $ writeComm c (Exec.ExecLocal cmd mv)
+    r <- liftIO $ takeMVar mv
+    writeResponse $ ApiSuccess $ r)
+  (\e -> liftIO $ putStrLn $ "Exception caught in the handler poll: " ++ show (e :: SomeException))
 
 sendPublicBatch :: Api ()
-sendPublicBatch = do
-  SubmitBatch cmds <- readJSON
-  when (null cmds) $ die "Empty Batch"
-  log $ "public: received batch of " ++ show (length cmds)
-  rpcs <- return $ buildCmdRpc <$> cmds
-  queueRpcs rpcs
+sendPublicBatch =
+  catch
+    (do
+      SubmitBatch cmds <- readJSON
+      when (null cmds) $ die "Empty Batch"
+      log $ "public: received batch of " ++ show (length cmds)
+      rpcs <- return $ buildCmdRpc <$> cmds
+      queueRpcs rpcs)
+    (\e -> liftIO $ putStrLn $ "Exception caught in the handler sendPublicBatch: "
+                             ++ show (e :: SomeException))
 
 sendClusterChange :: Api ()
-sendClusterChange = do
-  SubmitCC ccCmds <- readJSON
-  when (null ccCmds) $ die "Empty cluster change batch"
-  when (length ccCmds /= 2) $ die "Exactly two cluster change commands required -- one Transitional, one Final"
-  let transCmd = head ccCmds
-  let finalCmd = head $ tail $ ccCmds
-  let transRpc = buildCCCmdRpc transCmd
-  queueRpcsNoResp [transRpc]
-  let transListenerReq = ListenerRequest (fst transRpc) --listen for the result of the transitional command
-  ccTransResult <- listenFor transListenerReq
-  case ccTransResult of
-    ClusterChangeSuccess -> do
-      log "Transitional CC was sucessful, now ok to send the Final"
-      let finalRpc = buildCCCmdRpc finalCmd
-      queueRpcs [finalRpc]
-      let finalListenerReq = ListenerRequest (fst finalRpc)
-      ccFinalResult <- listenFor finalListenerReq
-      case ccFinalResult of
-        ClusterChangeSuccess -> log "Final CC was sucessful, Config change complete"
-        ClusterChangeFailure eFinal -> log $ "Final cluster change failed: " ++ eFinal
-    ClusterChangeFailure eTrans  -> log $ "Transitional cluster change failed: " ++ eTrans
+sendClusterChange = catch (do
+    SubmitCC ccCmds <- readJSON
+    when (null ccCmds) $ die "Empty cluster change batch"
+    when (length ccCmds /= 2) $ die "Exactly two cluster change commands required -- one Transitional, one Final"
+    let transCmd = head ccCmds
+    let finalCmd = head $ tail $ ccCmds
+    let transRpc = buildCCCmdRpc transCmd
+    queueRpcsNoResp [transRpc]
+    let transListenerReq = ListenerRequest (fst transRpc) --listen for the result of the transitional command
+    ccTransResult <- listenFor transListenerReq
+    case ccTransResult of
+      ClusterChangeSuccess -> do
+        log "Transitional CC was sucessful, now ok to send the Final"
+        let finalRpc = buildCCCmdRpc finalCmd
+        queueRpcs [finalRpc]
+        let finalListenerReq = ListenerRequest (fst finalRpc)
+        ccFinalResult <- listenFor finalListenerReq
+        case ccFinalResult of
+          ClusterChangeSuccess -> log "Final CC was sucessful, Config change complete"
+          ClusterChangeFailure eFinal -> log $ "Final cluster change failed: " ++ eFinal
+      ClusterChangeFailure eTrans  -> log $ "Transitional cluster change failed: " ++ eTrans
+  )
+  (\e -> liftIO $ putStrLn $ "Exception caught in the handler poll: " ++ show (e :: SomeException))
 
 queueRpcs :: [(RequestKey,CMDWire)] -> Api ()
 queueRpcs rpcs = do
@@ -164,40 +172,44 @@ queueRpcsNoResp rpcs = do
     return ()
 
 sendPrivateBatch :: Api ()
-sendPrivateBatch = do
-  conf <- view aiConfig >>= liftIO . readCurrentConfig
-  unless (_ecSending $ _entity conf) $ die "Node is not configured as private sending node"
-  SubmitBatch cmds <- readJSON
-  log $ "private: received batch of " ++ show (length cmds)
-  when (null cmds) $ die "Empty Batch"
-  rpcs <- forM cmds $ \c -> do
-    let cb@Pact.Command{..} = fmap encodeUtf8 c
-    case eitherDecodeStrict' _cmdPayload of
-      Left e -> die $ "JSON payload decode failed: " ++ show e
-      Right (Pact.Payload{..} :: Pact.Payload (PactRPC T.Text)) -> case _pAddress of
-        Nothing -> die $ "sendPrivateBatch: missing address in payload: " ++ show c
-        Just Pact.Address{..} -> do
-          pchan <- view (aiDispatch.dispPrivateChannel)
-          if _aFrom `Set.member` _aTo || _aFrom /= (_elName $ _ecLocal$ _entity conf)
-            then die $ "sendPrivateBatch: invalid address in payload: " ++ show c
-            else do
-              er <- liftIO $ encrypt pchan $
-                PrivatePlaintext _aFrom (_alias (_nodeId conf)) _aTo (SZ.encode cb)
-              case er of
-                Left e -> die $ "sendPrivateBatch: encrypt failed: " ++ show e ++ ", command: " ++ show c
-                Right pc@PrivateCiphertext{..} -> do
-                  let hsh = hash $ _lPayload $ _pcEntity
-                      hc = Hashed pc hsh
-                  return (RequestKey hsh,PCWire $ SZ.encode hc)
-  queueRpcs rpcs
+sendPrivateBatch = catch (do
+    conf <- view aiConfig >>= liftIO . readCurrentConfig
+    unless (_ecSending $ _entity conf) $ die "Node is not configured as private sending node"
+    SubmitBatch cmds <- readJSON
+    log $ "private: received batch of " ++ show (length cmds)
+    when (null cmds) $ die "Empty Batch"
+    rpcs <- forM cmds $ \c -> do
+      let cb@Pact.Command{..} = fmap encodeUtf8 c
+      case eitherDecodeStrict' _cmdPayload of
+        Left e -> die $ "JSON payload decode failed: " ++ show e
+        Right (Pact.Payload{..} :: Pact.Payload (PactRPC T.Text)) -> case _pAddress of
+          Nothing -> die $ "sendPrivateBatch: missing address in payload: " ++ show c
+          Just Pact.Address{..} -> do
+            pchan <- view (aiDispatch.dispPrivateChannel)
+            if _aFrom `Set.member` _aTo || _aFrom /= (_elName $ _ecLocal$ _entity conf)
+              then die $ "sendPrivateBatch: invalid address in payload: " ++ show c
+              else do
+                er <- liftIO $ encrypt pchan $
+                  PrivatePlaintext _aFrom (_alias (_nodeId conf)) _aTo (SZ.encode cb)
+                case er of
+                  Left e -> die $ "sendPrivateBatch: encrypt failed: " ++ show e ++ ", command: " ++ show c
+                  Right pc@PrivateCiphertext{..} -> do
+                    let hsh = hash $ _lPayload $ _pcEntity
+                        hc = Hashed pc hsh
+                    return (RequestKey hsh,PCWire $ SZ.encode hc)
+    queueRpcs rpcs)
+  (\e -> liftIO $ putStrLn $ "Exception caught in the handler poll: " ++ show (e :: SomeException))
+
 
 poll :: Api ()
-poll = do
-  (Poll rks) <- readJSON
-  log $ "Polling for " ++ show rks
-  PossiblyIncompleteResults{..} <- checkHistoryForResult (HashSet.fromList rks)
-  when (HashMap.null possiblyIncompleteResults) $ log $ "No results found for poll!" ++ show rks
-  writeResponse $ pollResultToReponse possiblyIncompleteResults
+poll = catch (do
+    (Poll rks) <- readJSON
+    log $ "Polling for " ++ show rks
+    PossiblyIncompleteResults{..} <- checkHistoryForResult (HashSet.fromList rks)
+    when (HashMap.null possiblyIncompleteResults) $
+      log $ "No results found for poll!" ++ show rks
+    writeResponse $ pollResultToReponse possiblyIncompleteResults)
+  (\e -> liftIO $ putStrLn $ "Exception caught in the handler poll: " ++ show (e :: SomeException))
 
 pollResultToReponse :: HashMap RequestKey CommandResult -> ApiResponse PollResponses
 pollResultToReponse m = ApiSuccess $ PollResponses $ scrToAr <$> m

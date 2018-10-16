@@ -120,7 +120,7 @@ sendLocal = catch (do
     liftIO $ writeComm c (Exec.ExecLocal cmd mv)
     r <- liftIO $ takeMVar mv
     writeResponse $ ApiSuccess $ r)
-  (\e -> liftIO $ putStrLn $ "Exception caught in the handler poll: " ++ show (e :: SomeException))
+  (\e -> liftIO $ putStrLn $ "Exception caught in the handler 'sendLocal' : " ++ show (e :: SomeException))
 
 sendPublicBatch :: Api ()
 sendPublicBatch =
@@ -131,7 +131,7 @@ sendPublicBatch =
       log $ "public: received batch of " ++ show (length cmds)
       rpcs <- return $ buildCmdRpc <$> cmds
       queueRpcs rpcs)
-    (\e -> liftIO $ putStrLn $ "Exception caught in the handler sendPublicBatch: "
+    (\e -> liftIO $ putStrLn $ "Exception caught in the handler 'sendPublicBatch': "
                              ++ show (e :: SomeException))
 
 sendClusterChange :: Api ()
@@ -157,7 +157,7 @@ sendClusterChange = catch (do
           ClusterChangeFailure eFinal -> log $ "Final cluster change failed: " ++ eFinal
       ClusterChangeFailure eTrans  -> log $ "Transitional cluster change failed: " ++ eTrans
   )
-  (\e -> liftIO $ putStrLn $ "Exception caught in the handler poll: " ++ show (e :: SomeException))
+  (\e -> liftIO $ putStrLn $ "Exception caught in the handler 'sendClusterChange': " ++ show (e :: SomeException))
 
 queueRpcs :: [(RequestKey,CMDWire)] -> Api ()
 queueRpcs rpcs = do
@@ -198,7 +198,7 @@ sendPrivateBatch = catch (do
                         hc = Hashed pc hsh
                     return (RequestKey hsh,PCWire $ SZ.encode hc)
     queueRpcs rpcs)
-  (\e -> liftIO $ putStrLn $ "Exception caught in the handler poll: " ++ show (e :: SomeException))
+  (\e -> liftIO $ putStrLn $ "Exception caught in the handler 'sendPrivateBatch': " ++ show (e :: SomeException))
 
 
 poll :: Api ()

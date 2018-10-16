@@ -18,6 +18,7 @@ module Kadena.Util.Util
 
 import Control.Concurrent (forkFinally, putMVar, takeMVar, newEmptyMVar, forkIO)
 import Control.Concurrent.Async
+import Control.Exception (SomeAsyncException)
 import Control.Monad
 import Control.Monad.Catch
 import Data.List (intersperse)
@@ -70,6 +71,7 @@ instance (Exception e) => Exception (TrackedError e)
 
 catchAndRethrow :: MonadCatch m => String -> m a -> m a
 catchAndRethrow loc fn = fn `catches` [Handler (\(e@TrackedError{..} :: TrackedError SomeException) -> throwM $ e {teTrace = [loc] ++ teTrace})
+                                      ,Handler (\(e :: SomeAsyncException)  -> throwM e)
                                       ,Handler (\(e :: SomeException)  -> throwM $ TrackedError [loc] e)]
 
 -- | Run an action asynchronously on a new thread. If an uncaught exception is encountered in the

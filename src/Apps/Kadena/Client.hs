@@ -257,8 +257,8 @@ handleResp a r =
 
 handleBatchResp :: RequestKeys -> Repl ()
 handleBatchResp resp = do
-  rk <- return $ head $ _rkRequestKeys resp
-  listenForResults 10000 [rk] Nothing
+  let rks _rkRequestKeys resp
+  listenForResults 10000 rks Nothing
 
 sendCmd :: Mode -> String -> String -> Repl ()
 sendCmd m cmd replCmd = do
@@ -284,8 +284,8 @@ sendMultiple templateCmd replCmd startCount nRepeats  = do
       flushStrLn $ "Failure: " ++ show _apiError
     ApiSuccess{..} -> do
       let rks = _rkRequestKeys _apiResponse 
-      let firstRk = last rks
-      tell [ReplApiRequest {_apiRequestKey = firstRk, _replCmd = replCmd}]
+      let lastRk = last rks
+      tell [ReplApiRequest {_apiRequestKey = lastRk, _replCmd = replCmd}]
       flushStrLn $ "Polling for multiple RequestKey(s): "
       listenForResults 10000 rks (Just (fromIntegral nRepeats))
   
@@ -416,6 +416,7 @@ loadConfigChange fp = do
   ccApiReq <- liftIO $ mkConfigChangeApiReq fp
   sendConfigChangeCmd ccApiReq fp
 
+{-  
 listenForResults :: Int -> [RequestKey] -> Maybe Int64 -> Repl ()
 listenForResults _ [] _ = return ()
 listenForResults tdelay rks countm = loop (0 :: Int)
@@ -439,6 +440,33 @@ listenForResults tdelay rks countm = loop (0 :: Int)
                   Nothing -> flushStrLn "Latency Measurement Unavailable"
                   Just n -> flushStrLn $ intervalOfNumerous cnt n
               Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
+-}
+listenForResults :: Int -> [RequestKey] -> Bool -> Repl ()
+listenForResults _ [] _ = return ()
+listenForResults tdelay rks showLatency =
+listenForResults tdelay rks = 
+  threadDelay tdelay
+  resp <- postAPI "poll" (Poll rks)
+  case resp ^. responseBody of
+    ApiFailure err -> (False, errs ++ "\nApiFailure: no results received: " ++ show err)
+    ApiSuccess responseMap -> 
+      foldr checkEach (True, []) (keys responseMap) where
+      
+        checkEach key (b, errs) =
+          case lookup key responseMap of 
+            Nothing -> do
+              liftIO $ putStrLn "Request key missing from the response map"
+              False
+            Just apiResult -> do
+              let ok = case _arResult apiResult of
+                            Object h | HM.lookup (T.pack "status") h == Just "success" -> True
+                                    | HM.lookup (T.pack "tag") h == Just "ClusterChangeSuccess" -> True 
+                                    | otherwise -> False
+                            _ -> False
+              when not ok $ do
+                putStrLn "
+-- newtype PollResponses = PollResponses (HM.HashMap RequestKey ApiResult)
+
 
 pollForResult :: Bool -> RequestKey -> Repl ()
 pollForResult printMetrics rk = do

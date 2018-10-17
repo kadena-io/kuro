@@ -300,6 +300,7 @@ canBroadcastAE cm nodeIndexMap ct myNodeId' vts broadcastControl =
       limit' <- view aeReplicationLogLimit
       mv <- queryLogs $ Set.singleton $ Log.GetInfoAndEntriesAfter (Just $ 1 + mni) limit'
       (pli,plt, es) <- return $ Log.hasQueryResult (Log.InfoAndEntriesAfter (Just $ 1 + mni) limit') mv
+      debug "canBroadcastAE - InSync"
       return $ InSync $ AE' $ AppendEntries ct myNodeId' pli plt es Set.empty NewMsg
     else do
       inSyncRpc <- case broadcastControl of
@@ -312,13 +313,18 @@ canBroadcastAE cm nodeIndexMap ct myNodeId' vts broadcastControl =
 --              ++ " with results " ++ show (Log.lesMinIndex es, Log.lesMaxIndex es)
           return $! Just $! AE' $ AppendEntries ct myNodeId' pli plt es Set.empty NewMsg
       if everyoneBelieves
-      then return $ BackStreet inSyncRpc laggingFollowers
+      then do
+        debug $ "canBroadcastAE - Backsteet -" 
+              ++ "\n\tlaggingFollowers: " ++ show laggingFollowers
+        return $ BackStreet inSyncRpc laggingFollowers
       else do
         s <- get
         let allNodes = CM.getAllExcluding (_snapClusterMembers s) myNodeId'
         let diff = allNodes Set.\\ vts
         let theUnion = Set.union laggingFollowers diff
-        debug $ "non-believers exist, establishing dominance"
+        debug $ "canBroadcastAE - non-believers exist, establishing dominance"
+        debug $ "canBroadcastAE - Backstreet - "
+              ++ "\n\ttheUnion (lagging followers): " ++ show theUnion
         return $ BackStreet inSyncRpc theUnion
 {-# INLINE canBroadcastAE #-}
 

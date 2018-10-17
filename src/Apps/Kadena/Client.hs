@@ -283,10 +283,11 @@ sendMultiple templateCmd replCmd startCount nRepeats  = do
     ApiFailure{..} ->
       flushStrLn $ "Failure: " ++ show _apiError
     ApiSuccess{..} -> do
-      rk <- return $ last $ _rkRequestKeys _apiResponse
-      tell [ReplApiRequest {_apiRequestKey = rk, _replCmd = replCmd}]
-      flushStrLn $ "Polling for RequestKey: " ++ show rk
-      listenForResults 10000 [rk] (Just (fromIntegral nRepeats))
+      let rks = _rkRequestKeys _apiResponse 
+      let firstRk = last rks
+      tell [ReplApiRequest {_apiRequestKey = firstRk, _replCmd = replCmd}]
+      flushStrLn $ "Polling for multiple RequestKey(s): "
+      listenForResults 10000 rks (Just (fromIntegral nRepeats))
   
 
 loadMultiple :: FilePath -> String -> Int -> Int -> Repl ()

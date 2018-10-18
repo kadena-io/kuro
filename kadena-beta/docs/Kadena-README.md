@@ -12,7 +12,7 @@ Kadena Version: 1.1.x
   * `local` queries now execute immediately, skipping the write behind's queue
   * Nodes are automatically configured to run on `0.0.0.0`
   * `genconfs` inputs now are reflected in the configuration files
-  * Fixed `genconfs --distributed` 
+  * Fixed `genconfs --distributed`
 
 # Getting Started
 
@@ -27,6 +27,7 @@ Required:
 * `unixodbc == v3.*`
   * OSX: `brew install unixodbc`
   * Ubuntu: refer to docker file
+* `MySQL`
 * Ubuntu Only:
   * `libsodium`: refer to docker file
 

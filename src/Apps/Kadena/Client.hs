@@ -72,7 +72,7 @@ import System.Environment
 import System.Exit hiding (die)
 import System.IO
 import System.Time.Extra (sleep)
-  
+
 import Text.Trifecta as TF hiding (err, rendered, try)
 
 import Kadena.Command
@@ -242,11 +242,11 @@ postSpecifyServerAPI ep server' rq = do
       let opts = defaults & manager .~ Left (defaultManagerSettings
             { managerResponseTimeout = responseTimeoutMicro (timeoutSeconds * 1000000) } )
       r <- liftIO $ postWith opts url (toJSON rq)
-      resp <- asJSON r 
+      resp <- asJSON r
       case resp ^. responseBody of
         ApiFailure{..} -> do
           sleep 1
-          loop 
+          loop
         ApiSuccess{..} -> return resp
 
 handleResp :: (t -> Repl ()) -> Response (ApiResponse t) -> Repl ()
@@ -257,8 +257,7 @@ handleResp a r =
 
 handleBatchResp :: RequestKeys -> Repl ()
 handleBatchResp resp = do
-  let rks _rkRequestKeys resp
-  listenForResults 10000 rks Nothing
+  listenForResults 10000 (_rkRequestKeys resp) False
 
 sendCmd :: Mode -> String -> String -> Repl ()
 sendCmd m cmd replCmd = do
@@ -278,17 +277,16 @@ sendMultiple templateCmd replCmd startCount nRepeats  = do
   j <- use cmdData
   let cmds = replaceCounters startCount nRepeats templateCmd
   xs <- sequence $ fmap (\cmd -> mkExec cmd j Nothing) cmds
-  resp <- postAPI "send" (SubmitBatch xs) 
+  resp <- postAPI "send" (SubmitBatch xs)
   case resp ^. responseBody of
     ApiFailure{..} ->
       flushStrLn $ "Failure: " ++ show _apiError
     ApiSuccess{..} -> do
-      let rks = _rkRequestKeys _apiResponse 
+      let rks = _rkRequestKeys _apiResponse
       let lastRk = last rks
       tell [ReplApiRequest {_apiRequestKey = lastRk, _replCmd = replCmd}]
       flushStrLn $ "Polling for multiple RequestKey(s): "
-      listenForResults 10000 rks (Just (fromIntegral nRepeats))
-  
+      listenForResults 10000 rks True
 
 loadMultiple :: FilePath -> String -> Int -> Int -> Repl ()
 loadMultiple filePath replCmd startCount nRepeats = do
@@ -344,7 +342,7 @@ batchTest n cmd = do
       rk <- return $ last $ _rkRequestKeys _apiResponse
       tell [ReplApiRequest {_apiRequestKey = rk, _replCmd = cmd}]
       flushStrLn $ "Polling for RequestKey: " ++ show rk
-      listenForResults 10000 [rk] (Just (fromIntegral n))
+      listenForResults 10000 [rk] True
 
 chunksOf :: Int -> [e] -> [[e]]
 chunksOf i ls = map (take i) (build (splitter ls)) where
@@ -416,7 +414,7 @@ loadConfigChange fp = do
   ccApiReq <- liftIO $ mkConfigChangeApiReq fp
   sendConfigChangeCmd ccApiReq fp
 
-{-  
+{-
 listenForResults :: Int -> [RequestKey] -> Maybe Int64 -> Repl ()
 listenForResults _ [] _ = return ()
 listenForResults tdelay rks countm = loop (0 :: Int)
@@ -441,32 +439,51 @@ listenForResults tdelay rks countm = loop (0 :: Int)
                   Just n -> flushStrLn $ intervalOfNumerous cnt n
               Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
 -}
+
 listenForResults :: Int -> [RequestKey] -> Bool -> Repl ()
 listenForResults _ [] _ = return ()
-listenForResults tdelay rks showLatency =
-listenForResults tdelay rks = 
+listenForResults tdelay rks showLatency = do
   threadDelay tdelay
-  resp <- postAPI "poll" (Poll rks)
+  resp <- postAPI "poll" (Pact.Poll rks)
   case resp ^. responseBody of
-    ApiFailure err -> (False, errs ++ "\nApiFailure: no results received: " ++ show err)
-    ApiSuccess responseMap -> 
-      foldr checkEach (True, []) (keys responseMap) where
-      
-        checkEach key (b, errs) =
-          case lookup key responseMap of 
-            Nothing -> do
-              liftIO $ putStrLn "Request key missing from the response map"
-              False
-            Just apiResult -> do
-              let ok = case _arResult apiResult of
-                            Object h | HM.lookup (T.pack "status") h == Just "success" -> True
-                                    | HM.lookup (T.pack "tag") h == Just "ClusterChangeSuccess" -> True 
-                                    | otherwise -> False
-                            _ -> False
-              when not ok $ do
-                putStrLn "
--- newtype PollResponses = PollResponses (HM.HashMap RequestKey ApiResult)
+    ApiFailure err -> liftIO $ putStrLn $ "\nApiFailure: no results received: " ++ show err
+    ApiSuccess (PollResponses responseMap) -> do
+      let theKeys = HM.keys responseMap
+      (allOk, theResults) <-  liftIO $ foldM (checkEach responseMap) (True, []) theKeys
+      when allOk $ do
+        liftIO $ putStrLn "All commands successful"
+      when showLatency $ do
+        printLatencyMetrics (last theResults) $ fromIntegral (length theResults)
+      return ()
 
+checkEach :: (HM.HashMap RequestKey ApiResult)
+          -> (Bool, [ApiResult]) -> RequestKey -> IO (Bool, [ApiResult])
+checkEach responseMap (b, xs) theKey = do
+  case HM.lookup theKey responseMap of
+    Nothing -> do
+      liftIO $ putStrLn "Request key missing from the response map"
+      return (False, xs)
+    Just apiResult -> do
+      let ok = case _arResult apiResult of
+                  Object h | HM.lookup (T.pack "status") h == Just "success" -> True
+                           | HM.lookup (T.pack "tag") h == Just "ClusterChangeSuccess" -> True
+                           | otherwise -> False
+                  _ -> False
+      if ok then return (b, apiResult : xs)
+      else do
+        putStrLn $ "Status was not successful for results of key: " ++ show theKey
+        return (False, xs)
+
+printLatencyMetrics :: ApiResult -> Int64 -> Repl ()
+printLatencyMetrics ApiResult{..} cnt = do
+  case fromJSON <$>_arMetaData of
+    Nothing -> flushStrLn "No metadata available"
+    Just (A.Success lats@CmdResultLatencyMetrics{..}) -> do
+      pprintLatency lats
+      case _rlmFinExecution of
+        Nothing -> flushStrLn "Latency Measurement Unavailable"
+        Just n -> flushStrLn $ intervalOfNumerous cnt n
+    Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
 
 pollForResult :: Bool -> RequestKey -> Repl ()
 pollForResult printMetrics rk = do

@@ -249,15 +249,27 @@ postSpecifyServerAPI ep server' rq = do
           loop
         ApiSuccess{..} -> return resp
 
-handleResp :: (t -> Repl ()) -> Response (ApiResponse t) -> Repl ()
-handleResp a r =
+handleHttpResp :: (t -> Repl ()) -> Response (ApiResponse t) -> Repl ()
+handleHttpResp a r =
         case r ^. responseBody of
-          ApiFailure{..} -> flushStrLn $ "Apps.Kadena.Client.handleResp - failure in API Send: " ++ show _apiError
+          ApiFailure{..} -> flushStrLn $ "Apps.Kadena.Client.handleHttpResp - failure in API Send: " ++ show _apiError
           ApiSuccess{..} -> a _apiResponse
 
-handleBatchResp :: RequestKeys -> Repl ()
-handleBatchResp resp = do
-  listenForResults 10000 (_rkRequestKeys resp) False
+getRequestKeys :: FromJSON (ApiRespose t) => Response (ApiResponse t) -> [RequestKey]
+getRequestKeys =
+  case r ^. resonseBody of
+    ApiFailure{..} ->
+        _apiError
+    ApiSuccess{..} ->
+       _apiResponse
+
+handleResponses :: [RequestKey] -> Repl ()
+handleResponses rks = do
+  listenForLastResult 10000 rks False
+
+handleResponse :: RequestKey -> Repl ()
+handleResponse rk = do
+  listenForResult 10000 rk
 
 sendCmd :: Mode -> String -> String -> Repl ()
 sendCmd m cmd replCmd = do
@@ -267,10 +279,10 @@ sendCmd m cmd replCmd = do
     Transactional -> do
       resp <- postAPI "send" (SubmitBatch [e])
       tellKeys resp replCmd
-      handleResp handleBatchResp resp
+      handleHttpResp handleResponse resp
     Local -> do
       y <- postAPI "local" e
-      handleResp (\(resp :: Value) -> putJSON resp) y
+      handleHttpResp (\(resp :: Value) -> putJSON resp) y
 
 sendMultiple :: String -> String -> Int -> Int -> Repl ()
 sendMultiple templateCmd replCmd startCount nRepeats  = do
@@ -304,7 +316,7 @@ sendConfigChangeCmd ccApiReq@ConfigChangeApiReq{..} fileName = do
   execs <- liftIO $ mkConfigChangeExecs ccApiReq
   resp <- postAPI "config" (SubmitCC execs)
   tellKeys resp fileName
-  handleResp handleBatchResp resp
+  handleHttpResp handleResponses resp
 
 tellKeys :: Response (ApiResponse RequestKeys) -> String -> Repl ()
 tellKeys resp cmd =
@@ -317,7 +329,7 @@ sendPrivate :: Pact.Address -> String -> Repl ()
 sendPrivate addy msg = do
   j <- use cmdData
   e <- mkExec msg j (Just addy)
-  postAPI "private" (SubmitBatch [e]) >>= handleResp handleBatchResp
+  postAPI "private" (SubmitBatch [e]) >>= handleHttpResp handleResponse
 
 putJSON :: (ToJSON a) => a -> Repl ()
 putJSON a =
@@ -342,7 +354,7 @@ batchTest n cmd = do
       rk <- return $ last $ _rkRequestKeys _apiResponse
       tell [ReplApiRequest {_apiRequestKey = rk, _replCmd = cmd}]
       flushStrLn $ "Polling for RequestKey: " ++ show rk
-      listenForResults 10000 [rk] True
+      listenForLastResult 10000 [rk] True
 
 chunksOf :: Int -> [e] -> [[e]]
 chunksOf i ls = map (take i) (build (splitter ls)) where
@@ -440,19 +452,45 @@ listenForResults tdelay rks countm = loop (0 :: Int)
               Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
 -}
 
-listenForResults :: Int -> [RequestKey] -> Bool -> Repl ()
-listenForResults _ [] _ = return ()
-listenForResults tdelay rks showLatency = do
+listenForResult :: Int -> RequestKey -> Repl ()
+listenForResult tdelay rk  = listenForLastResult tdelay [rk] False
+
+listenForLastResult :: Int -> [RequestKey] -> Bool -> Repl ()
+listenForLastResult _ [] _ = return ()
+listenForLastResult tdelay rks showLatency = do
+  threadDelay tdelay
+  let lastRk = last rks
+  resp <- postAPI "listen" (ListenerRequest lastRk)
+  case resp ^. responseBody of
+    ApiFailure err -> flushStrLn $ "Error: no results received: " ++ show err
+    ApiSuccess ar@ApiResult{..} -> do
+      tell [ReplApiResponse {_apiResponseKey = lastRk, _apiResult = ar, _batchCnt = length rks}]
+      case showLatency of
+        False -> putJSON _arResult
+        True -> case fromJSON <$>_arMetaData of
+          Nothing -> flushStrLn "Success"
+          Just (A.Success lats@CmdResultLatencyMetrics{..}) -> do
+            pprintLatency lats
+            case _rlmFinExecution of
+              Nothing -> flushStrLn "Latency Measurement Unavailable"
+              Just n -> flushStrLn $ intervalOfNumerous cnt n
+          Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
+
+pollForResults :: Int -> [RequestKey] -> Bool -> Repl ()
+pollForResults _ [] _ = return ()
+pollForResults tdelay rks showLatency = do
   threadDelay tdelay
   resp <- postAPI "poll" (Pact.Poll rks)
   case resp ^. responseBody of
     ApiFailure err -> liftIO $ putStrLn $ "\nApiFailure: no results received: " ++ show err
     ApiSuccess (PollResponses responseMap) -> do
       let theKeys = HM.keys responseMap
+      liftIO $ putStrLn $ "&&&&& initial list of keys has " ++ show (length theKeys) ++ " elemeniiits*****"
       (allOk, theResults) <-  liftIO $ foldM (checkEach responseMap) (True, []) theKeys
       when allOk $ do
         liftIO $ putStrLn "All commands successful"
-      when showLatency $ do
+      liftIO $ putStrLn $ "***** results list has " ++ show (length theResults) ++ " elementos*****"
+      when (showLatency && not (null theResults)) $ do
         printLatencyMetrics (last theResults) $ fromIntegral (length theResults)
       return ()
 
@@ -485,6 +523,7 @@ printLatencyMetrics ApiResult{..} cnt = do
         Just n -> flushStrLn $ intervalOfNumerous cnt n
     Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
 
+--MLN: remove this when pollForResults (plural) is working
 pollForResult :: Bool -> RequestKey -> Repl ()
 pollForResult printMetrics rk = do
   s <- getServer

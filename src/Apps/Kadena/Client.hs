@@ -413,32 +413,6 @@ loadConfigChange fp = do
   ccApiReq <- liftIO $ mkConfigChangeApiReq fp
   sendConfigChangeCmd ccApiReq fp
 
-{-
-listenForResults :: Int -> [RequestKey] -> Maybe Int64 -> Repl ()
-listenForResults _ [] _ = return ()
-listenForResults tdelay rks countm = loop (0 :: Int)
-  where
-    loop c = do
-      threadDelay tdelay
-      when (c > 100) $ flushStrLn "Timeout"
-      let lastRk = last rks
-      resp <- postAPI "listen" (ListenerRequest lastRk)
-      case resp ^. responseBody of
-        ApiFailure err -> flushStrLn $ "Error: no results received: " ++ show err
-        ApiSuccess ar@ApiResult{..} -> do
-          tell [ReplApiResponse {_apiResponseKey = lastRk, _apiResult = ar, _batchCnt = countm}]
-          case countm of
-            Nothing -> putJSON _arResult
-            Just cnt -> case fromJSON <$>_arMetaData of
-              Nothing -> flushStrLn "Success"
-              Just (A.Success lats@CmdResultLatencyMetrics{..}) -> do
-                pprintLatency lats
-                case _rlmFinExecution of
-                  Nothing -> flushStrLn "Latency Measurement Unavailable"
-                  Just n -> flushStrLn $ intervalOfNumerous cnt n
-              Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
--}
-
 listenForResult :: Int -> RequestKeys -> Repl ()
 listenForResult tdelay theKeys = do
   let (_ : xs) = _rkRequestKeys theKeys

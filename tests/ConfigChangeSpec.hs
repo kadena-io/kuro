@@ -174,10 +174,12 @@ checkBatchPerSecond minPerSec tr = do
 
 perSecMay :: TestResponse -> Maybe Integer
 perSecMay tr = do
-    count <- _batchCount tr
-    (AE.Success lats) <- fromJSON <$> (_arMetaData (apiResult tr))
-    microSeconds <- _rlmFinExecution lats
-    return $ snd $ calcInterval count microSeconds
+    let cnt = _batchCount tr
+    if cnt == 1 then Nothing 
+    else do
+      (AE.Success lats) <- fromJSON <$> (_arMetaData (apiResult tr))
+      microSeconds <- _rlmFinExecution lats
+      return $ snd $ calcInterval cnt microSeconds
 
 parseCCStatus :: AE.Value -> Bool
 parseCCStatus (AE.Object o) =

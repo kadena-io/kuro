@@ -65,7 +65,7 @@ instance Show TestRequest where
 data TestResponse = TestResponse
   { resultSuccess :: Bool
   , apiResult :: ApiResult
-  , _batchCount :: Maybe Int64
+  , _batchCount :: Int64
   } deriving (Eq, Generic)
 
 instance Show TestResponse where

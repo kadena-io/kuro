@@ -9,6 +9,7 @@ import           Data.Aeson as AE
 import           Data.Either
 import qualified Data.HashMap.Strict as HM
 import           Data.List.Extra
+import           Data.Maybe
 import           Data.Scientific
 import           Safe
 import           System.Time.Extra (sleep)
@@ -174,10 +175,12 @@ checkBatchPerSecond minPerSec tr = do
 
 perSecMay :: TestResponse -> Maybe Integer
 perSecMay tr = do
-    count <- _batchCount tr
-    (AE.Success lats) <- fromJSON <$> (_arMetaData (apiResult tr))
-    microSeconds <- _rlmFinExecution lats
-    return $ snd $ calcInterval count microSeconds
+    let cnt = _batchCount tr
+    if cnt == 1 then Nothing 
+    else do
+      (AE.Success lats) <- fromJSON <$> (_arMetaData (apiResult tr))
+      microSeconds <- _rlmFinExecution lats
+      return $ snd $ calcInterval cnt microSeconds
 
 parseCCStatus :: AE.Value -> Bool
 parseCCStatus (AE.Object o) =
@@ -337,7 +340,7 @@ waitForMetric tm = waitForMetric' tm 0
 -- Version of waitForMetric that takes node number (0-3) as additional param
 waitForMetric' :: TestMetric -> Int -> IO Bool
 waitForMetric' tm node =
-  maybe False (const True) <$> timeout 30 go
+  isJust <$> timeout 30 go
   where
     go :: IO ()
     go = do

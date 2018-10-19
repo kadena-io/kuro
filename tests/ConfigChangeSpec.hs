@@ -9,6 +9,7 @@ import           Data.Aeson as AE
 import           Data.Either
 import qualified Data.HashMap.Strict as HM
 import           Data.List.Extra
+import           Data.Maybe
 import           Data.Scientific
 import           Safe
 import           System.Time.Extra (sleep)
@@ -339,7 +340,7 @@ waitForMetric tm = waitForMetric' tm 0
 -- Version of waitForMetric that takes node number (0-3) as additional param
 waitForMetric' :: TestMetric -> Int -> IO Bool
 waitForMetric' tm node =
-  maybe False (const True) <$> timeout 30 go
+  isJust <$> timeout 30 go
   where
     go :: IO ()
     go = do

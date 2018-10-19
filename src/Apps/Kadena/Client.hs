@@ -25,7 +25,6 @@ module Apps.Kadena.Client
   , timeout
   ) where
 
-import Control.Concurrent.Async (race)
 import Control.Error.Util (hush)
 import Control.Exception (IOException)
 import qualified Control.Exception as Exception
@@ -66,7 +65,7 @@ import qualified Data.Yaml as Y
 
 import GHC.Generics (Generic)
 import Network.HTTP.Client hiding (responseBody)
-import Network.Wreq hiding (Raw, get)
+import Network.Wreq hiding (Raw)
 import System.Console.GetOpt
 import System.Environment
 import System.Exit hiding (die)
@@ -283,9 +282,8 @@ sendMultiple' templateCmd replCmd startCount nRepeats singleCmd = do
   j <- use cmdData
   let cmds = replaceCounters startCount nRepeats templateCmd
   cmds' <- sequence $
-    case singleCmd of
-        False -> fmap (\cmd -> mkExec cmd j Nothing) cmds
-        True -> [mkExec (intercalate " " cmds) j Nothing]
+    if singleCmd then [mkExec (unwords cmds) j Nothing]
+    else fmap (\cmd -> mkExec cmd j Nothing) cmds
   resp <- postAPI "send" (SubmitBatch cmds')
   tellKeys resp replCmd
   handleHttpResp (pollForResults pollDelayMs True) resp
@@ -304,7 +302,7 @@ loadMultiple' filePath replCmd startCount nRepeats singleCmd = do
                                                  ++ "\n" ++ show except
     Right str -> do
       let xs = lines str
-      let cmd = intercalate " " xs -- carriage returns in the file now replaced with spaces
+      let cmd = unwords xs -- carriage returns in the file now replaced with spaces
       sendMultiple' cmd replCmd startCount nRepeats singleCmd
 
 sendConfigChangeCmd :: ConfigChangeApiReq -> String -> Repl ()
@@ -444,7 +442,7 @@ listenForResults tdelay rks countm = loop (0 :: Int)
 listenForResult :: Int -> RequestKeys -> Repl ()
 listenForResult tdelay theKeys = do
   let (_ : xs) = _rkRequestKeys theKeys
-  when (not (null xs)) $ do
+  unless (null xs) $ do
     flushStrLn "Expecting one result but found many"
   listenForLastResult tdelay False theKeys 
 
@@ -465,16 +463,15 @@ listenForLastResult tdelay showLatency theKeys = do
         ApiSuccess ar@ApiResult{..} -> do
           tell [ReplApiResponse { _apiResponseKey = lastRk, _apiResult = ar
                                 , _batchCnt = fromIntegral cnt}]
-          case showLatency of
-            False -> putJSON _arResult
-            True -> case fromJSON <$>_arMetaData of
-              Nothing -> flushStrLn "Success"
-              Just (A.Success lats@CmdResultLatencyMetrics{..}) -> do
-                pprintLatency lats
-                case _rlmFinExecution of
-                  Nothing -> flushStrLn "Latency Measurement Unavailable"
-                  Just n -> flushStrLn $ intervalOfNumerous cnt n
-              Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
+          if not showLatency then putJSON _arResult
+          else case fromJSON <$>_arMetaData of
+            Nothing -> flushStrLn "Success"
+            Just (A.Success lats@CmdResultLatencyMetrics{..}) -> do
+              pprintLatency lats
+              case _rlmFinExecution of
+                Nothing -> flushStrLn "Latency Measurement Unavailable"
+                Just n -> flushStrLn $ intervalOfNumerous cnt n
+            Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
 
 pollForResults :: Int -> Bool -> RequestKeys -> Repl ()
 pollForResults tdelay showLatency theKeys = do

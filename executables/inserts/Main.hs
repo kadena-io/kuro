@@ -37,7 +37,8 @@ data InsertArgs = InsertArgs
   , noRunServer :: Bool
   , configFile :: String
   , dirForConfig :: String
-  , enableDiagnostics :: Bool }
+  , enableDiagnostics :: Bool
+  , singleTransaction :: Bool}
   deriving (Show, Data, Typeable)
 
 insertArgs :: InsertArgs
@@ -50,10 +51,16 @@ insertArgs = InsertArgs
     , AcctTransfer &= help "Execute multiple acct transfers" &= name "accttransfer" &= name "at"
     , AcctTransferUnique &= help "Execute multiple acct transfers with unique transfer amounts"
       &= name "accttransferunique" &= name "atu" ]
-  , noRunServer = False &= name "n" &= name "norunserver" &= help "Flag specifying this exe should not launch Kadena server instances"
+  , noRunServer = False &= name "n" &= name "norunserver"
+    &= help "Flag specifying this exe should not launch Kadena server instances"
   , configFile = "client.yaml" &= name "c" &= name "configfile" &= help "Kadena config file"
-  , dirForConfig = insertsConfDir &= name "d" &= name "dirForConfig" &= help "Location of config files"
-  , enableDiagnostics = False &= name "e" &= name "enablediagnostics" &= help "Enable diagnostic exceptions" }
+  , dirForConfig = insertsConfDir &= name "d" &= name "dirForConfig"
+    &= help "Location of config files"
+  , enableDiagnostics = False &= name "e" &= name "enablediagnostics"
+    &= help "Enable diagnostic exceptions"
+  , singleTransaction = False &= name "s" &= name "singletransaction"
+    &= help "Run batches inside a single Pact Cmd/Transaction"
+  }
 
 insertsConfDir,  kadenaDemoDir :: String
 insertsConfDir = "executables/inserts/conf/"
@@ -114,7 +121,6 @@ testMetricSize4 :: TestMetric
 testMetricSize4 = TestMetric
   { metricNameTm = "/kadena/cluster/size"
   , evalTm = (\s -> readDef (0.0 :: Float) s == 4.0) }
-----------------------------------------------------------------------------------------------------
 
 delLogFiles :: IO ()
 delLogFiles = do
@@ -135,7 +141,7 @@ batchCmds theArgs@InsertArgs{..} totalRemaining allOk = do -- do next batch
   (_sec, (ok, _nDone, sz)) <- duration $ do
       let thisBatch = min totalRemaining batchSize
       let startNum = transactions - totalRemaining
-      let batchReq = createMultiReq batchType startNum thisBatch
+      let batchReq = createMultiReq batchType startNum thisBatch singleTransaction
       putStrLn $ "batchCmds - multi-request created: "
             ++ "\n\r" ++ show batchReq
       _res <- runClientCommands (clientArgs theArgs) [batchReq]
@@ -215,14 +221,15 @@ _testReq = TestRequest
   , eval = \_ -> return () -- not used in this sim
   , displayStr = "Executes 1 + 1 in Pact" }
 
-createMultiReq :: BatchType -> Int -> Int -> TestRequest
-createMultiReq batchType startNum numOrders =
+createMultiReq :: BatchType -> Int -> Int -> Bool -> TestRequest
+createMultiReq batchType startNum numOrders singleTransaction =
   let theTemplate = case batchType of
         CreateAcct -> createAcctTemplate
         AcctTransfer -> acctTransferTemplate
         AcctTransferUnique -> acctTransferUniqueTemplate
         _ -> insertOrderTemplate -- InsertOrders is the default
-      theCmd = "multiple " ++ show startNum ++ " " ++ show numOrders ++ " " ++ theTemplate
+      theCmdName = if singleTransaction then "asSingleTransaction" else "multiple" 
+      theCmd = theCmdName ++ show startNum ++ " " ++ show numOrders ++ " " ++ theTemplate
   in TestRequest
        { cmd = theCmd
        , matchCmd = "TBD" -- MLN: need to find what the match str format is

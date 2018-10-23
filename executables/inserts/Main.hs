@@ -74,7 +74,6 @@ startupStuff theArgs = do
     putStrLn $ "Waiting for confirmation that cluster size == 4..."
     _ <- waitForMetric testMetricSize4
     return ()
-  return ()
 
 -- clean up the double-negative -- since 'noRunServer' makes the most sense as an option ...
 runServer :: InsertArgs -> Bool
@@ -228,7 +227,7 @@ createMultiReq batchType startNum numOrders singleTransaction =
         AcctTransfer -> acctTransferTemplate
         AcctTransferUnique -> acctTransferUniqueTemplate
         _ -> insertOrderTemplate -- InsertOrders is the default
-      theCmdName = if singleTransaction then "asSingleTransaction" else "multiple" 
+      theCmdName = if singleTransaction then "asSingleTransaction" else "multiple"
       theCmd = theCmdName ++ show startNum ++ " " ++ show numOrders ++ " " ++ theTemplate
   in TestRequest
        { cmd = theCmd

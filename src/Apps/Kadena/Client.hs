@@ -105,10 +105,9 @@ coptions =
 timeoutSeconds :: Int
 timeoutSeconds = 300
 
-listenDelayMs, pollDelayMs :: Int
+listenDelayMs :: Int
 listenDelayMs = 10000
-pollDelayMs = 10000
-  
+
 data Node = Node
   { _nEntity :: EntityName
   , _nURL :: String
@@ -152,11 +151,13 @@ data CliCmd =
   Help |
   Keys (Maybe (T.Text,Maybe T.Text)) |
   LoadMultiple Int Int FilePath |
+  LoadAsSingleTrans Int Int FilePath |
   Load FilePath Mode |
   ConfigChange FilePath |
   Poll String |
   PollMetrics String |
   Send Mode String |
+  AsSingleTrans Int Int String |
   Multiple Int Int String |
   Private EntityName [EntityName] String |
   Server (Maybe String) |
@@ -229,11 +230,11 @@ postAPI :: (ToJSON req,FromJSON (ApiResponse t))
 postAPI ep rq = do
   use echo >>= \e -> when e $ putJSON rq
   s <- getServer
-  liftIO $ postSpecifyServerAPI ep s rq
+  liftIO $ postWithRetry ep s rq
 
-postSpecifyServerAPI :: (ToJSON req,FromJSON (ApiResponse t))
+postWithRetry :: (ToJSON req,FromJSON (ApiResponse t))
                       => String -> String -> req -> IO (Response (ApiResponse t))
-postSpecifyServerAPI ep server' rq = do
+postWithRetry ep server' rq = do
   t <- timeout (fromIntegral timeoutSeconds) loop
   case t of
     Nothing -> die "postServerApi - timeout: no successful response received"
@@ -286,14 +287,14 @@ sendMultiple' templateCmd replCmd startCount nRepeats singleCmd = do
     else fmap (\cmd -> mkExec cmd j Nothing) cmds
   resp <- postAPI "send" (SubmitBatch cmds')
   tellKeys resp replCmd
-  handleHttpResp (pollForResults pollDelayMs True) resp
+  handleHttpResp (pollForResults True (Just nRepeats)) resp
 
 loadMultiple :: FilePath -> String -> Int -> Int -> Repl ()
-loadMultiple filePath replCmd startCount nRepeats = 
+loadMultiple filePath replCmd startCount nRepeats =
   loadMultiple' filePath replCmd startCount nRepeats False
 
 -- | Similar to sendMultiple but with an extra Bool param which when True puts all the
---   transactions inside a single Cmd 
+--   transactions inside a single Cmd
 loadMultiple' :: FilePath -> String -> Int -> Int -> Bool -> Repl ()
 loadMultiple' filePath replCmd startCount nRepeats singleCmd = do
   strOrErr <- liftIO $ try $ readFile filePath
@@ -310,7 +311,7 @@ sendConfigChangeCmd ccApiReq@ConfigChangeApiReq{..} fileName = do
   execs <- liftIO $ mkConfigChangeExecs ccApiReq
   resp <- postAPI "config" (SubmitCC execs)
   tellKeys resp fileName
-  handleHttpResp (listenForLastResult listenDelayMs False) resp 
+  handleHttpResp (listenForLastResult listenDelayMs False) resp
 
 tellKeys :: Response (ApiResponse RequestKeys) -> String -> Repl ()
 tellKeys resp cmd =
@@ -323,7 +324,7 @@ sendPrivate :: Pact.Address -> String -> Repl ()
 sendPrivate addy msg = do
   j <- use cmdData
   e <- mkExec msg j (Just addy)
-  postAPI "private" (SubmitBatch [e]) >>= handleHttpResp (listenForResult listenDelayMs) 
+  postAPI "private" (SubmitBatch [e]) >>= handleHttpResp (listenForResult listenDelayMs)
 
 putJSON :: (ToJSON a) => a -> Repl ()
 putJSON a =
@@ -360,7 +361,7 @@ intoNumLists numLists ls = chunksOf numPerList ls
 processParBatchPerServer :: Int -> (MVar (), (Node, [[Pact.Command T.Text]])) -> IO ()
 processParBatchPerServer sleep' (sema, (Node{..}, batches)) = do
   forM_ batches $ \batch -> do
-    resp <- postSpecifyServerAPI "send" _nURL $ SubmitBatch batch
+    resp <- postWithRetry "send" _nURL $ SubmitBatch batch
     flushStrLn $ "Sent a batch to " ++ _nURL
     case resp ^. responseBody of
       ApiFailure{..} ->
@@ -403,7 +404,7 @@ load m fp = do
   -- re-parse yaml for batch command
   v :: Value <- either (\pe -> die $ "File load failed: " ++ show pe) return =<<
                 liftIO (Y.decodeFileEither fp)
-  case firstOf (key "batchCmd" . _String) v of 
+  case firstOf (key "batchCmd" . _String) v of
     Nothing -> return ()
     Just c -> flushStrLn ("Setting batch command to: " ++ show c) >> batchCmd .= (T.unpack c)
   cmdData .= Null
@@ -418,7 +419,7 @@ listenForResult tdelay theKeys = do
   let (_ : xs) = _rkRequestKeys theKeys
   unless (null xs) $ do
     flushStrLn "Expecting one result but found many"
-  listenForLastResult tdelay False theKeys 
+  listenForLastResult tdelay False theKeys
 
 listenForLastResult :: Int -> Bool -> RequestKeys -> Repl ()
 listenForLastResult tdelay showLatency theKeys = do
@@ -447,29 +448,51 @@ listenForLastResult tdelay showLatency theKeys = do
                 Just n -> flushStrLn $ intervalOfNumerous cnt n
             Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
 
-pollForResults :: Int -> Bool -> RequestKeys -> Repl ()
-pollForResults tdelay showLatency theKeys = do
+pollMaxRetry :: Int
+pollMaxRetry = 180
+
+-- | pollForResults' Maybe param holds the true number of 'commands' processed.
+--   This is needed when commands are combined into a single Pact transaction.
+pollForResults :: Bool -> (Maybe Int) -> RequestKeys -> Repl ()
+pollForResults showLatency mTrueCount theKeys = do
   let rks = _rkRequestKeys theKeys
-  when (null rks) $ return ()
-  threadDelay tdelay
-  resp <- postAPI "poll" (Pact.Poll rks)
-  case resp ^. responseBody of
-    ApiFailure err -> liftIO $ putStrLn $ "\nApiFailure: no results received: " ++ show err
-    ApiSuccess (PollResponses responseMap) -> do
-      let ks = HM.keys responseMap
-      (allOk, theResults) <-  liftIO $ foldM (checkEach responseMap) (True, []) ks 
-      when allOk $ do
-        liftIO $ putStrLn "All commands successful"
-      when (showLatency && not (null theResults)) $ do
-        printLatencyMetrics (last theResults) $ fromIntegral (length theResults)
+  when (null rks) $ do
+    flushStrLn "pollForResults -- called with an empty list of request keys"
+    return ()
+  let keyCount = length rks
+  loop rks keyCount pollMaxRetry
+  where
+    loop _rks _keyCount 0 = do
+      flushStrLn "Timeout on pollForResults -- not all results were received"
       return ()
+    loop rks keyCount retryCount = do
+      resp <- postAPI "poll" (Pact.Poll rks)
+      case resp ^. responseBody of
+        ApiFailure err -> liftIO $ putStrLn $ "\nApiFailure: no results received: " ++ show err
+        ApiSuccess (PollResponses responseMap) -> do
+          let ks = HM.keys responseMap
+          if length ks < keyCount
+          then do
+            liftIO $ sleep 1
+            loop rks keyCount (retryCount - 1)
+          else do
+            flushStrLn $ "\nReceived all the keys: (" ++ show (length ks) ++ " of "
+                      ++ show keyCount ++ " on try #" ++ show ( pollMaxRetry- retryCount + 1) ++ ")"
+            flushStrLn $ "Calling foldM on checkEach with " ++ show (length ks) ++ " keys"
+            (allOk, theResults) <-  liftIO $ foldM (checkEach responseMap) (True, []) ks
+            when allOk $ do
+              liftIO $ putStrLn "All commands successful"
+            when (showLatency && not (null theResults)) $ do
+              let numTrueTrans = fromMaybe keyCount mTrueCount
+              printLatencyMetrics (last theResults) $ fromIntegral numTrueTrans
+              return ()
 
 checkEach :: (HM.HashMap RequestKey ApiResult)
           -> (Bool, [ApiResult]) -> RequestKey -> IO (Bool, [ApiResult])
 checkEach responseMap (b, xs) theKey = do
   case HM.lookup theKey responseMap of
     Nothing -> do
-      liftIO $ putStrLn "Request key missing from the response map"
+      putStrLn "Request key missing from the response map"
       return (False, xs)
     Just apiResult -> do
       let ok = case _arResult apiResult of
@@ -570,60 +593,67 @@ parseMode =
   (symbol "local" >> pure Local)
 
 cliCmds :: [(String,String,String,TF.Parser CliCmd)]
-cliCmds = [
-  ("sleep","[MILLIS]","Pause for 5 sec or MILLIS",
-   Sleep . fromIntegral . fromMaybe 5000 <$> optional integer),
-  ("cmd","[COMMAND]","Show/set current batch command",
-   Cmd <$> optional (some anyChar)),
-  ("data","[JSON]","Show/set current JSON data payload",
-   Data <$> optional (some anyChar)),
-  ("echo", "on|off", "Set message echoing on|off",
-   Echo <$> ((symbol "on" >> pure True) <|> (symbol "off" >> pure False))),
-  ("loadMultiple", "START_COUNT REPEAT_TIMES TEMPLATE_TEXT_FILE",
+cliCmds =
+  [ ("sleep","[MILLIS]","Pause for 5 sec or MILLIS",
+      Sleep . fromIntegral . fromMaybe 5000 <$> optional integer)
+  , ("cmd","[COMMAND]","Show/set current batch command",
+      Cmd <$> optional (some anyChar))
+  , ("data","[JSON]","Show/set current JSON data payload",
+      Data <$> optional (some anyChar))
+  , ("echo", "on|off", "Set message echoing on|off",
+       Echo <$> ((symbol "on" >> pure True) <|> (symbol "off" >> pure False)))
+  , ("loadMultiple", "START_COUNT REPEAT_TIMES TEMPLATE_TEXT_FILE",
      "Batch multiple commands togehter and send transactionally to the server",
-   LoadMultiple <$> (fromIntegral <$> integer) <*> (fromIntegral <$> integer) <*> some anyChar),
-  ("load","YAMLFILE [MODE]",
-   "Load and submit yaml file with optional mode (transactional|local), defaults to transactional",
-   Load <$> some anyChar <*> (fromMaybe Transactional <$> optional parseMode)),
-  ("batch","TIMES","Repeat command in batch message specified times",
-   Batch . fromIntegral <$> integer),
-  ("par-batch","TOTAL_CMD_CNT CMD_PER_SEC SLEEP"
-  ,"Similar to `batch` but the commands are distributed among the nodes:\n\
-   \  * the REPL will create N batch messages and group them into individual batches\n\
-   \  * CMD_PER_SEC refers to the overall command submission rate\n\
-   \  * individual batch sizes are calculated by `ceiling (CMD_PER_SEC * (SLEEP/1000) / clusterSize)`\n\
-   \  * submit them (in parallel) to each available node\n\
-   \  * pause for S milliseconds between submissions to a given server",
+     LoadMultiple <$> (fromIntegral <$> integer) <*> (fromIntegral <$> integer) <*> some anyChar)
+  , ("loadAsSingleTrans", "START_COUNT REPEAT_TIMES TEMPLATE_TEXT_FILE",
+     "Batch multiple commands togehter and send to the server as a single Pact command / transaction",
+     LoadAsSingleTrans <$> (fromIntegral <$> integer) <*> (fromIntegral <$> integer) <*> some anyChar)
+  , ("load","YAMLFILE [MODE]",
+     "Load and submit yaml file with optional mode (transactional|local), defaults to transactional",
+      Load <$> some anyChar <*> (fromMaybe Transactional <$> optional parseMode))
+  , ("batch","TIMES","Repeat command in batch message specified times",
+     Batch . fromIntegral <$> integer)
+  , ("par-batch","TOTAL_CMD_CNT CMD_PER_SEC SLEEP"
+        ,"Similar to `batch` but the commands are distributed among the nodes:\n\
+      \  * the REPL will create N batch messages and group them into individual batches\n\
+      \  * CMD_PER_SEC refers to the overall command submission rate\n\
+      \  * individual batch sizes are calculated by `ceiling (CMD_PER_SEC * (SLEEP/1000) / clusterSize)`\n\
+      \  * submit them (in parallel) to each available node\n\
+      \  * pause for S milliseconds between submissions to a given server",
    ParallelBatch <$> (fromIntegral <$> integer)
                  <*> (fromIntegral <$> integer)
-                 <*> (fromIntegral <$> integer)
-  ),
-  ("pollMetrics","REQUESTKEY", "Poll each server for the request key but print latency metrics from each.",
-   PollMetrics <$> some anyChar),
-  ("poll","REQUESTKEY", "Poll server for request key",
-   Poll <$> some anyChar),
-  ("exec","COMMAND","Send command transactionally to server",
-   Send Transactional <$> some anyChar),
-  ("local","COMMAND","Send command locally to server",
-   Send Local <$> some anyChar),
-  ("server","[SERVERID]","Show server info or set current server",
-   Server <$> optional (some anyChar)),
-  ("help","","Show command help", pure Help),
-  ("keys","[PUBLIC PRIVATE | FILE]","Show or set signing keypair/read keypairs from file",
-   Keys <$> optional ((,) <$> (T.pack <$> some anyChar) <*>
-                      (optional (spaces >> (T.pack <$> some alphaNum))))),
-  ("exit","","Exit client", pure Exit),
-  ("format","[FORMATTER]","Show/set current output formatter (yaml|raw|pretty|table)",
-   Format <$> optional ((symbol "yaml" >> pure YAML) <|>
-                        (symbol "raw" >> pure Raw) <|>
-                        (symbol "pretty" >> pure PrettyJSON) <|>
-                        (symbol "table" >> pure Table))),
-  ("private","TO [FROM1 FROM2...] CMD","Send private transactional command to server addressed with entity names",
-   parsePrivate),
-  ("configChange", "YAMLFILE", "Load and submit transactionally a yaml configuration change file",
-   ConfigChange <$> some anyChar),
-  ("multiple", "START_COUNT REPEAT_TIMES COMMAND", "Batch multiple commands togehter and send transactionally to the server",
-   Multiple <$> (fromIntegral <$> integer) <*> (fromIntegral <$> integer) <*> some anyChar)
+                 <*> (fromIntegral <$> integer))
+  , ("pollMetrics","REQUESTKEY",
+     "Poll each server for the request key but print latency metrics from each.",
+     PollMetrics <$> some anyChar)
+  , ("poll","REQUESTKEY", "Poll server for request key",
+     Poll <$> some anyChar)
+  , ("exec","COMMAND","Send command transactionally to server",
+     Send Transactional <$> some anyChar)
+  , ("local","COMMAND","Send command locally to server",
+     Send Local <$> some anyChar)
+  , ("server","[SERVERID]","Show server info or set current server",
+     Server <$> optional (some anyChar))
+  , ("help","","Show command help", pure Help)
+  , ("keys","[PUBLIC PRIVATE | FILE]","Show or set signing keypair/read keypairs from file",
+     Keys <$> optional ((,) <$> (T.pack <$> some anyChar) <*>
+             (optional (spaces >> (T.pack <$> some alphaNum)))))
+  , ("exit","","Exit client", pure Exit)
+  , ("format","[FORMATTER]","Show/set current output formatter (yaml|raw|pretty|table)",
+     Format <$> optional ((symbol "yaml" >> pure YAML) <|>
+                          (symbol "raw" >> pure Raw) <|>
+                          (symbol "pretty" >> pure PrettyJSON) <|>
+                          (symbol "table" >> pure Table)))
+  , ("private","TO [FROM1 FROM2...] CMD",
+     "Send private transactional command to server addressed with entity names", parsePrivate)
+  , ("configChange", "YAMLFILE", "Load and submit transactionally a yaml configuration change file",
+     ConfigChange <$> some anyChar)
+  , ("multiple", "START_COUNT REPEAT_TIMES COMMAND",
+     "Batch multiple commands togehter and send transactionally to the server",
+     Multiple <$> (fromIntegral <$> integer) <*> (fromIntegral <$> integer) <*> some anyChar)
+  , ("asSingleTransaction", "START_COUNT REPEAT_TIMES COMMAND",
+     "Batch multiple commands togehter and send to the server as a single Pact Cmd/Transaction",
+     AsSingleTrans <$> (fromIntegral <$> integer) <*> (fromIntegral <$> integer) <*> some anyChar)
   ]
 
 parsePrivate :: TF.Parser CliCmd
@@ -665,7 +695,9 @@ handleCmd cmd reqStr = case cmd of
   Cmd (Just c) -> batchCmd .= c
   Send m c -> sendCmd m c reqStr
   Multiple m n c -> sendMultiple c reqStr m n
+  AsSingleTrans m n c -> sendMultiple' c reqStr m n True
   LoadMultiple m n fp -> loadMultiple fp reqStr m n
+  LoadAsSingleTrans m n fp -> loadMultiple' fp reqStr m n True
   Server Nothing -> do
     use server >>= \s -> flushStrLn $ "Current server: " ++ s
     flushStrLn "Servers:"

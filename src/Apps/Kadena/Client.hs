@@ -70,7 +70,7 @@ import System.Console.GetOpt
 import System.Environment
 import System.Exit hiding (die)
 import System.IO
-import qualified System.Time.Extra as SYS (sleep, timeout)
+import System.Time.Extra (sleep)
 
 import Text.Trifecta as TF hiding (err, rendered, try)
 
@@ -107,7 +107,7 @@ timeoutSeconds = 300
 
 listenDelayMs :: Int
 listenDelayMs = 10000
-  
+
 data Node = Node
   { _nEntity :: EntityName
   , _nURL :: String
@@ -227,21 +227,14 @@ mkExec code mdata addy = do
 
 postAPI :: (ToJSON req,FromJSON (ApiResponse t))
          => String -> req -> Repl (Response (ApiResponse t))
-postAPI ep rq = postAPI' ep rq True 
-
--- | Similar to postAPI, but with additional parameter to turn of automatic retries on ApiFailure
-postAPI' :: (ToJSON req,FromJSON (ApiResponse t))
-         => String -> req -> Bool -> Repl (Response (ApiResponse t))
-postAPI' ep rq allowRetry = do
+postAPI ep rq = do
   use echo >>= \e -> when e $ putJSON rq
   s <- getServer
-  if allowRetry
-    then liftIO $ postWithRetry ep s rq
-    else liftIO $ postWithoutRetry ep s rq 
-    
+  liftIO $ postWithRetry ep s rq
+
 postWithRetry :: (ToJSON req,FromJSON (ApiResponse t))
                       => String -> String -> req -> IO (Response (ApiResponse t))
-postWithRetry ep server' rq = do 
+postWithRetry ep server' rq = do
   t <- timeout (fromIntegral timeoutSeconds) loop
   case t of
     Nothing -> die "postServerApi - timeout: no successful response received"
@@ -256,20 +249,10 @@ postWithRetry ep server' rq = do
       resp <- asJSON r
       case resp ^. responseBody of
         ApiFailure{..} -> do
-          SYS.sleep 1
+          sleep 1
           loop
         ApiSuccess{..} -> return resp
 
-postWithoutRetry :: (ToJSON req,FromJSON (ApiResponse t))
-                      => String -> String -> req -> IO (Response (ApiResponse t))
-postWithoutRetry ep server' rq = do
-  let url = "http://" ++ server' ++ "/api/v1/" ++ ep
-  let opts = defaults & manager .~ Left (defaultManagerSettings
-        { managerResponseTimeout = responseTimeoutMicro (timeoutSeconds * 1000000) } )
-  r <- liftIO $ postWith opts url (toJSON rq)
-  resp <- asJSON r
-  return resp
-  
 handleHttpResp :: (t -> Repl ()) -> Response (ApiResponse t) -> Repl ()
 handleHttpResp a r =
         case r ^. responseBody of
@@ -302,16 +285,16 @@ sendMultiple' templateCmd replCmd startCount nRepeats singleCmd = do
   cmds' <- sequence $
     if singleCmd then [mkExec (unwords cmds) j Nothing]
     else fmap (\cmd -> mkExec cmd j Nothing) cmds
-  resp <- postAPI' "send" (SubmitBatch cmds') False
+  resp <- postAPI "send" (SubmitBatch cmds')
   tellKeys resp replCmd
-  handleHttpResp (pollForResults True) resp
+  handleHttpResp (pollForResults True (Just nRepeats)) resp
 
 loadMultiple :: FilePath -> String -> Int -> Int -> Repl ()
-loadMultiple filePath replCmd startCount nRepeats = 
+loadMultiple filePath replCmd startCount nRepeats =
   loadMultiple' filePath replCmd startCount nRepeats False
 
 -- | Similar to sendMultiple but with an extra Bool param which when True puts all the
---   transactions inside a single Cmd 
+--   transactions inside a single Cmd
 loadMultiple' :: FilePath -> String -> Int -> Int -> Bool -> Repl ()
 loadMultiple' filePath replCmd startCount nRepeats singleCmd = do
   strOrErr <- liftIO $ try $ readFile filePath
@@ -328,7 +311,7 @@ sendConfigChangeCmd ccApiReq@ConfigChangeApiReq{..} fileName = do
   execs <- liftIO $ mkConfigChangeExecs ccApiReq
   resp <- postAPI "config" (SubmitCC execs)
   tellKeys resp fileName
-  handleHttpResp (listenForLastResult listenDelayMs False) resp 
+  handleHttpResp (listenForLastResult listenDelayMs False) resp
 
 tellKeys :: Response (ApiResponse RequestKeys) -> String -> Repl ()
 tellKeys resp cmd =
@@ -341,7 +324,7 @@ sendPrivate :: Pact.Address -> String -> Repl ()
 sendPrivate addy msg = do
   j <- use cmdData
   e <- mkExec msg j (Just addy)
-  postAPI "private" (SubmitBatch [e]) >>= handleHttpResp (listenForResult listenDelayMs) 
+  postAPI "private" (SubmitBatch [e]) >>= handleHttpResp (listenForResult listenDelayMs)
 
 putJSON :: (ToJSON a) => a -> Repl ()
 putJSON a =
@@ -421,7 +404,7 @@ load m fp = do
   -- re-parse yaml for batch command
   v :: Value <- either (\pe -> die $ "File load failed: " ++ show pe) return =<<
                 liftIO (Y.decodeFileEither fp)
-  case firstOf (key "batchCmd" . _String) v of 
+  case firstOf (key "batchCmd" . _String) v of
     Nothing -> return ()
     Just c -> flushStrLn ("Setting batch command to: " ++ show c) >> batchCmd .= (T.unpack c)
   cmdData .= Null
@@ -436,7 +419,7 @@ listenForResult tdelay theKeys = do
   let (_ : xs) = _rkRequestKeys theKeys
   unless (null xs) $ do
     flushStrLn "Expecting one result but found many"
-  listenForLastResult tdelay False theKeys 
+  listenForLastResult tdelay False theKeys
 
 listenForLastResult :: Int -> Bool -> RequestKeys -> Repl ()
 listenForLastResult tdelay showLatency theKeys = do
@@ -465,83 +448,44 @@ listenForLastResult tdelay showLatency theKeys = do
                 Just n -> flushStrLn $ intervalOfNumerous cnt n
             Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
 
+pollMaxRetry :: Int
+pollMaxRetry = 180
 
-pollForResults :: Bool -> RequestKeys -> Repl ()
-pollForResults showLatency theKeys = do
+-- | pollForResults' Maybe param holds the true number of 'commands' processed.
+--   This is needed when commands are combined into a single Pact transaction.
+pollForResults :: Bool -> (Maybe Int) -> RequestKeys -> Repl ()
+pollForResults showLatency mTrueCount theKeys = do
   let rks = _rkRequestKeys theKeys
   when (null rks) $ do
     flushStrLn "pollForResults -- called with an empty list of request keys"
     return ()
-  let keyCount = length rks 
-  flushStrLn $ "pollForResults - keyCount = " ++ show keyCount
-  t <- liftIO $ SYS.timeout 30 (return $ loop rks keyCount)
-  if (isNothing t) 
-    then flushStrLn "pollForResults - timeout before all results were retreived"
-    else do
-      flushStrLn "pollForResults -- timeout did NOT fire"
-      return ()
+  let keyCount = length rks
+  loop rks keyCount pollMaxRetry
   where
-    loop rks keyCount = do
-      error "LOOOOPE"
-      resp <- postAPI' "poll" (Pact.Poll rks) False
+    loop _rks _keyCount 0 = do
+      flushStrLn "Timeout on pollForResults -- not all results were received"
+      return ()
+    loop rks keyCount retryCount = do
+      resp <- postAPI "poll" (Pact.Poll rks)
       case resp ^. responseBody of
         ApiFailure err -> liftIO $ putStrLn $ "\nApiFailure: no results received: " ++ show err
         ApiSuccess (PollResponses responseMap) -> do
           let ks = HM.keys responseMap
           if length ks < keyCount
           then do
-            flushStrLn $ "Not enough keys: " ++ show (length ks) ++ " of: " ++ show keyCount
-            liftIO $ SYS.sleep 1
-            loop rks keyCount  
-          else do 
+            liftIO $ sleep 1
+            loop rks keyCount (retryCount - 1)
+          else do
+            flushStrLn $ "\nReceived all the keys: (" ++ show (length ks) ++ " of "
+                      ++ show keyCount ++ " on try #" ++ show ( pollMaxRetry- retryCount + 1) ++ ")"
             flushStrLn $ "Calling foldM on checkEach with " ++ show (length ks) ++ " keys"
-            (allOk, theResults) <-  liftIO $ foldM (checkEach responseMap) (True, []) ks 
+            (allOk, theResults) <-  liftIO $ foldM (checkEach responseMap) (True, []) ks
             when allOk $ do
               liftIO $ putStrLn "All commands successful"
-
-            flushStrLn $ "showLatency: " ++ show showLatency
-            flushStrLn $ "lenght of theResults: " ++ show (length theResults)
-
             when (showLatency && not (null theResults)) $ do
-              printLatencyMetrics (last theResults) $ fromIntegral (length theResults)
+              let numTrueTrans = fromMaybe keyCount mTrueCount
+              printLatencyMetrics (last theResults) $ fromIntegral numTrueTrans
               return ()
-
-
-{-
-pollForResults :: Bool -> RequestKeys -> Repl ()
-pollForResults showLatency theKeys = do
-  t <- timeout 30 $ do
-    return $ do
-      let rks = _rkRequestKeys theKeys
-      when (null rks) $ return ()
-      let keyCount = length rks3d 
-      return loop
-      where
-        loop :: Repl ()
-        loop = do
-          resp <- postAPI "poll" (Pact.Poll rks)
-          case resp ^. responseBody of
-            ApiFailure err -> liftIO $ putStrLn $ "\nApiFailure: no results received: " ++ show err
-            ApiSuccess (PollResponses responseMap) -> do
-              let ks = HM.keys responseMap
-              if length ks < keyCount
-                then sleep 1 >> loop  
-                else do 
-                  flushStrLn $ "Calling foldM on checkEach with " ++ show (length ks) ++ " keys"
-                  (allOk, theResults) <-  liftIO $ foldM (checkEach responseMap) (True, []) ks 
-                  when allOk $ do
-                    liftIO $ putStrLn "All commands successful"
-
-                  flushStrLn $ "showLatency: " ++ show showLatency
-                  flushStrLn $ "lenght of theResults: " ++ show (length theResults)
-
-                  when (showLatency && not (null theResults)) $ do
-                    printLatencyMetrics (last theResults) $ fromIntegral (length theResults)
-                    return ()
-  case t of
-    Nothing -> error "PollForResults timed out before all responces were received"
-    Just x -> return x
--}
 
 checkEach :: (HM.HashMap RequestKey ApiResult)
           -> (Bool, [ApiResult]) -> RequestKey -> IO (Bool, [ApiResult])
@@ -556,10 +500,7 @@ checkEach responseMap (b, xs) theKey = do
                            | HM.lookup (T.pack "tag") h == Just "ClusterChangeSuccess" -> True
                            | otherwise -> False
                   _ -> False
-      if ok then do
-        putStrLn $ "checkEach = returning " ++ show b ++ " and list of size "
-          ++ show (length xs + 1)
-        return (b, apiResult : xs)
+      if ok then return (b, apiResult : xs)
       else do
         putStrLn $ "Status was not successful for results of key: " ++ show theKey
         return (False, xs)

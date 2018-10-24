@@ -478,7 +478,6 @@ pollForResults showLatency mTrueCount theKeys = do
           else do
             flushStrLn $ "\nReceived all the keys: (" ++ show (length ks) ++ " of "
                       ++ show keyCount ++ " on try #" ++ show ( pollMaxRetry- retryCount + 1) ++ ")"
-            flushStrLn $ "Calling foldM on checkEach with " ++ show (length ks) ++ " keys"
             (allOk, theResults) <-  liftIO $ foldM (checkEach responseMap) (True, []) ks
             when allOk $ do
               liftIO $ putStrLn "All commands successful"

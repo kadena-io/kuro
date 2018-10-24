@@ -203,10 +203,7 @@ sendPrivateBatch = catch (do
 poll :: Api ()
 poll = catch (do
     (Poll rks) <- readJSON
-    log $ "Polling for " ++ show rks
     PossiblyIncompleteResults{..} <- checkHistoryForResult (HashSet.fromList rks)
-    when (HashMap.null possiblyIncompleteResults) $
-      log $ "No results found for poll!" ++ show rks
     writeResponse $ pollResultToReponse possiblyIncompleteResults)
   (\e -> liftIO $ putStrLn $ "Exception caught in the handler poll: " ++ show (e :: SomeException))
 

@@ -64,4 +64,4 @@ handle msg = do
     NoFollowers -> do
       debug (theAlias ++ ": (leader) enqueuing ElectionTimeout")
       timeout' <- return $ _csTimeSinceLastAER s
-      enqueueEvent $ ElectionTimeout $ "Leader has not hear from followers in: " ++ show (timeout' `div` 1000) ++ "ms"
+      enqueueEvent $ ElectionTimeout $ "*%* Leader has not heard from followers in: " ++ show (timeout' `div` 1000) ++ "ms"

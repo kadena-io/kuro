@@ -67,7 +67,7 @@ checkElection votes = do
 
 checkInvalids :: (MonadReader RequestVoteResponseEnv m, MonadWriter [String] m) =>
                  RequestVoteResponse -> m RequestVoteResponseOut
-checkInvalids rvr@RequestVoteResponse{..} = do
+checkInvalids RequestVoteResponse{..} = do
   maybeIcr' <- view icr
   quorumSize' <- view quorumSize
   case maybeIcr' of
@@ -75,7 +75,7 @@ checkInvalids rvr@RequestVoteResponse{..} = do
     Just icr'@InvalidCandidateResults{..} -> do
       case _rvrHeardFromLeader of
         Nothing -> do
-          tell ["Received negative RVR but HFL was unpopulated, taking no action: " ++ show rvr]
+          tell ["Received negative RVR but HFL was unpopulated, taking no action: "]
           return NoAction
         Just HeardFromLeader{..} -> do
           if _hflYourRvSig == _icrMyReqVoteSig

@@ -32,7 +32,9 @@ handleEvents = forever $ do
   case e of
     ERPC rpc                      -> handleRPC rpc
     NewCmd cmds                   -> PureCommand.handleBatch cmds
-    ElectionTimeout s             -> PureElectionTimeout.handle s
+    ElectionTimeout s             -> do
+      debug "*%* Election timeout received from timer thread"
+      PureElectionTimeout.handle s
     HeartbeatTimeout s            -> PureHeartbeatTimeout.handle s
     Heart tock'  -> do
       gCfg <- view cfg

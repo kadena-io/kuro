@@ -19,7 +19,12 @@ source-repository head
   location: git@github.com:buckie/kadena.git
 
 flag kill-switch
-    description: Build with kill switches enabled
+    description: Build with Beta kill switches enabled
+    manual: True
+    default: False
+
+flag aws-kill-switch
+    description: Build with AWS kill switches enabled
     manual: True
     default: False
 
@@ -201,6 +206,8 @@ library
      cpp-options: -DENABLE_PACT_PERSISTENCE=1
   if flag(kill-switch)
      cpp-options: -DWITH_KILL_SWITCH=1
+  if flag(aws-kill-switch)
+     cpp-options: -DWITH_AWS_KILL_SWITCH=1
 
 executable genconfs
   main-is:             GenerateConfigFiles.hs

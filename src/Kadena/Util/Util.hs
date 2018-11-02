@@ -22,6 +22,7 @@ import Control.Exception (SomeAsyncException)
 import Control.Monad
 import Control.Monad.Catch
 import Data.List (intersperse)
+import Data.Maybe
 import Data.String (IsString)
 import Data.Typeable
 import Data.Sequence (Seq)
@@ -84,9 +85,9 @@ linkAsyncTrack loc fn = link =<< (async $ catchAndRethrow loc fn)
 linkAsyncBoundTrack :: String -> IO a -> IO ()
 linkAsyncBoundTrack loc fn = link =<< (asyncBound $ catchAndRethrow loc fn)
 
-throwDiagnostics :: MonadThrow m => Bool -> String -> m ()
-throwDiagnostics diagnostics str = do
-  if diagnostics
+throwDiagnostics :: MonadThrow m => Maybe Bool -> String -> m ()
+throwDiagnostics mDiag str = do
+  if (fromMaybe False mDiag)
     then throwM $ DiagnosticException str
     else return ()
 

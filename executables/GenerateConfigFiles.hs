@@ -306,7 +306,7 @@ createClusterConfig cp@ConfigParams{..} adminKeys' (privMap, pubMap) entMap apiP
   , _inMemTxCache         = cpInMemTxs
   , _hostStaticDir        = cpHostStaticDirB
   , _nodeClass            = Active
-  , _enableDiagnostics    = False
+  , _enableDiagnostics    = Nothing
   }
 
 mkPactPersistConfig :: ConfigParams -> Bool -> NodeId -> PactPersistConfig

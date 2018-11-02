@@ -15,6 +15,7 @@ import Control.Lens
 import Control.Monad
 import Control.Monad.IO.Class
 
+import Data.Maybe
 import Data.Monoid ((<>))
 import Data.Thyme.Calendar (showGregorian)
 import Data.Thyme.Clock (UTCTime, getCurrentTime)
@@ -87,7 +88,7 @@ getConfig = do
           -- enableDiagnositcs is set to true if either:
           --   enableDiagnostics is set to true in the config file
           --   or, if the -e flag exists in the command line arg
-          , _enableDiagnostics = (_enableDiagnostics conf') || (optEnableDiagnostics opts)
+          , _enableDiagnostics = Just $ (fromMaybe False  (_enableDiagnostics conf')) || (optEnableDiagnostics opts)
           }
     (_,_,errs)     -> mapM_ putStrLn errs >> exitFailure
 

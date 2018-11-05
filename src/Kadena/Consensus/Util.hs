@@ -33,7 +33,7 @@ import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.RWS.Strict
 import Control.Concurrent (putMVar, takeMVar, newEmptyMVar)
-import qualified Control.Concurrent.Lifted as CL
+import Control.Concurrent.Async
 
 import Data.HashSet (HashSet)
 import Data.Set (Set)
@@ -85,17 +85,17 @@ resetHeartbeatTimer = do
 
 cancelTimer :: Consensus ()
 cancelTimer = do
-  tmr <- use csTimerThread
-  case tmr of
+  asy <- use csTimerAsync
+  case asy of
     Nothing -> return ()
-    Just t -> view killEnqueued >>= \f -> liftIO $ f t
-  csTimerThread .= Nothing
+    Just a -> view killEnqueued >>= \f -> liftIO $ f a
+  csTimerAsync .= Nothing
 
 setTimedEvent :: Event -> Int -> Consensus ()
 setTimedEvent e t = do
   cancelTimer
   tmr <- enqueueEventLater t e -- forks, no state
-  csTimerThread .= Just tmr
+  csTimerAsync .= Just tmr
 
 becomeFollower :: Consensus ()
 becomeFollower = do
@@ -156,7 +156,7 @@ enqueueRequest' s = do
 enqueueEvent :: Event -> Consensus ()
 enqueueEvent event = view enqueue >>= \f -> liftIO $! f event
 
-enqueueEventLater :: Int -> Event -> Consensus CL.ThreadId
+enqueueEventLater :: Int -> Event -> Consensus (Async ())
 enqueueEventLater t event = view enqueueLater >>= \f -> liftIO $! f t event
 
 -- no state update

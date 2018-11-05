@@ -15,7 +15,7 @@ module Kadena.Types.Spec
   , informEvidenceServiceOfElection, enqueueHistoryQuery
   , ConsensusState(..), initialConsensusState
   , csNodeRole, csTerm, csVotedFor, csLazyVote, csCurrentLeader, csIgnoreLeader
-  , csTimerThread, csYesVotes, csPotentialVotes, csLastCommitTime
+  , csTimerAsync, csYesVotes, csPotentialVotes, csLastCommitTime
   , csTimeSinceLastAER, csCmdBloomFilter, csInvalidCandidateResults
   , mkConsensusEnv
   , PublishedConsensus(..),pcLeader,pcRole,pcTerm,pcYesVotes
@@ -23,7 +23,8 @@ module Kadena.Types.Spec
   , InvalidCandidateResults(..), icrMyReqVoteSig, icrNoVotes
   ) where
 
-import Control.Concurrent (MVar, ThreadId, killThread, yield, forkIO, threadDelay, tryPutMVar, tryTakeMVar)
+import Control.Concurrent (MVar, yield, threadDelay, tryPutMVar, tryTakeMVar)
+import Control.Concurrent.Async as ASYNC
 import Control.Concurrent.STM
 import Control.Lens hiding (Index, (|>))
 import Control.Monad
@@ -51,6 +52,7 @@ import Kadena.Types.Sender (SenderServiceChannel, ServiceRequest')
 import Kadena.Log.Types (QueryApi(..))
 import Kadena.Types.History (History(..))
 import Kadena.Types.Evidence (PublishedEvidenceState, Evidence(ClearConvincedNodes))
+import Kadena.Util.Util (linkAsyncTrack')
 
 data PublishedConsensus = PublishedConsensus
     { _pcLeader :: !(Maybe NodeId)
@@ -93,7 +95,7 @@ data ConsensusState = ConsensusState
   , _csLazyVote         :: !(Maybe LazyVote)
   , _csCurrentLeader    :: !(Maybe NodeId)
   , _csIgnoreLeader     :: !Bool
-  , _csTimerThread      :: !(Maybe ThreadId)
+  , _csTimerAsync       :: !(Maybe (Async ()))
   , _csTimerTarget      :: !(MVar Event)
   , _csCmdBloomFilter   :: !(Bloom RequestKey)
   , _csYesVotes        :: !(Set RequestVoteResponse)
@@ -133,8 +135,8 @@ data ConsensusEnv = ConsensusEnv
   , _sendMessage      :: !(ServiceRequest' -> IO ())
   , _enqueue          :: !(Event -> IO ())
   , _enqueueMultiple  :: !([Event] -> IO ())
-  , _enqueueLater     :: !(Int -> Event -> IO ThreadId)
-  , _killEnqueued     :: !(ThreadId -> IO ())
+  , _enqueueLater     :: !(Int -> Event -> IO (Async ()))
+  , _killEnqueued     :: !((Async ()) -> IO ())
   , _dequeue          :: !(IO Event)
   , _clientSendMsg    :: !(OutboundGeneral -> IO ())
   , _evidenceState    :: !(MVar PublishedEvidenceState)
@@ -168,12 +170,20 @@ mkConsensusEnv conf' rSpec dispatch timerTarget' timeCache' mEs mResetLeaderNoFo
         -- We want to clear it the instance that we reset the timer.
         -- Not doing this can cause a bug when there's an AE being processed when the thread fires, causing a needless election.
         -- As there is a single producer for this mvar + the consumer is single threaded + fires this function this is safe.
-        forkIO $ do
+
+        --forkIO $ do
+        linkAsyncTrack' "ConsensusTimerThread" $ do
+          putStrLn "Starting Async timer"
           threadDelay t
           b <- tryPutMVar timerTarget' $! e
           unless b (putStrLn "Failed to update timer MVar")
+          putStrLn "Async timer done, exiting"
           -- TODO: what if it's already taken?
-    , _killEnqueued = killThread
+
+    -- , _killEnqueued = ASYNC.cancel
+    , _killEnqueued = \a -> do
+        putStrLn "Calling cancel on timer Async"
+        ASYNC.cancel a
     , _dequeue = _unConsensusEvent <$> readComm ie'
     , _clientSendMsg = writeComm cog'
     , _evidenceState = mEs

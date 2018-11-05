@@ -49,7 +49,7 @@ data Config = Config
   , _hostStaticDir        :: !Bool
   , _nodeClass            :: !NodeClass
   , _logRules             :: !LogRules
-  , _enableDiagnostics    :: !Bool
+  , _enableDiagnostics    :: !(Maybe Bool)
   }
   deriving (Show, Generic)
 makeLenses ''Config

@@ -76,4 +76,3 @@ nodeClass: active
 enablePersistence: true
 myPrivateKey: 2d90c6e7a5492d0f49f264dd80cc988e7bd76c8bec4385e79117d2cac18d22d8
 preProcUsePar: true
-enableDiagnostics: false 

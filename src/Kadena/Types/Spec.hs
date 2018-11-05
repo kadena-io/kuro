@@ -170,20 +170,12 @@ mkConsensusEnv conf' rSpec dispatch timerTarget' timeCache' mEs mResetLeaderNoFo
         -- We want to clear it the instance that we reset the timer.
         -- Not doing this can cause a bug when there's an AE being processed when the thread fires, causing a needless election.
         -- As there is a single producer for this mvar + the consumer is single threaded + fires this function this is safe.
-
-        --forkIO $ do
         linkAsyncTrack' "ConsensusTimerThread" $ do
-          putStrLn "Starting Async timer"
           threadDelay t
           b <- tryPutMVar timerTarget' $! e
           unless b (putStrLn "Failed to update timer MVar")
-          putStrLn "Async timer done, exiting"
           -- TODO: what if it's already taken?
-
-    -- , _killEnqueued = ASYNC.cancel
-    , _killEnqueued = \a -> do
-        putStrLn "Calling cancel on timer Async"
-        ASYNC.cancel a
+    , _killEnqueued = catchCancel
     , _dequeue = _unConsensusEvent <$> readComm ie'
     , _clientSendMsg = writeComm cog'
     , _evidenceState = mEs
@@ -199,6 +191,11 @@ mkConsensusEnv conf' rSpec dispatch timerTarget' timeCache' mEs mResetLeaderNoFo
     hs' = dispatch ^. dispHistoryChannel
     ie' = dispatch ^. dispConsensusEvent
     ev' = dispatch ^. dispEvidence
+
+catchCancel :: Async () -> IO ()
+catchCancel asy = do
+  _ <- waitAnyCancel [asy]
+  return ()
 
 sendMsg :: SenderServiceChannel -> ServiceRequest' -> IO ()
 sendMsg outboxWrite og = do

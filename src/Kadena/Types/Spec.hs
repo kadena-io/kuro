@@ -26,6 +26,7 @@ module Kadena.Types.Spec
 import Control.Concurrent (MVar, yield, threadDelay, tryPutMVar, tryTakeMVar)
 import Control.Concurrent.Async as ASYNC
 import Control.Concurrent.STM
+import Control.Exception
 import Control.Lens hiding (Index, (|>))
 import Control.Monad
 import Control.Monad.IO.Class
@@ -165,16 +166,7 @@ mkConsensusEnv conf' rSpec dispatch timerTarget' timeCache' mEs mResetLeaderNoFo
     , _sendMessage = sendMsg g'
     , _enqueue = writeComm ie' . ConsensusEvent
     , _enqueueMultiple = mapM_ (writeComm ie' . ConsensusEvent)
-    , _enqueueLater = \t e -> do
-        void $ tryTakeMVar timerTarget'
-        -- We want to clear it the instance that we reset the timer.
-        -- Not doing this can cause a bug when there's an AE being processed when the thread fires, causing a needless election.
-        -- As there is a single producer for this mvar + the consumer is single threaded + fires this function this is safe.
-        linkAsyncTrack' "ConsensusTimerThread" $ do
-          threadDelay t
-          b <- tryPutMVar timerTarget' $! e
-          unless b (putStrLn "Failed to update timer MVar")
-          -- TODO: what if it's already taken?
+    , _enqueueLater = timerFn timerTarget'
     , _killEnqueued = catchCancel
     , _dequeue = _unConsensusEvent <$> readComm ie'
     , _clientSendMsg = writeComm cog'
@@ -191,6 +183,27 @@ mkConsensusEnv conf' rSpec dispatch timerTarget' timeCache' mEs mResetLeaderNoFo
     hs' = dispatch ^. dispHistoryChannel
     ie' = dispatch ^. dispConsensusEvent
     ev' = dispatch ^. dispEvidence
+
+timerFn :: (MVar Event) -> (Int -> Event -> IO (Async ()))
+timerFn timerMVar =
+  (\t event ->
+    --MLN remove this, just for debugging
+    catch ( do
+      -- We want to clear it the instance that we reset the timer. Not doing this can cause a bug when
+      -- there's an AE being processed when the thread fires, causing a needless election.As there is a
+      -- single producer for this mvar + the consumer is single threaded + fires this fn this is safe.
+      void $ tryTakeMVar timerMVar
+      linkAsyncTrack' "ConsensusTimerThread" $ do
+            threadDelay t
+            b <- tryPutMVar timerMVar $! event
+            unless b (putStrLn "Failed to update timer MVar")
+            -- TODO: what if it's already taken?
+      )
+      (\e -> do
+            let err = "Exception in timer thread: " ++ show (e :: SomeException)
+            error err
+      )
+  )
 
 catchCancel :: Async () -> IO ()
 catchCancel asy = do

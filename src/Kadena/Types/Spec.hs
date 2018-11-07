@@ -183,19 +183,17 @@ mkConsensusEnv conf' rSpec dispatch timerTarget' timeCache' mEs mResetLeaderNoFo
     ev' = dispatch ^. dispEvidence
 
 timerFn :: (MVar Event) -> (Int -> Event -> IO (Async ()))
-timerFn timerMVar =
-  (\t event -> do
+timerFn timerMVar t event = do
     -- We want to clear it the instance that we reset the timer. Not doing this can cause a bug when
     -- there's an AE being processed when the thread fires, causing a needless election.As there is a
     -- single producer for this mvar + the consumer is single threaded + fires this fn this is safe.
     void $ tryTakeMVar timerMVar
     -- Note: using linkAsyncTrack' instead of just async here causes a problem when cancel is called
     async $ do
-          threadDelay t
-          b <- tryPutMVar timerMVar $! event
-          unless b (putStrLn "Failed to update timer MVar")
-          -- TODO: what if it's already taken?
-  )
+      threadDelay t
+      b <- tryPutMVar timerMVar $! event
+      unless b (putStrLn "Failed to update timer MVar")
+      -- TODO: what if it's already taken?
 
 sendMsg :: SenderServiceChannel -> ServiceRequest' -> IO ()
 sendMsg outboxWrite og = do

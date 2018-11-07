@@ -11,7 +11,6 @@ module Kadena.Util.Util
   , fromMaybeM
   , foreverRetry
   , linkAsyncTrack
-  , linkAsyncTrack'
   , linkAsyncBoundTrack
   , seqIndex
   , throwDiagnostics
@@ -42,17 +41,6 @@ foreverRetry debug threadName action = void $ forkIO $ forever $ do
       putMVar threadDied ()
   takeMVar threadDied
   debug $ threadName ++ "got MVar... restarting"
-
--- MLN: to-be-tested replacement for foreverRetry using async instead of forkIO
-_foreverRetry' :: (String -> IO ()) -> String -> IO () -> IO ()
-_foreverRetry' debug threadName actions = forever $ do
-  debug (threadName ++ " launching")
-  theAsync <- async actions
-  (_, waitResponse) <- waitAnyCatch [theAsync]
-  case waitResponse of
-    Right () -> debug $ threadName ++ " died returning () with no details"
-    Left err -> debug $ threadName ++ " exception " ++ show err
-  debug $ threadName ++ "... restarting"
 
 awsDashVar :: Bool -> String -> String -> IO ()
 awsDashVar False _ _ = return ()
@@ -93,13 +81,6 @@ catchAndRethrow loc fn = fn `catches` [Handler (\(e@TrackedError{..} :: TrackedE
 --   where to look after it's thrown.
 linkAsyncTrack :: String -> IO a -> IO ()
 linkAsyncTrack loc fn = link =<< (async $ catchAndRethrow loc fn)
-
--- | Similar to linkAsyncTrack, but returns the Async (in order to cancel, etc.)
-linkAsyncTrack' :: String -> IO () -> IO (Async ())
-linkAsyncTrack' loc fn = do
-  theAsync <- async $ catchAndRethrow loc fn
-  link theAsync
-  return theAsync
 
 linkAsyncBoundTrack :: String -> IO a -> IO ()
 linkAsyncBoundTrack loc fn = link =<< (asyncBound $ catchAndRethrow loc fn)

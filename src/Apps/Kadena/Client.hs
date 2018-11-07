@@ -486,16 +486,6 @@ pollForResults showLatency mTrueCount theKeys = do
               printLatencyMetrics (last theResults) $ fromIntegral numTrueTrans
               return ()
 
-_pollForLastResult :: Bool -> RequestKeys -> Repl ()
-_pollForLastResult showLatency theKeys = do
-  let rks = _rkRequestKeys theKeys
-  let cnt = length rks
-  case rks of
-    [] -> do
-      flushStrLn "Empty list of keys passed to pollForLastResult"
-      return ()
-    _ -> pollForResults showLatency (Just cnt) $ RequestKeys [last rks]
-
 checkEach :: (HM.HashMap RequestKey ApiResult)
           -> (Bool, [ApiResult]) -> RequestKey -> IO (Bool, [ApiResult])
 checkEach responseMap (b, xs) theKey = do

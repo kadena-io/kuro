@@ -53,13 +53,13 @@ import Kadena.Util.Util
 getNewElectionTimeout :: Consensus Int
 getNewElectionTimeout = do
   viewConfig electionTimeoutRange >>= randomRIO
-  
+
 resetElectionTimer :: Consensus ()
 resetElectionTimer = do
   theCfg <- readConfig
   let theNode = _alias (_nodeId theCfg)
   timeout <- getNewElectionTimeout
-  debug $ (show theNode) ++ ": Resetting Election Timeout - setting a new timed event for "
+  debug $ (show theNode) ++ ": Resetting Election Timer - setting a new timed event for "
     ++ show (timeout `div` 1000) ++ "ms"
   setTimedEvent (ElectionTimeout $ show (timeout `div` 1000) ++ "ms") timeout
 
@@ -81,6 +81,8 @@ resetElectionTimerLeader = csTimeSinceLastAER .= 0
 resetHeartbeatTimer :: Consensus ()
 resetHeartbeatTimer = do
   timeout <- viewConfig heartbeatTimeout
+  debug $ ": Resetting Heartbeat Timer - setting a new timed event for "
+    ++ show (timeout `div` 1000) ++ "ms"
   setTimedEvent (HeartbeatTimeout $ show (timeout `div` 1000) ++ "ms") timeout
 
 cancelTimer :: Consensus ()
@@ -124,7 +126,7 @@ debug s = do
       Leader -> liftIO $! dbg $! "[Kadena|\ESC[0;34mLEADER\ESC[0m]: " ++ s
       Follower -> liftIO $! dbg $! "[Kadena|\ESC[0;32mFOLLOWER\ESC[0m]: " ++ s
       Candidate -> liftIO $! dbg $! "[Kadena|\ESC[1;33mCANDIDATE\ESC[0m]: " ++ s
-  
+
 randomRIO :: R.Random a => (a,a) -> Consensus a
 randomRIO rng = view (rs.random) >>= \f -> liftIO $! f rng -- R.randomRIO
 

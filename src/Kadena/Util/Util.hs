@@ -43,6 +43,17 @@ foreverRetry debug threadName action = void $ forkIO $ forever $ do
   takeMVar threadDied
   debug $ threadName ++ "got MVar... restarting"
 
+-- MLN: to-be-tested replacement for foreverRetry using async instead of forkIO
+_foreverRetry' :: (String -> IO ()) -> String -> IO () -> IO ()
+_foreverRetry' debug threadName actions = forever $ do
+  debug (threadName ++ " launching")
+  theAsync <- async actions
+  (_, waitResponse) <- waitAnyCatch [theAsync]
+  case waitResponse of
+    Right () -> debug $ threadName ++ " died returning () with no details"
+    Left err -> debug $ threadName ++ " exception " ++ show err
+  debug $ threadName ++ "... restarting"
+
 awsDashVar :: Bool -> String -> String -> IO ()
 awsDashVar False _ _ = return ()
 awsDashVar True  k v = void $! forkIO $! void $! system $

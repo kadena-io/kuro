@@ -299,6 +299,4 @@ registerListener = do
       log errStr
       liftIO $ putStrLn errStr
       throw e
-    Right y -> do
-      log "registerListener returning 'Right'"
-      return y
+    Right y -> return y

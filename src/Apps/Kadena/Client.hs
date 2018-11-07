@@ -311,8 +311,7 @@ sendConfigChangeCmd ccApiReq@ConfigChangeApiReq{..} fileName = do
   execs <- liftIO $ mkConfigChangeExecs ccApiReq
   resp <- postAPI "config" (SubmitCC execs)
   tellKeys resp fileName
-  -- handleHttpResp (listenForLastResult listenDelayMs False) resp
-  handleHttpResp (pollForLastResult False) resp
+  handleHttpResp (listenForLastResult listenDelayMs False) resp
 
 tellKeys :: Response (ApiResponse RequestKeys) -> String -> Repl ()
 tellKeys resp cmd =
@@ -343,8 +342,7 @@ batchTest n cmd = do
   es <- SubmitBatch <$> replicateM n (mkExec cmd j Nothing)
   resp <- postAPI "send" es
   flushStrLn $ "Sent, retrieving responses"
-  -- handleHttpResp (listenForLastResult listenDelayMs True) resp
-  handleHttpResp (pollForLastResult True) resp
+  handleHttpResp (listenForLastResult listenDelayMs True) resp
 
 chunksOf :: Int -> [e] -> [[e]]
 chunksOf i ls = map (take i) (build (splitter ls)) where
@@ -488,8 +486,8 @@ pollForResults showLatency mTrueCount theKeys = do
               printLatencyMetrics (last theResults) $ fromIntegral numTrueTrans
               return ()
 
-pollForLastResult :: Bool -> RequestKeys -> Repl ()
-pollForLastResult showLatency theKeys = do
+_pollForLastResult :: Bool -> RequestKeys -> Repl ()
+_pollForLastResult showLatency theKeys = do
   let rks = _rkRequestKeys theKeys
   let cnt = length rks
   case rks of

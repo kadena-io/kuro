@@ -295,6 +295,8 @@ registerListener = do
         writeLBS $ encode ls
   case theEither of
     Left e -> do
-      liftIO $ putStrLn $ "Exception in registerListener: " ++ show e
+      let errStr = "Exception in registerListener: " ++ show e
+      log errStr
+      liftIO $ putStrLn errStr
       throw e
     Right y -> return y

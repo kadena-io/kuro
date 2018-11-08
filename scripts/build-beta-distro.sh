@@ -99,7 +99,7 @@ if [ -z "$target" -o "$target" = "perform" ]; then
 
     chirp "Builing and Copying: Performance Monitor"
     rm -rf ./kadena-beta/static/monitor/*
-    safe cp -R monitor/* ./kadena-beta/static/monitor
+    safe cp -R monitor/ ./kadena-beta/static/monitor
 
 fi
 

@@ -8,9 +8,13 @@ conf_path: ~/kadena-beta
 # ----------- EC2 Kadena Server Instances Specifications ---------------
 # The following specifications will be used to create all EC2 instances that will run
 # the kadena servers.
+
+# Recommended Parameters
 instance_kadena_server_count: 4
-instance_type: m4.2xlarge  # Recommended
+instance_type: m4.2xlarge
+
+# MUST change the following parameters
 instance_region: us-west-2
-instance_key_name: testenv-key
-instance_image: ami-044b98bd59d694167   # AMI ID of Kadena AMI for the instance_region
-instance_security_group: testenv-sg
+instance_key_name: sample-key
+instance_image: ami-0123456789   # AMI ID of Kadena AMI for the instance_region
+instance_security_group: sample-sg

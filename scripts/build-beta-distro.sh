@@ -8,7 +8,7 @@ barf() { shout "$*"; exit 111; }
 safe() { "$@" || barf "cannot $*"; }
 
 types="(beta|aws)"
-targets="(osx|ubuntu|centos|perfmon|dist)"
+targets="(osx|ubuntu|centos|perform|dist)"
 usage="\n
 usage: [type] [target]\n
    \t type - required build type $types \n
@@ -24,7 +24,7 @@ else
    barf $usage
 fi
 
-FLAG="kill-switch"              # beta is the default
+FLAG="kill-switch"             # beta is the default
 if [[ "$type" = "aws" ]]; then
     FLAG="aws-kill-switch"
 fi
@@ -32,6 +32,15 @@ fi
 target="$2"
 if [ -n "$target" ]; then
     [[ ! "$target" =~ $targets ]] && barf $usage
+fi
+
+if [ -z "$target" -o "$target" = "dist" ]; then
+    chirp "Creating build directories"
+    safe rm -rf kadena-beta/aws && mkdir kadena-beta/aws
+    safe rm -rf kadena-beta/log && mkdir kadena-beta/log
+    safe rm -rf kadena-beta/conf && mkdir kadena-beta/conf
+    safe rm -rf kadena-beta/demo && mkdir kadena-beta/demo
+    safe rm -rf kadena-beta/setup && mkdir kadena-beta/setup
 fi
 
 version=`egrep "^version:" kadena.cabal | sed -e 's/^version: *\(.*\) *$/\1/'`
@@ -65,7 +74,7 @@ if [ -z "$target" -o "$target" = "ubuntu" ]; then
     chirp "Builing and Copying: Ubuntu 16.04"
     rm -rf ./kadena-beta/bin/ubuntu-16.04/{genconfs,kadenaserver,kadenaclient}
     safe docker build --cpuset-cpus="0-3" --cpu-shares=1024 --memory=8g -t kadena-base:ubuntu-16.04 -f docker/ubuntu-base.Dockerfile .
-    safe docker build --cpuset-cpus="0-3" --cpu-shares=1024 --memory=8g -t -e FLAG=$FLAG kadena:ubuntu-16.04 -f docker/ubuntu-build.Dockerfile .
+    safe docker build --build-arg flag=$FLAG --cpuset-cpus="0-3" --cpu-shares=1024 --memory=8g -t kadena:ubuntu-16.04 -f docker/ubuntu-build.Dockerfile .
     safe docker run -i -v ${PWD}:/work_dir kadena:ubuntu-16.04 << COMMANDS
 cp -R /ubuntu-16.04 /work_dir/kadena-beta/bin
 COMMANDS
@@ -78,7 +87,7 @@ if [ -z "$target" -o "$target" = "centos" ]; then
     chirp "Builing and Copying: CENTOS 6.8"
     rm -rf ./kadena-beta/bin/centos-6.8/{genconfs,kadenaserver,kadenaclient}
     safe docker build --cpuset-cpus="0-3" --cpu-shares=1024 --memory=8g -t kadena-base:centos-6.8 -f docker/centos6-base.Dockerfile .
-    safe docker build --cpuset-cpus="0-3" --cpu-shares=1024 --memory=8g -t -e FLAG=$FLAG kadena:centos-6.8 -f docker/centos6-build.Dockerfile .
+    safe docker build --build-arg flag=$FLAG --cpuset-cpus="0-3" --cpu-shares=1024 --memory=8g -t kadena:centos-6.8 -f docker/centos6-build.Dockerfile .
     safe docker run -i -v ${PWD}:/work_dir kadena:centos-6.8 << COMMANDS
 cp -R /centos-6.8 /work_dir/kadena-beta/bin
 COMMANDS
@@ -86,11 +95,11 @@ COMMANDS
 
 fi
 
-if [ -z "$target" -o "$target" = "perfmon" ]; then
+if [ -z "$target" -o "$target" = "perform" ]; then
 
     chirp "Builing and Copying: Performance Monitor"
     rm -rf ./kadena-beta/static/monitor/*
-    safe cp -R monitor/* ./kadena-beta/static/monitor/
+    safe cp -R monitor/* ./kadena-beta/static/monitor
 
 fi
 

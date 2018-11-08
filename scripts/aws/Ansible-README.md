@@ -39,6 +39,7 @@ following playbooks:
                         Server executable. It also creates a file containing
                         all of their private IP addresses and the default
                         (i.e. SQLite backend) node configurations for each.
+                        This will create instances tagged as "kadena_server".
                         This list of IP addresses will be located in
                         `aws/ipAddr.yml`.
 

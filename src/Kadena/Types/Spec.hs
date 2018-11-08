@@ -15,7 +15,7 @@ module Kadena.Types.Spec
   , informEvidenceServiceOfElection, enqueueHistoryQuery
   , ConsensusState(..), initialConsensusState
   , csNodeRole, csTerm, csVotedFor, csLazyVote, csCurrentLeader, csIgnoreLeader
-  , csTimerAsync, csYesVotes, csPotentialVotes, csLastCommitTime
+  , csTimerKey, csYesVotes, csPotentialVotes, csLastCommitTime
   , csTimeSinceLastAER, csCmdBloomFilter, csInvalidCandidateResults
   , mkConsensusEnv
   , PublishedConsensus(..),pcLeader,pcRole,pcTerm,pcYesVotes
@@ -23,9 +23,9 @@ module Kadena.Types.Spec
   , InvalidCandidateResults(..), icrMyReqVoteSig, icrNoVotes
   ) where
 
-import Control.Concurrent (MVar, yield, threadDelay, tryPutMVar, tryTakeMVar)
-import Control.Concurrent.Async as ASYNC
+import Control.Concurrent (MVar, yield, tryPutMVar, tryTakeMVar)
 import Control.Concurrent.STM
+import Control.Exception (mask_)
 import Control.Lens hiding (Index, (|>))
 import Control.Monad
 import Control.Monad.IO.Class
@@ -39,6 +39,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Thyme.Clock
 import Data.Thyme.Time.Core ()
+import GHC.Event (TimeoutKey, getSystemTimerManager, registerTimeout, unregisterTimeout)
 import System.Random (Random)
 
 import Kadena.Types.Base
@@ -94,7 +95,7 @@ data ConsensusState = ConsensusState
   , _csLazyVote         :: !(Maybe LazyVote)
   , _csCurrentLeader    :: !(Maybe NodeId)
   , _csIgnoreLeader     :: !Bool
-  , _csTimerAsync       :: !(Maybe (Async ()))
+  , _csTimerKey         :: !(Maybe TimeoutKey)
   , _csTimerTarget      :: !(MVar Event)
   , _csCmdBloomFilter   :: !(Bloom RequestKey)
   , _csYesVotes        :: !(Set RequestVoteResponse)
@@ -134,8 +135,8 @@ data ConsensusEnv = ConsensusEnv
   , _sendMessage      :: !(ServiceRequest' -> IO ())
   , _enqueue          :: !(Event -> IO ())
   , _enqueueMultiple  :: !([Event] -> IO ())
-  , _enqueueLater     :: !(Int -> Event -> IO (Async ()))
-  , _killEnqueued     :: !((Async ()) -> IO ())
+  , _enqueueLater     :: !(Int -> Event -> IO TimeoutKey)
+  , _killEnqueued     :: !(TimeoutKey -> IO ())
   , _dequeue          :: !(IO Event)
   , _clientSendMsg    :: !(OutboundGeneral -> IO ())
   , _evidenceState    :: !(MVar PublishedEvidenceState)
@@ -165,7 +166,7 @@ mkConsensusEnv conf' rSpec dispatch timerTarget' timeCache' mEs mResetLeaderNoFo
     , _enqueue = writeComm ie' . ConsensusEvent
     , _enqueueMultiple = mapM_ (writeComm ie' . ConsensusEvent)
     , _enqueueLater = timerFn timerTarget'
-    , _killEnqueued = ASYNC.cancel
+    , _killEnqueued = cancelTimerFn
     , _dequeue = _unConsensusEvent <$> readComm ie'
     , _clientSendMsg = writeComm cog'
     , _evidenceState = mEs
@@ -182,18 +183,18 @@ mkConsensusEnv conf' rSpec dispatch timerTarget' timeCache' mEs mResetLeaderNoFo
     ie' = dispatch ^. dispConsensusEvent
     ev' = dispatch ^. dispEvidence
 
-timerFn :: (MVar Event) -> (Int -> Event -> IO (Async ()))
-timerFn timerMVar t event = do
-    -- We want to clear it the instance that we reset the timer. Not doing this can cause a bug when
-    -- there's an AE being processed when the thread fires, causing a needless election.As there is a
-    -- single producer for this mvar + the consumer is single threaded + fires this fn this is safe.
-    void $ tryTakeMVar timerMVar
-    -- Note: using linkAsyncTrack' instead of just async here causes a problem when cancel is called
-    async $ do
-      threadDelay t
-      b <- tryPutMVar timerMVar $! event
-      unless b (putStrLn "Failed to update timer MVar")
-      -- TODO: what if it's already taken?
+timerFn :: MVar Event -> Int -> Event -> IO TimeoutKey
+timerFn timerMVar t event = mask_ $ do
+  void $ tryTakeMVar timerMVar
+  mgr <- getSystemTimerManager
+  registerTimeout mgr t $ do
+    b <- tryPutMVar timerMVar $! event
+    unless b (putStrLn "Failed to update timer MVar")
+
+cancelTimerFn :: TimeoutKey -> IO ()
+cancelTimerFn k = mask_ $ do
+  mgr <- getSystemTimerManager
+  unregisterTimeout mgr k
 
 sendMsg :: SenderServiceChannel -> ServiceRequest' -> IO ()
 sendMsg outboxWrite og = do

@@ -33,7 +33,7 @@ import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.RWS.Strict
 import Control.Concurrent (putMVar, takeMVar, newEmptyMVar)
-import qualified Control.Concurrent.Lifted as CL
+import Control.Concurrent.Async
 
 import Data.HashSet (HashSet)
 import Data.Set (Set)
@@ -53,13 +53,13 @@ import Kadena.Util.Util
 getNewElectionTimeout :: Consensus Int
 getNewElectionTimeout = do
   viewConfig electionTimeoutRange >>= randomRIO
-  
+
 resetElectionTimer :: Consensus ()
 resetElectionTimer = do
   theCfg <- readConfig
   let theNode = _alias (_nodeId theCfg)
   timeout <- getNewElectionTimeout
-  debug $ (show theNode) ++ ": Resetting Election Timeout - setting a new timed event for "
+  debug $ (show theNode) ++ ": Resetting Election Timer - setting a new timed event for "
     ++ show (timeout `div` 1000) ++ "ms"
   setTimedEvent (ElectionTimeout $ show (timeout `div` 1000) ++ "ms") timeout
 
@@ -81,21 +81,23 @@ resetElectionTimerLeader = csTimeSinceLastAER .= 0
 resetHeartbeatTimer :: Consensus ()
 resetHeartbeatTimer = do
   timeout <- viewConfig heartbeatTimeout
+  debug $ ": Resetting Heartbeat Timer - setting a new timed event for "
+    ++ show (timeout `div` 1000) ++ "ms"
   setTimedEvent (HeartbeatTimeout $ show (timeout `div` 1000) ++ "ms") timeout
 
 cancelTimer :: Consensus ()
 cancelTimer = do
-  tmr <- use csTimerThread
-  case tmr of
+  asy <- use csTimerAsync
+  case asy of
     Nothing -> return ()
-    Just t -> view killEnqueued >>= \f -> liftIO $ f t
-  csTimerThread .= Nothing
+    Just a -> view killEnqueued >>= \f -> liftIO $ f a
+  csTimerAsync .= Nothing
 
 setTimedEvent :: Event -> Int -> Consensus ()
 setTimedEvent e t = do
   cancelTimer
   tmr <- enqueueEventLater t e -- forks, no state
-  csTimerThread .= Just tmr
+  csTimerAsync .= Just tmr
 
 becomeFollower :: Consensus ()
 becomeFollower = do
@@ -124,7 +126,7 @@ debug s = do
       Leader -> liftIO $! dbg $! "[Kadena|\ESC[0;34mLEADER\ESC[0m]: " ++ s
       Follower -> liftIO $! dbg $! "[Kadena|\ESC[0;32mFOLLOWER\ESC[0m]: " ++ s
       Candidate -> liftIO $! dbg $! "[Kadena|\ESC[1;33mCANDIDATE\ESC[0m]: " ++ s
-  
+
 randomRIO :: R.Random a => (a,a) -> Consensus a
 randomRIO rng = view (rs.random) >>= \f -> liftIO $! f rng -- R.randomRIO
 
@@ -156,7 +158,7 @@ enqueueRequest' s = do
 enqueueEvent :: Event -> Consensus ()
 enqueueEvent event = view enqueue >>= \f -> liftIO $! f event
 
-enqueueEventLater :: Int -> Event -> Consensus CL.ThreadId
+enqueueEventLater :: Int -> Event -> Consensus (Async ())
 enqueueEventLater t event = view enqueueLater >>= \f -> liftIO $! f t event
 
 -- no state update

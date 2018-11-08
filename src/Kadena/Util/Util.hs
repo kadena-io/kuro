@@ -87,9 +87,8 @@ linkAsyncBoundTrack loc fn = link =<< (asyncBound $ catchAndRethrow loc fn)
 
 throwDiagnostics :: MonadThrow m => Maybe Bool -> String -> m ()
 throwDiagnostics mDiag str = do
-  if (fromMaybe False mDiag)
-    then throwM $ DiagnosticException str
-    else return ()
+  when (fromMaybe False mDiag) $
+    throwM $ DiagnosticException str
 
 newtype DiagnosticException = DiagnosticException String
   deriving (Eq,Show,Ord,IsString)

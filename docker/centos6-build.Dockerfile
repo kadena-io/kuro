@@ -21,11 +21,12 @@ COPY ./LICENSE /kadena/LICENSE
 RUN bash -c "mkdir -p /kadena/log && \
     cd && source /home/build-exports && ldconfig && \
     cd /kadena && \
-    stack build --flag kadena:kill-switch && \
-    stack install"
+    stack install --flag kadena:$FLAG"
 
 
 RUN mkdir -p /centos-6.8 && \
-    cp kadena/bin/* /centos-6.8
+    cp kadena/bin/genconfs /centos-6.8 && \
+    cp kadena/bin/kadenaserver /centos-6.8 && \
+    cp kadena/bin/kadenaclient /centos-6.8
 
 CMD ["/bin/bash"]

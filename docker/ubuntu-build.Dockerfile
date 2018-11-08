@@ -19,10 +19,11 @@ COPY ./LICENSE /kadena/LICENSE
 RUN bash -c "mkdir -p /kadena/log && \
     cd && source ./build-exports && \
     cd /kadena && \
-    stack build --flag kadena:kill-switch && \
-    stack install"
+    stack install --flag kadena:$FLAG"
 
 RUN mkdir -p /ubuntu-16.04 && \
-    cp /kadena/bin/* /ubuntu-16.04
+    cp /kadena/bin/genconfs /ubuntu-16.04 && \
+    cp /kadena/bin/kadenaserver /ubuntu-16.04 && \
+    cp /kadena/bin/kadenaclient /ubuntu-16.04
 
 CMD ["/bin/bash"]

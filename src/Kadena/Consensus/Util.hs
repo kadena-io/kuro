@@ -13,7 +13,7 @@ module Kadena.Consensus.Util
   , debug
   , randomRIO
   , runRWS_
-  , enqueueEvent, enqueueEventLater
+  , enqueueEvent
   , dequeueEvent
   , logMetric
   , logStaticMetrics
@@ -39,7 +39,6 @@ import Data.HashSet (HashSet)
 import Data.Set (Set)
 import Data.Map.Strict (Map)
 import Data.Thyme.Clock
-import GHC.Event (TimeoutKey)
 import qualified System.Random as R
 
 import qualified Kadena.Config.ClusterMembership as CM
@@ -160,9 +159,6 @@ enqueueRequest' s = do
 -- no state update
 enqueueEvent :: Event -> Consensus ()
 enqueueEvent event = view enqueue >>= \f -> liftIO $! f event
-
-enqueueEventLater :: Int -> Event -> Consensus TimeoutKey
-enqueueEventLater t event = view enqueueLater >>= \f -> liftIO $! f t event
 
 -- no state update
 dequeueEvent :: Consensus Event

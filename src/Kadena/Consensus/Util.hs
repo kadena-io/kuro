@@ -13,7 +13,7 @@ module Kadena.Consensus.Util
   , debug
   , randomRIO
   , runRWS_
-  , enqueueEvent, enqueueEventLater
+  , enqueueEvent
   , dequeueEvent
   , logMetric
   , logStaticMetrics
@@ -28,12 +28,12 @@ module Kadena.Consensus.Util
   , now
   ) where
 
+import Control.Exception.Lifted (mask_)
 import Control.Lens hiding (Index)
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.RWS.Strict
 import Control.Concurrent (putMVar, takeMVar, newEmptyMVar)
-import Control.Concurrent.Async
 
 import Data.HashSet (HashSet)
 import Data.Set (Set)
@@ -87,17 +87,19 @@ resetHeartbeatTimer = do
 
 cancelTimer :: Consensus ()
 cancelTimer = do
-  asy <- use csTimerAsync
+  asy <- use csTimerKey
   case asy of
     Nothing -> return ()
-    Just a -> view killEnqueued >>= \f -> liftIO $ f a
-  csTimerAsync .= Nothing
+    Just a -> view killEnqueued >>= \f -> mask_ $ do
+      liftIO $ f a
+      csTimerKey .= Nothing
 
 setTimedEvent :: Event -> Int -> Consensus ()
 setTimedEvent e t = do
   cancelTimer
-  tmr <- enqueueEventLater t e -- forks, no state
-  csTimerAsync .= Just tmr
+  view enqueueLater >>= \f -> mask_ $ do
+    tk <- liftIO $ f t e
+    csTimerKey .= Just tk
 
 becomeFollower :: Consensus ()
 becomeFollower = do
@@ -157,9 +159,6 @@ enqueueRequest' s = do
 -- no state update
 enqueueEvent :: Event -> Consensus ()
 enqueueEvent event = view enqueue >>= \f -> liftIO $! f event
-
-enqueueEventLater :: Int -> Event -> Consensus (Async ())
-enqueueEventLater t event = view enqueueLater >>= \f -> liftIO $! f t event
 
 -- no state update
 dequeueEvent :: Consensus Event

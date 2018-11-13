@@ -16,7 +16,7 @@ module Kadena.Util.Util
   , throwDiagnostics
   ) where
 
-import Control.Concurrent (forkFinally, putMVar, takeMVar, newEmptyMVar, forkIO)
+import Control.Concurrent (forkIO)
 import Control.Concurrent.Async
 import Control.Exception (SomeAsyncException)
 import Control.Monad

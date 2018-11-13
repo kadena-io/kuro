@@ -30,13 +30,13 @@ import qualified Data.Sequence as Seq
 import System.Process (system)
 
 foreverRetry :: (String -> IO ()) -> String -> IO () -> IO ()
-foreverRetry debug threadName actions = do
-  void $ async $ retry debug threadName actions
+foreverRetry debug threadName actions = threadName `deepSeq` go
+ where
+  go = uninterruptibleMask_ $ forkIOWithUnmask $ \unmask ->
+    forever $
+      unmask (forever actions) `catch` \(_ :: SomeException) ->
+        debug $ threadName ++ "is being restarted"
 
-retry :: (String -> IO ()) -> String -> IO () -> IO ()
-retry debug threadName actions =
-  mask $ \umask -> forever $
-    umask (forever actions) `catch` \(_ :: SomeException) -> debug $ threadName ++ "is being restarted"
 
 awsDashVar :: Bool -> String -> String -> IO ()
 awsDashVar False _ _ = return ()

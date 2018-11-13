@@ -16,8 +16,9 @@ module Kadena.Util.Util
   , throwDiagnostics
   ) where
 
-import Control.Concurrent (forkFinally, putMVar, takeMVar, newEmptyMVar, forkIO)
+import Control.Concurrent (forkIO, forkIOWithUnmask)
 import Control.Concurrent.Async
+import Control.DeepSeq
 import Control.Exception (SomeAsyncException)
 import Control.Monad
 import Control.Monad.Catch
@@ -29,18 +30,14 @@ import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import System.Process (system)
 
---TODO: this is pretty ghetto, there has to be a better/cleaner way
 foreverRetry :: (String -> IO ()) -> String -> IO () -> IO ()
-foreverRetry debug threadName action = void $ forkIO $ forever $ do
-  threadDied <- newEmptyMVar
-  void $ forkFinally (debug (threadName ++ " launching") >> action >> putMVar threadDied ())
-    $ \res -> do
-      case res of
-        Right () -> debug $ threadName ++ " died returning () with no details"
-        Left err -> debug $ threadName ++ " exception " ++ show err
-      putMVar threadDied ()
-  takeMVar threadDied
-  debug $ threadName ++ "got MVar... restarting"
+foreverRetry debug threadName actions = threadName `deepseq` go
+ where
+  go = void $ uninterruptibleMask_ $ forkIOWithUnmask $ \unmask ->
+    forever $
+      unmask (forever actions) `catch` \(_ :: SomeException) ->
+        debug $ threadName ++ "is being restarted"
+
 
 awsDashVar :: Bool -> String -> String -> IO ()
 awsDashVar False _ _ = return ()

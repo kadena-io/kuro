@@ -16,8 +16,9 @@ module Kadena.Util.Util
   , throwDiagnostics
   ) where
 
-import Control.Concurrent (forkIO)
+import Control.Concurrent (forkIO, forkIOWithUnmask)
 import Control.Concurrent.Async
+import Control.DeepSeq
 import Control.Exception (SomeAsyncException)
 import Control.Monad
 import Control.Monad.Catch
@@ -30,9 +31,9 @@ import qualified Data.Sequence as Seq
 import System.Process (system)
 
 foreverRetry :: (String -> IO ()) -> String -> IO () -> IO ()
-foreverRetry debug threadName actions = threadName `deepSeq` go
+foreverRetry debug threadName actions = threadName `deepseq` go
  where
-  go = uninterruptibleMask_ $ forkIOWithUnmask $ \unmask ->
+  go = void $ uninterruptibleMask_ $ forkIOWithUnmask $ \unmask ->
     forever $
       unmask (forever actions) `catch` \(_ :: SomeException) ->
         debug $ threadName ++ "is being restarted"

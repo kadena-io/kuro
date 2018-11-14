@@ -6,19 +6,11 @@ build:
 # Local packages, usually specified by relative directory name
 packages:
   - '.'
+  - /users/marklnichols/dev/prometheus/ekg-prometheus-adapter
+  - /users/marklnichols/dev/ridley/ridley
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)
-
-# Attempting to build Kadena with lts-12.9 @ ghc 8.4.3
-# LTS-12.9 requires base-4.11.1.0
-# ekg-prometheus-adapter's latest version is 0.1.0.3 (It hasn't been
-# updated since Oct '16
-#     This version requires prometheus < 0.5
-#         The closest is prometheus-0.4.2 which requires base < 4.11
-
-#The latest LTS that has base < 4.11 is lts-11.22 @ ghc 8.2.2
 extra-deps:
-  - base-4.10.1.0
   - algebraic-graphs-0.2
   - bloomfilter-2.0.1.0
   - bound-2
@@ -26,23 +18,27 @@ extra-deps:
   - compactable-0.1.2.2
   - concurrent-extra-0.7.0.10
   - ed25519-donna-0.1.1
-  - ekg-prometheus-adapter-0.1.0.3
   - lz4-0.2.3.1
   - monad-gen-0.3.0.1
-  - prometheus-0.4.2
-  - ridley-0.3.1.2
+  - prometheus-2.1.0
   - system-command-0.0.10
   - unagi-chan-0.4.0.0
+  - katip-0.6.3.0
+  - crackNum-2.2
+  - FloatingHex-0.4
   - git: git@github.com:kadena-io/pact.git
-    commit: 1e26e2661828b877a3da2cbcea04423d6820000e
+    commit: ed3fa37ec9be56e72679ee766e457028b7cc1dd2
   - git: git@github.com:kadena-io/pact-persist.git
-    commit: 9d56a1a2b85e5430e687263fdf373639eebe38dd
+    commit: 8b70f7a1d5f77baa760b3f0351a061ec3699f98f
   - git: git@github.com:kadena-io/thyme.git
     commit: 6ee9fcb026ebdb49b810802a981d166680d867c9
   - git: https://github.com/abbradar/hdbc-odbc.git
     commit: 79ffd1f5060d2c8b5cbdfd4eba8ae6414372d6b7
   - git: https://github.com/LeventErkok/sbv.git
     commit: 3dc60340634c82f39f6c5dca2b3859d10925cfdf # with exposed registerKind
+#  - git: git@github.com:kadena-io/ekg-prometheus-adapter.git
+#    commit: TBD
+#  - TBD add git reference for ridley
 
 
 local-bin-path: ./bin

@@ -117,8 +117,8 @@ if [ -z "$target" -o "$target" = "dist" ]; then
     chirp "taring the result"
     if [[ "$type" = "aws" ]]; then
       safe cp -r kadena-beta kadena-aws
-      safe rm -rf kadena-aws/centos-6.8     # Not supported in AWS
-      safe rm -rf kadena-aws/osx            # Not supported in AWS
+      safe rm -rf kadena-aws/bin/centos-6.8     # Not supported in AWS
+      safe rm -rf kadena-aws/bin/osx            # Not supported in AWS
       safe tar cvz kadena-aws/* > kadena-aws-$version.tgz
       safe rm -rf kadena-aws
     else

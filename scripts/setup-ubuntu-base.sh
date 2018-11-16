@@ -66,12 +66,15 @@ cd && apt-get -y update && \
    apt-get -y install ansible && \
    apt-get -y install python-boto && \
    apt-get -y install python-boto3 && \
+   apt -y install python-pip && \
+   pip install -U boto && \
    cd /etc/ansible/ && \
    wget 'https://raw.githubusercontent.com/ansible/ansible/devel/contrib/inventory/ec2.py' && \
    wget 'https://raw.githubusercontent.com/ansible/ansible/devel/contrib/inventory/ec2.ini' && \
    chmod +x ec2.py && \
    perl -p -i -e 's/^vpc_destination_variable = .*/vpc_destination_variable = private_ip_address/' ec2.ini && \
    perl -p -i -e 's/^destination_variable = .*/destination_variable = private_dns_name/' ec2.ini && \
+   perl -p -i -e 's/^#elasticache = .*/elasticache = False/' ec2.ini && \
    echo "export EC2_INI_PATH=/etc/ansible/ec2.ini" >> ~/.bashrc && \
    echo "export ANSIBLE_INVENTORY=/etc/ansible/ec2.py" >> ~/.bashrc && \
    echo "export ANSIBLE_HOST_KEY_CHECKING=False" >> ~/.bashrc

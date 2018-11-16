@@ -58,6 +58,7 @@ following playbooks:
 
 `get_server_logs.yml` : This playbook retrieves all of the Kadena Servers' logs
                         and sqlite files, deleting all previous retrieved logs.
+                        It stores the logs in `aws/logs/`.
 
 `edit_conf.yml` : This playbook edits all node configurations on the monitor
                   instance. For example, if you wanted to change the backend

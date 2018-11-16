@@ -1,15 +1,16 @@
 # Absolute path to kadena-beta executables directory
-bin_path: ~/kadena-beta/bin/ubuntu-16.04
+bin_path: ~/kadena-aws/bin/ubuntu-16.04
 
 # Absolute path to conf/ directory used to configure Kadena Servers
 # Note: Using `~` or `~/` throws an error with Ansible.
-conf_path: ~/kadena-beta
+conf_path: ~/kadena-aws
 
 # ----------- EC2 Kadena Server Instances Specifications ---------------
 # The following specifications will be used to create all EC2 instances that will run
 # the kadena servers.
 
 # Recommended Parameters
+# Community Version of Kadena restricts to 4 Consensus nodes.
 instance_kadena_server_count: 4
 instance_type: m4.2xlarge
 

@@ -38,7 +38,7 @@ import           Network.Wreq
 import qualified Network.Wreq as WR (getWith)
 import           Pact.ApiReq
 import           Pact.Types.API
-import           System.Command
+-- import           System.Command
 import           System.Console.GetOpt
 import           System.Environment
 import           System.Time.Extra

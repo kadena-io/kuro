@@ -14,14 +14,13 @@ extra-deps:
   - algebraic-graphs-0.2
   - bloomfilter-2.0.1.0
   - bound-2
-  - cacophony-0.8.0
+  - cacophony-0.10.1
   - compactable-0.1.2.2
   - concurrent-extra-0.7.0.10
   - ed25519-donna-0.1.1
   - lz4-0.2.3.1
   - monad-gen-0.3.0.1
   - prometheus-2.1.0
-  - system-command-0.0.10
   - unagi-chan-0.4.0.0
   - katip-0.6.3.0
   - crackNum-2.2

@@ -20,17 +20,15 @@ import Control.Lens
        ((&), (.~), (.=), (%=), use, ix, view, over, set)
 import Control.Monad (forM, forM_, when)
 import Control.Monad.Catch (MonadThrow, MonadCatch, throwM, handle)
-import Control.Monad.State.Strict
-       (MonadState, get, put)
-import Crypto.Noise
-       (defaultHandshakeOpts, HandshakeRole(..), hoLocalStatic,
-        hoRemoteStatic, hoLocalEphemeral, noiseState,
-        writeMessage, readMessage)
+import Control.Monad.State.Strict (MonadState, get, put)
+import Crypto.Noise ( defaultHandshakeOpts, HandshakePattern, HandshakeOpts, HandshakeRole(..)
+                    , noiseState, writeMessage, readMessage, setLocalStatic, setLocalEphemeral
+                    , setRemoteStatic, NoiseResult(..) )
 import Crypto.Noise.Cipher (Cipher(..), Plaintext)
 import Crypto.Noise.DH (KeyPair, DH(..))
 import Crypto.Noise.DH.Curve25519 (Curve25519)
-import Crypto.Noise.HandshakePatterns (HandshakePattern, noiseK)
-import Data.ByteArray.Extend (convert)
+import Crypto.Noise.HandshakePatterns (noiseK)
+import Data.ByteArray (convert)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as B8
 import qualified Data.HashMap.Strict as HM
@@ -47,7 +45,7 @@ import Pact.Types.Util (AsString(..))
 import Kadena.Types.Private
 import Kadena.Types.Entity
 
-
+{-
 noise :: HandshakePattern -> HandshakeRole
         -> EntityLocal -> PublicKey Curve25519
         -> Noise
@@ -56,6 +54,18 @@ noise pat rol EntityLocal{..} remoteStatic =
       hoLocalStatic .~ Just (toKeyPair _elStatic) &
       hoRemoteStatic .~ Just remoteStatic &
       hoLocalEphemeral .~ Just (toKeyPair _elEphemeral)
+-}
+
+noise :: HandshakePattern -> HandshakeRole
+        -> EntityLocal -> PublicKey Curve25519
+        -> Noise
+noise pat rol EntityLocal{..} remoteStatic =
+  let dho = defaultHandshakeOpts rol "prologue" :: HandshakeOpts Curve25519
+      iho = setLocalStatic (Just (toKeyPair _elStatic))
+            . setRemoteStatic (Just remoteStatic)
+            . setLocalEphemeral (Just (toKeyPair _elEphemeral))
+            $ dho
+  in noiseState iho pat
 
 kpPublic :: KeyPair a -> PublicKey a
 kpPublic = snd
@@ -119,11 +129,21 @@ sendPrivate pm@PrivatePlaintext{..} = withStateRollback $ \(PrivateState Session
   remotePayloads <- forM (S.toList _ppTo) $ \to -> do
     when (to == entName) $ die "sendPrivate: sending to same entity!"
     RemoteSession {..} <- lookupRemote to _sRemotes
-    (ct,n') <- liftEither ("sendPrivate:" ++ show to) $ writeMessage _rsSendNoise pt
+
+    -- (ct,n') <- liftEither ("sendPrivate:" ++ show to) $ writeMessage _rsSendNoise pt
+    let (ct, n') = case writeMessage pt _rsSendNoise of
+          NoiseResultMessage scrubbed ns -> (scrubbed, ns)
+          NoiseResultNeedPSK ns -> throwM "NoiseResultNeedPSK not handled"
+          NoiseResultException e -> throwM e
+
     sessions . sRemotes . ix to %= (set rsSendNoise n' . over rsSendLabeler updateLabeler . over rsVersion succ)
     return $ Labeled (makeLabel _rsSendLabeler) (convert ct)
   entityPayload <- do
-    (ct,n') <- liftEither "sendPrivate:entity" $ writeMessage (_esSendNoise _sEntity) pt
+    -- (ct,n') <- liftEither "sendPrivate:entity" $ writeMessage (_esSendNoise _sEntity) pt
+    let (ct, n') = case writeMessage pt (_esSendNoise _sEntity) of
+          NoiseResultMessage scrubbed ns -> (scrubbed, ns)
+          NoiseResultNeedPSK ns -> throwM "NoiseResultNeedPSK not handled"
+          NoiseResultException e -> throwM e
     sessions . sEntity %= (set esSendNoise n' . over esSendLabeler updateLabeler . over esVersion succ)
     return $ Labeled (makeLabel (_esSendLabeler _sEntity)) (convert ct)
   return $ PrivateCiphertext entityPayload remotePayloads
@@ -144,7 +164,12 @@ handlePrivate pe@PrivateCiphertext{..} = do
 readEntity :: PrivateCiphertext -> Private PrivatePlaintext
 readEntity PrivateCiphertext{..} = do
   Sessions{..} <- use sessions
-  (pt,n') <- liftEither "readEntity:decrypt" $ readMessage (_esRecvNoise _sEntity) (_lPayload _pcEntity)
+  -- (pt,n') <- liftEither "readEntity:decrypt" $ readMessage (_esRecvNoise _sEntity) (_lPayload _pcEntity)
+  let (pt, n') = case readMessage t b d of
+          NoiseResultMessage scrubbed ns -> (scrubbed, ns)
+          NoiseResultNeedPSK ns -> throwM "NoiseResultNeedPSK not handled"
+          NoiseResultException e -> throwM e
+
   pm@PrivatePlaintext{..} <- liftEither "readEntity:deser" $ decode (convert pt)
   me <- view nodeAlias
   let ilblr = updateLabeler $ _esRecvLabeler _sEntity

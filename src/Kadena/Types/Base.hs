@@ -35,7 +35,6 @@ import Data.Thyme.Clock
 
 import Data.Serialize (Serialize)
 import Data.Aeson
-import Data.Aeson.Types
 
 import Data.Word (Word64)
 import GHC.Int (Int64)

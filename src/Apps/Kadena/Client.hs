@@ -28,7 +28,7 @@ module Apps.Kadena.Client
 import Control.Error.Util (hush)
 import Control.Exception (IOException)
 import qualified Control.Exception as Exception
-import Control.Monad.Extra
+import Control.Monad.Extra hiding (loop)
 import Control.Monad.Reader
 import Control.Lens hiding (to,from)
 import Control.Monad.Catch
@@ -85,7 +85,7 @@ import qualified Pact.Types.Command as Pact
 import qualified Pact.Types.Crypto as Pact
 import Pact.Types.RPC
 import Pact.Types.Util
-import Pact.ApiReq
+import qualified Pact.ApiReq as Pact
 
 data ClientOpts = ClientOpts {
       _oConfig :: FilePath
@@ -128,7 +128,7 @@ instance ToJSON ClientConfig where toJSON = lensyToJSON 3
 instance FromJSON ClientConfig where parseJSON = lensyParseJSON 3
 
 data KeyPairFile = KeyPairFile {
-    _kpKeyPairs :: [KeyPair]
+    _kpKeyPairs :: [Pact.KeyPair]
   } deriving (Generic)
 instance FromJSON KeyPairFile where parseJSON = lensyParseJSON 3
 
@@ -170,7 +170,7 @@ data ReplState = ReplState {
     , _batchCmd :: String
     , _requestId :: MVar Int64 -- this needs to be an MVar in case we get an exception mid function... it's our entropy
     , _cmdData :: Value
-    , _keys :: [KeyPair]
+    , _keys :: [Pact.KeyPair]
     , _fmt :: Formatter
     , _echo :: Bool
 }
@@ -220,7 +220,7 @@ mkExec code mdata addy = do
   rid <- use requestId >>= liftIO . (`modifyMVar` (\i -> return $ (succ i, i)))
   return $ decodeUtf8 <$>
     Pact.mkCommand
-    (map (\KeyPair {..} -> (Pact.ED25519,_kpSecret,_kpPublic)) kps)
+    (map (\Pact.KeyPair {..} -> (Pact.ED25519,_kpSecret,_kpPublic)) kps)
     addy
     (T.pack $ show rid)
     (Exec (ExecMsg (T.pack code) mdata))
@@ -235,13 +235,13 @@ postAPI ep rq = do
 postWithRetry :: (ToJSON req,FromJSON (ApiResponse t))
                       => String -> String -> req -> IO (Response (ApiResponse t))
 postWithRetry ep server' rq = do
-  t <- timeout (fromIntegral timeoutSeconds) loop
+  t <- timeout (fromIntegral timeoutSeconds) go
   case t of
     Nothing -> die "postServerApi - timeout: no successful response received"
     Just x -> return x
   where
-    loop :: (FromJSON (ApiResponse t)) => IO (Response (ApiResponse t))
-    loop = do
+    go :: (FromJSON (ApiResponse t)) => IO (Response (ApiResponse t))
+    go = do
       let url = "http://" ++ server' ++ "/api/v1/" ++ ep
       let opts = defaults & manager .~ Left (defaultManagerSettings
             { managerResponseTimeout = responseTimeoutMicro (timeoutSeconds * 1000000) } )
@@ -250,7 +250,7 @@ postWithRetry ep server' rq = do
       case resp ^. responseBody of
         ApiFailure{..} -> do
           sleep 1
-          loop
+          go
         ApiSuccess{..} -> return resp
 
 handleHttpResp :: (t -> Repl ()) -> Response (ApiResponse t) -> Repl ()
@@ -397,7 +397,7 @@ parallelBatchTest totalNumCmds' cmdRate' sleep' = do
 load :: Mode -> FilePath -> Repl ()
 load m fp = do
   --Note that MkApiReqExec calls mkExec defined in Pact.ApiReq, not the one defined in this module
-  ((ApiReq {..},code,cdata,_),_) <- liftIO $ mkApiReqExec fp
+  ((Pact.ApiReq {..},code,cdata,_),_) <- liftIO $ Pact.mkApiReq fp
   keys .= _ylKeyPairs
   cmdData .= cdata
   sendCmd m code fp
@@ -460,12 +460,12 @@ pollForResults showLatency mTrueCount theKeys = do
     flushStrLn "pollForResults -- called with an empty list of request keys"
     return ()
   let keyCount = length rks
-  loop rks keyCount pollMaxRetry
+  go rks keyCount pollMaxRetry
   where
-    loop _rks _keyCount 0 = do
+    go _rks _keyCount 0 = do
       flushStrLn "Timeout on pollForResults -- not all results were received"
       return ()
-    loop rks keyCount retryCount = do
+    go rks keyCount retryCount = do
       resp <- postAPI "poll" (Pact.Poll rks)
       case resp ^. responseBody of
         ApiFailure err -> liftIO $ putStrLn $ "\nApiFailure: no results received: " ++ show err
@@ -474,7 +474,7 @@ pollForResults showLatency mTrueCount theKeys = do
           if length ks < keyCount
           then do
             liftIO $ sleep 1
-            loop rks keyCount (retryCount - 1)
+            go rks keyCount (retryCount - 1)
           else do
             flushStrLn $ "\nReceived all the keys: (" ++ show (length ks) ++ " of "
                       ++ show keyCount ++ " on try #" ++ show ( pollMaxRetry- retryCount + 1) ++ ")"
@@ -732,7 +732,7 @@ handleCmd cmd reqStr = case cmd of
     pk <- case fromJSON (String p) of
       A.Error e -> die $ "Bad public key value: " ++ show e
       A.Success k -> return k
-    keys .= [KeyPair sk pk]
+    keys .= [Pact.KeyPair sk pk]
   Keys (Just (kpFile,Nothing)) -> do
     (KeyPairFile kps) <- either (die . show) return =<< liftIO (Y.decodeFileEither (T.unpack kpFile))
     keys .= kps
@@ -794,7 +794,7 @@ main = do
           _batchCmd = "\"Hello Kadena\"",
           _requestId = i,
           _cmdData = Null,
-          _keys = [KeyPair (_ccSecretKey conf) (_ccPublicKey conf)],
+          _keys = [Pact.KeyPair (_ccSecretKey conf) (_ccPublicKey conf)],
           _fmt = Table,
           _echo = False
         }

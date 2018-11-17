@@ -260,7 +260,6 @@ executable inserts
                      , lens
                      , pact
                      , safe
-                     , system-command
                      , text
                      , transformers
                      , trifecta
@@ -308,7 +307,6 @@ test-suite hspec
                    , safe
                    , safe-exceptions
                    , scientific
-                   , system-command
                    , text
                    , transformers
                    , trifecta

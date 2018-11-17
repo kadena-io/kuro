@@ -19,7 +19,7 @@ import Control.Monad (unless)
 import Crypto.Noise.DH (KeyPair,DH(..))
 import Crypto.Noise.DH.Curve25519 (Curve25519)
 import Data.Aeson (ToJSON(..),FromJSON(..),object,(.=),withObject,(.:))
-import Data.ByteArray.Extend (convert)
+import Data.ByteArray (convert)
 import Data.Monoid ((<>))
 import GHC.Generics (Generic)
 

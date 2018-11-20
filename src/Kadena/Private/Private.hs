@@ -17,7 +17,7 @@ module Kadena.Private.Private
 import Control.Arrow ((&&&))
 import Control.Exception (Exception, SomeException)
 import Control.Lens
-       ((&), (.~), (.=), (%=), use, ix, view, over, set)
+       ((.=), (%=), use, ix, view, over, set)
 import Control.Monad (forM, forM_, when)
 import Control.Monad.Catch (MonadThrow, MonadCatch, throwM, handle)
 import Control.Monad.State.Strict (MonadState, get, put)
@@ -28,7 +28,7 @@ import Crypto.Noise.Cipher (Cipher(..), Plaintext)
 import Crypto.Noise.DH (KeyPair, DH(..))
 import Crypto.Noise.DH.Curve25519 (Curve25519)
 import Crypto.Noise.HandshakePatterns (noiseK)
-import Data.ByteArray (convert, ScrubbedBytes(..))
+import Data.ByteArray (convert)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as B8
 import qualified Data.HashMap.Strict as HM
@@ -120,7 +120,7 @@ sendPrivate pm@PrivatePlaintext{..} = withStateRollback $ \(PrivateState Session
     RemoteSession {..} <- lookupRemote to _sRemotes
     case writeMessage pt _rsSendNoise of
       NoiseResultException e -> throwM e
-      NoiseResultNeedPSK ns -> throwM $ NoiseMessageException "NoiseREsultNeedPSK is not implemented"
+      NoiseResultNeedPSK _ -> throwM $ NoiseMessageException "NoiseREsultNeedPSK is not implemented"
       (NoiseResultMessage ct n') -> do
         sessions . sRemotes . ix to %=
           (set rsSendNoise n' . over rsSendLabeler updateLabeler . over rsVersion succ)
@@ -128,7 +128,7 @@ sendPrivate pm@PrivatePlaintext{..} = withStateRollback $ \(PrivateState Session
   entityPayload <- do
     case writeMessage pt (_esSendNoise _sEntity) of
       NoiseResultException e -> throwM e
-      NoiseResultNeedPSK ns -> throwM $ NoiseMessageException "NoiseREsultNeedPSK is not implemented"
+      NoiseResultNeedPSK _ -> throwM $ NoiseMessageException "NoiseREsultNeedPSK is not implemented"
       (NoiseResultMessage ct n') -> do
         sessions . sEntity %= (set esSendNoise n' . over esSendLabeler updateLabeler . over esVersion succ)
         return $ Labeled (makeLabel (_esSendLabeler _sEntity)) (convert ct)
@@ -152,7 +152,7 @@ readEntity PrivateCiphertext{..} = do
   Sessions{..} <- use sessions
   case readMessage (convert (_lPayload _pcEntity)) (_esRecvNoise _sEntity) of
     NoiseResultException e -> throwM e
-    NoiseResultNeedPSK ns -> throwM $ NoiseMessageException "NoiseREsultNeedPSK is not implemented"
+    NoiseResultNeedPSK _ -> throwM $ NoiseMessageException "NoiseREsultNeedPSK is not implemented"
     NoiseResultMessage pt n' -> do
       pm@PrivatePlaintext{..} <- liftEither "readEntity:deser" $ decode (convert pt)
       me <- view nodeAlias
@@ -163,13 +163,14 @@ readEntity PrivateCiphertext{..} = do
         sessions . sEntity %= update
         else do
         case writeMessage pt (_esSendNoise _sEntity) of
-          NoiseResultNeedPSK ns -> throwM $ NoiseMessageException "NoiseREsultNeedPSK is not implemented"
+          NoiseResultNeedPSK _ -> throwM $ NoiseMessageException "NoiseREsultNeedPSK is not implemented"
           NoiseResultException e -> throwM e
           NoiseResultMessage _ in' -> do
+            sessions . sEntity %= update . set esSendNoise in' . over esSendLabeler updateLabeler
             forM_ (S.toList _ppTo) $ \to -> do
               RemoteSession{..} <- lookupRemote to _sRemotes
               case writeMessage pt _rsSendNoise of
-                NoiseResultNeedPSK ns -> throwM $ NoiseMessageException "NoiseREsultNeedPSK is not implemented"
+                NoiseResultNeedPSK _ -> throwM $ NoiseMessageException "NoiseREsultNeedPSK is not implemented"
                 NoiseResultException e -> throwM e
                 NoiseResultMessage _ rn' -> do
                   sessions . sRemotes . ix to %=
@@ -181,7 +182,7 @@ readRemote :: (Labeled,EntityName) -> Private PrivatePlaintext
 readRemote (Labeled{..},remoteEntName) = do
   rs@RemoteSession{..} <- lookupRemote remoteEntName =<< use (sessions . sRemotes)
   case readMessage (convert _lPayload) _rsRecvNoise of
-    NoiseResultNeedPSK ns -> throwM $ NoiseMessageException "NoiseREsultNeedPSK is not implemented"
+    NoiseResultNeedPSK _ -> throwM $ NoiseMessageException "NoiseREsultNeedPSK is not implemented"
     NoiseResultException e -> throwM e
     NoiseResultMessage pt n' -> do
       let l' = updateLabeler _rsRecvLabeler

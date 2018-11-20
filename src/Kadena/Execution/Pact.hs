@@ -187,11 +187,12 @@ encodeResume (TObject ps _ _) = fmap object $ forM ps $ \p -> case p of
   (k,_) -> throwCmdEx $ "encodeResume: only string keys supported for yield:" ++ show k
 encodeResume t = throwCmdEx $ "encodeResume: expected object type for yield: " ++ show t
 
-decodeResume :: MonadThrow m => Value -> m (Term Name)
-decodeResume (Object ps) = fmap (\ps' -> TObject ps' TyAny def) $ forM (HM.toList ps) $ \(k,v) -> case fromJSON v of
+-- TODO: Linda -- this is not being used
+_decodeResume :: MonadThrow m => Value -> m (Term Name)
+_decodeResume (Object ps) = fmap (\ps' -> TObject ps' TyAny def) $ forM (HM.toList ps) $ \(k,v) -> case fromJSON v of
   A.Success (p :: Persistable) -> return (toTerm k,toTerm p)
   A.Error r -> throwCmdEx $ "decodeResume: failed to decode value: " ++ show (k,v) ++ ": " ++ r
-decodeResume v = throwCmdEx $ "decodeResume: only Object values supported: " ++ show v
+_decodeResume v = throwCmdEx $ "decodeResume: only Object values supported: " ++ show v
 
 
 applyContinuation :: ContMsg -> PactM p CommandResult

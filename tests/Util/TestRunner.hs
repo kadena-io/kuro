@@ -41,6 +41,8 @@ import           Pact.Types.API
 -- import           System.Command
 import           System.Console.GetOpt
 import           System.Environment
+import           System.Exit
+import           System.Process
 import           System.Time.Extra
 import           Test.Hspec
 import           Text.Trifecta (ErrInfo(..), parseString, Result(..))

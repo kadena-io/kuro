@@ -21,6 +21,7 @@ import qualified Data.HashMap.Strict as HM
 import Data.Default
 
 import Pact.Types.Command
+import Pact.Types.Gas (GasEnv(..))
 import Pact.Types.RPC
 import Pact.Types.Logger (logLog,Logger,Loggers,newLogger)
 import qualified Pact.Persist.SQLite as SQLite
@@ -29,6 +30,7 @@ import qualified Pact.Persist.MSSQL as MSSQL
 import qualified Pact.Persist.MySQL as MySQL
 import qualified Pact.Persist.WriteBehind as WB
 import Pact.Persist.CacheAdapter (initPureCacheWB)
+import Pact.Gas (constGasModel)
 import Pact.Interpreter
 import Pact.Types.Server (throwCmdEx,userSigsToPactKeySet)
 import Pact.PersistPactDb (initDbEnv,pactdb)
@@ -146,8 +148,11 @@ applyExec (ExecMsg parsedCode edata) ks = do
   when (null (_pcExps parsedCode)) $ throwCmdEx "No expressions found"
   PactState{..} <- liftIO $ readMVar _peState
   let sigs = userSigsToPactKeySet ks
+  let gasLimit = (0 :: Integer) -- TODO implement
+  let gasRate = (0 :: Integer) -- TODO implement
+  let gasEnv = (GasEnv (fromIntegral gasLimit) 0.0 (constGasModel (fromIntegral gasRate)))
       evalEnv = setupEvalEnv _peDbEnv (Just (_elName $ _ecLocal $ _peEntity)) _peMode
-                (MsgData sigs edata Nothing (_cmdHash _peCommand)) _psRefStore
+                (MsgData sigs edata Nothing (_cmdHash _peCommand)) _psRefStore gasEnv
   EvalResult{..} <- liftIO $ evalExec evalEnv parsedCode
   mp <- join <$> mapM (handleYield erInput sigs) erExec
   let newState = PactState erRefStore $ case mp of
@@ -200,12 +205,18 @@ applyContinuation cm@ContMsg{..} = do
         Nothing -> throwCmdEx $ "applyContinuation: txid not found: " ++ show _cmTxId
         Just pact@Pact{..} -> do
           when (_cmStep < 0 || _cmStep >= _pStepCount) $ throwCmdEx $ "Invalid step value: " ++ show _cmStep
-          res <- mapM decodeResume _cmResume
+          -- TODO: Linda -- _cmResume no longer exsits, patched just for ghc 8.4 build:
+          -- res <- mapM decodeResume _cmResume
+          let res = Nothing
+
+          let gasLimit = (0 :: Integer) -- TODO implement
+          let gasRate = (0 :: Integer) -- TODO implement
+          let gasEnv = (GasEnv (fromIntegral gasLimit) 0.0 (constGasModel (fromIntegral gasRate)))
           let evalEnv = setupEvalEnv _peDbEnv (Just (_elName $ _ecLocal $ _peEntity)) _peMode
                 (MsgData _pSigs Null
-                 (Just $ PactStep _cmStep _cmRollback (fromString $ show $ _cmTxId) res)
-                 (_cmdHash _peCommand))
-                _psRefStore
+                  (Just $ PactStep _cmStep _cmRollback (fromString $ show $ _cmTxId) res)
+                  (_cmdHash _peCommand))
+                _psRefStore gasEnv
           tryAny (liftIO $ evalContinuation evalEnv _pContinuation) >>=
             either (handleContFailure tid pe cm ps) (handleContSuccess tid pe cm ps pact)
 
@@ -246,14 +257,18 @@ doResume tid PactEnv{..} ContMsg{..} PactState{..} Pact{..} EvalResult{..} PactE
       updateState _psPacts
 
 publishCont :: TxId -> TxId -> Int -> Bool -> Maybe Value -> PactM p ()
-publishCont pactTid tid step rollback resume = do
+publishCont pactTid tid step rollback _resume = do
   PactEnv{..} <- ask
   let EntityConfig{..} = _peEntity
   when _ecSending $ do
     let me = _elName _ecLocal
         addy = fmap (reverseAddy me) $ _pAddress $ _cmdPayload $ _peCommand
         nonce = fromString $ show tid
-        (rpc :: PactRPC ()) = Continuation $ ContMsg pactTid step rollback resume
+
+        -- TODO: Linda -- removed the resume param, now its not used at all
+        --       also, what to provide for the _cmData param?
+        -- (rpc :: PactRPC ()) = Continuation $ ContMsg pactTid step rollback resume
+        (rpc :: PactRPC ()) = Continuation $ ContMsg pactTid step rollback ""
         cmd = mkCommand [signer _ecSigner] addy nonce rpc
     debug $ "Sending success continuation for pact: " ++ show rpc
     _rks <- publish _pePublish throwCmdEx [(buildCmdRpcBS cmd)]

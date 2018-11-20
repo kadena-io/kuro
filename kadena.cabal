@@ -259,6 +259,7 @@ executable inserts
                      , kadena
                      , lens
                      , pact
+                     , process
                      , safe
                      , text
                      , transformers

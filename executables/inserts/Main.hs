@@ -16,6 +16,7 @@ import Safe
 -- import System.Command
 import System.Console.CmdArgs
 import System.Time.Extra
+import System.Process
 
 import Apps.Kadena.Client (esc)
 import Util.TestRunner

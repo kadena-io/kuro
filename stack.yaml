@@ -6,8 +6,6 @@ build:
 # Local packages, usually specified by relative directory name
 packages:
   - '.'
-  - /users/marklnichols/dev/prometheus/ekg-prometheus-adapter
-  - /users/marklnichols/dev/ridley/ridley
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)
 extra-deps:
@@ -26,19 +24,19 @@ extra-deps:
   - crackNum-2.2
   - FloatingHex-0.4
   - git: git@github.com:kadena-io/pact.git
-    commit: ed3fa37ec9be56e72679ee766e457028b7cc1dd2
+    commit: ac0f72ed48f6e17dadedd76ee46e87c58de9a3f4
   - git: git@github.com:kadena-io/pact-persist.git
-    commit: 8b70f7a1d5f77baa760b3f0351a061ec3699f98f
+    commit: 289864150fce306767ad4865e61f96a5c81f308e
   - git: git@github.com:kadena-io/thyme.git
     commit: 6ee9fcb026ebdb49b810802a981d166680d867c9
   - git: https://github.com/abbradar/hdbc-odbc.git
     commit: 79ffd1f5060d2c8b5cbdfd4eba8ae6414372d6b7
   - git: https://github.com/LeventErkok/sbv.git
     commit: 3dc60340634c82f39f6c5dca2b3859d10925cfdf # with exposed registerKind
-#  - git: git@github.com:kadena-io/ekg-prometheus-adapter.git
-#    commit: TBD
-#  - TBD add git reference for ridley
-
+  - git: git@github.com:kadena-io/ekg-prometheus-adapter.git
+    commit: bd93dd5596d626b121f567bb24c0741fa0c8ccdd
+  - git: git@github.com:kadena-io/ridley.git
+    commit: 9fe0a60757fd183529050557debe1ec7b9e44bb3
 
 local-bin-path: ./bin
 # Extra directories used by stack for building

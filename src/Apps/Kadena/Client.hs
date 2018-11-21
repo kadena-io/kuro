@@ -225,14 +225,16 @@ mkExec code mdata addy = do
     (T.pack $ show rid)
     (Exec (ExecMsg (T.pack code) mdata))
 
-postAPI :: (ToJSON req,FromJSON (ApiResponse t))
+-- postAPI :: (ToJSON req,FromJSON (ApiResponse t))
+--         => String -> req -> Repl (Response (ApiResponse t))
+postAPI :: (ToJSON req, FromJSON t)
          => String -> req -> Repl (Response (ApiResponse t))
 postAPI ep rq = do
   use echo >>= \e -> when e $ putJSON rq
   s <- getServer
   liftIO $ postWithRetry ep s rq
 
-postWithRetry :: (ToJSON req,FromJSON (ApiResponse t))
+postWithRetry :: (ToJSON req, FromJSON t)
                       => String -> String -> req -> IO (Response (ApiResponse t))
 postWithRetry ep server' rq = do
   t <- timeout (fromIntegral timeoutSeconds) go
@@ -240,7 +242,7 @@ postWithRetry ep server' rq = do
     Nothing -> die "postServerApi - timeout: no successful response received"
     Just x -> return x
   where
-    go :: (FromJSON (ApiResponse t)) => IO (Response (ApiResponse t))
+    go :: (FromJSON t) => IO (Response (ApiResponse t))
     go = do
       let url = "http://" ++ server' ++ "/api/v1/" ++ ep
       let opts = defaults & manager .~ Left (defaultManagerSettings

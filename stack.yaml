@@ -32,11 +32,13 @@ extra-deps:
   - git: https://github.com/abbradar/hdbc-odbc.git
     commit: 79ffd1f5060d2c8b5cbdfd4eba8ae6414372d6b7
   - git: https://github.com/LeventErkok/sbv.git
-    commit: 3dc60340634c82f39f6c5dca2b3859d10925cfdf # with exposed registerKind
+    commit: 3dc60340634c82f39f6c5dca2b3859d10925cfdf
   - git: git@github.com:kadena-io/ekg-prometheus-adapter.git
     commit: bd93dd5596d626b121f567bb24c0741fa0c8ccdd
   - git: git@github.com:kadena-io/ridley.git
-    commit: 9fe0a60757fd183529050557debe1ec7b9e44bb3
+    commit: d523e11fb7c98870a9ace52461e756227ca75cd3
+    subdirs:
+      - ridley
 
 local-bin-path: ./bin
 # Extra directories used by stack for building

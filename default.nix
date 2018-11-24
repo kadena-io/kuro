@@ -43,8 +43,8 @@ in
             pact = addBuildDepend (self.callCabal2nix "pact" (pkgs.fetchFromGitHub {
               owner = "kadena-io";
               repo = "pact";
-              rev = "9635c9472ad0ea79437cd780b655c195ce101d7e";
-              sha256 = "0rf8prb03fsdwhcc6cpcxz53dx44rnw1xiqsnxi3prps1dk54j9i";
+              rev = "ac0f72ed48f6e17dadedd76ee46e87c58de9a3f4";
+              sha256 = "0000000000000000000000000000000000000000000000000000";
             }) {}) pkgs.z3;
 
             pact-persist = self.callCabal2nix "pact-persist" (builtins.fetchGit {
@@ -55,14 +55,35 @@ in
               # Uncomment when nix and mysql branch merged into master.
               # rev = "1db11ffbc806b2e75b63ff64a7fcf6b29f4f073d"
               ref = "mysql-nix-merge";
-              rev = "f6a650200a7937a84011dfe54873924d2e8445bc";
+              rev = "289864150fce306767ad4865e61f96a5c81f308e";
             }) {};
 
             sbv = self.callCabal2nix "sbv" (pkgs.fetchFromGitHub {
               owner = "LeventErkok";
               repo = "sbv";
-              rev = "dbbdd396d069dc8235f5c8cf58209886318f6525";
-              sha256 = "0s607qbgiykgqv2b5sxcvzqpj1alxzqw6szcjzhs4hxcbbwkd60y";
+              rev = "3dc60340634c82f39f6c5dca2b3859d10925cfdf";
+              sha256 = "0000000000000000000000000000000000000000000000000000";
+            }) {};
+
+            hdbc-odbc = self.callCabal2nix "hdbc-odbc" (pkgs.fetchFromGitHub {
+              owner = "kadena-io";
+              repo = "hdbc-odbc";
+              rev = "79ffd1f5060d2c8b5cbdfd4eba8ae6414372d6b7";
+              sha256 = "0000000000000000000000000000000000000000000000000000";
+            }) {};
+
+            ekg-prometheus-adapter = self.callCabal2nix "ekg-prometheus-adapter" (pkgs.fetchFromGitHub {
+              owner = "kadena-io";
+              repo = "ekg-prometheus-adapter";
+              rev = "bd93dd5596d626b121f567bb24c0741fa0c8ccdd";
+              sha256 = "0000000000000000000000000000000000000000000000000000";
+            }) {};
+
+            ridley = self.callCabal2nix "ridley" (pkgs.fetchFromGitHub {
+              owner = "kadena-io";
+              repo = "ridley";
+              rev = "TBD";
+              sha256 = "0000000000000000000000000000000000000000000000000000";
             }) {};
 
             # dontCheck is here because a couple tests were failing

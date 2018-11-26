@@ -14,6 +14,12 @@ in
     name = "kadena-umbrella";
     overrides = self: super:
       let guardGhcjs = p: if self.ghc.isGhcjs or false then null else p;
+          ridley-src = pkgs.fetchFromGitHub {
+            owner = "kadena-io";
+            repo = "ridley";
+            rev = "d523e11fb7c98870a9ace52461e756227ca75cd3";
+            sha256 = "0x15cg95xj7133l18ivc0znfy31kvwnggi6jkjqbp64k68f9n6h7";
+          };
        in with pkgs.haskell.lib; {
             # QuickCheck = dontCheck (self.callHackage "QuickCheck" "2.11.3" {});
             # aeson = self.callHackage "aeson" "1.0.2.1" {};
@@ -82,16 +88,10 @@ in
               owner = "kadena-io";
               repo = "ekg-prometheus-adapter";
               rev = "bd93dd5596d626b121f567bb24c0741fa0c8ccdd";
-              sha256 = "0000000000000000000000000000000000000000000000000000";
+              sha256 = "03igbrzb9xh2aryj9srmd4ycn8zidxynkvirv8sn4912b8pwgssz";
             }) {};
 
-            ridley = self.callCabal2nix "ridley" (pkgs.fetchFromGitHub {
-              owner = "kadena-io";
-              repo = "ridley";
-              #subDir= "ridley";
-              rev = "d523e11fb7c98870a9ace52461e756227ca75cd3";
-              sha256 = "0x15cg95xj7133l18ivc0znfy31kvwnggi6jkjqbp64k68f9n6h7";
-            }) {};
+            ridley = self.callCabal2nix "ridley"  (ridley-src + /ridley) {};
 
             # dontCheck is here because a couple tests were failing
             statistics = dontCheck (self.callCabal2nix "statistics" (pkgs.fetchFromGitHub {

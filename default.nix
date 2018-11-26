@@ -17,13 +17,15 @@ in
        in with pkgs.haskell.lib; {
             # QuickCheck = dontCheck (self.callHackage "QuickCheck" "2.11.3" {});
             # aeson = self.callHackage "aeson" "1.0.2.1" {};
+
             # cacophony requires cryptonite >= 0.22 but doesn't supply a lower bound
-            cacophony = dontCheck (self.callHackage "cacophony" "0.8.0" {});
+            # cacophony = dontCheck (self.callHackage "cacophony" "0.8.0" {});
+
             cryptonite = self.callHackage "cryptonite" "0.23" {};
 
             haskeline = self.callHackage "haskeline" "0.7.4.2" {};
             katip = doJailbreak (self.callHackage "katip" "0.3.1.4" {});
-            ridley = dontCheck (self.callHackage "ridley" "0.3.1.2" {});
+            #ridley = dontCheck (self.callHackage "ridley" "0.3.1.2" {});
 
             criterion = dontCheck (self.callCabal2nix "criterion" (pkgs.fetchFromGitHub {
               owner = "bos";
@@ -44,25 +46,29 @@ in
               owner = "kadena-io";
               repo = "pact";
               rev = "ac0f72ed48f6e17dadedd76ee46e87c58de9a3f4";
-              sha256 = "0000000000000000000000000000000000000000000000000000";
+              sha256 = "0y1c0kvsvhc5akgsyi5sspinjln37gaprbm54wh8s9vfysxq3b7m";
             }) {}) pkgs.z3;
 
-            pact-persist = self.callCabal2nix "pact-persist" (builtins.fetchGit {
-              url = "ssh://git@github.com/kadena-io/pact-persist.git";
+            #pact-persist = self.callCabal2nix "pact-persist" (builtins.fetchGit {
+            #  url = "ssh://git@github.com/kadena-io/pact-persist.git";
               # ref = "pact-2.4.x-upgrade";
               # This rev must be on the above branch ref
               # rev = "d0657343da4347637e9419096e324edf66a7c543";
               # Uncomment when nix and mysql branch merged into master.
               # rev = "1db11ffbc806b2e75b63ff64a7fcf6b29f4f073d"
-              ref = "mysql-nix-merge";
+              # ref = "mysql-nix-merge";
+
+            pact-persist = self.callCabal2nix "pact-persist" (builtins.fetchGit {
+              url = "ssh://git@github.com/kadena-io/pact-persist.git";
               rev = "289864150fce306767ad4865e61f96a5c81f308e";
+              #sha256 = "0000000000000000000000000000000000000000000000000000";
             }) {};
 
             sbv = self.callCabal2nix "sbv" (pkgs.fetchFromGitHub {
               owner = "LeventErkok";
               repo = "sbv";
               rev = "3dc60340634c82f39f6c5dca2b3859d10925cfdf";
-              sha256 = "0000000000000000000000000000000000000000000000000000";
+              sha256 = "18xcxg1h19zx6gdzk3dfs87447k3xjqn40raghjz53bg5k8cdc31";
             }) {};
 
             hdbc-odbc = self.callCabal2nix "hdbc-odbc" (pkgs.fetchFromGitHub {
@@ -82,8 +88,9 @@ in
             ridley = self.callCabal2nix "ridley" (pkgs.fetchFromGitHub {
               owner = "kadena-io";
               repo = "ridley";
-              rev = "TBD";
-              sha256 = "0000000000000000000000000000000000000000000000000000";
+              #subDir= "ridley";
+              rev = "d523e11fb7c98870a9ace52461e756227ca75cd3";
+              sha256 = "0x15cg95xj7133l18ivc0znfy31kvwnggi6jkjqbp64k68f9n6h7";
             }) {};
 
             # dontCheck is here because a couple tests were failing

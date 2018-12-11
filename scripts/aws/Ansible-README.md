@@ -60,21 +60,6 @@ following playbooks:
                         and sqlite files, deleting all previous retrieved logs.
                         It stores the logs in `aws/logs/`.
 
-`edit_conf.yml` : This playbook edits all node configurations on the monitor
-                  instance. For example, if you wanted to change the backend
-                  of all nodes to INMEM, then run
-                  `ansible-playbook /path/to/edit_conf.yml --tags "inmem"`
-                  This playbook allows for changing other components of node
-                  configurations. Below is a list of changes possible and
-                  the tags names associated with them.
-                  CONF CHANGE                      TAG NAME
-                  - Disables write-behind:         `no_wb`
-                  - Disables PactPersist logging:  `no_pactPersist_log`
-                  - Disables all DEBUG logging:    `no_debug`
-                  - Changes backend to in-memory:  `inmem`
-                  To run only certain changes, execute the playbook as follows:
-                  `ansible-playbook /path/to/edit_conf.yml --tags "tagName, tagName"`
-
 NB: The `edit_conf.yml` playbook is designed for testing purposes. For a more robust
 way of changing distributed nodes' configurations, run
 `<kadena-directory>$ ./bin/<OS-name>/genconfs --distributed <kadena-directory>/aws/ipAddr.yml`

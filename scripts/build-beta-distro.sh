@@ -117,6 +117,9 @@ if [ -z "$target" -o "$target" = "dist" ]; then
     chirp "taring the result"
     if [[ "$type" = "aws" ]]; then
       safe cp -r kadena-beta kadena-aws
+      safe rm -r kadena-aws/aws/edit_conf.yml
+      safe rm -r kadena-aws/aws/templates/conf.j2
+      safe rm -rf kadena-aws/bin/ubuntu-16.04/start-no-persistence.sh  # Not used
       safe rm -rf kadena-aws/bin/centos-6.8     # Not supported in AWS
       safe rm -rf kadena-aws/bin/osx            # Not supported in AWS
       safe tar cvz kadena-aws/* > kadena-aws-$version.tgz

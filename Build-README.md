@@ -1,6 +1,6 @@
 
 
-# Beta Build Instructions
+# Beta and AWS Build Instructions
 
 ### Manual Part
 
@@ -64,7 +64,10 @@ Make sure that `kadena` is building and all tests are passing.
 
 Start Docker with a memory allowance of at least 4 GB.
 
-Run `./scripts/build-beta-distro.sh`, go get a coffee because it'll take a while.
+Run `./scripts/build-beta-distro.sh beta` to build kadena-beta, or
+run `./scripts/build-beta-distro.sh aws` to build kadena-aws.
+Then go get a coffee because it'll take a while.
 
-When it's done, the script outputs the file `kadena-beta-\<version number\>.tgz` . If the file is missing a version number,
+When it's done, the script outputs the file `kadena-beta-\<version number\>.tgz`
+or `kadena-aws-\<version number\>.tgz`. If the file is missing a version number,
 add it to .tgz file created.

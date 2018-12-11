@@ -158,10 +158,10 @@ runServer = do
   T.putStrLn $! "Kadena LLC (c) (2016-2018)"
   rconf <- getConfig
   gcm <- initGlobalConfigTMVar rconf
-#if WITH_KILL_SWITCH
-  when ((CM.countOthers (_clusterMembers rconf)) >= 16) $
-    error $ "Beta versions of Kadena are limited to 16 consensus nodes."
+#if WITH_KILL_SWITCH || WITH_AWS_KILL_SWITCH
+  killSwitchNodeCheck rconf
 #endif
+
   utcTimeCache' <- utcTimeCache
   fs <- initSysLog utcTimeCache'
   let debugFn = if rconf ^. enableDebug then showDebug fs else noDebug
@@ -183,3 +183,38 @@ runServer = do
   rstate <- return $ initialConsensusState timerTarget'
   mPubConsensus' <- newMVar $! PublishedConsensus Nothing Follower startTerm Set.empty
   runConsensusService receiverEnv gcm raftSpec rstate getCurrentTime mPubConsensus'
+
+#if WITH_KILL_SWITCH
+isBetaKillSwitch :: Bool
+isBetaKillSwitch = True
+#else
+isBetaKillSwitch :: Bool
+isBetaKillSwitch = False
+#endif
+
+#if WITH_AWS_KILL_SWITCH
+isAWSKillSwitch :: Bool
+isAWSKillSwitch = True
+#else
+isAWSKillSwitch :: Bool
+isAWSKillSwitch = False
+#endif
+
+killSwitchNodeCheck :: Config -> IO ()
+killSwitchNodeCheck rconf = do
+  let beta_node_limit = 16
+  let aws_node_limit = 4
+  let currNodeCount = (CM.countOthers (_clusterMembers rconf)) -- doesn't include node executing this code
+  
+  let betaSwitch = isBetaKillSwitch
+  let awsSwitch = isAWSKillSwitch
+
+  case (betaSwitch,awsSwitch) of
+    (False, False) -> return ()
+    (True,  False) -> when (currNodeCount >= beta_node_limit) $
+                      error $ "Beta versions of Kadena are limited to 16 consensus nodes."
+    (False, True)  -> when (currNodeCount >= aws_node_limit) $
+                      error $ "Community versions of Kadena are limited to 4 consensus nodes."
+    (True,  True)  -> when (currNodeCount >= beta_node_limit) $
+                      error $ "Community versions of Kadena are limited to 4 consensus nodes."
+                      -- Apply strictess kill-switch limitations (i.e. the Beta kill switch)

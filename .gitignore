@@ -1,9 +1,21 @@
+# Beta and AWS Builds
+kadena-beta/log/*
+kadena-beta/bin/*
+kadena-beta/docs/Ansible-README.md
+kadena-beta/static/monitor/*
+kadena-beta/setup/*
+kadena-beta/conf/*
+kadena-beta/aws/*
+kadena-beta/demo/*
+kadena-beta.tgz
+submodules/
+submodules/*
+*.tgz
+kadena-aws/*
+
 ipAddr.yml
 scripts/aws/logs
 data/*
-kadena-beta/log/*
-kadena-beta/bin/*
-kadena-beta.tgz
 payments-demo*
 *.swp
 aws-conf/*
@@ -13,8 +25,6 @@ bin/*
 .dir-locals.el
 .stack-work/
 .stack-work*
-submodules/
-submodules/*
 stack-docker.yaml
 *~
 log/*

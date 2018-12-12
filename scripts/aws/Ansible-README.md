@@ -60,8 +60,7 @@ following playbooks:
                         and sqlite files, deleting all previous retrieved logs.
                         It stores the logs in `aws/logs/`.
 
-NB: The `edit_conf.yml` playbook is designed for testing purposes. For a more robust
-way of changing distributed nodes' configurations, run
+NB: To change distributed nodes' configuration, run
 `<kadena-directory>$ ./bin/<OS-name>/genconfs --distributed <kadena-directory>/aws/ipAddr.yml`
 Provide the desired settings when prompted. For more information, refer to the
 "Automated configuration generation: `genconfs`" section in `docs/Kadena-README.md`.

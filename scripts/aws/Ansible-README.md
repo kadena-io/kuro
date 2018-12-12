@@ -88,7 +88,7 @@ $ tree <kadena-directory>
         └── <all kadena executables>
 ```
 
-Navigate to /path/to/kadena-directory and run the following commands:
+Navigate to `/path/to/kadena-directory` and run the following commands:
 ```
 tmux
 aws/start_aws_demo.sh

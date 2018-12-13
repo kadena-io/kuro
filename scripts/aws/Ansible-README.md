@@ -1,8 +1,8 @@
 # Ansible and AWS
 
 ## QuickStart
-1. Spin up an EC2 instance with the desired configurations (See [Instance Requirements](#instance-requirements)).
-   This will serve as the Ansible monitor instance.
+1. Spin up an EC2 instance with Kadena's ScalableBFT AMI or with the desired configurations
+   (See [Instance Requirements](#instance-requirements)). This will serve as the Ansible monitor instance.
 2. Ensure that the key pair(s) of the monitor and Kadena server instances are not publicly
    viewable: `chmod 400 /path/to/keypair.pem`. Otherwise, SSH and any service that rely on it (i.e. Ansible)
    will not work.

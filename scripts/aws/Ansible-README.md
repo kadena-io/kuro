@@ -1,8 +1,8 @@
 # Ansible and AWS
 
 ## QuickStart
-1. Spin up an EC2 instance with the desired configurations (See [Instance Requirements](#instance-requirements)).
-   This will serve as the Ansible monitor instance.
+1. Spin up an EC2 instance with Kadena's ScalableBFT AMI or with the desired configurations
+   (See [Instance Requirements](#instance-requirements)). This will serve as the Ansible monitor instance.
 2. Ensure that the key pair(s) of the monitor and Kadena server instances are not publicly
    viewable: `chmod 400 /path/to/keypair.pem`. Otherwise, SSH and any service that rely on it (i.e. Ansible)
    will not work.
@@ -60,9 +60,10 @@ following playbooks:
                         and sqlite files, deleting all previous retrieved logs.
                         It stores the logs in `aws/logs/`.
 
-NB: The `edit_conf.yml` playbook is designed for testing purposes. For a more robust
-way of changing distributed nodes' configurations, run
-`<kadena-directory>$ ./bin/<OS-name>/genconfs --distributed <kadena-directory>/aws/ipAddr.yml`
+NB: To change distributed nodes' configuration, run
+```
+<kadena-directory>$ ./bin/<OS-name>/genconfs --distributed aws/ipAddr.yml
+```
 Provide the desired settings when prompted. For more information, refer to the
 "Automated configuration generation: `genconfs`" section in `docs/Kadena-README.md`.
 
@@ -87,7 +88,7 @@ $ tree <kadena-directory>
         └── <all kadena executables>
 ```
 
-Navigate to /path/to/kadena-directory and run the following commands:
+Navigate to `/path/to/kadena-directory` and run the following commands:
 ```
 tmux
 aws/start_aws_demo.sh
@@ -99,10 +100,10 @@ To exit the Kadena Client, type `exit`. To kill the tmux sessions, type `tmux ki
 
 ## Instance Requirements
 The Ansible monitor instance and the Kadena server instances should be configured as follows:
-a. Install all Kadena software requirements. Refer to `<kadena-directory>/docs/Kadena-README.md` for specifics.
-b. Have Ansible 2.6+ installed.
+1. Install all Kadena software requirements. Refer to `<kadena-directory>/docs/Kadena-README.md` for specifics.
+2. Have Ansible 2.6+ installed.
    See <https://docs.ansible.com/ansible/latest/installation_guide/intro_installation.html> for instructions.
-d. Setup Ansible to use EC2's external inventory script.
+3. Setup Ansible to use EC2's external inventory script.
    See <https://docs.ansible.com/ansible/latest/user_guide/intro_dynamic_inventory.html#example-aws-ec2-external-inventory-script> for instructions.
 
 An AWS image (AMI) created from this configured instance could be used to launch the Ansible monitor and Kadena server

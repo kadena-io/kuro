@@ -199,8 +199,8 @@ getParams cfgMode = do
     else getUserInput
       "[Integer] How many green threads should be allocated to the Crypto PreProcessor? (recommended: 5 to 100)"
       NumberType Nothing $ checkGTE 1
-  enableWB' <- yesNoToBool <$>
-     getUserInput "[Yes|No] Use write-behind backend? (recommended: Yes)" YesOrNo (Just Yes) Nothing
+  {--enableWB' <- yesNoToBool <$>
+     getUserInput "[Yes|No] Use write-behind backend? (recommended: Yes)" YesOrNo (Just Yes) Nothing--}
   hostStaticDir' <- yesNoToBool <$>
     getUserInput "[Yes|No] Should each node host the contents of './static' as '<host>:<port>/'? (recommended: Yes)"
     YesOrNo (Just Yes) Nothing
@@ -222,7 +222,7 @@ getParams cfgMode = do
     , cpInMemTxs = inMemTxs'
     , cpLogDir = logDir'
     , cpConfDir = confDir'
-    , cpEnableWB = enableWB'
+    , cpEnableWB = False
     , cpHostStaticDirB = hostStaticDir'
     , cpAdminKeyCnt = adminKeyCnt'
     , cpEntityCnt = entityCnt'

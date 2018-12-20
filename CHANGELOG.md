@@ -1,5 +1,7 @@
-# Version 1.1.3.2
+# Version 1.1.4.0
+* Stability improvements
 * Includes Ansible playbooks for AWS deployment
+* Bug Fixes
 
 # Version 1.1.3.1
 * Includes Kadena Grafana dashboard

@@ -14,10 +14,8 @@ in
       let ridley-src = pkgs.fetchFromGitHub {
             owner = "kadena-io";
             repo = "ridley";
-            rev = "d523e11fb7c98870a9ace52461e756227ca75cd3";
-            #rev = "e414ce8d5caec46a41437e45e0850436841c9ce4";
-            #sha256 = "0x15cg95xj7133l18ivc0znfy31kvwnggi6jkjqbp64k68f9n6h7";
-            sha256 = "0x15cg95xj7133l18ivc0znfy31kvwnggi6jkjqbp64k68f9n6h7";
+            rev = "1227fff4559586bd128fb41bd129c4440b6102ff";
+            sha256 = "0v0mg6xw4p2ykvavs4fcddyllvbgslxvrlhz3ja3bgkw2sv0a6hv";
           };
           #katip 0.6.3.0 was not being found via callHackage for some reason...
           katip-src = pkgs.fetchFromGitHub {
@@ -102,7 +100,7 @@ in
               sha256 = "03igbrzb9xh2aryj9srmd4ycn8zidxynkvirv8sn4912b8pwgssz";
             }) {};
 
-            ridley = self.callCabal2nix "ridley" (ridley-src + /ridley) {};
+            ridley = dontHaddock (dontCheck (self.callCabal2nix "ridley" (ridley-src + /ridley) {}));
 
             katip = self.callCabal2nix "katip" "${katip-src}/katip" {};
 

@@ -23,6 +23,8 @@ import qualified Data.HashMap.Strict as HashMap
 import Data.Thyme.Clock
 #if WITH_KILL_SWITCH
 import Data.Thyme.Clock.POSIX
+import Data.Thyme.LocalTime
+import Data.Thyme.Time
 #endif
 import Data.Maybe (fromJust,isJust,isNothing)
 import System.FilePath
@@ -37,6 +39,10 @@ import qualified Kadena.History.Persistence as DB
 import Kadena.Types.Dispatch (Dispatch)
 import qualified Kadena.Types.Dispatch as D
 import Kadena.Event (pprintBeat)
+
+#define cpp_compile_time (__DATE__ ++ " " ++ __TIME__)
+compileTime :: String
+compileTime = cpp_compile_time
 
 initHistoryEnv
   :: Dispatch
@@ -93,9 +99,34 @@ setupPersistence dbg (Just dbPath') = do
 _k'' :: HistoryService ()
 _k'' = do
   t <- liftIO $ getPOSIXTime
-  te :: POSIXTime <- return $ read $ "1538352000s"
+  te :: POSIXTime <- return $ getExpiration compileTime
   when (t >= te) $ do
-    error "Demo period complete. Please contact us for updated binaries."
+    error $ "Demo period complete on " ++ show (posixSecondsToUTCTime te)
+      ++ ". Please contact us for updated binaries."
+
+getExpiration :: String -> POSIXTime
+getExpiration str = utcTimeToPOSIXSeconds (mkUTCTime expirationDate time)
+  where
+    [month,day,year,hms] = words str
+    m = fromJust (toMonthNum month) -- will always be a valid month
+    d = read day :: Int
+    y = read year :: Int
+    expirationDate = addDays (6*31) (fromGregorian y m d) -- 6 months
+    time = timeOfDayToTime (read hms :: TimeOfDay)
+    toMonthNum shortMonth = case shortMonth of
+      "Jan" -> Just 1
+      "Feb" -> Just 2
+      "Mar" -> Just 3
+      "Apr" -> Just 4
+      "May" -> Just 5
+      "Jun" -> Just 6
+      "Jul" -> Just 7
+      "Aug" -> Just 8
+      "Sep" -> Just 9
+      "Oct" -> Just 10
+      "Nov" -> Just 11
+      "Dec" -> Just 12
+      _ -> Nothing
 #endif
 
 handle :: HistoryChannel -> HistoryService ()

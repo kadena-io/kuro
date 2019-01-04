@@ -5,6 +5,9 @@ Kadena Version: 1.1.x
 
 # Change Log
 
+* Version 1.1.3.0
+  * Added MySQL adapter to pact-persist
+
 * Kadena 1.1.2 (June 12th, 2017)
   * Integrated privacy mechanism (on-chain Noise protocol based private channels)
   * Added `par-batch` to REPL
@@ -22,7 +25,7 @@ Required:
 
 * `zeromq >= v4.1.4`
   * OSX: `brew install zeromq`
-  * Ubuntu: the `apt-get` version of zeromq v4 is incorrect, you need to build it from sounce. See the Ubuntu docker file for more information.
+  * Ubuntu: the `apt-get` version of zeromq v4 is incorrect, you need to build it from source. See the Ubuntu docker file for more information.
 * `libz`: usually this comes pre-installed
 * `unixodbc == v3.*`
   * OSX: `brew install unixodbc`
@@ -33,28 +36,29 @@ Required:
 
 Optional:
 
+* `pact == v2.4`: See <https://github.com/kadena-io/pact#installing-pact-with-binary-distributions>.
 * `rlwrap`: only used in `kadenaclient.sh` to enable Up-Arrow style history. Feel free to remove it from the script if you'd like to avoid installing it.
-* `tmux == v2.0`: only used for the local demo script `demo/start.sh`.
+* `tmux == v2.0`: only used for the local demo script `<kadena-directory>/bin/<OS-name>/start.sh`.
 A very specific version of tmux is required because features were entirely removed in later version that preclude the script from working.
 
+NB: The docker and script files for installing the Kadena dependencies can be found in `<kadena-directory>/setup`.
 
 ### Quick Start
 
-Quickly launch a local instance, see "Sample Usage: `[payments|monitor|todomvc]`" for interactions that come with the beta.
+Quickly launch a local instance, see "Sample Usage: `[payments|monitor|todomvc]`" for interactions supported.
 
 #### OSX
 
 ```
-$ tmux
-$ demo/start.sh
+<kadena-directory>$ tmux
+<kadena-directory>$ ./bin/osx/start.sh
 ```
 
 #### Ubuntu 16.04
 
 ```
-$ tmux
-$ cd kadena-beta
-$ ./bin/ubuntu-16.04/start.sh
+<kadena-directory>$ tmux
+<kadena-directory>$ ./bin/ubuntu-16.04/start.sh
 ```
 
 
@@ -112,8 +116,8 @@ If you would like to do large scale `batch` tests in a local setting, use `genco
 If you'll be testing with many (100s to +10k) simultaneous clients please be sure to provision extra CPU's.
 In a production setting, we'd expect:
 
-* To use a seperate server to collect inbound transactions from the multitude of clients and lump them into a single batch/pipe them over a websocket to the cluster itself so as to avoid needless CPU utilization.
-* For clients to connect to different nodes (e.g. all Firm A clients connect to Firm A's nodes, B's to B's, etc.), allowing the nodes themselves to batch/foward commands.
+* To use a separate server to collect inbound transactions from the multitude of clients and lump them into a single batch/pipe them over a websocket to the cluster itself so as to avoid needless CPU utilization.
+* For clients to connect to different nodes (e.g. all Firm A clients connect to Firm A's nodes, B's to B's, etc.), allowing the nodes themselves to batch/forward commands.
 
 The ability to do either of these is a feature of Kadena -- because commands must have a unique hash and are either (a) signed or (b) fully encrypted, they can be redirected without degrading the security model.
 
@@ -128,7 +132,7 @@ By default `kadenaserver` is configured use as many cores as are available.
 In a distributed setting, this is generally a good default; in a local setting, it is not.
 Because each node needs 8 cores to function at peak performance, running multiple nodes locally when clusterSize * 8 > available cores can cause the nodes to obstruct each other (and thereby trigger an election).
 
-To avoid this, the `demo/start.sh` script restricts each node to 4 cores via the `+RTS -N4 -RTS` flags.
+To avoid this, the demo's `start.sh` script restricts each node to 4 cores via the `+RTS -N4 -RTS` flags.
 You may use these, or any other flags found in [GHC RTS Options](https://downloads.haskell.org/~ghc/7.10.3/docs/html/users_guide/runtime-control.html#rts-opts-compile-time) to configure a given node should you wish to.
 
 * To set cores to a specific amount, add `+RTS -N[core count] -RTS`.
@@ -142,6 +146,13 @@ Beta License instances of Kadena are limited as follows:
 * The maximum number of total committed transactions is limited to 200,000
 * The binaries will only run for 90 days
 * Consensus level membership & key rotation changes are not available
+
+For a version without any/all of these restrictions, please contact us at [info@kadena.io](mailto:info@kadena.io).
+
+### AWS Marketplace Limitations
+The AWS Marketplace listing of Kadena is limited as follows:
+
+* The maximum cluster size is limited to 4
 
 For a version without any/all of these restrictions, please contact us at [info@kadena.io](mailto:info@kadena.io).
 
@@ -239,18 +250,20 @@ node1>
 `load` is designed to assist with initializing a new environment on a running blockchain,
 accepting a yaml file to instruct how the code and data is loaded.
 
-The beta ships with the "demo" smart contract for exploring this:
+The "demo" smart contract explores this:
 
 ```
 $ tree demo
-payments
+demo
 ├── demo.pact
 ├── demo.repl
 └── demo.yaml
 
 $ cat demo/demo.yaml
 data: |-
-  { "demo-admin-keyset": { "keys": ["demoadmin"], "pred": ">" } }
+  demo-admin-keyset:
+    "keys": ["demoadmin"]
+    "pred": ">"
 codeFile: demo.pact
 keyPairs:
   - public: 06c9c56daa8a068e1f19f5578cdf1797b047252e1ef0eb4a1809aa3c2226f61e
@@ -271,7 +284,7 @@ The cluster will handle the forwarding automatically.
 node3> server node0
 ```
 
-Initialize the chain with the `demo` smart contract, and create the global/non-private accounts.
+Initialize the chain with the `payments` smart contract, and create the global/non-private accounts.
 Note that the load process has an optional feature to set the batch command (see docs for `cmd` in help).
 The demo.yaml sets the batch command to
 transfer `1.00` between the demo accounts.
@@ -373,7 +386,7 @@ However, if you'd like to test the worst-case setup -- one where new commands ar
 
 `par-batch TOTAL_CMD_CNT CMD_RATE_PER_SEC DELAY` works much like `batch` except that `kadenaclient` will evenly distributed the new commands across the entire cluster.
 It is creates `TOTAL_CMD_CNT` commands first and then submits portions of the new command pool to each node in individual batches with a `DELAY` millisecond pause between each submission.
-Globally, it will achieve the `CMD_RATE_PER_SEC` specified. 
+Globally, it will achieve the `CMD_RATE_PER_SEC` specified.
 
 For example, on a 4 node cluster `par-batch 10000 1000 200` will submit 50 new commands to each node every 200ms for 10 seconds.
 
@@ -428,7 +441,7 @@ account | amount   | balance  | data
 
 This illustrates how the different servers (which would be presumably behind firewalls, etc) contain different, private data.
 
-Now, execute a confidential transfer between Alice and Bob, transfering money from Alice's account "A" to Bob's account "B".
+Now, execute a confidential transfer between Alice and Bob, transferring money from Alice's account "A" to Bob's account "B".
 
 For this, the pact "payment" is used, which executes the debit step on the "source" entity, and the credit step on the "dest" entity. You can see the function docs by simply executing `payment`:
 
@@ -503,14 +516,14 @@ You can test inserting multiple records into a sample client database with the f
 
 ```
 node0> load demo/orders.yaml
-  
+
 This creates an 'orders' table into which records can be inserted.
 ```
 
 The command:
 
 ```
-node0> loadMultiple 0 3000 demo/orders.txt 
+node0> loadMultiple 0 3000 demo/orders.txt
 ```
 
 will insert 3000 records into the orders table.  The file orders.txt serves as a template for the order records, and contains special strings of the form "${count}" that will be replaced with the numbers
@@ -518,7 +531,7 @@ from 0 through 2999 as the records are inserted.  All 3000 records are sent in a
 
 You can run additional loadMultiple commands, but the initial 'count' (0 in the last example) must be chosen to not overlap with previously inserted rows.  So subsequent commands could be:
 ```
-node0> loadMultiple 3000 3000 
+node0> loadMultiple 3000 3000
 
 node0> loadMultiple 6000 3000
 
@@ -535,14 +548,14 @@ Each kadena node, while running, will host a performance monitor at the URL `<no
 
 #### Sample Usage: Running Pact TodoMVC
 
-The `kadena-beta` also bundles the [Pact TodoMVC](github.com/kadena-io/pact-todomvc). Each kadena node will host the frontend at `<nodeId.host>:<nodeId.port>/todomvc`. To initialized the `todomvc`:
+This repo also bundles the [Pact TodoMVC](github.com/kadena-io/pact-todomvc). Each Kadena node will host the frontend at `<nodeId.host>:<nodeId.port>/todomvc`. To initialized the `todomvc`:
 
 ```
-$ cd kadena-beta
+$ cd <kadena-directory>
 
 # launch the cluster
 
-$ ./bin/osx/kadenaclient.sh
+$ ./bin/<OS-name>/kadenaclient.sh
 node3> load todomvc/demo.yaml
 
 # go to host:port/todomvc
@@ -552,23 +565,21 @@ NB: this demo can be run at the same time as the `payments` demo.
 
 #### Sample Usage: Running a cluster on AWS
 
-The scripts we use for quickly testing Kadena on AWS are now available as well, located in `kadena-beta/scripts`.
-The include: 
-
-* `create_aws_confs.sh`: This script will query AWS for a list of IP addresses, use it to create the configs for each node (and one client), and create a file directory `aws-confs` that stores the configs and the startup scripts for each node.
-* `servers.sh`: This script is used for managing the cluster and requires the `aws-confs` file hierarchy to be in place prior to running. It can distribute the `kadenaserver` binaries to each node, configure each server (transfer configs, start scripts, create directories), start/stop/reset the cluster, query the status of each node, etc... View the source for more details. 
+The Ansible playbooks and scripts we use for testing Kadena on AWS are now available as well, located in
+`<kadena-directory>/aws`. Refer to `<kadena-directory>/docs/Ansible-README.md` for detailed instructions on
+how to use these Ansible playbooks and scripts.
 
 #### Sample Usage: Querying the Cluster for Server Metrics
 
-Each `kadenaserver` hosts an instance of `ekg` (a performance monitoring tool) on `<node-host>:<node-port>+80`. 
-It returns a JSON blob of the latest tracked metrics. 
-`server.sh status` uses this mechanism for status querying:
+Each `kadenaserver` hosts an instance of `ekg` (a performance monitoring tool) on `<node-host>:<node-port>+80`.
+It returns a JSON blob of the latest tracked metrics.
+The following shell script extract uses this mechanism for status querying:
 
 ```
 status)
   for i in `cat kadenaservers.privateIp`;
-    do echo $i ; 
-      curl -sH "Accept: application/json" "$i:10080" | jq '.kadena | {role: .node.role.val, commit_index: .consensus.commit_index.val, applied_index: .node.applied_index.val}' ; 
+    do echo $i ;
+      curl -sH "Accept: application/json" "$i:10080" | jq '.kadena | {role: .node.role.val, commit_index: .consensus.commit_index.val, applied_index: .node.applied_index.val}' ;
     done
   exit 0
   ;;

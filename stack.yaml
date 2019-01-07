@@ -1,4 +1,4 @@
-resolver: lts-8.15
+resolver: lts-12.9
 
 build:
   copy-bins: true
@@ -9,30 +9,36 @@ packages:
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)
 extra-deps:
+  - algebraic-graphs-0.2
   - bloomfilter-2.0.1.0
   - bound-2
-  - cacophony-0.8.0
+  - cacophony-0.10.1
+  - compactable-0.1.2.2
   - concurrent-extra-0.7.0.10
-  - cryptonite-0.23
   - ed25519-donna-0.1.1
-  - ekg-prometheus-adapter-0.1.0.3
-  - kan-extensions-5.0.1
   - lz4-0.2.3.1
   - monad-gen-0.3.0.1
-  - prometheus-0.4.2
-  - ridley-0.3.1.2
-  - system-command-0.0.10
+  - prometheus-2.1.0
   - unagi-chan-0.4.0.0
-  - git: https://github.com/kadena-io/pact.git
-    commit: 9635c9472ad0ea79437cd780b655c195ce101d7e
+  - katip-0.6.3.0
+  - crackNum-2.2
+  - FloatingHex-0.4
+  - git: git@github.com:kadena-io/pact.git
+    commit: ac0f72ed48f6e17dadedd76ee46e87c58de9a3f4
   - git: git@github.com:kadena-io/pact-persist.git
-    commit: 1db11ffbc806b2e75b63ff64a7fcf6b29f4f073d
+    commit: 289864150fce306767ad4865e61f96a5c81f308e
+  - git: git@github.com:kadena-io/thyme.git
+    commit: 6ee9fcb026ebdb49b810802a981d166680d867c9
   - git: https://github.com/abbradar/hdbc-odbc.git
     commit: 79ffd1f5060d2c8b5cbdfd4eba8ae6414372d6b7
-  - git: https://github.com/kadena-io/thyme.git
-    commit: 6ee9fcb026ebdb49b810802a981d166680d867c9
   - git: https://github.com/LeventErkok/sbv.git
-    commit: dbbdd396d069dc8235f5c8cf58209886318f6525 # with symbolic string support
+    commit: 3dc60340634c82f39f6c5dca2b3859d10925cfdf
+  - git: git@github.com:kadena-io/ekg-prometheus-adapter.git
+    commit: bd93dd5596d626b121f567bb24c0741fa0c8ccdd
+  - git: git@github.com:kadena-io/ridley.git
+    commit: d523e11fb7c98870a9ace52461e756227ca75cd3
+    subdirs:
+      - ridley
 
 local-bin-path: ./bin
 # Extra directories used by stack for building

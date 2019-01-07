@@ -78,7 +78,7 @@ import Pact.Types.Runtime (EntityName(..))
 
 
 newtype Label = Label ByteString
-  deriving (IsString,Eq,Ord,Hashable,Serialize,NFData,Monoid,ByteArray,ByteArrayAccess)
+  deriving (IsString,Eq,Ord,Hashable,Serialize,NFData,Monoid,Semigroup,ByteArray,ByteArrayAccess)
 instance Show Label where show (Label l) = show (B16.encode l)
 instance AsString Label where asString (Label l) = T.pack $ B8.unpack $ B16.encode l
 

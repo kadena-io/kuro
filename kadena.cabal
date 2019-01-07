@@ -12,7 +12,7 @@ license-file:        LICENSE
 
 category:            Network
 build-type:          Simple
-cabal-version:       >=1.20
+cabal-version:       >=1.22
 
 source-repository head
   type:     git
@@ -131,13 +131,13 @@ library
                      , bound
                      , bytestring
                      , cacophony
-                     , cereal >= 0.4.1.1
+                     , cereal >= 0.5.4.0
                      , containers
                      , criterion
                      , crypto-api
                      , cryptonite
                      , data-default
-                     , deepseq >= 1.4.1.1
+                     , deepseq >= 1.4.2.0
                      , direct-sqlite
                      , directory
                      , ed25519-donna
@@ -154,7 +154,7 @@ library
                      , hashable
                      , hspec
                      , http-client
-                     , lens >= 4.13
+                     , lens >= 4.15
                      , lens-aeson
                      , lifted-base
                      , lz4
@@ -167,7 +167,7 @@ library
                      , mtl-compat
                      , mysql >= 0.1 && < 0.2
                      , network
-                     , pact == 2.4.*
+                     , pact == 2.6.*
                      , pact-persist == 1.0.*
                      , parallel
                      , parsers
@@ -193,7 +193,7 @@ library
                      , unordered-containers
                      , utf8-string >= 1.0.1.1
                      , vector >= 0.11.0.0
-                     , vector-space >= 0.10.2 && < 0.11
+                     , vector-space >= 0.10.4 && < 0.14
                      , wreq
                      , yaml
                      , zeromq4-haskell >= 0.6.3
@@ -266,8 +266,8 @@ executable inserts
                      , kadena
                      , lens
                      , pact
+                     , process
                      , safe
-                     , system-command
                      , text
                      , transformers
                      , trifecta
@@ -315,7 +315,6 @@ test-suite hspec
                    , safe
                    , safe-exceptions
                    , scientific
-                   , system-command
                    , text
                    , transformers
                    , trifecta

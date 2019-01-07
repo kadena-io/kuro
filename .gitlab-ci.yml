@@ -1,3 +1,7 @@
-kadena:
+kadena-mac:
   script:
     - nix-build
+
+kadena-linux:
+  script:
+    - nix-build --argstr system x86_64-linux

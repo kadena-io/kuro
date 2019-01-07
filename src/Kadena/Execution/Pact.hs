@@ -10,17 +10,16 @@ import Control.Exception (SomeException)
 import Control.Monad
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (ask,ReaderT,runReaderT,reader)
-import Control.Monad.Catch (MonadThrow,throwM)
+import Control.Monad.Catch (throwM)
 import System.Directory (doesFileExist,removeFile)
 import Control.Exception.Safe (tryAny)
 import Data.Aeson as A
 import qualified Data.Set as S
 import Data.String
 import qualified Data.Map.Strict as M
-import qualified Data.HashMap.Strict as HM
-import Data.Default
 
 import Pact.Types.Command
+import Pact.Types.Gas (GasEnv(..))
 import Pact.Types.RPC
 import Pact.Types.Logger (logLog,Logger,Loggers,newLogger)
 import qualified Pact.Persist.SQLite as SQLite
@@ -29,6 +28,7 @@ import qualified Pact.Persist.MSSQL as MSSQL
 import qualified Pact.Persist.MySQL as MySQL
 import qualified Pact.Persist.WriteBehind as WB
 import Pact.Persist.CacheAdapter (initPureCacheWB)
+import Pact.Gas (constGasModel)
 import Pact.Interpreter
 import Pact.Types.Server (throwCmdEx,userSigsToPactKeySet)
 import Pact.PersistPactDb (initDbEnv,pactdb)
@@ -47,6 +47,7 @@ data Pact = Pact
   , _pContinuation :: Term Name
   , _pSigs :: S.Set PublicKey
   , _pStepCount :: Int
+  , _pYield :: Maybe (Term Name)
   }
 
 data PactState = PactState
@@ -146,10 +147,13 @@ applyExec (ExecMsg parsedCode edata) ks = do
   when (null (_pcExps parsedCode)) $ throwCmdEx "No expressions found"
   PactState{..} <- liftIO $ readMVar _peState
   let sigs = userSigsToPactKeySet ks
+  let gasLimit = (0 :: Integer) -- TODO implement
+  let gasRate = (0 :: Integer) -- TODO implement
+  let gasEnv = (GasEnv (fromIntegral gasLimit) 0.0 (constGasModel (fromIntegral gasRate)))
       evalEnv = setupEvalEnv _peDbEnv (Just (_elName $ _ecLocal $ _peEntity)) _peMode
-                (MsgData sigs edata Nothing (_cmdHash _peCommand)) _psRefStore
+                (MsgData sigs edata Nothing (_cmdHash _peCommand)) _psRefStore gasEnv
   EvalResult{..} <- liftIO $ evalExec evalEnv parsedCode
-  mp <- join <$> mapM (handleYield erInput sigs) erExec
+  mp <- join <$> mapM (handleYield erInput sigs edata) erExec
   let newState = PactState erRefStore $ case mp of
         Nothing -> _psPacts
         Just (p@Pact{..}) -> M.insert _pTxId p _psPacts
@@ -159,8 +163,8 @@ applyExec (ExecMsg parsedCode edata) ks = do
 debug :: String -> PactM p ()
 debug m = reader _peLogger >>= \l -> liftIO $ logLog l "DEBUG" m
 
-handleYield :: [Term Name] -> S.Set PublicKey -> PactExec -> PactM p (Maybe Pact)
-handleYield em sigs PactExec{..} = do
+handleYield :: [Term Name] -> S.Set PublicKey -> Value -> PactExec -> PactM p (Maybe Pact)
+handleYield em sigs edata PactExec{..} = do
   PactEnv{..} <- ask
   let EntityConfig{..} = _peEntity
   unless (length em == 1) $
@@ -168,26 +172,11 @@ handleYield em sigs PactExec{..} = do
   case _peMode of
     Local -> return Nothing
     Transactional tid -> do
-      ry <- mapM encodeResume _peYield
-      when _peExecuted $ publishCont tid tid 1 False ry
-      return $ Just $ Pact tid (head em) sigs _peStepCount
+      when _peExecuted $ publishCont tid tid 1 False edata
+      return $ Just $ Pact tid (head em) sigs _peStepCount _peYield
 
 reverseAddy :: EntityName -> Address -> Address
 reverseAddy me Address{..} = Address me (S.delete me $ S.insert _aFrom _aTo)
-
--- | resumes are JSON encoded similarly to a row: top-level names are encoded as Persistables
-encodeResume :: MonadThrow m => Term Name -> m Value
-encodeResume (TObject ps _ _) = fmap object $ forM ps $ \p -> case p of
-  (TLitString k,v) -> return (k .= toPersistable v)
-  (k,_) -> throwCmdEx $ "encodeResume: only string keys supported for yield:" ++ show k
-encodeResume t = throwCmdEx $ "encodeResume: expected object type for yield: " ++ show t
-
-decodeResume :: MonadThrow m => Value -> m (Term Name)
-decodeResume (Object ps) = fmap (\ps' -> TObject ps' TyAny def) $ forM (HM.toList ps) $ \(k,v) -> case fromJSON v of
-  A.Success (p :: Persistable) -> return (toTerm k,toTerm p)
-  A.Error r -> throwCmdEx $ "decodeResume: failed to decode value: " ++ show (k,v) ++ ": " ++ r
-decodeResume v = throwCmdEx $ "decodeResume: only Object values supported: " ++ show v
-
 
 applyContinuation :: ContMsg -> PactM p CommandResult
 applyContinuation cm@ContMsg{..} = do
@@ -200,34 +189,40 @@ applyContinuation cm@ContMsg{..} = do
         Nothing -> throwCmdEx $ "applyContinuation: txid not found: " ++ show _cmTxId
         Just pact@Pact{..} -> do
           when (_cmStep < 0 || _cmStep >= _pStepCount) $ throwCmdEx $ "Invalid step value: " ++ show _cmStep
-          res <- mapM decodeResume _cmResume
+          let gasLimit = (0 :: Integer) -- TODO implement
+          let gasRate = (0 :: Integer) -- TODO implement
+          let gasEnv = (GasEnv (fromIntegral gasLimit) 0.0 (constGasModel (fromIntegral gasRate)))
           let evalEnv = setupEvalEnv _peDbEnv (Just (_elName $ _ecLocal $ _peEntity)) _peMode
                 (MsgData _pSigs Null
-                 (Just $ PactStep _cmStep _cmRollback (fromString $ show $ _cmTxId) res)
-                 (_cmdHash _peCommand))
-                _psRefStore
+                  (Just $ PactStep _cmStep _cmRollback (fromString $ show $ _cmTxId) _pYield)
+                  (_cmdHash _peCommand))
+                _psRefStore gasEnv
           tryAny (liftIO $ evalContinuation evalEnv _pContinuation) >>=
-            either (handleContFailure tid pe cm ps) (handleContSuccess tid pe cm ps pact)
+            either (handleContFailure tid pe cm ps pact) (handleContSuccess tid pe cm ps pact)
 
 
-handleContFailure :: TxId -> PactEnv p -> ContMsg -> PactState -> SomeException -> PactM p CommandResult
-handleContFailure tid pe cm ps ex = doRollback tid pe cm ps True >> throwM ex
+handleContFailure :: TxId -> PactEnv p -> ContMsg -> PactState -> Pact -> SomeException -> PactM p CommandResult
+handleContFailure tid pe cm ps p ex = doRollback tid pe cm ps p True >> throwM ex
 
-doRollback :: TxId -> PactEnv p -> ContMsg -> PactState -> Bool -> PactM p ()
-doRollback tid PactEnv{..} ContMsg{..} PactState{..} executed = do
+doRollback :: TxId -> PactEnv p -> ContMsg -> PactState -> Pact -> Bool -> PactM p ()
+doRollback tid PactEnv{..} ContMsg{..} PactState{..} Pact{..} executed = do
   let prevStep = pred _cmStep
       done = prevStep < 0
+      updateState pacts = void $ liftIO $ swapMVar _peState (PactState _psRefStore pacts)
   if done
     then do
     debug $ "handleContFailure: reaping pact: " ++ show _cmTxId
     void $ liftIO $ swapMVar _peState $ PactState _psRefStore $ M.delete _cmTxId _psPacts
-    else when executed $ publishCont _cmTxId tid prevStep True Nothing
+    else do
+      let newPact = Pact _pTxId _pContinuation _pSigs _pStepCount Nothing
+      when executed $ publishCont _cmTxId tid prevStep True _cmData
+      updateState $ M.insert _pTxId newPact _psPacts
 
 handleContSuccess :: TxId -> PactEnv p -> ContMsg -> PactState -> Pact -> EvalResult -> PactM p CommandResult
 handleContSuccess tid pe@PactEnv{..} cm@ContMsg{..} ps@PactState{..} p@Pact{..} er@EvalResult{..} = do
   py@PactExec {..} <- maybe (throwCmdEx "No yield from continuation exec!") return erExec
   if _cmRollback then
-    doRollback tid pe cm ps _peExecuted
+    doRollback tid pe cm ps p _peExecuted
   else
     doResume tid pe cm ps p er py
   jsonResult' $ CommandSuccess (last erOutput)
@@ -236,24 +231,24 @@ doResume :: TxId -> PactEnv p -> ContMsg -> PactState -> Pact -> EvalResult -> P
 doResume tid PactEnv{..} ContMsg{..} PactState{..} Pact{..} EvalResult{..} PactExec{..} = do
   let nextStep = succ _cmStep
       isLast = nextStep >= _pStepCount
-      updateState pacts = void $ liftIO $ swapMVar _peState (PactState erRefStore pacts)
+      updateState pacts = void $ liftIO $ swapMVar _peState (PactState _psRefStore pacts)
   if isLast
     then debug $ "handleContSuccess: reaping pact [disabled]: " ++ show _cmTxId
       -- updateState $ M.delete _cmTxId _psPacts
     else do
-      ry <- mapM encodeResume _peYield
-      when _peExecuted $ publishCont _cmTxId tid nextStep False ry
-      updateState _psPacts
+      let newPact = Pact _pTxId _pContinuation _pSigs _pStepCount _peYield
+      when _peExecuted $ publishCont _cmTxId tid nextStep False _cmData
+      updateState $ M.insert _pTxId newPact _psPacts
 
-publishCont :: TxId -> TxId -> Int -> Bool -> Maybe Value -> PactM p ()
-publishCont pactTid tid step rollback resume = do
+publishCont :: TxId -> TxId -> Int -> Bool -> Value -> PactM p ()
+publishCont pactTid tid step rollback cData = do
   PactEnv{..} <- ask
   let EntityConfig{..} = _peEntity
   when _ecSending $ do
     let me = _elName _ecLocal
         addy = fmap (reverseAddy me) $ _pAddress $ _cmdPayload $ _peCommand
         nonce = fromString $ show tid
-        (rpc :: PactRPC ()) = Continuation $ ContMsg pactTid step rollback resume
+        (rpc :: PactRPC ()) = Continuation $ ContMsg pactTid step rollback cData
         cmd = mkCommand [signer _ecSigner] addy nonce rpc
     debug $ "Sending success continuation for pact: " ++ show rpc
     _rks <- publish _pePublish throwCmdEx [(buildCmdRpcBS cmd)]

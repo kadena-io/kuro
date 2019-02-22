@@ -9,7 +9,15 @@ let rp = builtins.fetchTarball {
 };
 
 in
-  (import rp { inherit system; }).project ({ pkgs, ... }: {
+  (import rp { inherit system; }).project ({ pkgs, ... }:
+  let gitignore = pkgs.callPackage (pkgs.fetchFromGitHub {
+        owner = "siers";
+        repo = "nix-gitignore";
+        rev = "4f2d85f2f1aa4c6bff2d9fcfd3caad443f35476e";
+        sha256 = "1vzfi3i3fpl8wqs1yq95jzdi6cpaby80n8xwnwa8h2jvcw3j7kdz";
+      }) {};
+  in
+  {
     name = "kadena-umbrella";
     overrides = self: super:
       let ridley-src = pkgs.fetchFromGitHub {
@@ -156,10 +164,7 @@ in
 
           };
     packages = {
-      kadena = builtins.filterSource
-        (path: type: !(builtins.elem (baseNameOf path)
-           ["result" "dist" "dist-ghcjs" ".git"]))
-        ./.;
+      kadena = gitignore.gitignoreSource [".git" ".gitlab-ci.yml" "CHANGELOG.md" "README.md"] ./.;
     };
 
     shells = {

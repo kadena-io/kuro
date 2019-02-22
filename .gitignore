@@ -99,3 +99,4 @@ jmeter.log
 # VS code
 .vscode/*
 /demo/cp
+result

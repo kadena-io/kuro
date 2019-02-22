@@ -1,7 +1,11 @@
-kadena-mac:
+pact-macos:
+  tags:
+    - macos
   script:
     - nix-build
 
-kadena-linux:
+pact-linux:
+  tags:
+    - linux
   script:
-    - nix-build --argstr system x86_64-linux
+    - nix-build

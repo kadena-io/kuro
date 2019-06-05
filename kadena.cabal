@@ -167,7 +167,7 @@ library
                      , mtl-compat
                      , mysql >= 0.1 && < 0.2
                      , network
-                     , pact == 2.6.*
+                     , pact == 2.7.*
                      , pact-persist == 1.0.*
                      , parallel
                      , parsers
@@ -175,7 +175,6 @@ library
                      , primitive
                      , process
                      , random
-                     , ridley
                      , safe
                      , safe-exceptions >= 0.1.4.0
                      , semigroups
@@ -193,7 +192,7 @@ library
                      , unordered-containers
                      , utf8-string >= 1.0.1.1
                      , vector >= 0.11.0.0
-                     , vector-space >= 0.10.4 && < 0.14
+                     , vector-space >= 0.10.4 && < 0.16
                      , wreq
                      , yaml
                      , zeromq4-haskell >= 0.6.3

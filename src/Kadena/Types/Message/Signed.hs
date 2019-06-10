@@ -1,5 +1,7 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
 
@@ -28,6 +30,8 @@ import GHC.Generics
 import Kadena.Types.Base
 import Kadena.Types.KeySet
 
+import Pact.Types.Scheme (PPKScheme(..), SPPKScheme)
+
 -- | One way or another we need a way to figure our what set of public keys to use for verification of signatures.
 -- By placing the message type in the digest, we can make the WireFormat implementation easier as well. CMD and REV
 -- need to use the Client Public Key maps.
@@ -38,8 +42,8 @@ instance Serialize MsgType
 -- | Digest containing Sender ID, Signature, Sender's Public Key and the message type
 data Digest = Digest
   { _digNodeId :: !Alias
-  , _digSig    :: !Signature
-  , _digPubkey :: !PublicKey
+  , _digSig    :: !(Signature (SPPKScheme 'ED25519))
+  , _digPubkey :: !(PublicKey (SPPKScheme 'ED25519))
   , _digType   :: !MsgType
   , _digHash   :: !Hash
   } deriving (Show, Eq, Ord, Generic)
@@ -67,8 +71,8 @@ data SignedRPC = SignedRPC
   } deriving (Show, Eq, Generic)
 instance Serialize SignedRPC
 
-class WireFormat a where
-  toWire   :: NodeId -> PublicKey -> PrivateKey -> a -> SignedRPC
+class WireFormat a s where
+  toWire   :: NodeId -> PublicKey s -> PrivateKey s -> a -> SignedRPC
   fromWire :: Maybe ReceivedAt -> KeySet -> SignedRPC -> Either String a
 
 newtype DeserializationError = DeserializationError String deriving (Show, Eq, Typeable)

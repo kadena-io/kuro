@@ -167,7 +167,7 @@ library
                      , mtl-compat
                      , mysql >= 0.1 && < 0.2
                      , network
-                     , pact == 2.7.*
+                     , pact == 3.0.*
                      , pact-persist == 1.0.*
                      , parallel
                      , parsers

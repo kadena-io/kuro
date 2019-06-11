@@ -1,7 +1,10 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
 
@@ -71,33 +74,33 @@ data SignedRPC = SignedRPC
   } deriving (Show, Eq, Generic)
 instance Serialize SignedRPC
 
-class WireFormat a s where
+class WireFormat a s | a -> s where
   toWire   :: NodeId -> PublicKey s -> PrivateKey s -> a -> SignedRPC
-  fromWire :: Maybe ReceivedAt -> KeySet -> SignedRPC -> Either String a
+  fromWire :: Maybe ReceivedAt -> KeySet s -> SignedRPC -> Either String a
 
 newtype DeserializationError = DeserializationError String deriving (Show, Eq, Typeable)
 
 instance Exception DeserializationError
 
 -- | Based on the MsgType in the SignedRPC's Digest, choose the keySet to try to find the key in
-pickKey :: KeySet -> SignedRPC -> Either String PublicKey
-pickKey !KeySet{..} s@(SignedRPC !Digest{..} _) =
+pickKey :: KeySet s -> SignedRPC -> Either String (PublicKey s)
+pickKey !KeySet{..} sRpc@(SignedRPC !Digest{..} _) =
   case Map.lookup _digNodeId _ksCluster of
     Nothing -> Left $! "PubKey not found for NodeId: " ++ show _digNodeId
     Just !key
-      | key /= _digPubkey -> Left $! "Public key in storage doesn't match digest's key for msg: " ++ show s
+      | key /= _digPubkey -> Left $! "Public key in storage doesn't match digest's key for msg: " ++ show sRpc
       | otherwise -> Right $! key
 {-# INLINE pickKey #-}
 
-verifySignedRPC :: KeySet -> SignedRPC -> Either String ()
+verifySignedRPC :: KeySet s -> SignedRPC -> Either String ()
 verifySignedRPC ks s = pickKey ks s >>= rehashAndVerify s
 {-# INLINE verifySignedRPC #-}
 
-verifySignedRPCNoReHash :: KeySet -> SignedRPC -> Either String ()
+verifySignedRPCNoReHash :: KeySet s -> SignedRPC -> Either String ()
 verifySignedRPCNoReHash ks s = pickKey ks s >>= verifyNoHash s
 {-# INLINE verifySignedRPCNoReHash #-}
 
-rehashAndVerify :: SignedRPC -> PublicKey -> Either String ()
+rehashAndVerify :: SignedRPC -> PublicKey s -> Either String ()
 rehashAndVerify s@(SignedRPC !Digest{..} !bdy) !key = runEval $ do
   h <- rpar $ hash bdy
   c <- rpar $ valid _digHash key _digSig
@@ -114,7 +117,7 @@ rehashAndVerify s@(SignedRPC !Digest{..} !bdy) !key = runEval $ do
     else return $! Right ()
 {-# INLINE rehashAndVerify #-}
 
-verifyNoHash :: SignedRPC -> PublicKey -> Either String ()
+verifyNoHash :: SignedRPC -> PublicKey s -> Either String ()
 verifyNoHash s@(SignedRPC !Digest{..} _) key =
   if not $ valid _digHash key _digSig
   then Left $! "Unable to verify SignedRPC sig: " ++ show s

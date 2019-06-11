@@ -5,16 +5,17 @@ module Kadena.Types.KeySet
  ) where
 
 import Control.Lens (makeLenses)
-import qualified Crypto.Ed25519.Pure as Ed (PublicKey)
 import Data.Default
 import Data.Map (Map)
 import qualified Data.Map as Map
 
+import qualified Pact.Types.Crypto as P (PublicKey)
+
 import Kadena.Types.Base (Alias)
 
-data KeySet = KeySet
-  { _ksCluster :: !(Map Alias Ed.PublicKey)
-  } deriving (Show, Eq, Ord)
+data KeySet s = KeySet
+  { _ksCluster :: !(Map Alias (P.PublicKey s))
+  }
 makeLenses ''KeySet
-instance Default KeySet where
+instance Default (KeySet a) where
   def = KeySet Map.empty

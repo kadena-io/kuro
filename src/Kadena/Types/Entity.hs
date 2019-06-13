@@ -1,8 +1,11 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE UndecidableInstances #-}
+
 module Kadena.Types.Entity
   ( EntityKeyPair(..)
   , toKeyPair, genKeyPair
@@ -83,27 +86,28 @@ instance Show EntityRemote where
 instance ToJSON EntityRemote where toJSON = lensyToJSON 3
 instance FromJSON EntityRemote where parseJSON = lensyParseJSON 3
 
-newtype Signer = Signer { signer :: (Signing.PPKScheme, Signing.PrivateKey, Signing.PublicKey) }
-  deriving (Show,Generic)
-instance ToJSON Signer where
+newtype Signer s = Signer { signer :: (Signing.PPKScheme, Signing.PrivateKey s, Signing.PublicKey s) }
+  deriving (Generic)
+instance (Show s) => Show (Signer s)
+instance (ToJSON (Signing.PrivateKey s), ToJSON (Signing.PublicKey s)) => ToJSON (Signer s) where
   toJSON (Signer (_sc,priv,pub)) = object [
     "private" .= priv
     , "public" .= pub
     ]
-instance FromJSON Signer where
+instance (FromJSON (Signing.PrivateKey s), FromJSON (Signing.PublicKey s)) => FromJSON (Signer s) where
   parseJSON = withObject "Signer" $ \o ->
     Signer <$>
       ((,,) <$> pure Signing.ED25519 <*> o .: "private" <*> o .: "public")
 
 
-data EntityConfig = EntityConfig
+data EntityConfig s = EntityConfig
   { _ecLocal :: EntityLocal
   , _ecRemotes :: [EntityRemote]
   , _ecSending :: Bool
-  , _ecSigner :: Signer
+  , _ecSigner :: Signer s
   } deriving (Show,Generic)
-instance ToJSON EntityConfig where toJSON = lensyToJSON 3
-instance FromJSON EntityConfig where parseJSON = lensyParseJSON 3
+instance ToJSON (EntityConfig s) where toJSON = lensyToJSON 3
+instance FromJSON (EntityConfig s) where parseJSON = lensyParseJSON 3
 makeLenses ''EntityConfig
 
 genKeyPair :: DH c => IO (EntityKeyPair c)

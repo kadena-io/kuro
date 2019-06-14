@@ -106,8 +106,8 @@ data EntityConfig s = EntityConfig
   , _ecSending :: Bool
   , _ecSigner :: Signer s
   } deriving (Show,Generic)
-instance ToJSON (EntityConfig s) where toJSON = lensyToJSON 3
-instance FromJSON (EntityConfig s) where parseJSON = lensyParseJSON 3
+instance ToJSON (Signer s) => ToJSON (EntityConfig s) where toJSON = lensyToJSON 3
+instance FromJSON (Signer s) => FromJSON (EntityConfig s) where parseJSON = lensyParseJSON 3
 makeLenses ''EntityConfig
 
 genKeyPair :: DH c => IO (EntityKeyPair c)

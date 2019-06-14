@@ -29,13 +29,15 @@ import qualified Data.Serialize as S
 import Data.Thyme.Time.Core ()
 import GHC.Generics
 
+import Pact.Types.Hash
+
 import Kadena.Types.Base
 import Kadena.Types.KeySet
 import Kadena.Types.Message.Signed
 
 data HeardFromLeader = HeardFromLeader
   { _hflLeaderId :: !NodeId
-  , _hflYourRvSig :: !Signature
+  , _hflYourRvSig :: !MsgSignature
   , _hflLastLogIndex :: !LogIndex
   , _hflLastLogTerm :: !Term
   } deriving (Show, Eq, Ord, Generic, Serialize)
@@ -59,8 +61,8 @@ instance Serialize RVRWire
 instance WireFormat RequestVoteResponse where
   toWire nid pubKey privKey RequestVoteResponse{..} = case _rvrProvenance of
     NewMsg -> let bdy = S.encode $ RVRWire (_rvrTerm,_rvrHeardFromLeader,_rvrNodeId,_voteGranted,_rvrCandidateId)
-                  hsh = hash bdy
-                  sig = sign hsh privKey pubKey
+                  hsh = pactHash bdy
+                  sig = msgSign hsh privKey pubKey
                   dig = Digest (_alias nid) sig pubKey RVR hsh
               in SignedRPC dig bdy
     ReceivedMsg{..} -> SignedRPC _pDig _pOrig
@@ -85,7 +87,7 @@ toSetRvr eRvrs = go eRvrs Set.empty
 
 -- the expected behavior here is tricky. For a set of votes, we are actually okay if some are invalid so long as there's a quorum
 -- however while we're still in alpha I think these failures represent a bug. Hence, they should be raised asap.
-decodeRVRWire :: Maybe ReceivedAt -> KeySet -> [SignedRPC] -> Either String (Set RequestVoteResponse)
+decodeRVRWire :: Maybe ReceivedAt -> MsgKeySet -> [SignedRPC] -> Either String (Set RequestVoteResponse)
 decodeRVRWire ts ks votes' = go votes' Set.empty
   where
     go [] s = Right $! s

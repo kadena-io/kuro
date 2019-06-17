@@ -42,6 +42,8 @@ import Kadena.Types.Evidence
 import Kadena.Types.Event (ResetLeaderNoFollowersTimeout)
 import Kadena.Util.Util
 
+import Pact.Types.Hash
+
 data EvidenceEnv = EvidenceEnv
   { _logService :: !LogServiceChannel
   , _evidence :: !EvidenceChannel
@@ -94,8 +96,8 @@ initEvidenceState clusterMembers' commidIndex' maxElectionTimeout' = EvidenceSta
   , _esCacheMissAers = Set.empty
   , _esMismatchNodes = Set.empty
   , _esResetLeaderNoFollowers = False
-  , _esHashAtCommitIndex = initialHash
-  , _esEvidenceCache = Map.singleton startIndex initialHash
+  , _esHashAtCommitIndex = pactInitialHash
+  , _esEvidenceCache = Map.singleton startIndex pactInitialHash
   , _esMaxElectionTimeout = maxElectionTimeout'
   }
 

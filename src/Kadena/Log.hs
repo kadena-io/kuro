@@ -7,7 +7,7 @@
 
 module Kadena.Log
   ( lesCnt, lesMinEntry, lesMaxEntry, lesMinIndex, lesMaxIndex, lesNull
-  , checkLogEntries, lesGetSection  
+  , checkLogEntries, lesGetSection
   , lesUnion, lesUnions, lesLookupEntry, lesUpdateCmdLat
   , plesCnt, plesMinEntry, plesMaxEntry, plesMinIndex, plesMaxIndex, plesNull, plesGetSection
   , plesAddNew, plesLookupEntry, plesTakeTopEntries
@@ -37,6 +37,7 @@ import Kadena.Types.Base
 import Kadena.Command
 import Kadena.Types.Command
 import Kadena.Types.Log
+import Pact.Types.Hash
 
 preprocLogEntry :: LogEntry -> IO (LogEntry, Maybe RunPreProc)
 preprocLogEntry le@LogEntry{..} = do
@@ -236,9 +237,9 @@ encodeLEWire les =
 -- TODO: This uses the old decode encode trick and should be changed...
 hashLogEntry :: Maybe Hash -> LogEntry -> LogEntry
 hashLogEntry (Just prevHash) le@LogEntry{..} =
-  le { _leHash = hash (encode $ (_leTerm, _leLogIndex, getCmdBodyHash _leCommand, prevHash))}
+  le { _leHash = pactHash (encode $ (_leTerm, _leLogIndex, getCmdBodyHash _leCommand, prevHash))}
 hashLogEntry Nothing le@LogEntry{..} =
-  le { _leHash = hash (encode $ (_leTerm, _leLogIndex, getCmdBodyHash _leCommand, initialHash))}
+  le { _leHash = pactHash (encode $ (_leTerm, _leLogIndex, getCmdBodyHash _leCommand, pactInitialHash))}
 {-# INLINE hashLogEntry #-}
 
 toReplicateLogEntries :: LogIndex -> LogEntries -> Either String ReplicateLogEntries

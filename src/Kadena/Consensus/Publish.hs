@@ -59,10 +59,10 @@ pactTextToCMDWire :: Pact.Command Text -> CMDWire
 pactTextToCMDWire cmd = pactBSToCMDWire (encodeUtf8 <$> cmd)
 
 buildCmdRpc :: Pact.Command Text -> (RequestKey,CMDWire)
-buildCmdRpc c@Pact.Command{..} = (RequestKey _cmdHash, pactTextToCMDWire c)
+buildCmdRpc c@Pact.Command{..} = (Pact.cmdToRequestKey c, pactTextToCMDWire c)
 
 buildCmdRpcBS :: Pact.Command ByteString -> (RequestKey,CMDWire)
-buildCmdRpcBS c@Pact.Command{..} = (RequestKey _cmdHash, pactBSToCMDWire c)
+buildCmdRpcBS c@Pact.Command{..} = (Pact.cmdToRequestKey c, pactBSToCMDWire c)
 
 -- TODO: Try to implment ClusterChangeCommand as Pact.Command ClusterChangeCommand.  If possible,
 -- this can be removed in favor of using Pact's buildCmdRpc

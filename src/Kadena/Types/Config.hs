@@ -8,7 +8,6 @@ module Kadena.Types.Config
   ( ConfigUpdater(..)
   , DiffNodes(..)
   , GlobalConfigTMVar
-  , KeyPair(..)
   ) where
 
 import Data.Aeson (ToJSON, FromJSON)
@@ -18,10 +17,11 @@ import Data.Set (Set)
 import Data.Thyme.Time.Core ()
 import GHC.Generics
 
+import Pact.Types.Util
+
 import Kadena.Types.Base
 import Kadena.Config.TMVar
-
-import Pact.Types.Util
+import Kadena.Types.Message.Signed
 
 data ConfigUpdater = ConfigUpdater
   { _cuPrintFn :: !(String -> IO ())
@@ -33,35 +33,14 @@ data DiffNodes = DiffNodes
   , nodesToRemove :: !(Set NodeId)
   } deriving (Show,Eq,Ord,Generic)
 
-data KeyPair = KeyPair
-  { _kpPublicKey :: PublicKey
-  , _kpPrivateKey :: PrivateKey
-  } deriving (Show, Eq, Generic)
-instance ToJSON KeyPair where
-  toJSON = lensyToJSON 3
-instance FromJSON KeyPair where
-  parseJSON = lensyParseJSON 3
-
--- Not implemented
-data NodeUpdateCommand =
-    NodeToPassive
-      { _nucNodeId :: !NodeId } |
-    NodeToActive
-      { _nucNodeId :: !NodeId } |
-    UpdateNodeKey
-      { _nucAlias :: !Alias
-      , _nucPublicKey :: !PublicKey
-      , _nucKeyPairPath :: !FilePath }
-    deriving (Show, Eq, Ord, Generic, Serialize)
-
 -- Not implemented
 data AdminUpdateCommand =
     AddAdminKey
       { _aucAlias :: !Alias
-      , _cucPublicKey :: !PublicKey } |
+      , _cucPublicKey :: !MsgPublicKey } |
     UpdateAdminKey
       { _aucAlias :: !Alias
-      , _cucPublicKey :: !PublicKey } |
+      , _cucPublicKey :: !MsgPublicKey } |
     RemoveAdminKey
       { _aucAlias :: !Alias }
     deriving (Show, Eq, Ord, Generic, Serialize)
@@ -71,12 +50,3 @@ data AdminCommand =
     RotateLeader
       { _cucTerm :: !Term }
     deriving (Show, Eq, Ord, Generic, Serialize)
-
-
-
-
-
-
-
-
-

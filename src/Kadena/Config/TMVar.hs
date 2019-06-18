@@ -1,5 +1,8 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Kadena.Config.TMVar
   ( Config(..), clusterMembers, nodeId, publicKeys, adminKeys, myPrivateKey, myPublicKey
@@ -15,30 +18,36 @@ module Kadena.Config.TMVar
 
 import Control.Concurrent.STM
 import Control.Lens (makeLenses)
+
+import qualified Crypto.Ed25519.Pure as Ed25519
 import Data.Aeson
 import Data.Map (Map)
 import Data.Set (Set)
 import GHC.Generics
 
+import Pact.Types.Crypto
+import Pact.Types.Logger hiding (logRules)
+import Pact.Types.Scheme
+import Pact.Types.Util
+
 import qualified Kadena.Config.ClusterMembership as CM
 import Kadena.Types.PactDB
 import Kadena.Types.Base
 import Kadena.Types.Entity
-import Pact.Types.Logger hiding (logRules)
-import Pact.Types.Util
+import  Kadena.Types.Message.Signed
 
-data Config = Config
+data Config' s = Config'
   { _clusterMembers       :: !CM.ClusterMembership
   , _nodeId               :: !NodeId
-  , _publicKeys           :: !(Map Alias PublicKey)
-  , _adminKeys            :: !(Map Alias PublicKey)
-  , _myPrivateKey         :: !PrivateKey
-  , _myPublicKey          :: !PublicKey
+  , _publicKeys           :: !(Map Alias (PublicKey s))
+  , _adminKeys            :: !(Map Alias (PublicKey s))
+  , _myPrivateKey         :: !(PrivateKey s)
+  , _myPublicKey          :: !(PublicKey s)
   , _electionTimeoutRange :: !(Int,Int)
   , _heartbeatTimeout     :: !Int
   , _enableDebug          :: !Bool
   , _apiPort              :: !Int
-  , _entity               :: !EntityConfig
+  , _entity               :: !(EntityConfig' s)
   , _logDir               :: !FilePath
   , _enablePersistence    :: !Bool
   , _pactPersist          :: !PactPersistConfig
@@ -51,13 +60,18 @@ data Config = Config
   , _logRules             :: !LogRules
   , _enableDiagnostics    :: !(Maybe Bool)
   }
-  deriving (Show, Generic)
-makeLenses ''Config
-instance ToJSON Config where
+  deriving (Generic)
+makeLenses ''Config'
+
+instance (Scheme s, Show (EntityConfig' s)) => Show (Config' s)
+
+instance (Scheme s, ToJSON (PublicKey s), ToJSON (PrivateKey s), ToJSON (EntityConfig' s)) => ToJSON (Config' s) where
   toJSON = lensyToJSON 1
-instance FromJSON Config where
+
+instance (Scheme s, FromJSON (PublicKey s), FromJSON (PrivateKey s), FromJSON (EntityConfig' s)) => FromJSON (Config' s) where
   parseJSON = lensyParseJSON 1
 
+type Config = Config' (SPPKScheme 'ED25519)
 
 data GlobalConfig = GlobalConfig
   { _gcVersion :: !ConfigVersion

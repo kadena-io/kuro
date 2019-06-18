@@ -24,6 +24,8 @@ module Kadena.Types.Message.Signed
   , WireFormat(..)
   , DeserializationError(..)
   , MsgKeySet(..)
+  , MsgPrivateKey(..)
+  , MsgPublicKey(..)
   , msgSign
   , MsgSignature
   ) where
@@ -65,6 +67,7 @@ type MsgSignature = Signature ConsensusScheme
 type MsgPublicKey = PublicKey ConsensusScheme
 type MsgPrivateKey = PrivateKey ConsensusScheme
 type MsgKeySet = KeySet ConsensusScheme
+type MsgKeyPair = KeyPair ConsensusScheme
 
 msgValid :: Hash -> MsgPublicKey -> MsgSignature -> Bool
 msgValid (Hash msg) pub sig = Ed25519.valid msg pub sig

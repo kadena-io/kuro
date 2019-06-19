@@ -54,6 +54,7 @@ library
                      , Kadena.Consensus.Publish
                      , Kadena.Consensus.Service
                      , Kadena.Consensus.Util
+                     , Kadena.Crypto
                      , Kadena.Event
                      , Kadena.Evidence.Service
                      , Kadena.Evidence.Spec
@@ -96,7 +97,6 @@ library
                      , Kadena.Types.Evidence
                      , Kadena.Types.Execution
                      , Kadena.Types.History
-                     , Kadena.Types.KeySet
                      , Kadena.Types.Log
                      , Kadena.Types.Message
                      , Kadena.Types.Message.AE

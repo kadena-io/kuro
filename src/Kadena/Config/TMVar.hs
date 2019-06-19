@@ -25,29 +25,28 @@ import Data.Map (Map)
 import Data.Set (Set)
 import GHC.Generics
 
-import Pact.Types.Crypto
 import Pact.Types.Logger hiding (logRules)
-import Pact.Types.Scheme
 import Pact.Types.Util
 
 import qualified Kadena.Config.ClusterMembership as CM
+import Kadena.Crypto
 import Kadena.Types.PactDB
 import Kadena.Types.Base
 import Kadena.Types.Entity
 import  Kadena.Types.Message.Signed
 
-data Config' s = Config'
+data Config = Config
   { _clusterMembers       :: !CM.ClusterMembership
   , _nodeId               :: !NodeId
-  , _publicKeys           :: !(Map Alias (PublicKey s))
-  , _adminKeys            :: !(Map Alias (PublicKey s))
-  , _myPrivateKey         :: !(PrivateKey s)
-  , _myPublicKey          :: !(PublicKey s)
+  , _publicKeys           :: !(Map Alias Ed25519.PublicKey)
+  , _adminKeys            :: !(Map Alias Ed25519.PublicKey)
+  , _myPrivateKey         :: !Ed25519.PrivateKey
+  , _myPublicKey          :: !Ed25519.PublicKey
   , _electionTimeoutRange :: !(Int,Int)
   , _heartbeatTimeout     :: !Int
   , _enableDebug          :: !Bool
   , _apiPort              :: !Int
-  , _entity               :: !(EntityConfig' s)
+  , _entity               :: !EntityConfig
   , _logDir               :: !FilePath
   , _enablePersistence    :: !Bool
   , _pactPersist          :: !PactPersistConfig
@@ -60,18 +59,14 @@ data Config' s = Config'
   , _logRules             :: !LogRules
   , _enableDiagnostics    :: !(Maybe Bool)
   }
-  deriving (Generic)
-makeLenses ''Config'
+  deriving (Show, Generic)
+makeLenses ''Config
 
-instance (Scheme s, Show (EntityConfig' s)) => Show (Config' s)
-
-instance (Scheme s, ToJSON (PublicKey s), ToJSON (PrivateKey s), ToJSON (EntityConfig' s)) => ToJSON (Config' s) where
+instance ToJSON Config where
   toJSON = lensyToJSON 1
 
-instance (Scheme s, FromJSON (PublicKey s), FromJSON (PrivateKey s), FromJSON (EntityConfig' s)) => FromJSON (Config' s) where
+instance FromJSON Config where
   parseJSON = lensyParseJSON 1
-
-type Config = Config' (SPPKScheme 'ED25519)
 
 data GlobalConfig = GlobalConfig
   { _gcVersion :: !ConfigVersion

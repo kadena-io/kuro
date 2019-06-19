@@ -15,25 +15,20 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 module Kadena.Types.Message.Signed
-  ( MsgType(..)
-  , Provenance(..), pDig, pOrig, pTimeStamp
+  ( Provenance(..), pDig, pOrig, pTimeStamp
   , Digest(..), digNodeId, digSig, digPubkey, digType, digHash
   , SignedRPC(..)
   -- for testing & benchmarks
   , verifySignedRPC, verifySignedRPCNoReHash
   , WireFormat(..)
   , DeserializationError(..)
-  , MsgKeySet(..)
-  , MsgPrivateKey(..)
-  , MsgPublicKey(..)
-  , msgSign
-  , MsgSignature
   ) where
 
 import Control.Exception
 import Control.Lens hiding (Index)
 import Control.Parallel.Strategies
--- import qualified Crypto.PubKey.Ed25519 as Ed25519
+
+import qualified Crypto.Ed25519.Pure as Ed25519
 
 import qualified Data.Map as Map
 import Data.ByteArray (convert)
@@ -45,15 +40,11 @@ import qualified Data.Serialize as S
 import Data.Thyme.Time.Core ()
 import Data.Typeable
 import GHC.Generics
-import qualified Crypto.Ed25519.Pure as Ed25519
 
+import Kadena.Crypto
 import Kadena.Types.Base
-import Kadena.Types.KeySet
 
-import qualified Pact.Types.Crypto as PCrypto (PublicKey, PrivateKey, Signature)
-import Pact.Types.Crypto
 import Pact.Types.Hash
-import Pact.Types.Scheme (PPKScheme(..), SPPKScheme)
 
 -- | One way or another we need a way to figure our what set of public keys to use for verification
 --   of signatures. By placing the message type in the digest, we can make the WireFormat
@@ -62,31 +53,14 @@ data MsgType = AE | AER | RV | RVR | NEW
   deriving (Show, Eq, Ord, Generic)
 instance Serialize MsgType
 
-type ConsensusScheme = SPPKScheme 'ED25519
-type MsgSignature = Signature ConsensusScheme
-type MsgPublicKey = PublicKey ConsensusScheme
-type MsgPrivateKey = PrivateKey ConsensusScheme
-type MsgKeySet = KeySet ConsensusScheme
-type MsgKeyPair = KeyPair ConsensusScheme
-
-msgValid :: Hash -> MsgPublicKey -> MsgSignature -> Bool
-msgValid (Hash msg) pub sig = Ed25519.valid msg pub sig
-
-msgSign :: Hash -> MsgPrivateKey -> MsgPublicKey -> MsgSignature
-msgSign (Hash msg) priv pub = Ed25519.sign msg priv pub
-
 data Digest = Digest
   { _digNodeId :: !Alias
-  , _digSig    :: !MsgSignature
-  , _digPubkey :: !MsgPublicKey
+  , _digSig    :: !Ed25519.Signature
+  , _digPubkey :: !Ed25519.PublicKey
   , _digType   :: !MsgType
   , _digHash   :: !Hash
   } deriving (Show, Eq, Ord, Serialize, Generic)
 makeLenses ''Digest
-
--- type ShowScheme a = (Show a, Show (Signature a), Show (PublicKey a), Show (PrivateKey a))
--- ^ all the Show constraints to avoid repeating the gigantic signature...
--- instance ShowScheme a => Show (Digest a)
 
 -- | Provenance is used to track if we made the message or received it. This is important for
 --   re-transmission.
@@ -109,15 +83,15 @@ data SignedRPC = SignedRPC
   } deriving (Show, Serialize, Generic)
 
 class WireFormat a where
-  toWire   :: NodeId -> MsgPublicKey -> MsgPrivateKey -> a -> SignedRPC
-  fromWire :: Maybe ReceivedAt -> MsgKeySet -> SignedRPC -> Either String a
+  toWire   :: NodeId -> Ed25519.PublicKey -> Ed25519.PrivateKey -> a -> SignedRPC
+  fromWire :: Maybe ReceivedAt -> KeySet -> SignedRPC -> Either String a
 
 newtype DeserializationError = DeserializationError String deriving (Show, Eq, Typeable)
 
 instance Exception DeserializationError
 
 -- | Based on the MsgType in the SignedRPC's Digest, choose the keySet to try to find the key in
-pickKey :: MsgKeySet -> SignedRPC -> Either String MsgPublicKey
+pickKey :: KeySet -> SignedRPC -> Either String Ed25519.PublicKey
 pickKey !KeySet{..} sRpc@(SignedRPC !Digest{..} _) =
   case Map.lookup _digNodeId _ksCluster of
     Nothing -> Left $! "PubKey not found for NodeId: " ++ show _digNodeId
@@ -127,18 +101,18 @@ pickKey !KeySet{..} sRpc@(SignedRPC !Digest{..} _) =
       | otherwise -> Right $! key
 {-# INLINE pickKey #-}
 
-verifySignedRPC :: MsgKeySet -> SignedRPC -> Either String ()
+verifySignedRPC :: KeySet -> SignedRPC -> Either String ()
 verifySignedRPC ks signed = pickKey ks signed >>= rehashAndVerify signed
 {-# INLINE verifySignedRPC #-}
 
-verifySignedRPCNoReHash :: MsgKeySet -> SignedRPC -> Either String ()
+verifySignedRPCNoReHash :: KeySet -> SignedRPC -> Either String ()
 verifySignedRPCNoReHash ks s = pickKey ks s >>= verifyNoHash s
 {-# INLINE verifySignedRPCNoReHash #-}
 
-rehashAndVerify :: SignedRPC -> MsgPublicKey -> Either String ()
+rehashAndVerify :: SignedRPC -> Ed25519.PublicKey -> Either String ()
 rehashAndVerify s@(SignedRPC !Digest{..} !bdy) !key = runEval $ do
   h <- rpar $ pactHash bdy
-  c <- rpar $ msgValid _digHash key _digSig
+  c <- rpar $ valid _digHash key _digSig
 
   hashRes <- rseq h
   if hashRes /= _digHash
@@ -153,9 +127,9 @@ rehashAndVerify s@(SignedRPC !Digest{..} !bdy) !key = runEval $ do
     else return $! Right ()
 {-# INLINE rehashAndVerify #-}
 
-verifyNoHash :: SignedRPC -> MsgPublicKey -> Either String ()
+verifyNoHash :: SignedRPC -> Ed25519.PublicKey -> Either String ()
 verifyNoHash s@(SignedRPC !Digest{..} _) key =
-  if not $ msgValid _digHash key _digSig
+  if not $ valid _digHash key _digSig
   then Left $! "Unable to verify SignedRPC sig: " ++ show s
   else Right ()
 {-# INLINE verifyNoHash #-}

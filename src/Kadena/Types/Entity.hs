@@ -11,6 +11,7 @@ module Kadena.Types.Entity
   ( EntityKeyPair(..)
   , toKeyPair, genKeyPair
   , EntityPublicKey(..)
+  , EntitySecretKey(..)
   , EntityLocal(..),elName,elStatic,elEphemeral,ecSigner
   , EntityRemote(..),erName,erStatic
   , EntityConfig(..),ecLocal,ecRemotes,ecSending
@@ -21,7 +22,6 @@ import Control.Lens (makeLenses)
 import Control.Monad (unless)
 import Crypto.Noise.DH (DH(..))
 import qualified Crypto.Noise.DH as Dh
-import Crypto.Noise.DH.Curve25519 (Curve25519)
 import qualified Crypto.Noise.DH.Curve25519 as Dh
 import Data.Aeson (ToJSON(..),FromJSON(..),object,(.=),withObject,(.:))
 import Data.ByteArray (convert)
@@ -32,7 +32,7 @@ import Pact.Types.Runtime (EntityName)
 import Pact.Types.Util (AsString(..),lensyToJSON,lensyParseJSON,toB16JSON,parseB16JSON,toB16Text)
 
 ----------------------------------------------------------------------------------------------------
-newtype EntityPublicKey = EntityPublicKey { epPublicKey :: Dh.PublicKey Curve25519 }
+newtype EntityPublicKey = EntityPublicKey { epPublicKey :: Dh.PublicKey Dh.Curve25519 }
 
 instance ToJSON EntityPublicKey  where
   toJSON (EntityPublicKey k) = toB16JSON . convert $ dhPubToBytes k
@@ -43,7 +43,7 @@ instance FromJSON EntityPublicKey where
     Just k -> return $ EntityPublicKey k
 
 ----------------------------------------------------------------------------------------------------
-newtype EntitySecretKey = EntitySecretKey { esSecretKey :: Dh.SecretKey Curve25519 }
+newtype EntitySecretKey = EntitySecretKey { esSecretKey :: Dh.SecretKey Dh.Curve25519 }
 
 ----------------------------------------------------------------------------------------------------
 data EntityKeyPair = EntityKeyPair
@@ -72,12 +72,12 @@ instance FromJSON EntityKeyPair where
         unless (p == convert (dhPubToBytes pk)) $ fail $ "Bad public key value: " ++ show o
         return $ EntityKeyPair (EntitySecretKey sk) (EntityPublicKey pk)
 
-toKeyPair :: EntityKeyPair -> Dh.KeyPair Curve25519
+toKeyPair :: EntityKeyPair -> Dh.KeyPair Dh.Curve25519
 toKeyPair EntityKeyPair{..} = (esSecretKey ekSecret, epPublicKey ekPublic)
 
 genKeyPair :: IO EntityKeyPair
 genKeyPair = do
-  (theSecretKey, thePublicKey) <- dhGenKey :: IO (Dh.SecretKey Curve25519, Dh.PublicKey Curve25519)
+  (theSecretKey, thePublicKey) <- dhGenKey :: IO (Dh.SecretKey Dh.Curve25519, Dh.PublicKey Dh.Curve25519)
   return EntityKeyPair
     { ekSecret = EntitySecretKey theSecretKey
     , ekPublic = EntityPublicKey thePublicKey

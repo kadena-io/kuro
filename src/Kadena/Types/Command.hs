@@ -47,11 +47,13 @@ import Data.Aeson
 import GHC.Generics
 import GHC.Int (Int64)
 
-import Kadena.Types.Base
+import Kadena.Crypto
+import Kadena.Types.Base (LogIndex, NodeId)
 import Kadena.Types.Private (PrivateCiphertext,PrivateResult)
 
 import qualified Pact.ApiReq as Pact
 import qualified Pact.Types.Command as Pact
+import qualified Pact.Types.Hash as Pact
 import qualified Pact.Types.RPC as Pact
 import Pact.Types.Util
 
@@ -114,7 +116,7 @@ instance FromJSON ClusterChangeInfo where
 
 data ConfigChangeApiReq = ConfigChangeApiReq
   { _ylccInfo :: ClusterChangeInfo
-  , _ylccKeyPairs :: ![Pact.KeyPair]
+  , _ylccKeyPairs :: ![KeyPair]
   , _ylccNonce :: Maybe String
   } deriving (Eq,Show,Generic)
 makeLenses ''ConfigChangeApiReq
@@ -133,7 +135,7 @@ instance FromJSON CCPayload where parseJSON = lensyParseJSON 4
 data ClusterChangeCommand a = ClusterChangeCommand
   { _cccPayload :: !a
   , _cccSigs :: ![Pact.UserSig]
-  , _cccHash :: !Hash
+  , _cccHash :: !Pact.PactHash
   } deriving (Eq,Show,Ord,Generic,Functor)
 makeLenses ''ClusterChangeCommand
 
@@ -160,7 +162,8 @@ data ProcessedClusterChg a =
   deriving (Show, Eq, Generic, Serialize)
 instance NFData a => NFData (ProcessedClusterChg a)
 
-type SCCPreProcResult = PendingResult (Pact.ProcessedCommand (Pact.PactRPC Pact.ParsedCode))
+-- TODO: use PrivateMeta instead of () ?
+type SCCPreProcResult = PendingResult (Pact.ProcessedCommand () (Pact.PactRPC Pact.ParsedCode))
 type CCCPreProcResult = PendingResult (ProcessedClusterChg CCPayload)
 
 data RunPreProc =
@@ -173,7 +176,8 @@ data RunPreProc =
 
 data FinishedPreProc =
   FinishedPreProcSCC
-    { _fppSccRes :: !(Pact.ProcessedCommand (Pact.PactRPC Pact.ParsedCode))
+    -- TODO: use PrivateMeta instead of () ?
+    { _fppSccRes :: !(Pact.ProcessedCommand () (Pact.PactRPC Pact.ParsedCode))
     , _fppSccMVar :: !(MVar SCCPreProcResult)} |
   FinishedPreProcCCC
     { _fppCccRes :: !(ProcessedClusterChg CCPayload)
@@ -189,7 +193,7 @@ instance NFData FinishedPreProc where
 
 data Hashed a = Hashed
   { _hValue :: !a
-  , _hHash :: !Hash
+  , _hHash :: !Pact.PactHash
   } deriving (Show,Eq,Generic)
 instance Serialize a => Serialize (Hashed a)
 instance NFData a => NFData (Hashed a)
@@ -197,7 +201,8 @@ instance NFData a => NFData (Hashed a)
 data Command =
   SmartContractCommand
   { _sccCmd :: !(Pact.Command ByteString)
-  , _sccPreProc :: !(Preprocessed (Pact.ProcessedCommand (Pact.PactRPC Pact.ParsedCode))) } |
+  -- TODO: use PrivateMeta instead of () ?
+  , _sccPreProc :: !(Preprocessed (Pact.ProcessedCommand () (Pact.PactRPC Pact.ParsedCode))) } |
   ConsensusChangeCommand
   { _cccCmd :: !(ClusterChangeCommand ByteString)
   , _cccPreProc :: !(Preprocessed (ProcessedClusterChg CCPayload))} |
@@ -215,7 +220,7 @@ data ClusterChangeResult =
   | ClusterChangeSuccess
   deriving (Show, Eq, Ord, Generic, ToJSON, FromJSON, Serialize)
 
-getCmdBodyHash :: Command -> Hash
+getCmdBodyHash :: Command -> Pact.PactHash
 getCmdBodyHash SmartContractCommand{ _sccCmd = Pact.Command{..}} = _cmdHash
 getCmdBodyHash ConsensusChangeCommand{ _cccCmd = ClusterChangeCommand{..}} = _cccHash
 getCmdBodyHash PrivateCommand { _pcCmd = Hashed{..}} = _hHash
@@ -248,18 +253,18 @@ instance FromJSON CmdResultLatencyMetrics where
 
 data CommandResult =
   SmartContractResult
-    { _crHash :: !Hash
-    , _scrResult :: !Pact.CommandResult
+    { _crHash :: !Pact.Hash
+    , _scrResult :: !(Pact.CommandResult Pact.Hash)
     , _crLogIndex :: !LogIndex
     , _crLatMetrics :: !(Maybe CmdResultLatencyMetrics) } |
    ConsensusChangeResult
-    { _crHash :: !Hash
+    { _crHash :: !Pact.Hash
     , _concrResult :: !ClusterChangeResult
     , _crLogIndex :: !LogIndex
     , _crLatMetrics :: !(Maybe CmdResultLatencyMetrics) } |
   PrivateCommandResult
-    { _crHash :: !Hash
-    , _pcrResult :: !(PrivateResult Pact.CommandResult)
+    { _crHash :: !Pact.Hash
+    , _pcrResult :: !(PrivateResult (Pact.CommandResult Pact.Hash))
     , _crLogIndex :: !LogIndex
     , _crLatMetrics :: !(Maybe CmdResultLatencyMetrics) }
   deriving (Show, Eq, Generic)

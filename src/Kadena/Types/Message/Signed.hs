@@ -81,7 +81,7 @@ makeLenses ''Provenance
 data SignedRPC = SignedRPC
   { _sigDigest :: !Digest
   , _sigBody   :: !ByteString
-  } deriving (Show, Serialize, Generic)
+  } deriving (Eq, Show, Serialize, Generic)
 
 class WireFormat a where
   toWire   :: NodeId -> Ed25519.PublicKey -> Ed25519.PrivateKey -> a -> SignedRPC

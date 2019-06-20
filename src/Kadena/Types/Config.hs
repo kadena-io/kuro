@@ -10,6 +10,7 @@ module Kadena.Types.Config
   , GlobalConfigTMVar
   ) where
 
+import qualified Crypto.Ed25519.Pure as Ed25519
 import Data.Aeson (ToJSON, FromJSON)
 import qualified Data.Aeson as A
 import Data.Serialize (Serialize)
@@ -37,10 +38,10 @@ data DiffNodes = DiffNodes
 data AdminUpdateCommand =
     AddAdminKey
       { _aucAlias :: !Alias
-      , _cucPublicKey :: !MsgPublicKey } |
+      , _cucPublicKey :: !Ed25519.PublicKey } |
     UpdateAdminKey
       { _aucAlias :: !Alias
-      , _cucPublicKey :: !MsgPublicKey } |
+      , _cucPublicKey :: !Ed25519.PublicKey } |
     RemoveAdminKey
       { _aucAlias :: !Alias }
     deriving (Show, Eq, Ord, Generic, Serialize)

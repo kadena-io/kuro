@@ -62,11 +62,15 @@ data Config = Config
   deriving (Show, Generic)
 makeLenses ''Config
 
+-- TODO: Fix this!
 instance ToJSON Config where
-  toJSON = lensyToJSON 1
+  -- toJSON = lensyToJSON 1
+  toJSON = undefined
 
+-- TODO: Fix this!
 instance FromJSON Config where
-  parseJSON = lensyParseJSON 1
+  -- parseJSON = lensyParseJSON 1
+  parseJSON = undefined
 
 data GlobalConfig = GlobalConfig
   { _gcVersion :: !ConfigVersion

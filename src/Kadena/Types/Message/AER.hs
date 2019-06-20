@@ -18,8 +18,8 @@ import GHC.Generics
 
 import Pact.Types.Hash
 
+import Kadena.Crypto
 import Kadena.Types.Base
-import Kadena.Types.KeySet
 import Kadena.Types.Message.Signed
 
 -- TODO: perhaps add leaderId into the AER's to protect against a possible attack vector of dual leaders where followers still come to consensus
@@ -58,7 +58,7 @@ instance WireFormat AppendEntriesResponse where
                                                , _aerIndex
                                                , _aerHash)
                   hsh = pactHash bdy
-                  sig = msgSign hsh privKey pubKey
+                  sig = sign hsh privKey pubKey
                   dig = Digest (_alias nid) sig pubKey AER hsh
               in SignedRPC dig bdy
     ReceivedMsg{..} -> SignedRPC _pDig _pOrig
@@ -77,7 +77,7 @@ aerDecodeNoVerify (ts, SignedRPC !dig !bdy) = case S.decode bdy of
   Left !err -> Left $! "Failure to decode AERWire: " ++ err
   Right (AERWire !(t,nid,s',c,i,h)) -> Right $! AppendEntriesResponse t nid s' c i h $ ReceivedMsg dig bdy $ Just ts
 
-aerReverify :: MsgKeySet -> AppendEntriesResponse -> Either String AppendEntriesResponse
+aerReverify :: KeySet -> AppendEntriesResponse -> Either String AppendEntriesResponse
 aerReverify ks aer = case _aerProvenance aer of
   NewMsg -> Right aer
   (ReceivedMsg !dig !bdy _) -> verifySignedRPC ks (SignedRPC dig bdy) >> return aer

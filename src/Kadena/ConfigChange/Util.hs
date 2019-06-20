@@ -4,23 +4,23 @@ module Kadena.ConfigChange.Util
   ( getMissingKeys
   ) where
 
+import qualified Crypto.Ed25519.Pure as Ed25519
 import qualified Data.Map as Map
 
 import Kadena.Config.TMVar
 import Kadena.Types.Base
 
 import Pact.Bench (eitherDie)
-import qualified Pact.Types.Command as P (UserSig)
+import qualified Pact.Types.Command as P (Payload(..))
 import Pact.Types.Command
 import qualified Pact.Types.Crypto as P (Scheme, PublicKey, PrivateKey, Signature)
 import qualified Pact.Types.Scheme as P (PPKScheme(..), SPPKScheme)
-import Pact.Types.Util (fromText')
+import Pact.Types.Util (toB16Text)
 
--- TODO: [UserSig] needs to become Payload...
-getMissingKeys :: P.Scheme s => s -> Config -> [UserSig] -> IO [Alias]
-getMissingKeys scheme cfg sigs = do
-  let textKeys = fmap _usPubKey sigs
-  pubKeys <- traverse (eitherDie . fromText') textKeys :: IO [P.PublicKey s]
+getMissingKeys :: Config -> Payload m c -> IO [Alias]
+getMissingKeys cfg payload = do
+  let  signerKeys = _siPubKey <$> _pSigners payload
   let filtered = filter f (Map.toList (_adminKeys cfg)) where
-        f (_, k) = notElem k pubKeys
+        f (_, k) = notElem (toTxt k) signerKeys
+        toTxt = toB16Text . Ed25519.exportPublic
   return $ fmap fst filtered

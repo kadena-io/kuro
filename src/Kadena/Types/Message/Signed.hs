@@ -17,6 +17,7 @@
 module Kadena.Types.Message.Signed
   ( Provenance(..), pDig, pOrig, pTimeStamp
   , Digest(..), digNodeId, digSig, digPubkey, digType, digHash
+  , MsgType(..)
   , SignedRPC(..)
   -- for testing & benchmarks
   , verifySignedRPC, verifySignedRPCNoReHash

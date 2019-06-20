@@ -15,6 +15,7 @@ import GHC.Generics
 
 import Pact.Types.Hash
 
+import Kadena.Crypto
 import Kadena.Types.Base
 import Kadena.Types.Message.Signed
 
@@ -39,7 +40,7 @@ instance WireFormat RequestVote where
                                           , _rvLastLogIndex
                                           , _rvLastLogTerm)
                   hsh = pactHash bdy
-                  sig = msgSign hsh privKey pubKey
+                  sig = sign hsh privKey pubKey
                   dig = Digest (_alias nid) sig pubKey RV hsh
               in SignedRPC dig bdy
     ReceivedMsg{..} -> SignedRPC _pDig _pOrig

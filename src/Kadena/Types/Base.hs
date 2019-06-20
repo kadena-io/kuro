@@ -12,7 +12,6 @@ module Kadena.Types.Base
   , ReceivedAt(..)
   -- for simplicity, re-export some core types that we need all over the place
   , parseB16JSON, toB16JSON, toB16Text, parseB16Text, failMaybe
-  , PublicKey, PrivateKey, Signature, sign
   , Role(..)
   , EncryptionKey(..)
   , Alias(..)
@@ -41,7 +40,6 @@ import GHC.Int (Int64)
 import GHC.Generics hiding (from)
 
 import Pact.Types.Orphans ()
-import Pact.Types.Crypto
 import Pact.Types.Util
 import Pact.Types.Command (RequestKey(..))
 import Pact.Types.Hash

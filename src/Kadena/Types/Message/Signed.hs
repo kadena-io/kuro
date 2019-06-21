@@ -32,12 +32,8 @@ import Control.Parallel.Strategies
 import qualified Crypto.Ed25519.Pure as Ed25519
 
 import qualified Data.Map as Map
-import Data.ByteArray (convert)
 import Data.ByteString (ByteString)
-import qualified Crypto.Error as E
-import qualified Data.ByteString as BS
 import Data.Serialize (Serialize)
-import qualified Data.Serialize as S
 import Data.Thyme.Time.Core ()
 import Data.Typeable
 import GHC.Generics

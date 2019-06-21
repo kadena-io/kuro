@@ -11,18 +11,13 @@ module Kadena.Types.Config
   ) where
 
 import qualified Crypto.Ed25519.Pure as Ed25519
-import Data.Aeson (ToJSON, FromJSON)
-import qualified Data.Aeson as A
 import Data.Serialize (Serialize)
 import Data.Set (Set)
 import Data.Thyme.Time.Core ()
 import GHC.Generics
 
-import Pact.Types.Util
-
 import Kadena.Types.Base
 import Kadena.Config.TMVar
-import Kadena.Types.Message.Signed
 
 data ConfigUpdater = ConfigUpdater
   { _cuPrintFn :: !(String -> IO ())

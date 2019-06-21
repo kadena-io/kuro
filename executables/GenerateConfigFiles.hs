@@ -38,7 +38,7 @@ import Kadena.Types.Entity
 import Apps.Kadena.Client hiding (main)
 
 import Pact.Types.SQLite
-import Pact.Types.Crypto
+import qualified Pact.Types.Crypto as Pact
 import Pact.Types.Logger
 
 

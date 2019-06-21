@@ -1,25 +1,30 @@
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module Kadena.Crypto
-  ( KeyPair(..)
+  ( KeyPair(..), kpPublicKey, kpPrivateKey
   , KeySet(..), ksCluster
   , sign
   , valid ) where
 
+import Control.DeepSeq
 import Control.Lens (makeLenses)
 import qualified Crypto.Ed25519.Pure as Ed25519
 import Data.Aeson
 import Data.Default
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Serialize (Serialize)
+import qualified Data.Serialize as S
+import Data.Text (Text)
 import GHC.Generics
 
 import qualified Pact.Types.Hash as P
-import Pact.Types.Util
+import Pact.Types.Util (ParseText(..), parseB16Text, toB16JSON)
 
-import Kadena.Types.Base (Alias)
+import Kadena.Types.Base (Alias, failMaybe)
 
 ----------------------------------------------------------------------------------------------------
 data KeyPair = KeyPair
@@ -35,8 +40,41 @@ instance ToJSON KeyPair where
 
 instance FromJSON KeyPair where
     parseJSON = withObject "KeyPair" $ \v -> KeyPair
-        <$> (Ed25519.importPublic toB16Text v) .: "publicKey"
-        <*> (Ed25519.importPrivate toB16Text v) .: "privateKey"
+        <$> v .: "publicKey"
+        <*> v .: "privateKey"
+
+
+-- TODO: move to Orphans module
+----------------------------------------------------------------------------------------------------
+instance ToJSON Ed25519.PublicKey where
+  toJSON = toB16JSON . Ed25519.exportPublic
+instance FromJSON Ed25519.PublicKey where
+  parseJSON = withText "Ed25519.PublicKey" parseText
+  {-# INLINE parseJSON #-}
+instance ParseText Ed25519.PublicKey where
+  parseText s = do
+    s' <- parseB16Text s
+    failMaybe ("Public key import failed: " ++ show s) $ Ed25519.importPublic s'
+  {-# INLINE parseText #-}
+-- instance Serialize Ed25519.PublicKey where
+--   put s = S.putByteString (Ed25519.exportPublic s)
+--   get = maybe (fail "Invalid PubKey") return =<< (Ed25519.importPublic <$> S.getByteString 32)
+instance Generic Ed25519.PublicKey
+----------------------------------------------------------------------------------------------------
+instance ToJSON Ed25519.PrivateKey where
+  toJSON = toB16JSON . Ed25519.exportPrivate
+instance FromJSON Ed25519.PrivateKey where
+  parseJSON = withText "Ed25519.PrivateKey" parseText
+  {-# INLINE parseJSON #-}
+instance ParseText Ed25519.PrivateKey where
+  parseText s = do
+    s' <- parseB16Text s
+    failMaybe ("Private key import failed: " ++ show s) $ Ed25519.importPrivate s'
+  {-# INLINE parseText #-}
+-- instance Serialize Ed25519.PrivateKey where
+--   put s = S.putByteString (Ed25519.exportPrivate s)
+--   get = maybe (fail "Invalid PubKey") return =<< (Ed25519.importPrivate <$> S.getByteString 32)
+instance Generic Ed25519.PrivateKey
 
 ----------------------------------------------------------------------------------------------------
 data KeySet = KeySet

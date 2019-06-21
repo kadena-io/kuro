@@ -10,21 +10,23 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString.Base16 as B16
 import qualified Data.Aeson as A
 import Data.String.Conv
-import qualified Crypto.Ed25519.Pure as Ed (PublicKey, Signature(..), importPublic)
+import qualified Crypto.Ed25519.Pure as Ed25519 (PublicKey, Signature(..), importPublic)
 
+import qualified Pact.Types.Command as P (UserSig(..))
+import qualified Pact.Types.Hash as P (hash, Hash(..))
+import Pact.Types.Hash (pactHash, PactHash)
+
+import Kadena.Crypto (valid, Signer(..))
 import Kadena.Types.Message.Signed (DeserializationError(..))
-  
-import Pact.Types.Command(UserSig(..))
-import Pact.Types.Util(Hash(..))
 import Kadena.Types.Command(CCPayload(..), ClusterChangeCommand(..), ProcessedClusterChg (..))
-import Pact.Types.Crypto (valid)
-import Pact.Types.Hash (hash)
 
 processClusterChange :: ClusterChangeCommand ByteString -> ProcessedClusterChg CCPayload
 processClusterChange cmd =
   let
-    hash' = hash $ _cccPayload cmd
-    boolSigs = fmap (validateSig hash') (_cccSigs cmd)
+    hash' = P.hash $ _cccPayload cmd
+    payload = _cccPayload $ decodeCCPayload cmd
+    sigZips = zip (_ccpSigners payload) (_cccSigs cmd)
+    boolSigs = fmap (validateSig hash') sigZips
     sigsValid = all (\(v,_,_) -> v) boolSigs :: Bool
     invalidSigs = filter (\(v,_,_) -> not v) boolSigs
   in if hash' /= (_cccHash cmd)
@@ -46,11 +48,11 @@ decodeCCPayload bsCmd =
                     , _cccSigs = _cccSigs bsCmd
                     , _cccHash = _cccHash bsCmd }
 
-validateSig :: Hash -> UserSig -> (Bool, Maybe Ed.PublicKey, Ed.Signature)
-validateSig h UserSig{..} =
-  let keyBytes = toS _usPubKey :: ByteString
-      keyMay = Ed.importPublic $ fst $ B16.decode keyBytes
+validateSig :: PactHash -> (Signer, P.UserSig) ->  (Bool, Maybe Ed25519.PublicKey, Ed25519.Signature)
+validateSig h payload userSig =
+  let keyBytes = toS (_usPubKey payload) :: ByteString
+      keyMay = Ed25519.importPublic $ fst $ B16.decode keyBytes
       sigBytes = toS _usSig :: ByteString
-      sig = Ed.Sig $ fst $ B16.decode sigBytes
+      sig = Ed25519.Sig $ fst $ B16.decode sigBytes
       b = maybe False (\k -> valid h k sig) keyMay
   in (b, keyMay, sig)

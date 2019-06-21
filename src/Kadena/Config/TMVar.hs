@@ -26,14 +26,11 @@ import Data.Set (Set)
 import GHC.Generics
 
 import Pact.Types.Logger hiding (logRules)
-import Pact.Types.Util
 
 import qualified Kadena.Config.ClusterMembership as CM
-import Kadena.Crypto
 import Kadena.Types.PactDB
 import Kadena.Types.Base
 import Kadena.Types.Entity
-import  Kadena.Types.Message.Signed
 
 data Config = Config
   { _clusterMembers       :: !CM.ClusterMembership

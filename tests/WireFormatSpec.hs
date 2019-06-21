@@ -17,7 +17,7 @@ import Kadena.Log
 import Kadena.Types
 import Kadena.Types.KeySet
 import qualified Pact.Types.Command as Pact
-import Pact.Types.Crypto
+import qualified Pact.Types.Crypto as Pact
 import Pact.Types.RPC
 
 spec :: Spec

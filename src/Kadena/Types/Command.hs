@@ -23,6 +23,7 @@ module Kadena.Types.Command
   , PendingResult(..)
   , ProcessedClusterChg (..)
   , SCCPreProcResult, CCCPreProcResult
+  , Signer(..), siPubKey, siAddress
   , CMDWire(..)
   , CommandResult(..), crHash, crLogIndex, crLatMetrics
   , scrResult, concrResult, pcrResult
@@ -38,6 +39,7 @@ module Kadena.Types.Command
 import Control.Lens (ASetter, makeLenses)
 import Control.Concurrent
 import Control.DeepSeq
+import qualified Crypto.Ed25519.Pure as Ed25519
 import Data.Serialize (Serialize)
 import Data.ByteString (ByteString)
 import Data.Text (Text)
@@ -126,11 +128,24 @@ instance FromJSON ConfigChangeApiReq where parseJSON = lensyParseJSON 5
 data CCPayload = CCPayload
   { _ccpInfo :: !ClusterChangeInfo
   , _ccpNonce :: !Text
-  } deriving (Show, Eq, Generic, Serialize)
+  , _ccpSigners :: [Signer]
+  } deriving (Show, Eq, Generic)
 
-instance NFData CCPayload
+instance Serialize CCPayload
+
 instance ToJSON CCPayload where toJSON = lensyToJSON 4
 instance FromJSON CCPayload where parseJSON = lensyParseJSON 4
+
+data Signer = Signer
+  { _siPubKey :: !Ed25519.PublicKey
+  , _siAddress :: Text }
+  deriving (Show, Eq, Generic)
+
+instance Serialize Signer
+instance ToJSON Signer where toJSON = lensyToJSON 3
+instance FromJSON Signer where parseJSON = lensyParseJSON 3
+
+makeLenses ''Signer
 
 data ClusterChangeCommand a = ClusterChangeCommand
   { _cccPayload :: !a

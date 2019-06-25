@@ -6,6 +6,7 @@
 module Kadena.Crypto
   ( KeyPair(..), kpPublicKey, kpPrivateKey
   , KeySet(..), ksCluster
+  , Signer(..), siPubKey, siAddress
   , sign
   , valid ) where
 
@@ -22,7 +23,7 @@ import Data.Text (Text)
 import GHC.Generics
 
 import qualified Pact.Types.Hash as P
-import Pact.Types.Util (ParseText(..), parseB16Text, toB16JSON)
+import Pact.Types.Util (lensyParseJSON, lensyToJSON, ParseText(..), parseB16Text, toB16JSON)
 
 import Kadena.Types.Base (Alias, failMaybe)
 
@@ -43,6 +44,22 @@ instance FromJSON KeyPair where
         <$> v .: "publicKey"
         <*> v .: "privateKey"
 
+----------------------------------------------------------------------------------------------------
+data Signer = Signer
+  { _siPubKey :: !Ed25519.PublicKey
+  , _siAddress :: Text }
+  deriving (Show, Eq, Generic)
+
+instance Serialize Signer
+instance ToJSON Signer where toJSON = lensyToJSON 3
+instance FromJSON Signer where parseJSON = lensyParseJSON 3
+
+-- Nothing really to do for Signer as NFData, but to convice the compiler:
+instance NFData Signer where
+  rnf (Signer _ _) = ()
+
+makeLenses ''Signer
+
 
 -- TODO: move to Orphans module
 ----------------------------------------------------------------------------------------------------
@@ -59,7 +76,7 @@ instance ParseText Ed25519.PublicKey where
 -- instance Serialize Ed25519.PublicKey where
 --   put s = S.putByteString (Ed25519.exportPublic s)
 --   get = maybe (fail "Invalid PubKey") return =<< (Ed25519.importPublic <$> S.getByteString 32)
-instance Generic Ed25519.PublicKey
+
 ----------------------------------------------------------------------------------------------------
 instance ToJSON Ed25519.PrivateKey where
   toJSON = toB16JSON . Ed25519.exportPrivate
@@ -74,7 +91,6 @@ instance ParseText Ed25519.PrivateKey where
 -- instance Serialize Ed25519.PrivateKey where
 --   put s = S.putByteString (Ed25519.exportPrivate s)
 --   get = maybe (fail "Invalid PubKey") return =<< (Ed25519.importPrivate <$> S.getByteString 32)
-instance Generic Ed25519.PrivateKey
 
 ----------------------------------------------------------------------------------------------------
 data KeySet = KeySet

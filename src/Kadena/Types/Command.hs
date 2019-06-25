@@ -23,7 +23,6 @@ module Kadena.Types.Command
   , PendingResult(..)
   , ProcessedClusterChg (..)
   , SCCPreProcResult, CCCPreProcResult
-  , Signer(..), siPubKey, siAddress
   , CMDWire(..)
   , CommandResult(..), crHash, crLogIndex, crLatMetrics
   , scrResult, concrResult, pcrResult
@@ -49,7 +48,7 @@ import Data.Aeson
 import GHC.Generics
 import GHC.Int (Int64)
 
-import Kadena.Crypto
+import qualified Kadena.Crypto as KC
 import Kadena.Types.Base (LogIndex, NodeId)
 import Kadena.Types.Private (PrivateCiphertext,PrivateResult)
 
@@ -118,7 +117,7 @@ instance FromJSON ClusterChangeInfo where
 
 data ConfigChangeApiReq = ConfigChangeApiReq
   { _ylccInfo :: ClusterChangeInfo
-  , _ylccKeyPairs :: ![KeyPair]
+  , _ylccKeyPairs :: ![KC.KeyPair]
   , _ylccNonce :: Maybe String
   } deriving (Eq,Show,Generic)
 makeLenses ''ConfigChangeApiReq
@@ -128,24 +127,14 @@ instance FromJSON ConfigChangeApiReq where parseJSON = lensyParseJSON 5
 data CCPayload = CCPayload
   { _ccpInfo :: !ClusterChangeInfo
   , _ccpNonce :: !Text
-  , _ccpSigners :: [Signer]
+  , _ccpSigners :: [KC.Signer]
   } deriving (Show, Eq, Generic)
 
+instance NFData CCPayload
 instance Serialize CCPayload
 
 instance ToJSON CCPayload where toJSON = lensyToJSON 4
 instance FromJSON CCPayload where parseJSON = lensyParseJSON 4
-
-data Signer = Signer
-  { _siPubKey :: !Ed25519.PublicKey
-  , _siAddress :: Text }
-  deriving (Show, Eq, Generic)
-
-instance Serialize Signer
-instance ToJSON Signer where toJSON = lensyToJSON 3
-instance FromJSON Signer where parseJSON = lensyParseJSON 3
-
-makeLenses ''Signer
 
 data ClusterChangeCommand a = ClusterChangeCommand
   { _cccPayload :: !a

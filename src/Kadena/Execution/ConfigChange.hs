@@ -9,14 +9,15 @@ import Control.Exception
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Base16 as B16
 import qualified Data.Aeson as A
-import Data.String.Conv
+import Data.String.Conv (toS)
+import Data.Text (Text)
 import qualified Crypto.Ed25519.Pure as Ed25519 (PublicKey, Signature(..), importPublic)
 
 import qualified Pact.Types.Command as P (UserSig(..))
 import qualified Pact.Types.Hash as P (hash, Hash(..))
-import Pact.Types.Hash (pactHash, PactHash)
+import Pact.Types.Hash (pactHash, PactHash, toUntypedHash)
 
-import Kadena.Crypto (valid, Signer(..))
+import Kadena.Crypto (Signer(..), valid)
 import Kadena.Types.Message.Signed (DeserializationError(..))
 import Kadena.Types.Command(CCPayload(..), ClusterChangeCommand(..), ProcessedClusterChg (..))
 
@@ -48,11 +49,16 @@ decodeCCPayload bsCmd =
                     , _cccSigs = _cccSigs bsCmd
                     , _cccHash = _cccHash bsCmd }
 
-validateSig :: PactHash -> (Signer, P.UserSig) ->  (Bool, Maybe Ed25519.PublicKey, Ed25519.Signature)
-validateSig h payload userSig =
-  let keyBytes = toS (_usPubKey payload) :: ByteString
-      keyMay = Ed25519.importPublic $ fst $ B16.decode keyBytes
-      sigBytes = toS _usSig :: ByteString
+validateSig :: PactHash -> (Signer, P.UserSig) ->  (Bool, Ed25519.PublicKey, Ed25519.Signature)
+validateSig h (signer, userSig) =
+  -- let keyBytes = toS (_siPubKey signer) :: ByteString
+  --     keyMay = Ed25519.importPublic $ fst $ B16.decode keyBytes
+  --     sigBytes = toS _usSig :: ByteString
+  --     sig = Ed25519.Sig $ fst $ B16.decode sigBytes
+  --     b = maybe False (\k -> valid h k sig) keyMay
+  -- in (b, keyMay, sig)
+  let pubKey = _siPubKey signer
+      sigBytes = toS $ P._usSig  userSig
       sig = Ed25519.Sig $ fst $ B16.decode sigBytes
-      b = maybe False (\k -> valid h k sig) keyMay
-  in (b, keyMay, sig)
+      b = valid (toUntypedHash h) pubKey sig
+  in (b, pubKey, sig)

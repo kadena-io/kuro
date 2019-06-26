@@ -167,7 +167,7 @@ data ProcessedClusterChg a =
 instance NFData a => NFData (ProcessedClusterChg a)
 
 -- TODO: use PrivateMeta instead of () ?
-type SCCPreProcResult = PendingResult (Pact.ProcessedCommand () (Pact.PactRPC Pact.ParsedCode))
+type SCCPreProcResult = PendingResult (Pact.ProcessedCommand () Pact.ParsedCode)
 type CCCPreProcResult = PendingResult (ProcessedClusterChg CCPayload)
 
 data RunPreProc =
@@ -181,7 +181,7 @@ data RunPreProc =
 data FinishedPreProc =
   FinishedPreProcSCC
     -- TODO: use PrivateMeta instead of () ?
-    { _fppSccRes :: !(Pact.ProcessedCommand () (Pact.PactRPC Pact.ParsedCode))
+    { _fppSccRes :: !(Pact.ProcessedCommand () Pact.ParsedCode)
     , _fppSccMVar :: !(MVar SCCPreProcResult)} |
   FinishedPreProcCCC
     { _fppCccRes :: !(ProcessedClusterChg CCPayload)
@@ -206,7 +206,7 @@ data Command =
   SmartContractCommand
   { _sccCmd :: !(Pact.Command ByteString)
   -- TODO: use PrivateMeta instead of () ?
-  , _sccPreProc :: !(Preprocessed (Pact.ProcessedCommand () (Pact.PactRPC Pact.ParsedCode))) } |
+  , _sccPreProc :: !(Preprocessed (Pact.ProcessedCommand () Pact.ParsedCode)) } |
   ConsensusChangeCommand
   { _cccCmd :: !(ClusterChangeCommand ByteString)
   , _cccPreProc :: !(Preprocessed (ProcessedClusterChg CCPayload))} |

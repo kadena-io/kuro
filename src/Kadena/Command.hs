@@ -24,6 +24,7 @@ import Control.Lens
 import Control.Monad
 import Control.Concurrent
 import qualified Crypto.Ed25519.Pure as Ed25519
+import Crypto.Number.Serialize (i2osp, os2ip)
 import qualified Data.Aeson as A (encode)
 import Data.Aeson
 import Data.ByteString (ByteString)
@@ -78,11 +79,8 @@ createSignatures kps msg =
 
 createSignature :: Ed25519.PrivateKey -> Ed25519.PublicKey -> Hash -> Pact.UserSig
 createSignature sk pk msg =
-  let theSig = KC.sign msg sk pk
-      sig16 = toB16Text $ Pact.exportSignature theSig
-      --  sig16 = toB16Text theSig
-      -- pk16 = toB16Text $ Pact.exportPublic pk
-  -- in Pact.UserSig scheme pk16 sig16
+  let Ed25519.Sig sigBS = KC.sign msg sk pk
+      sig16 = toB16Text sigBS
   in Pact.UserSig sig16
 
 -- | similar to Pact.Types.API.SubmitBatch but for a single config change command
@@ -248,7 +246,7 @@ verifyCommand cmd@PrivateCommand{} = cmd
 {-# INLINE verifyCommand #-}
 
 toRequestKey :: Command -> RequestKey
-toRequestKey = RequestKey . getCmdBodyHash
+toRequestKey cmd = RequestKey $ Pact.toUntypedHash $ getCmdBodyHash cmd
 {-# INLINE toRequestKey #-}
 
 mkLatResults :: CmdLatencyMetrics -> CmdResultLatencyMetrics

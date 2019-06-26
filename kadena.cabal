@@ -80,6 +80,7 @@ library
                      , Kadena.Monitoring.EkgMonitor
                      , Kadena.Monitoring.EkgSnap
                      , Kadena.Monitoring.Server
+                     , Kadena.Orphans
                      , Kadena.PreProc.Service
                      , Kadena.Private.Private
                      , Kadena.Private.Service

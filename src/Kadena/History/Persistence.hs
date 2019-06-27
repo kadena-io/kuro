@@ -50,8 +50,12 @@ htFromField s = Left $ "unrecognized 'type' field in history db: " ++ show s
 hashToField :: Hash -> SType
 hashToField h = SText $ Utf8 $ BSL.toStrict $ A.encode h
 
-crToField :: A.Value -> SType
-crToField r = SText $ Utf8 $ BSL.toStrict $ A.encode r
+crToField :: Pact.PactResult -> SType
+crToField (Pact.PactResult (Right pv)) = crToField' $ A.toJSON pv
+crToField (Pact.PactResult (Left pError)) = error $ "crToField - PactError: " ++ show pError
+
+crToField' :: A.Value -> SType
+crToField' r = SText $ Utf8 $ BSL.toStrict $ A.encode r
 
 latToField :: Maybe CmdResultLatencyMetrics -> SType
 latToField r = SText $ Utf8 $ BSL.toStrict $ A.encode r
@@ -160,14 +164,14 @@ insertRow s ConsensusChangeResult{..} =
             ,SInt $ fromIntegral _crLogIndex
             ,SInt $ -1
             ,htToField CCC
-            ,crToField $ A.toJSON _concrResult
+            ,crToField' $ A.toJSON _concrResult
             ,latToField _crLatMetrics]
 insertRow s PrivateCommandResult{..} =
   execs "insertRow" s [hashToField _crHash
             ,SInt $ fromIntegral _crLogIndex
             ,SInt $ -1
             ,htToField PC
-            ,crToField $ A.toJSON (Pact._crResult <$> _pcrResult)
+            ,crToField' $ A.toJSON (Pact._crResult <$> _pcrResult)
             ,latToField _crLatMetrics]
 
 insertCompletedCommand :: DbEnv -> [CommandResult] -> IO ()

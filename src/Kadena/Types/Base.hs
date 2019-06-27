@@ -42,7 +42,7 @@ import GHC.Generics hiding (from)
 import Pact.Types.Orphans ()
 import Pact.Types.Util
 import Pact.Types.Command (RequestKey(..))
-import Pact.Types.Hash
+import Pact.Types.Hash (hash, Hash(..), initialHash)
 
 
 newtype Alias = Alias { unAlias :: ByteString }

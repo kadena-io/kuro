@@ -45,10 +45,12 @@ import Database.SQLite.Simple (Connection(..))
 
 import GHC.Generics
 
+import qualified Pact.Types.Hash as P
+
 import qualified Kadena.Config.TMVar as Cfg
+import Kadena.Crypto
 import Kadena.Types.Base as X
 import Kadena.Types.Metric
-import Kadena.Types.KeySet
 import Kadena.Types.Log
 import Kadena.Types.Comms
 import Kadena.Types.Event (Beat,ConsensusEventChannel)
@@ -103,7 +105,7 @@ initLogState = LogState
   , _lsPersistedLogEntries = plesEmpty
   , _lsLastApplied = startIndex
   , _lsLastLogIndex = startIndex
-  , _lsLastLogHash = initialHash
+  , _lsLastLogHash = P.pactInitialHash
   , _lsNextLogIndex = startIndex + 1
   , _lsCommitIndex = startIndex
   , _lsLastPersisted = startIndex

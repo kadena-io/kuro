@@ -1,3 +1,4 @@
+{-# LANGUAGE TypeFamilies, GADTs, DataKinds #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -5,6 +6,9 @@ module WireFormatSpec (spec) where
 
 import Test.Hspec
 
+import qualified Crypto.Ed25519.Pure as Ed25519
+
+import Data.ByteString (ByteString)
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
@@ -13,11 +17,12 @@ import Data.Text (Text)
 import Data.Maybe
 
 import Kadena.Command
+import qualified Kadena.Crypto as KC
 import Kadena.Log
 import Kadena.Types
-import Kadena.Types.KeySet
-import qualified Pact.Types.Command as Pact
-import qualified Pact.Types.Crypto as Pact
+import qualified Pact.Types.Command as P
+import qualified Pact.Types.Crypto as P
+import qualified Pact.Types.Scheme as P
 import Pact.Types.RPC
 
 spec :: Spec
@@ -110,37 +115,51 @@ nodeIdLeader, nodeIdFollower :: NodeId
 nodeIdLeader = NodeId "localhost" 10000 "tcp://127.0.0.1:10000" $ Alias "leader"
 nodeIdFollower = NodeId "localhost" 10001 "tcp://127.0.0.1:10001" $ Alias "follower"
 
-privKeyLeader, privKeyFollower, privKeyClient :: PrivateKey
+privKeyLeader, privKeyFollower, privKeyClient :: Ed25519.PrivateKey
 privKeyLeader = fromMaybe (error "bad key") $
-  importPrivate "\204m\223Uo|\211.\144\131\&5Xmlyd$\165T\148\&11P\142m\249\253$\216\232\220c"
+  Ed25519.importPrivate "\204m\223Uo|\211.\144\131\&5Xmlyd$\165T\148\&11P\142m\249\253$\216\232\220c"
 privKeyFollower = fromMaybe (error "bad key") $
-  importPrivate "$%\181\214\b\138\246(5\181%\199\186\185\t!\NUL\253'\t\ENQ\212^\236O\SOP\217\ACK\EOT\170<"
+  Ed25519.importPrivate "$%\181\214\b\138\246(5\181%\199\186\185\t!\NUL\253'\t\ENQ\212^\236O\SOP\217\ACK\EOT\170<"
 privKeyClient = fromMaybe (error "bad key") $
-  importPrivate "8H\r\198a;\US\249\233b\DLE\211nWy\176\193\STX\236\SUB\151\206\152\tm\205\205\234(\CAN\254\181"
+  Ed25519.importPrivate "8H\r\198a;\US\249\233b\DLE\211nWy\176\193\STX\236\SUB\151\206\152\tm\205\205\234(\CAN\254\181"
 
-pubKeyLeader, pubKeyFollower, pubKeyClient :: PublicKey
+pubKeyLeader, pubKeyFollower, pubKeyClient :: Ed25519.PublicKey
 pubKeyLeader = fromMaybe (error "bad key") $
-  importPublic "f\t\167y\197\140\&2c.L\209;E\181\146\157\226\137\155$\GS(\189\215\SUB\199\r\158\224\FS\190|"
+  Ed25519.importPublic "f\t\167y\197\140\&2c.L\209;E\181\146\157\226\137\155$\GS(\189\215\SUB\199\r\158\224\FS\190|"
 pubKeyFollower = fromMaybe (error "bad key") $
-  importPublic "\187\182\129\&4\139\197s\175Sc!\237\&8L \164J7u\184;\CANiC\DLE\243\ESC\206\249\SYN\189\ACK"
+  Ed25519.importPublic "\187\182\129\&4\139\197s\175Sc!\237\&8L \164J7u\184;\CANiC\DLE\243\ESC\206\249\SYN\189\ACK"
 pubKeyClient = fromMaybe (error "bad key") $
-  importPublic "@*\228W(^\231\193\134\239\254s\ETBN\208\RS\137\201\208,bEk\213\221\185#\152\&7\237\234\DC1"
+  Ed25519.importPublic "@*\228W(^\231\193\134\239\254s\ETBN\208\RS\137\201\208,bEk\213\221\185#\152\&7\237\234\DC1"
 
-keySet :: KeySet
-keySet = KeySet
-  { _ksCluster = Map.fromList [(_alias nodeIdLeader, pubKeyLeader),
-                               (_alias nodeIdFollower, pubKeyFollower)] }
+keySet :: KC.KeySet
+keySet = KC.KeySet
+  { KC._ksCluster = Map.fromList [ (_alias nodeIdLeader, pubKeyLeader),
+                                   (_alias nodeIdFollower, pubKeyFollower) ] }
 
 -- #####################################
 -- Commands, with and without provenance
 -- #####################################
+
+mkTestCommand
+  :: Ed25519.PublicKey
+  -> Ed25519.PrivateKey
+  -> Text
+  -> Text
+  -> IO (P.Command ByteString)
+mkTestCommand pubKey privKey nonce cmdTxt = do
+  let someScheme = P.toScheme P.ED25519
+  let pubBS = P.PubBS (B.convert pubKey) -- (P.toBS pubKey)
+  let privBS = P.PrivBS (B.convert privKey) -- (toBS privKey)
+  let someKP = P.importKeyPair someScheme (Just pubBS) (privBS)
+  return P.mkCommand someKP Nothing Nonce (Exec (ExecMsg cmdTxt Null))
+
 cmdRPC1, cmdRPC2 :: NewCmdRPC
-cmdRPC1 = NewCmdRPC
+cmdRPC1 =
+  NewCmdRPC
           { _newCmd =
             [encodeCommand $
               SmartContractCommand
-              { _sccCmd = Pact.mkCommand [(ED25519,privKeyClient,pubKeyClient)] Nothing "nonce1"
-                          (Exec (ExecMsg ("(+ 1 2)" :: Text) Null))
+              { _sccCmd = mkTestCommand pubKeyClient privKeyClient "nonce1" "(+ 1 2)"
               , _sccPreProc = Unprocessed
               }]
           , _newProvenance = NewMsg }
@@ -148,11 +167,29 @@ cmdRPC2 = NewCmdRPC
           { _newCmd =
             [encodeCommand $
               SmartContractCommand
-              { _sccCmd = Pact.mkCommand [(ED25519,privKeyClient,pubKeyClient)] Nothing "nonce2"
-                          (Exec (ExecMsg ("(+ 3 4)" :: Text) Null))
+              { _sccCmd = mkTestCommand pubKeyClient privKeyClient "nonce2" "(+ 3 4)"
               , _sccPreProc = Unprocessed
               }]
           , _newProvenance = NewMsg }
+-- cmdRPC1 =
+--   NewCmdRPC
+--           { _newCmd =
+--             [encodeCommand $
+--               SmartContractCommand
+--               { _sccCmd = Pact.mkCommand [(ED25519,privKeyClient,pubKeyClient)] Nothing "nonce1"
+--                           (Exec (ExecMsg ("(+ 1 2)" :: Text) Null))
+--               , _sccPreProc = Unprocessed
+--               }]
+--           , _newProvenance = NewMsg }
+-- cmdRPC2 = NewCmdRPC
+--           { _newCmd =
+--             [encodeCommand $
+--               SmartContractCommand
+--               { _sccCmd = Pact.mkCommand [(ED25519,privKeyClient,pubKeyClient)] Nothing "nonce2"
+--                           (Exec (ExecMsg ("(+ 3 4)" :: Text) Null))
+--               , _sccPreProc = Unprocessed
+--               }]
+--           , _newProvenance = NewMsg }
 
 cmdSignedRPC1, cmdSignedRPC2 :: SignedRPC
 cmdSignedRPC1 = toWire nodeIdLeader pubKeyLeader privKeyLeader cmdRPC1

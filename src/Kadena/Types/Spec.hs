@@ -31,6 +31,8 @@ import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.RWS.Strict (RWST)
 
+import qualified Crypto.Ed25519.Pure as Ed25519
+
 import Data.BloomFilter (Bloom)
 import qualified Data.BloomFilter as Bloom
 import qualified Data.BloomFilter.Hash as BHash
@@ -77,7 +79,7 @@ data ConsensusSpec = ConsensusSpec
 makeLenses (''ConsensusSpec)
 
 data InvalidCandidateResults = InvalidCandidateResults
-  { _icrMyReqVoteSig :: !Signature
+  { _icrMyReqVoteSig :: !Ed25519.Signature
   , _icrNoVotes :: !(Set NodeId)
   } deriving (Show, Eq)
 makeLenses ''InvalidCandidateResults

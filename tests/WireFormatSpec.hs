@@ -16,12 +16,15 @@ import Data.Aeson
 import Data.Text (Text)
 import Data.Maybe
 
+import System.Exit
+
 import Kadena.Command
 import qualified Kadena.Crypto as KC
 import Kadena.Log
 import Kadena.Types
 import qualified Pact.Types.Command as P
 import qualified Pact.Types.Crypto as P
+import qualified Pact.Types.Hash as P
 import qualified Pact.Types.Scheme as P
 import Pact.Types.RPC
 
@@ -45,28 +48,32 @@ testHashingStability = do
   it "OverloadedStrings ByteString Stability (repeated)" $
     replicate 10 testString3 `shouldBe` replicate 10 testString4
   it "Stability (unary)" $
-    hash testString1 `shouldBe` hash testString1
+    P.pactHash testString1 `shouldBe` P.pactHash testString1
   it "Stability (repeated)" $
-    (hash <$> replicate 10 testString1) `shouldBe` (hash <$> replicate 10 testString1)
+    (P.pactHash <$> replicate 10 testString1) `shouldBe` (P.pactHash <$> replicate 10 testString1)
   it "Equiv 1" $
-    hash testString1 `shouldBe` hash testString2
+    P.pactHash testString1 `shouldBe` P.pactHash testString2
   it "Equiv 3" $
-    hash testString3 `shouldBe` hash testString3
+    P.pactHash testString3 `shouldBe` P.pactHash testString3
   it "Equiv 4" $
-    hash testString3 `shouldBe` hash testString4
+    P.pactHash testString3 `shouldBe` P.pactHash testString4
 
 testWireRoundtrip :: Spec
 testWireRoundtrip = do
-  it "Command" $
-    fromWire Nothing keySet cmdSignedRPC1
+  it "Command" $ do
+    cmd1 <- cmdRPC1
+    signed1 <- cmdSignedRPC1
+    fromWire Nothing keySet signed1
       `shouldBe`
-        (Right $ cmdRPC1 {
+        (Right $ cmd1 {
             _newProvenance = ReceivedMsg
-              { _pDig = _sigDigest cmdSignedRPC1
-              , _pOrig = _sigBody cmdSignedRPC1
+              { _pDig = _sigDigest signed1
+              , _pOrig = _sigBody signed1
               , _pTimeStamp = Nothing}})
-  it "Seq LogEntry" $
-    leSeqDecoded `shouldBe` leSeq
+  it "Seq LogEntry" $ do
+    leSeqDec <- leSeqDecoded
+    theSeq <- leSeq
+    leSeqDec `shouldBe` theSeq
   it "RequestVoteResponse" $
     fromWire Nothing keySet rvrSignedRPC1
       `shouldBe`
@@ -77,13 +84,15 @@ testWireRoundtrip = do
               , _pTimeStamp = Nothing}})
   it "Set RequestVoteResponse" $
     decodeRVRWire Nothing keySet rvrSignedRPCList `shouldBe` Right rvrRPCSet'
-  it "AppendEntries" $
-    fromWire Nothing keySet aeSignedRPC
+  it "AppendEntries" $ do
+    aerpc <- aeRPC
+    aeSigned <- aeSignedRPC
+    fromWire Nothing keySet aeSigned
       `shouldBe`
-        (Right $ aeRPC {
+        (Right $ aerpc {
             _aeProvenance = ReceivedMsg
-              { _pDig = _sigDigest aeSignedRPC
-              , _pOrig = _sigBody aeSignedRPC
+              { _pDig = _sigDigest aeSigned
+              , _pOrig = _sigBody aeSigned
               , _pTimeStamp = Nothing}})
 
   it "AppendEntriesResponse" $
@@ -148,85 +157,90 @@ mkTestCommand
   -> IO (P.Command ByteString)
 mkTestCommand pubKey privKey nonce cmdTxt = do
   let someScheme = P.toScheme P.ED25519
-  let pubBS = P.PubBS (B.convert pubKey) -- (P.toBS pubKey)
-  let privBS = P.PrivBS (B.convert privKey) -- (toBS privKey)
-  let someKP = P.importKeyPair someScheme (Just pubBS) (privBS)
-  return P.mkCommand someKP Nothing Nonce (Exec (ExecMsg cmdTxt Null))
+  let pubBS = P.PubBS (Ed25519.exportPublic pubKey)
+  let privBS = P.PrivBS (Ed25519.exportPrivate privKey)
+  case P.importKeyPair someScheme (Just pubBS) (privBS) of
+    Left _ -> die "WireFormatSpec.mkTestCommand -- importKeyPair failed"
+    Right someKP -> P.mkCommand [someKP] (Nothing :: Maybe Value) nonce (Exec (ExecMsg cmdTxt Null))
 
-cmdRPC1, cmdRPC2 :: NewCmdRPC
-cmdRPC1 =
-  NewCmdRPC
+cmdRPC1, cmdRPC2 :: IO NewCmdRPC
+cmdRPC1 = do
+  cmd <- mkTestCommand pubKeyClient privKeyClient "nonce1" "(+ 1 2)"
+  return $ NewCmdRPC
           { _newCmd =
-            [encodeCommand $
-              SmartContractCommand
-              { _sccCmd = mkTestCommand pubKeyClient privKeyClient "nonce1" "(+ 1 2)"
-              , _sccPreProc = Unprocessed
-              }]
+              [encodeCommand $
+                SmartContractCommand
+                { _sccCmd = cmd
+                , _sccPreProc = Unprocessed
+                }]
           , _newProvenance = NewMsg }
-cmdRPC2 = NewCmdRPC
+cmdRPC2 = do
+  cmd <- mkTestCommand pubKeyClient privKeyClient "nonce2" "(+ 3 4)"
+  return $ NewCmdRPC
           { _newCmd =
-            [encodeCommand $
-              SmartContractCommand
-              { _sccCmd = mkTestCommand pubKeyClient privKeyClient "nonce2" "(+ 3 4)"
-              , _sccPreProc = Unprocessed
-              }]
+              [encodeCommand $
+                SmartContractCommand
+                { _sccCmd = cmd
+                , _sccPreProc = Unprocessed
+                }]
           , _newProvenance = NewMsg }
--- cmdRPC1 =
---   NewCmdRPC
---           { _newCmd =
---             [encodeCommand $
---               SmartContractCommand
---               { _sccCmd = Pact.mkCommand [(ED25519,privKeyClient,pubKeyClient)] Nothing "nonce1"
---                           (Exec (ExecMsg ("(+ 1 2)" :: Text) Null))
---               , _sccPreProc = Unprocessed
---               }]
---           , _newProvenance = NewMsg }
--- cmdRPC2 = NewCmdRPC
---           { _newCmd =
---             [encodeCommand $
---               SmartContractCommand
---               { _sccCmd = Pact.mkCommand [(ED25519,privKeyClient,pubKeyClient)] Nothing "nonce2"
---                           (Exec (ExecMsg ("(+ 3 4)" :: Text) Null))
---               , _sccPreProc = Unprocessed
---               }]
---           , _newProvenance = NewMsg }
 
-cmdSignedRPC1, cmdSignedRPC2 :: SignedRPC
-cmdSignedRPC1 = toWire nodeIdLeader pubKeyLeader privKeyLeader cmdRPC1
-cmdSignedRPC2 = toWire nodeIdFollower pubKeyFollower privKeyFollower cmdRPC2
+cmdSignedRPC1, cmdSignedRPC2 :: IO SignedRPC
+cmdSignedRPC1 = do
+  cmd1 <- cmdRPC1
+  return $ toWire nodeIdLeader pubKeyLeader privKeyLeader cmd1
+cmdSignedRPC2 = do
+  cmd2 <- cmdRPC2
+  return $ toWire nodeIdFollower pubKeyFollower privKeyFollower cmd2
 
 -- these are signed (received) provenance versions
-cmdRPC1', cmdRPC2' :: Command
-cmdRPC1' = either error (decodeCommand . head . _newCmd) $ fromWire Nothing keySet cmdSignedRPC1
-cmdRPC2' = either error (decodeCommand . head . _newCmd) $ fromWire Nothing keySet cmdSignedRPC2
+cmdRPC1', cmdRPC2' :: IO Command
+cmdRPC1' = do
+  signed1 <- cmdSignedRPC1
+  return $ either error (decodeCommand . head . _newCmd) $ fromWire Nothing keySet signed1
+cmdRPC2' = do
+  signed2 <- cmdSignedRPC2
+  return $ either error (decodeCommand . head . _newCmd) $ fromWire Nothing keySet signed2
 
 -- ########################################################
 -- LogEntry(s) and Seq LogEntry with correct hashes.
 -- LogEntry is not an RPC but is(are) nested in other RPCs.
 -- Given this, they are handled differently (no provenance)
 -- ########################################################
-logEntry1, logEntry2 :: LogEntry
-logEntry1 = hashLogEntry Nothing $ LogEntry
-  { _leTerm    = Term 0
-  , _leLogIndex = 0
-  , _leCommand = cmdRPC1'
-  , _leHash    = hash "logEntry1"
-  , _leCmdLatMetrics = Nothing
-  }
-logEntry2 = hashLogEntry (Just $ _leHash logEntry1) $ LogEntry
-  { _leTerm    = Term 0
-  , _leLogIndex = 1
-  , _leCommand = cmdRPC2'
-  , _leHash    = hash "logEntry2"
-  , _leCmdLatMetrics = Nothing
-  }
+logEntry1, logEntry2 :: IO LogEntry
+logEntry1 = do
+  cmd1 <- cmdRPC1'
+  return $ hashLogEntry Nothing $ LogEntry
+    { _leTerm    = Term 0
+    , _leLogIndex = 0
+    , _leCommand = cmd1
+    , _leHash    = P.pactHash "logEntry1"
+    , _leCmdLatMetrics = Nothing
+    }
+logEntry2 = do
+  cmd2 <- cmdRPC2'
+  entry1 <- logEntry1
+  return $ hashLogEntry (Just $ _leHash entry1) $ LogEntry
+    { _leTerm    = Term 0
+    , _leLogIndex = 1
+    , _leCommand = cmd2
+    , _leHash    = P.pactHash "logEntry2"
+    , _leCmdLatMetrics = Nothing
+    }
 
-leSeq, leSeqDecoded :: LogEntries
-leSeq = (\(Right v) -> v) $ checkLogEntries $ Map.fromList [(0,logEntry1),(1,logEntry2)]
-leSeqDecoded = (\(Right v) -> v) $ decodeLEWire Nothing leWire
+leSeq, leSeqDecoded :: IO LogEntries
+leSeq = do
+  entry1 <- logEntry1
+  entry2 <- logEntry2
+  return $ (\(Right v) -> v) $ checkLogEntries $ Map.fromList [(0,entry1),(1,entry2)]
+leSeqDecoded = do
+  lew <- leWire
+  return $ (\(Right v) -> v) $ decodeLEWire Nothing lew
 
-leWire :: [LEWire]
-leWire = encodeLEWire leSeq
+leWire :: IO [LEWire]
+leWire = do
+  theSeq <- leSeq
+  return $ encodeLEWire theSeq
 
 -- ################################################
 -- RequestVoteResponse, with and without provenance
@@ -267,20 +281,24 @@ rvrSignedRPCList = [rvrSignedRPC1, rvrSignedRPC2]
 -- #############################################
 -- AppendEntries, with and without provenance
 -- #############################################
-aeRPC :: AppendEntries
-aeRPC = AppendEntries
-  { _aeTerm        = Term 0
-  , _leaderId      = nodeIdLeader
-  , _prevLogIndex  = LogIndex (-1)
-  , _prevLogTerm   = Term 0
-  , _aeEntries     = leSeq
-  , _aeQuorumVotes = rvrRPCSet'
-  , _aeProvenance  = NewMsg
-  }
+aeRPC :: IO AppendEntries
+aeRPC = do
+  theSeq <- leSeq
+  return $ AppendEntries
+    { _aeTerm        = Term 0
+    , _leaderId      = nodeIdLeader
+    , _prevLogIndex  = LogIndex (-1)
+    , _prevLogTerm   = Term 0
+    , _aeEntries     = theSeq
+    , _aeQuorumVotes = rvrRPCSet'
+    , _aeProvenance  = NewMsg
+    }
 
 
-aeSignedRPC :: SignedRPC
-aeSignedRPC = toWire nodeIdLeader pubKeyLeader privKeyLeader aeRPC
+aeSignedRPC :: IO SignedRPC
+aeSignedRPC = do
+  aerpc <- aeRPC
+  return $ toWire nodeIdLeader pubKeyLeader privKeyLeader aerpc
 
 
 -- #####################
@@ -293,7 +311,7 @@ aerRPC = AppendEntriesResponse
   , _aerSuccess    = True
   , _aerConvinced  = True
   , _aerIndex      = LogIndex 1
-  , _aerHash       = hash "hello"
+  , _aerHash       = P.pactHash "hello"
   , _aerProvenance = NewMsg
   }
 

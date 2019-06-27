@@ -14,9 +14,9 @@ import Control.Parallel.Strategies
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 
+import Kadena.Crypto
 import Kadena.Message
 import Kadena.Types hiding (debugPrint)
-import Kadena.Types.KeySet
 
 turbineRv, turbineAer, turbineCmd, turbineGeneral :: String
 turbineRv = "[Turbine|Rv]: "

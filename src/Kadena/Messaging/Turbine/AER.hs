@@ -1,4 +1,3 @@
-
 module Kadena.Messaging.Turbine.AER
   ( aerTurbine
   ) where
@@ -18,8 +17,8 @@ import qualified Data.Set as Set
 
 import Data.Thyme.Clock (getCurrentTime)
 
+import Kadena.Crypto
 import Kadena.Types hiding (debugPrint)
-import Kadena.Types.KeySet
 import Kadena.Types.Evidence (Evidence(VerifiedAER))
 
 import Kadena.Messaging.Turbine.Util

@@ -28,7 +28,7 @@ import Data.Maybe
 import Database.SQLite3.Direct
 
 import qualified Pact.Types.Command as Pact
-import Pact.Types.Runtime (TxId)
+import Pact.Types.Runtime (Gas(..), TxId)
 import Kadena.Types
 import Kadena.Types.Sqlite
 
@@ -62,11 +62,29 @@ latFromField cr lat = case A.eitherDecodeStrict' lat of
       Right v' -> v'
 
 crFromField :: Hash -> LogIndex -> Maybe TxId -> ByteString -> ByteString -> CommandResult
-crFromField hsh li tid cr lat = SmartContractResult hsh (Pact.CommandResult (Pact.RequestKey hsh) tid v) li (latFromField cr lat)
-  where
-    v = case A.eitherDecodeStrict' cr of
-      Left err -> error $ "crFromField: unable to decode CommandResult from database! " ++ show err ++ "\n" ++ show cr
-      Right v' -> v'
+crFromField hsh li tid cr lat =
+  SmartContractResult hsh
+    (Pact.CommandResult
+        (Pact.RequestKey hsh)
+        tid
+        v
+        {- TODO: What values should be used for missing params for CommandResult:
+          , _crGas :: !Gas
+          , _crLogs :: !(Maybe l) -- -- | Level of logging (i.e. full TxLog vs hashed logs)
+          , _crContinuation :: !(Maybe PactExec)-- | Output of a Cont. if one occurred in the command.
+          , _crMetaData :: !(Maybe Value)
+        -}
+        (Gas 0)
+        Nothing
+        Nothing
+        Nothing
+    )
+    li (latFromField cr lat)
+    where
+      v = case A.eitherDecodeStrict' cr of
+            Left err -> error $ "crFromField: unable to decode CommandResult from database! "
+                                ++ show err ++ "\n" ++ show cr
+            Right v' -> v'
 
 ccFromField :: Hash -> LogIndex -> ByteString -> ByteString -> CommandResult
 ccFromField hsh li ccr lat = ConsensusChangeResult hsh v li (latFromField ccr lat)
@@ -80,7 +98,16 @@ pcFromField hsh li tid pc lat = PrivateCommandResult hsh v li (latFromField pc l
   where
     v = case A.eitherDecodeStrict' pc of
       Left err -> error $ "ccFromField: unable to decode CommandResult from database! " ++ show err ++ "\n" ++ show pc
-      Right v' -> fmap (Pact.CommandResult (Pact.RequestKey hsh) tid) v'
+      Right v' -> fmap (\x -> Pact.CommandResult
+                                  (Pact.RequestKey hsh)
+                                  tid
+                                  x -- :: PactResult
+                                  --TODO: same comment as above, extra args for Pact.CommandResult
+                                  (Gas 0)
+                                  Nothing
+                                  Nothing
+                                  Nothing)
+                       v'
 
 sqlDbSchema :: Utf8
 sqlDbSchema =

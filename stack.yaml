@@ -20,13 +20,13 @@ extra-deps:
   - unagi-chan-0.4.0.0
   - katip-0.6.3.0
   - FloatingHex-0.4
-  # - git: git@github.com:kadena-io/pact.git
-  #  commit: 1179b6963336a5be085a60aee44c429189845039
+  - git: git@github.com:kadena-io/pact.git
+    commit: f42a48fad4f1b2abd554f3a7c2514239666bebeb
   # - /Users/marklnichols/dev/pdev/pact-3-kadena/pact
-  - /home/mark/dev/pdev/pact-3-kadena/pact
+  # - /home/mark/dev/pdev/pact-3-kadena/pact
 
   - git: git@github.com:kadena-io/pact-persist.git
-    commit: 8ff3dfe483278f9ed0c7c39a8729a796c59e2fd2
+    commit: 21760a2b590e5e76ded6d89222607d286fecfb32
 
   - git: https://github.com/abbradar/hdbc-odbc.git
     commit: 79ffd1f5060d2c8b5cbdfd4eba8ae6414372d6b7

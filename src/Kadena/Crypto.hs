@@ -8,6 +8,7 @@ module Kadena.Crypto
   , KeySet(..), ksCluster
   , Signer(..), siPubKey, siAddress
   , sign
+  , Ed25519.exportPublic, Ed25519.exportPrivate
   , valid ) where
 
 import Control.DeepSeq

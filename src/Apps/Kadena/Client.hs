@@ -74,6 +74,8 @@ import System.Time.Extra (sleep)
 
 import Text.Trifecta as TF hiding (err, rendered, try)
 
+import qualified Crypto.Ed25519.Pure as Ed25519
+
 import Kadena.Command
 import Kadena.ConfigChange (mkConfigChangeApiReq)
 import Kadena.Types.Base hiding (printLatTime)
@@ -119,8 +121,8 @@ instance Show Node where
   show Node{..} = _nURL ++ " [" ++ show _nEntity ++ ", sending: " ++ show _nSender ++ "]"
 
 data ClientConfig = ClientConfig {
-      _ccSecretKey :: PrivateKey
-    , _ccPublicKey :: PublicKey
+      _ccSecretKey :: Ed25519.PrivateKey
+    , _ccPublicKey :: Ed25519.PublicKey
     , _ccEndpoints :: HM.HashMap String Node
     } deriving (Eq,Show,Generic)
 makeLenses ''ClientConfig

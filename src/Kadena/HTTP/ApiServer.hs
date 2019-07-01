@@ -39,10 +39,12 @@ import System.FilePath
 import System.Directory
 import Data.Thyme.Clock
 
+import qualified Pact.Server.ApiServer as Pact
 import qualified Pact.Types.Runtime as Pact
+import qualified Pact.Types.ChainMeta as Pact
 import qualified Pact.Types.Command as Pact
 import Pact.Types.RPC (PactRPC)
-import Pact.Types.API
+import qualified Pact.Types.API as Pact
 
 import Kadena.Command (SubmitCC(..))
 import Kadena.Types.Command
@@ -119,14 +121,14 @@ sendLocal = catch (do
     c <- view $ aiDispatch . dispExecService
     liftIO $ writeComm c (Exec.ExecLocal cmd mv)
     r <- liftIO $ takeMVar mv
-    writeResponse $ ApiSuccess $ r)
+    writeResponse r)
   (\e -> liftIO $ putStrLn $ "Exception caught in the handler 'sendLocal' : " ++ show (e :: SomeException))
 
 sendPublicBatch :: Api ()
 sendPublicBatch =
   catch
     (do
-      SubmitBatch cmds <- readJSON
+      Pact.SubmitBatch cmds <- readJSON
       when (null cmds) $ die "Empty Batch"
       log $ "public: received batch of " ++ show (length cmds)
       rpcs <- return $ buildCmdRpc <$> cmds
@@ -143,14 +145,14 @@ sendClusterChange = catch (do
     let finalCmd = head $ tail $ ccCmds
     let transRpc = buildCCCmdRpc transCmd
     queueRpcsNoResp [transRpc]
-    let transListenerReq = ListenerRequest (fst transRpc) --listen for the result of the transitional command
+    let transListenerReq = Pact.ListenerRequest (fst transRpc) --listen for the result of the transitional command
     ccTransResult <- listenFor transListenerReq
     case ccTransResult of
       ClusterChangeSuccess -> do
         log "Transitional CC was sucessful, now ok to send the Final"
         let finalRpc = buildCCCmdRpc finalCmd
         queueRpcs [finalRpc]
-        let finalListenerReq = ListenerRequest (fst finalRpc)
+        let finalListenerReq = Pact.ListenerRequest (fst finalRpc)
         ccFinalResult <- listenFor finalListenerReq
         case ccFinalResult of
           ClusterChangeSuccess -> log "Final CC was sucessful, Config change complete"
@@ -163,7 +165,7 @@ queueRpcs :: [(RequestKey,CMDWire)] -> Api ()
 queueRpcs rpcs = do
   p <- view aiPublish
   rks <- publish p die rpcs
-  writeResponse $ ApiSuccess rks
+  writeResponse rks
 
 queueRpcsNoResp :: [(RequestKey,CMDWire)] -> Api ()
 queueRpcsNoResp rpcs = do
@@ -175,49 +177,53 @@ sendPrivateBatch :: Api ()
 sendPrivateBatch = catch (do
     conf <- view aiConfig >>= liftIO . readCurrentConfig
     unless (_ecSending $ _entity conf) $ die "Node is not configured as private sending node"
-    SubmitBatch cmds <- readJSON
+    Pact.SubmitBatch cmds <- readJSON
     log $ "private: received batch of " ++ show (length cmds)
     when (null cmds) $ die "Empty Batch"
     rpcs <- forM cmds $ \c -> do
       let cb@Pact.Command{..} = fmap encodeUtf8 c
       case eitherDecodeStrict' _cmdPayload of
         Left e -> die $ "JSON payload decode failed: " ++ show e
-        Right (Pact.Payload{..} :: Pact.Payload (PactRPC T.Text)) -> case _pAddress of
-          Nothing -> die $ "sendPrivateBatch: missing address in payload: " ++ show c
-          Just Pact.Address{..} -> do
-            pchan <- view (aiDispatch.dispPrivateChannel)
-            if _aFrom `Set.member` _aTo || _aFrom /= (_elName $ _ecLocal$ _entity conf)
-              then die $ "sendPrivateBatch: invalid address in payload: " ++ show c
-              else do
-                er <- liftIO $ encrypt pchan $
-                  PrivatePlaintext _aFrom (_alias (_nodeId conf)) _aTo (SZ.encode cb)
-                case er of
-                  Left e -> die $ "sendPrivateBatch: encrypt failed: " ++ show e ++ ", command: " ++ show c
-                  Right pc@PrivateCiphertext{..} -> do
-                    let hsh = hash $ _lPayload $ _pcEntity
-                        hc = Hashed pc hsh
-                    return (RequestKey hsh,PCWire $ SZ.encode hc)
+        Right (Pact.Payload{..} :: Pact.Payload (PactRPC T.Text)) -> do
+          case _pMeta of
+            Pact.PrivateMeta addr ->
+              case addr of
+                Nothing -> die $ "sendPrivateBatch: missing address in payload: " ++ show c
+                Just Pact.Address{..} -> do
+                  pchan <- view (aiDispatch.dispPrivateChannel)
+                  if _aFrom `Set.member` _aTo || _aFrom /= (_elName $ _ecLocal$ _entity conf)
+                    then die $ "sendPrivateBatch: invalid address in payload: " ++ show c
+                    else do
+                      er <- liftIO $ encrypt pchan $
+                        PrivatePlaintext _aFrom (_alias (_nodeId conf)) _aTo (SZ.encode cb)
+                      case er of
+                        Left e -> die $ "sendPrivateBatch: encrypt failed: " ++ show e
+                                     ++ ", command: " ++ show c
+                        Right pc@PrivateCiphertext{..} -> do
+                          let hsh = hash $ _lPayload $ _pcEntity
+                              hc = Hashed pc hsh
+                          return (RequestKey hsh,PCWire $ SZ.encode hc)
+            -- case _pMeta is not (Pact.PrivateMeta pm)
+            _ -> die $ "sendPrivateBatch: expecting PrivateMeta in payload: " ++ show c
+
     queueRpcs rpcs)
   (\e -> liftIO $ putStrLn $ "Exception caught in the handler 'sendPrivateBatch': " ++ show (e :: SomeException))
 
 poll :: Api ()
 poll = catch (do
-    (Poll rks) <- readJSON
+    (Pact.Poll rks) <- readJSON
     PossiblyIncompleteResults{..} <- checkHistoryForResult (HashSet.fromList rks)
-    writeResponse $ pollResultToReponse possiblyIncompleteResults)
+    writeResponse $ Pact.PollResponses possiblyIncompleteResults)
   (\e -> liftIO $ putStrLn $ "Exception caught in the handler poll: " ++ show (e :: SomeException))
 
-pollResultToReponse :: HashMap RequestKey CommandResult -> ApiResponse PollResponses
-pollResultToReponse m = ApiSuccess $ PollResponses $ scrToAr <$> m
-
-scrToAr :: CommandResult -> ApiResult
-scrToAr cr = case cr of
+scrToCr :: CommandResult -> Pact.CommandResult Hash
+scrToCr cr = case cr of
   SmartContractResult{..} ->
-    ApiResult (toJSON (Pact._crResult _scrResult)) (Pact._crTxId _scrResult) metaData'
+    Pact.CommandResult (toJSON (Pact._crResult _scrResult)) (Pact._crTxId _scrResult) metaData'
   ConsensusChangeResult{..} ->
-    ApiResult (toJSON _concrResult) tidFromLid metaData'
+    Pact.CommandResult (toJSON _concrResult) tidFromLid metaData'
   PrivateCommandResult{..} ->
-    ApiResult (handlePR _pcrResult) tidFromLid metaData'
+    Pact.CommandResult (handlePR _pcrResult) tidFromLid metaData'
   where metaData' = Just $ toJSON $ _crLatMetrics $ cr
         tidFromLid = Just $ Pact.TxId $ fromIntegral $ _crLogIndex $ cr
         handlePR (PrivateFailure e) = toJSON $ "ERROR: " ++ show e
@@ -239,7 +245,7 @@ die res = do
   _ <- getResponse -- chuck what we've done so far
   setJSON
   log res
-  writeLBS $ encode $ (ApiFailure ("Kadena.HTTP.ApiServer" ++ res) :: ApiResponse ())
+  writeLBS $ encode $ "Kadena.HTTP.ApiServer" ++ res
   finishWith =<< getResponse
 
 readJSON :: (Show t, FromJSON t) => Api t
@@ -260,8 +266,8 @@ setJSON = modifyResponse $ setHeader "Content-Type" "application/json"
 writeResponse :: ToJSON j => j -> Api ()
 writeResponse j = setJSON >> writeLBS (encode j)
 
-listenFor :: ListenerRequest -> Api ClusterChangeResult
-listenFor (ListenerRequest rk) = do
+listenFor :: Pact.ListenerRequest -> Api ClusterChangeResult
+listenFor (Pact.ListenerRequest rk) = do
   hChan <- view (aiDispatch.dispHistoryChannel)
   m <- liftIO $ newEmptyMVar
   liftIO $ writeComm hChan $ RegisterListener (HashMap.fromList [(rk,m)])
@@ -278,7 +284,7 @@ listenFor (ListenerRequest rk) = do
 registerListener :: Api ()
 registerListener = do
   (theEither :: Either SomeException ()) <- try $ do
-    (ListenerRequest rk) <- readJSON
+    (Pact.ListenerRequest rk) <- readJSON
     hChan <- view (aiDispatch.dispHistoryChannel)
     m <- liftIO $ newEmptyMVar
     liftIO $ writeComm hChan $ RegisterListener (HashMap.fromList [(rk,m)])
@@ -291,7 +297,7 @@ registerListener = do
       History.ListenerResult scr -> do
         log $ "Listener Serviced for: " ++ show rk
         setJSON
-        ls <- return $ ApiSuccess $ scrToAr scr
+        ls <- return $ scrToCr scr
         writeLBS $ encode ls
   case theEither of
     Left e -> do

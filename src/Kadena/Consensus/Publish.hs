@@ -41,7 +41,7 @@ publish
   :: MonadIO m
   => Publish
   -> (forall a . String -> m a)
-  -> [(RequestKey,CMDWire)]
+  -> NonEmpty (RequestKey,CMDWire)
   -> m P.RequestKeys
 publish Publish{..} die rpcs = do
   PublishedConsensus{..} <- liftIO (tryReadMVar pConsensus) >>=
@@ -50,15 +50,15 @@ publish Publish{..} die rpcs = do
     (die (show pNodeId ++ ": There is no current leader. System unavaiable, please try again later"))
     _pcLeader
   rAt <- ReceivedAt <$> liftIO pNow
-  cmds' <- return $! snd <$> rpcs
-  let rks' = case nonEmpty (fst <$> rpcs) of
-               Nothing -> die (show pNodeId ++ ": List of RequestKeys cannot be empty")
-               Just nonEmp -> return $ P.RequestKeys nonEmp
+  cmds' <- return $! fmap snd rpcs
+  let rks' = return $ P.RequestKeys (fmap fst rpcs)
   if pNodeId == ldr
-  then  -- dispatch internally if we're leader, otherwise send outbound
-    liftIO $ writeComm (_dispInboundCMD pDispatch) $ InboundCMDFromApi $ (rAt, NewCmdInternal cmds')
-  else
-    liftIO $ writeComm (_dispSenderService pDispatch) $! ForwardCommandToLeader (NewCmdRPC cmds' NewMsg)
+    then  -- dispatch internally if we're leader, otherwise send outbound
+      liftIO $ writeComm (_dispInboundCMD pDispatch) $ InboundCMDFromApi
+        (rAt, NewCmdInternal (toList cmds'))
+    else
+      liftIO $ writeComm (_dispSenderService pDispatch)
+        $! ForwardCommandToLeader (NewCmdRPC (toList cmds') NewMsg)
   rks'
 
 pactBSToCMDWire :: Pact.Command ByteString -> CMDWire

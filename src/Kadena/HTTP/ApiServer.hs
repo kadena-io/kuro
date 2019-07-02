@@ -23,6 +23,8 @@ import Data.Aeson hiding (defaultOptions, Result(..))
 import Data.ByteString.Lazy (toStrict)
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy as BSL
+import Data.List.NonEmpty (nonEmpty, NonEmpty(..))
+import qualified Data.List.NonEmpty as NE
 import qualified Data.Text as T
 import Data.Text.Encoding
 import Data.HashSet (HashSet)
@@ -43,6 +45,7 @@ import qualified Pact.Server.ApiServer as Pact
 import qualified Pact.Types.Runtime as Pact
 import qualified Pact.Types.ChainMeta as Pact
 import qualified Pact.Types.Command as Pact
+import qualified Pact.Types.Hash as Pact
 import Pact.Types.RPC (PactRPC)
 import qualified Pact.Types.API as Pact
 
@@ -128,10 +131,12 @@ sendPublicBatch :: Api ()
 sendPublicBatch =
   catch
     (do
-      Pact.SubmitBatch cmds <- readJSON
-      when (null cmds) $ die "Empty Batch"
-      log $ "public: received batch of " ++ show (length cmds)
-      rpcs <- return $ buildCmdRpc <$> cmds
+      cmdList <- readJSON
+      cmds <- case nonEmpty cmdList of
+                Nothing -> die "Empty Batch"
+                Just ne -> return ne
+      log $ "public: received batch of " ++ show (NE.length cmds)
+      rpcs <- return $ fmap buildCmdRpc cmds
       queueRpcs rpcs)
     (\e -> liftIO $ putStrLn $ "Exception caught in the handler 'sendPublicBatch': "
                              ++ show (e :: SomeException))
@@ -144,14 +149,14 @@ sendClusterChange = catch (do
     let transCmd = head ccCmds
     let finalCmd = head $ tail $ ccCmds
     let transRpc = buildCCCmdRpc transCmd
-    queueRpcsNoResp [transRpc]
+    queueRpcsNoResp (transRpc :| []) -- NonEmpty List
     let transListenerReq = Pact.ListenerRequest (fst transRpc) --listen for the result of the transitional command
     ccTransResult <- listenFor transListenerReq
     case ccTransResult of
       ClusterChangeSuccess -> do
         log "Transitional CC was sucessful, now ok to send the Final"
         let finalRpc = buildCCCmdRpc finalCmd
-        queueRpcs [finalRpc]
+        queueRpcs (finalRpc :| []) -- NonEmpty List
         let finalListenerReq = Pact.ListenerRequest (fst finalRpc)
         ccFinalResult <- listenFor finalListenerReq
         case ccFinalResult of
@@ -161,13 +166,13 @@ sendClusterChange = catch (do
   )
   (\e -> liftIO $ putStrLn $ "Exception caught in the handler 'sendClusterChange': " ++ show (e :: SomeException))
 
-queueRpcs :: [(RequestKey,CMDWire)] -> Api ()
+queueRpcs :: NonEmpty (RequestKey,CMDWire) -> Api ()
 queueRpcs rpcs = do
   p <- view aiPublish
   rks <- publish p die rpcs
   writeResponse rks
 
-queueRpcsNoResp :: [(RequestKey,CMDWire)] -> Api ()
+queueRpcsNoResp :: NonEmpty (RequestKey,CMDWire) -> Api ()
 queueRpcsNoResp rpcs = do
     p <- view aiPublish
     _rks <- publish p die rpcs
@@ -184,7 +189,7 @@ sendPrivateBatch = catch (do
       let cb@Pact.Command{..} = fmap encodeUtf8 c
       case eitherDecodeStrict' _cmdPayload of
         Left e -> die $ "JSON payload decode failed: " ++ show e
-        Right (Pact.Payload{..} :: Pact.Payload (PactRPC T.Text)) -> do
+        Right Pact.Payload{..} -> do
           case _pMeta of
             Pact.PrivateMeta addr ->
               case addr of
@@ -200,9 +205,9 @@ sendPrivateBatch = catch (do
                         Left e -> die $ "sendPrivateBatch: encrypt failed: " ++ show e
                                      ++ ", command: " ++ show c
                         Right pc@PrivateCiphertext{..} -> do
-                          let hsh = hash $ _lPayload $ _pcEntity
+                          let hsh = Pact.hash $ _lPayload $ _pcEntity
                               hc = Hashed pc hsh
-                          return (RequestKey hsh,PCWire $ SZ.encode hc)
+                          return (RequestKey (Pact.toUntypedHash hsh), PCWire $ SZ.encode hc)
             -- case _pMeta is not (Pact.PrivateMeta pm)
             _ -> die $ "sendPrivateBatch: expecting PrivateMeta in payload: " ++ show c
 
@@ -212,23 +217,9 @@ sendPrivateBatch = catch (do
 poll :: Api ()
 poll = catch (do
     (Pact.Poll rks) <- readJSON
-    PossiblyIncompleteResults{..} <- checkHistoryForResult (HashSet.fromList rks)
+    PossiblyIncompleteResults{..} <- checkHistoryForResult (HashSet.fromList (NE.toList rks))
     writeResponse $ Pact.PollResponses possiblyIncompleteResults)
   (\e -> liftIO $ putStrLn $ "Exception caught in the handler poll: " ++ show (e :: SomeException))
-
-scrToCr :: CommandResult -> Pact.CommandResult Hash
-scrToCr cr = case cr of
-  SmartContractResult{..} ->
-    Pact.CommandResult (toJSON (Pact._crResult _scrResult)) (Pact._crTxId _scrResult) metaData'
-  ConsensusChangeResult{..} ->
-    Pact.CommandResult (toJSON _concrResult) tidFromLid metaData'
-  PrivateCommandResult{..} ->
-    Pact.CommandResult (handlePR _pcrResult) tidFromLid metaData'
-  where metaData' = Just $ toJSON $ _crLatMetrics $ cr
-        tidFromLid = Just $ Pact.TxId $ fromIntegral $ _crLogIndex $ cr
-        handlePR (PrivateFailure e) = toJSON $ "ERROR: " ++ show e
-        handlePR PrivatePrivate = String "Private message"
-        handlePR (PrivateSuccess pr) = toJSON (Pact._crResult pr)
 
 checkHistoryForResult :: HashSet RequestKey -> Api PossiblyIncompleteResults
 checkHistoryForResult rks = do

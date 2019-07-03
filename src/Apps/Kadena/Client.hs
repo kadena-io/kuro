@@ -56,6 +56,7 @@ import Data.Maybe
 import Data.List.Extra hiding (chunksOf)
 import qualified Data.Set as S
 import Data.String
+import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding (decodeUtf8)
 import Data.Thyme.Clock
@@ -76,18 +77,20 @@ import Text.Trifecta as TF hiding (err, rendered, try)
 
 import qualified Crypto.Ed25519.Pure as Ed25519
 
-import Kadena.Command
-import Kadena.ConfigChange (mkConfigChangeApiReq)
-import Kadena.Types.Base hiding (printLatTime)
-import Kadena.Types.Entity (EntityName)
-import Kadena.Types.Command
-import Pact.Types.API hiding (Poll)
+import qualified Pact.ApiReq as Pact
 import qualified Pact.Types.API as Pact
+import qualified Pact.Types.ChainMeta as Pact
 import qualified Pact.Types.Command as Pact
 import qualified Pact.Types.Crypto as Pact
 import Pact.Types.RPC
 import Pact.Types.Util
-import qualified Pact.ApiReq as Pact
+import Kadena.Command
+import Kadena.ConfigChange (mkConfigChangeApiReq)
+import qualified Kadena.Crypto as KC
+import Kadena.HTTP.ApiServer (ApiResponse)
+import Kadena.Types.Base hiding (printLatTime)
+import Kadena.Types.Entity (EntityName)
+import Kadena.Types.Command
 
 data ClientOpts = ClientOpts {
       _oConfig :: FilePath
@@ -130,7 +133,7 @@ instance ToJSON ClientConfig where toJSON = lensyToJSON 3
 instance FromJSON ClientConfig where parseJSON = lensyParseJSON 3
 
 data KeyPairFile = KeyPairFile {
-    _kpKeyPairs :: [Pact.KeyPair]
+    _kpKeyPairs :: [KC.KeyPair]
   } deriving (Generic)
 instance FromJSON KeyPairFile where parseJSON = lensyParseJSON 3
 
@@ -172,7 +175,7 @@ data ReplState = ReplState {
     , _batchCmd :: String
     , _requestId :: MVar Int64 -- this needs to be an MVar in case we get an exception mid function... it's our entropy
     , _cmdData :: Value
-    , _keys :: [Pact.KeyPair]
+    , _keys :: [KC.KeyPair]
     , _fmt :: Formatter
     , _echo :: Bool
 }
@@ -186,7 +189,7 @@ data ReplApiData =
       , _replCmd :: String }
   | ReplApiResponse
       { _apiResponseKey ::  RequestKey
-      , _apiResult :: ApiResult
+      , _apiResult :: CommandResult
       , _batchCnt :: Int64
 } deriving Show
 
@@ -216,52 +219,53 @@ readPrompt = do
   e <- liftIO $ isEOF
   if e then return Nothing else Just <$> liftIO getLine
 
-mkExec :: String -> Value -> Maybe Pact.Address -> Repl (Pact.Command T.Text)
-mkExec code mdata addy = do
+mkExec :: String -> Value -> Pact.PrivateMeta -> Repl (Pact.Command Text)
+mkExec code mdata privMeta = do
   kps <- use keys
   rid <- use requestId >>= liftIO . (`modifyMVar` (\i -> return $ (succ i, i)))
   return $ decodeUtf8 <$>
     Pact.mkCommand
-    (map (\Pact.KeyPair {..} -> (Pact.ED25519,_kpSecret,_kpPublic)) kps)
-    addy
-    (T.pack $ show rid)
-    (Exec (ExecMsg (T.pack code) mdata))
+      (map (\KC.KeyPair {..} ->
+             Pact.importKeyPair (Pact.toScheme ED25519)
+               (Just $ Pact.PubBS $ KC.exportPublic _kpPublicKey)
+               (Pact.PrivBS $ KC.exportPrivate _kpPrivateKey))
+           kps)
+      privMeta
+      (T.pack $ show rid)
+      (Exec (ExecMsg (T.pack code) mdata))
 
--- postAPI :: (ToJSON req,FromJSON (ApiResponse t))
---         => String -> req -> Repl (Response (ApiResponse t))
-postAPI :: (ToJSON req, FromJSON t)
-         => String -> req -> Repl (Response (ApiResponse t))
+postAPI :: (ToJSON req, FromJSON t) => String -> req -> Repl (Response t)
 postAPI ep rq = do
   use echo >>= \e -> when e $ putJSON rq
   s <- getServer
   liftIO $ postWithRetry ep s rq
 
-postWithRetry :: (ToJSON req, FromJSON t)
-                      => String -> String -> req -> IO (Response (ApiResponse t))
+postWithRetry :: (ToJSON req, FromJSON t) => String -> String -> req -> IO (Response t)
 postWithRetry ep server' rq = do
   t <- timeout (fromIntegral timeoutSeconds) go
   case t of
     Nothing -> die "postServerApi - timeout: no successful response received"
     Just x -> return x
   where
-    go :: (FromJSON t) => IO (Response (ApiResponse t))
+    go :: (FromJSON t) => IO (Response t)
     go = do
       let url = "http://" ++ server' ++ "/api/v1/" ++ ep
       let opts = defaults & manager .~ Left (defaultManagerSettings
             { managerResponseTimeout = responseTimeoutMicro (timeoutSeconds * 1000000) } )
       r <- liftIO $ postWith opts url (toJSON rq)
       resp <- asJSON r
+
       case resp ^. responseBody of
-        ApiFailure{..} -> do
+        Left _err -> do
           sleep 1
           go
-        ApiSuccess{..} -> return resp
+        Right _ -> return resp
 
 handleHttpResp :: (t -> Repl ()) -> Response (ApiResponse t) -> Repl ()
 handleHttpResp a r =
         case r ^. responseBody of
-          ApiFailure{..} -> flushStrLn $ "Apps.Kadena.Client.handleHttpResp - failure in API Send: " ++ show _apiError
-          ApiSuccess{..} -> a _apiResponse
+          Left err -> flushStrLn $ "Apps.Kadena.Client.handleHttpResp - failure in API Send: " ++ err
+          Right resp -> a resp
 
 sendCmd :: Mode -> String -> String -> Repl ()
 sendCmd m cmd replCmd = do
@@ -317,12 +321,12 @@ sendConfigChangeCmd ccApiReq@ConfigChangeApiReq{..} fileName = do
   tellKeys resp fileName
   handleHttpResp (listenForLastResult listenDelayMs False) resp
 
-tellKeys :: Response (ApiResponse RequestKeys) -> String -> Repl ()
+tellKeys :: Response (ApiResponse Pact.RequestKeys) -> String -> Repl ()
 tellKeys resp cmd =
   case resp ^. responseBody of
-    ApiSuccess ks ->
+    Right ks ->
       tell $ fmap (\k -> ReplApiRequest { _apiRequestKey = k, _replCmd = cmd }) (_rkRequestKeys ks)
-    ApiFailure _ -> return ()
+    Left _ -> return ()
 
 sendPrivate :: Pact.Address -> String -> Repl ()
 sendPrivate addy msg = do
@@ -368,10 +372,10 @@ processParBatchPerServer sleep' (sema, (Node{..}, batches)) = do
     resp <- postWithRetry "send" _nURL $ SubmitBatch batch
     flushStrLn $ "Sent a batch to " ++ _nURL
     case resp ^. responseBody of
-      ApiFailure{..} ->
-        flushStrLn $ _nURL ++ " Failure: " ++ show _apiError
-      ApiSuccess{..} -> do
-        rk <- return $ last $ _rkRequestKeys _apiResponse
+      Left err ->
+        flushStrLn $ _nURL ++ " Failure: " ++ show err
+      Right resp -> do
+        rk <- return $ last $ _rkRequestKeys resp
         flushStrLn $ _nURL ++ " Success: " ++ show rk
     threadDelay (sleep' * 1000)
   putMVar sema ()
@@ -418,14 +422,14 @@ loadConfigChange fp = do
   ccApiReq <- liftIO $ mkConfigChangeApiReq fp
   sendConfigChangeCmd ccApiReq fp
 
-listenForResult :: Int -> RequestKeys -> Repl ()
+listenForResult :: Int -> Pact.RequestKeys -> Repl ()
 listenForResult tdelay theKeys = do
   let (_ : xs) = _rkRequestKeys theKeys
   unless (null xs) $ do
     flushStrLn "Expecting one result but found many"
   listenForLastResult tdelay False theKeys
 
-listenForLastResult :: Int -> Bool -> RequestKeys -> Repl ()
+listenForLastResult :: Int -> Bool -> Pact.RequestKeys -> Repl ()
 listenForLastResult tdelay showLatency theKeys = do
   let rks = _rkRequestKeys theKeys
   let cnt = fromIntegral $ length rks
@@ -438,8 +442,8 @@ listenForLastResult tdelay showLatency theKeys = do
       let lastRk = last rks
       resp <- postAPI "listen" (ListenerRequest lastRk)
       case resp ^. responseBody of
-        ApiFailure err -> flushStrLn $ "Error: no results received: " ++ show err
-        ApiSuccess ar@ApiResult{..} -> do
+        Left err -> flushStrLn $ "Error: no results received: " ++ show err
+        Right ccr@ConsensusChangeResult{..} -> do
           tell [ReplApiResponse { _apiResponseKey = lastRk, _apiResult = ar
                                 , _batchCnt = fromIntegral cnt}]
           if not showLatency then putJSON _arResult
@@ -457,7 +461,7 @@ pollMaxRetry = 180
 
 -- | pollForResults' Maybe param holds the true number of 'commands' processed.
 --   This is needed when commands are combined into a single Pact transaction.
-pollForResults :: Bool -> (Maybe Int) -> RequestKeys -> Repl ()
+pollForResults :: Bool -> (Maybe Int) -> Pact.RequestKeys -> Repl ()
 pollForResults showLatency mTrueCount theKeys = do
   let rks = _rkRequestKeys theKeys
   when (null rks) $ do
@@ -472,8 +476,8 @@ pollForResults showLatency mTrueCount theKeys = do
     go rks keyCount retryCount = do
       resp <- postAPI "poll" (Pact.Poll rks)
       case resp ^. responseBody of
-        ApiFailure err -> liftIO $ putStrLn $ "\nApiFailure: no results received: " ++ show err
-        ApiSuccess (PollResponses responseMap) -> do
+        Left err -> liftIO $ putStrLn $ "\nApiFailure: no results received: " ++ show err
+        Right (Pact.PollResponses responseMap) -> do
           let ks = HM.keys responseMap
           if length ks < keyCount
           then do
@@ -490,8 +494,8 @@ pollForResults showLatency mTrueCount theKeys = do
               printLatencyMetrics (last theResults) $ fromIntegral numTrueTrans
               return ()
 
-checkEach :: (HM.HashMap RequestKey ApiResult)
-          -> (Bool, [ApiResult]) -> RequestKey -> IO (Bool, [ApiResult])
+checkEach :: (HM.HashMap RequestKey CommandResult)
+          -> (Bool, [CommandResult]) -> RequestKey -> IO (Bool, [CommandResult])
 checkEach responseMap (b, xs) theKey = do
   case HM.lookup theKey responseMap of
     Nothing -> do
@@ -508,16 +512,13 @@ checkEach responseMap (b, xs) theKey = do
         putStrLn $ "Status was not successful for results of key: " ++ show theKey
         return (False, xs)
 
-printLatencyMetrics :: ApiResult -> Int64 -> Repl ()
-printLatencyMetrics ApiResult{..} cnt = do
-  case fromJSON <$>_arMetaData of
-    Nothing -> flushStrLn "No metadata available"
-    Just (A.Success lats@CmdResultLatencyMetrics{..}) -> do
-      pprintLatency lats
-      case _rlmFinExecution of
-       Nothing -> flushStrLn "Latency Measurement Unavailable"
-       Just n -> flushStrLn $ intervalOfNumerous cnt n
-    Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
+printLatencyMetrics :: CommandResult -> Int64 -> Repl ()
+printLatencyMetrics result cnt = do
+  let metrics = _crLatMetrics result
+  pprintLatency metrics
+  case _rlmFinExecution metrics of
+    Nothing -> flushStrLn "Latency Measurement Unavailable"
+    Just n -> flushStrLn $ intervalOfNumerous cnt n
 
 handlePollCmds :: Bool -> RequestKey -> Repl ()
 handlePollCmds printMetrics rk = do
@@ -530,10 +531,10 @@ handlePollCmds printMetrics rk = do
     Right r -> do
       resp <- asJSON r
       case resp ^. responseBody of
-        ApiFailure err -> flushStrLn $ "Error: no results received: " ++ show err
-        ApiSuccess (PollResponses prs) -> do
+        Left err -> flushStrLn $ "Error: no results received: " ++ show err
+        Right (Pact.PollResponses prs) -> do
           tell (fmap (\(k, v) -> ReplApiResponse { _apiResponseKey = k, _apiResult = v, _batchCnt = 1 }) (HM.toList prs) )
-          forM_ (HM.elems prs) $ \ApiResult{..} -> do
+          forM_ (HM.elems prs) $ \Pact.CommandResult{..} -> do
             putJSON _arResult
             when printMetrics $
                   case fromJSON <$>_arMetaData of

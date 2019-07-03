@@ -4,13 +4,16 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE BangPatterns #-}
 
 -- TODO: add latency back into the apiResult
 
 module Kadena.HTTP.ApiServer
-  ( runApiServer
+  ( ApiResponse
+  , runApiServer
   ) where
 
 import Prelude hiding (log)
@@ -77,6 +80,8 @@ data ApiEnv = ApiEnv
 makeLenses ''ApiEnv
 
 type Api a = ReaderT ApiEnv Snap a
+
+type ApiResponse a = Either String a
 
 runApiServer :: Dispatch -> Config.GlobalConfigTMVar -> (String -> IO ())
              -> Int -> MVar PublishedConsensus -> IO UTCTime -> IO ()
@@ -189,7 +194,7 @@ sendPrivateBatch = catch (do
       let cb@Pact.Command{..} = fmap encodeUtf8 c
       case eitherDecodeStrict' _cmdPayload of
         Left e -> die $ "JSON payload decode failed: " ++ show e
-        Right Pact.Payload{..} -> do
+        Right (Pact.Payload{..} :: Pact.Payload Pact.PrivateMeta T.Text) -> do
           case _pMeta of
             Pact.PrivateMeta addr ->
               case addr of
@@ -288,8 +293,7 @@ registerListener = do
       History.ListenerResult scr -> do
         log $ "Listener Serviced for: " ++ show rk
         setJSON
-        ls <- return $ scrToCr scr
-        writeLBS $ encode ls
+        writeLBS $ encode scr
   case theEither of
     Left e -> do
       let errStr = "Exception in registerListener: " ++ show e

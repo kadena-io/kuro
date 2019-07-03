@@ -273,3 +273,8 @@ data CommandResult =
     , _crLatMetrics :: !(Maybe CmdResultLatencyMetrics) }
   deriving (Show, Eq, Generic)
 makeLenses ''CommandResult
+
+instance ToJSON CommandResult where
+  toJSON = lensyToJSON 3
+instance FromJSON CommandResult where
+  parseJSON = lensyParseJSON 3

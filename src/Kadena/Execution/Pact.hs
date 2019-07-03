@@ -14,6 +14,7 @@ import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (ask,ReaderT,runReaderT,reader)
 import Data.Aeson as A
 import Data.Default
+import Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import Data.String
@@ -236,6 +237,6 @@ publishCont pactTid step rollback cData = do
               (PCrypto.PrivBS $ KCrypto.exportPrivate ksk)
     cmd <- liftIO $ mkCommand [signer] addy nonce rpc
     debug $ "Sending success continuation for pact: " ++ show rpc
-    _rks <- publish _pePublish throwCmdEx [(buildCmdRpcBS cmd)]
+    _rks <- publish _pePublish throwCmdEx $ (buildCmdRpcBS cmd) :| [] -- NonEmpty List
     -- TODO would be good to somehow return all the request keys?
     return ()

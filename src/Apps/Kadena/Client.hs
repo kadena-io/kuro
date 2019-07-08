@@ -52,8 +52,11 @@ import Data.Foldable
 import Data.Function
 import qualified Data.HashMap.Strict as HM
 import Data.Int
-import Data.Maybe
 import Data.List.Extra hiding (chunksOf)
+import Data.List.NonEmpty (NonEmpty(..))
+import qualified Data.List.NonEmpty as NE
+import qualified Data.Map.Strict as M
+import Data.Maybe
 import qualified Data.Set as S
 import Data.String
 import Data.Text (Text)
@@ -82,7 +85,12 @@ import qualified Pact.Types.API as Pact
 import qualified Pact.Types.ChainMeta as Pact
 import qualified Pact.Types.Command as Pact
 import qualified Pact.Types.Crypto as Pact
+import qualified Pact.Types.Exp as Pact
+import qualified Pact.Types.PactValue as Pact
 import Pact.Types.RPC
+import qualified Pact.Types.Runtime as Pact
+import qualified Pact.Types.Scheme as Pact
+import qualified Pact.Types.Term as Pact
 import Pact.Types.Util
 import Kadena.Command
 import Kadena.ConfigChange (mkConfigChangeApiReq)
@@ -226,7 +234,7 @@ mkExec code mdata privMeta = do
   return $ decodeUtf8 <$>
     Pact.mkCommand
       (map (\KC.KeyPair {..} ->
-             Pact.importKeyPair (Pact.toScheme ED25519)
+             Pact.importKeyPair (Pact.toScheme Pact.ED25519)
                (Just $ Pact.PubBS $ KC.exportPublic _kpPublicKey)
                (Pact.PrivBS $ KC.exportPrivate _kpPrivateKey))
            kps)
@@ -234,20 +242,20 @@ mkExec code mdata privMeta = do
       (T.pack $ show rid)
       (Exec (ExecMsg (T.pack code) mdata))
 
-postAPI :: (ToJSON req, FromJSON t) => String -> req -> Repl (Response t)
+postAPI :: (ToJSON req, FromJSON t) => String -> req -> Repl (Response (ApiResponse t))
 postAPI ep rq = do
   use echo >>= \e -> when e $ putJSON rq
   s <- getServer
   liftIO $ postWithRetry ep s rq
 
-postWithRetry :: (ToJSON req, FromJSON t) => String -> String -> req -> IO (Response t)
+postWithRetry :: (ToJSON req, FromJSON t) => String -> String -> req -> IO (Response (ApiResponse t))
 postWithRetry ep server' rq = do
   t <- timeout (fromIntegral timeoutSeconds) go
   case t of
     Nothing -> die "postServerApi - timeout: no successful response received"
     Just x -> return x
   where
-    go :: (FromJSON t) => IO (Response t)
+    go :: (FromJSON t) => IO (Response (ApiResponse t))
     go = do
       let url = "http://" ++ server' ++ "/api/v1/" ++ ep
       let opts = defaults & manager .~ Left (defaultManagerSettings
@@ -273,7 +281,7 @@ sendCmd m cmd replCmd = do
   e <- mkExec cmd j Nothing -- Note: this is mkExec in this  module, not the one in Pact.ApiReq
   case m of
     Transactional -> do
-      resp <- postAPI "send" (SubmitBatch [e])
+      resp <- postAPI "send" (Pact.SubmitBatch [e])
       tellKeys resp replCmd
       handleHttpResp (listenForResult listenDelayMs) resp
     Local -> do
@@ -293,7 +301,7 @@ sendMultiple' templateCmd replCmd startCount nRepeats singleCmd = do
   cmds' <- sequence $
     if singleCmd then [mkExec (unwords cmds) j Nothing]
     else fmap (\cmd -> mkExec cmd j Nothing) cmds
-  resp <- postAPI "send" (SubmitBatch cmds')
+  resp <- postAPI "send" (Pact.SubmitBatch cmds')
   tellKeys resp replCmd
   handleHttpResp (pollForResults True (Just nRepeats)) resp
 
@@ -325,14 +333,15 @@ tellKeys :: Response (ApiResponse Pact.RequestKeys) -> String -> Repl ()
 tellKeys resp cmd =
   case resp ^. responseBody of
     Right ks ->
-      tell $ fmap (\k -> ReplApiRequest { _apiRequestKey = k, _replCmd = cmd }) (_rkRequestKeys ks)
+      tell $ fmap (\k -> ReplApiRequest { _apiRequestKey = k, _replCmd = cmd })
+                  (Pact._rkRequestKeys ks)
     Left _ -> return ()
 
 sendPrivate :: Pact.Address -> String -> Repl ()
 sendPrivate addy msg = do
   j <- use cmdData
   e <- mkExec msg j (Just addy)
-  postAPI "private" (SubmitBatch [e]) >>= handleHttpResp (listenForResult listenDelayMs)
+  postAPI "private" (Pact.SubmitBatch [e]) >>= handleHttpResp (listenForResult listenDelayMs)
 
 putJSON :: (ToJSON a) => a -> Repl ()
 putJSON a =
@@ -347,7 +356,7 @@ batchTest :: Int -> String -> Repl ()
 batchTest n cmd = do
   j <- use cmdData
   flushStrLn $ "Preparing " ++ show n ++ " messages ..."
-  es <- SubmitBatch <$> replicateM n (mkExec cmd j Nothing)
+  es <- Pact.SubmitBatch <$> replicateM n (mkExec cmd j Nothing)
   resp <- postAPI "send" es
   flushStrLn $ "Sent, retrieving responses"
   handleHttpResp (listenForLastResult listenDelayMs True) resp
@@ -369,13 +378,13 @@ intoNumLists numLists ls = chunksOf numPerList ls
 processParBatchPerServer :: Int -> (MVar (), (Node, [[Pact.Command T.Text]])) -> IO ()
 processParBatchPerServer sleep' (sema, (Node{..}, batches)) = do
   forM_ batches $ \batch -> do
-    resp <- postWithRetry "send" _nURL $ SubmitBatch batch
+    resp <- postWithRetry "send" _nURL $ Pact.SubmitBatch batch
     flushStrLn $ "Sent a batch to " ++ _nURL
     case resp ^. responseBody of
       Left err ->
         flushStrLn $ _nURL ++ " Failure: " ++ show err
       Right resp -> do
-        rk <- return $ last $ _rkRequestKeys resp
+        rk <- return $ last $ Pact._rkRequestKeys resp
         flushStrLn $ _nURL ++ " Success: " ++ show rk
     threadDelay (sleep' * 1000)
   putMVar sema ()
@@ -424,14 +433,14 @@ loadConfigChange fp = do
 
 listenForResult :: Int -> Pact.RequestKeys -> Repl ()
 listenForResult tdelay theKeys = do
-  let (_ : xs) = _rkRequestKeys theKeys
+  let (_ :| xs) = Pact._rkRequestKeys theKeys
   unless (null xs) $ do
     flushStrLn "Expecting one result but found many"
   listenForLastResult tdelay False theKeys
 
 listenForLastResult :: Int -> Bool -> Pact.RequestKeys -> Repl ()
 listenForLastResult tdelay showLatency theKeys = do
-  let rks = _rkRequestKeys theKeys
+  let rks = Pact._rkRequestKeys theKeys
   let cnt = fromIntegral $ length rks
   case rks of
     [] -> do
@@ -439,17 +448,18 @@ listenForLastResult tdelay showLatency theKeys = do
       return ()
     _ -> do
       threadDelay tdelay
-      let lastRk = last rks
-      resp <- postAPI "listen" (ListenerRequest lastRk)
+      let lastRk = NE.last rks
+      resp <- postAPI "listen" (Pact.ListenerRequest lastRk)
       case resp ^. responseBody of
         Left err -> flushStrLn $ "Error: no results received: " ++ show err
         Right ccr@ConsensusChangeResult{..} -> do
-          tell [ReplApiResponse { _apiResponseKey = lastRk, _apiResult = ar
+          tell [ReplApiResponse { _apiResponseKey = lastRk,
+                                  _apiResult = ccr
                                 , _batchCnt = fromIntegral cnt}]
-          if not showLatency then putJSON _arResult
-          else case fromJSON <$>_arMetaData of
+          if not showLatency then putJSON ccr
+          else case fromJSON <$> _crLatMetrics of
             Nothing -> flushStrLn "Success"
-            Just (A.Success lats@CmdResultLatencyMetrics{..}) -> do
+            Just lats@CmdResultLatencyMetrics{..} -> do
               pprintLatency lats
               case _rlmFinExecution of
                 Nothing -> flushStrLn "Latency Measurement Unavailable"
@@ -463,7 +473,7 @@ pollMaxRetry = 180
 --   This is needed when commands are combined into a single Pact transaction.
 pollForResults :: Bool -> (Maybe Int) -> Pact.RequestKeys -> Repl ()
 pollForResults showLatency mTrueCount theKeys = do
-  let rks = _rkRequestKeys theKeys
+  let rks = Pact._rkRequestKeys theKeys
   when (null rks) $ do
     flushStrLn "pollForResults -- called with an empty list of request keys"
     return ()
@@ -494,20 +504,27 @@ pollForResults showLatency mTrueCount theKeys = do
               printLatencyMetrics (last theResults) $ fromIntegral numTrueTrans
               return ()
 
-checkEach :: (HM.HashMap RequestKey CommandResult)
+checkEach :: (HM.HashMap RequestKey (Pact.CommandResult Hash))
           -> (Bool, [CommandResult]) -> RequestKey -> IO (Bool, [CommandResult])
 checkEach responseMap (b, xs) theKey = do
   case HM.lookup theKey responseMap of
     Nothing -> do
       putStrLn "Request key missing from the response map"
       return (False, xs)
-    Just apiResult -> do
-      let ok = case _arResult apiResult of
-                  Object h | HM.lookup (T.pack "status") h == Just "success" -> True
-                           | HM.lookup (T.pack "tag") h == Just "ClusterChangeSuccess" -> True
-                           | otherwise -> False
-                  _ -> False
-      if ok then return (b, apiResult : xs)
+    Just cmdResult -> do
+      ok <- case Pact._crResult cmdResult of
+          Pact.PactResult (Left pactError) -> do
+            putStrLn $ "Pact error in response: " ++ show (Pact.peInfo pactError)
+            return False
+          Pact.PactResult (Right pactValue) -> case pactValue of
+            Pact.PObject (Pact.ObjectMap h)
+              | M.lookup (Pact.FieldKey "status") h ==
+                  Just (Pact.PLiteral (Pact.LString "success")) -> return True
+              | M.lookup (Pact.FieldKey "tag") h ==
+                  Just (Pact.PLiteral (Pact.LString "ClusterChangeSuccess")) -> return True
+              | otherwise -> return False
+          _ -> return False
+      if ok then return (b, cmdResult : xs)
       else do
         putStrLn $ "Status was not successful for results of key: " ++ show theKey
         return (False, xs)
@@ -534,13 +551,16 @@ handlePollCmds printMetrics rk = do
         Left err -> flushStrLn $ "Error: no results received: " ++ show err
         Right (Pact.PollResponses prs) -> do
           tell (fmap (\(k, v) -> ReplApiResponse { _apiResponseKey = k, _apiResult = v, _batchCnt = 1 }) (HM.toList prs) )
+          -- TODO: are the latency metrics somewhere else now?
+          {-
           forM_ (HM.elems prs) $ \Pact.CommandResult{..} -> do
-            putJSON _arResult
+            putJSON _crResult
             when printMetrics $
-                  case fromJSON <$>_arMetaData of
+                  case fromJSON <$>_crMetaData of
                     Nothing -> flushStrLn "Metrics Unavailable"
                     Just (A.Success lats@CmdResultLatencyMetrics{..}) -> pprintLatency lats
                     Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
+          -}
 
 printLatTime :: (Num a, Ord a, Show a) => a -> String
 printLatTime s
@@ -752,11 +772,14 @@ parseRK cmd = case B16.decode $ BS8.pack cmd of
     | B.empty /= leftovers ->
       die $ "Failed to decode RequestKey: this was converted " ++
       show rk ++ " and this was not " ++ show leftovers
+    -- TODO: is this check still valid?
+    {-
     | B.length rk /= hashLengthAsBS ->
       die $ "RequestKey is too short, should be "
               ++ show hashLengthAsBase16
               ++ " char long but was " ++ show (B.length $ BS8.pack $ drop 7 cmd) ++
               " -> " ++ show (B16.encode rk)
+    -}
     | otherwise -> return rk
 
 help :: Repl ()

@@ -48,6 +48,7 @@ import qualified Data.ByteString.Base16 as B16
 import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Lazy.Char8 as BSL
 import Data.Default
+import Data.Either
 import Data.Foldable
 import Data.Function
 import qualified Data.HashMap.Strict as HM
@@ -183,7 +184,7 @@ data ReplState = ReplState {
     , _batchCmd :: String
     , _requestId :: MVar Int64 -- this needs to be an MVar in case we get an exception mid function... it's our entropy
     , _cmdData :: Value
-    , _keys :: [KC.KeyPair]
+    , _keys :: [Pact.ApiKeyPair]
     , _fmt :: Formatter
     , _echo :: Bool
 }
@@ -231,16 +232,13 @@ mkExec :: String -> Value -> Pact.PrivateMeta -> Repl (Pact.Command Text)
 mkExec code mdata privMeta = do
   kps <- use keys
   rid <- use requestId >>= liftIO . (`modifyMVar` (\i -> return $ (succ i, i)))
-  return $ decodeUtf8 <$>
-    Pact.mkCommand
-      (map (\KC.KeyPair {..} ->
-             Pact.importKeyPair (Pact.toScheme Pact.ED25519)
-               (Just $ Pact.PubBS $ KC.exportPublic _kpPublicKey)
-               (Pact.PrivBS $ KC.exportPrivate _kpPrivateKey))
-           kps)
+  someKps <- liftIO $ Pact.mkKeyPairs kps
+  cmd <- liftIO $ Pact.mkCommand
+      someKps
       privMeta
       (T.pack $ show rid)
       (Exec (ExecMsg (T.pack code) mdata))
+  return $ decodeUtf8 <$> cmd
 
 postAPI :: (ToJSON req, FromJSON t) => String -> req -> Repl (Response (ApiResponse t))
 postAPI ep rq = do
@@ -278,10 +276,11 @@ handleHttpResp a r =
 sendCmd :: Mode -> String -> String -> Repl ()
 sendCmd m cmd replCmd = do
   j <- use cmdData
-  e <- mkExec cmd j Nothing -- Note: this is mkExec in this  module, not the one in Pact.ApiReq
+  e <- mkExec cmd j (Pact.PrivateMeta Nothing)
+  -- ^ Note: this is mkExec in this  module, not in Pact.ApiReq
   case m of
     Transactional -> do
-      resp <- postAPI "send" (Pact.SubmitBatch [e])
+      resp <- postAPI "send" (Pact.SubmitBatch (e :| [])) -- NonEmpty List
       tellKeys resp replCmd
       handleHttpResp (listenForResult listenDelayMs) resp
     Local -> do
@@ -299,11 +298,15 @@ sendMultiple' templateCmd replCmd startCount nRepeats singleCmd = do
   j <- use cmdData
   let cmds = replaceCounters startCount nRepeats templateCmd
   cmds' <- sequence $
-    if singleCmd then [mkExec (unwords cmds) j Nothing]
-    else fmap (\cmd -> mkExec cmd j Nothing) cmds
-  resp <- postAPI "send" (Pact.SubmitBatch cmds')
-  tellKeys resp replCmd
-  handleHttpResp (pollForResults True (Just nRepeats)) resp
+    if singleCmd then [mkExec (unwords cmds) j (Pact.PrivateMeta Nothing)]
+    else fmap (\cmd -> mkExec cmd j (Pact.PrivateMeta Nothing)) cmds
+
+  case NE.nonEmpty cmds' of
+    Nothing -> flushStrLn $ "Apps.Kadena.Client.sendMultiple' - empty list of commands"
+    Just ne -> do
+      resp <- postAPI "send" (Pact.SubmitBatch ne)
+      tellKeys resp replCmd
+      handleHttpResp (pollForResults True (Just nRepeats)) resp
 
 loadMultiple :: FilePath -> String -> Int -> Int -> Repl ()
 loadMultiple filePath replCmd startCount nRepeats =
@@ -334,14 +337,14 @@ tellKeys resp cmd =
   case resp ^. responseBody of
     Right ks ->
       tell $ fmap (\k -> ReplApiRequest { _apiRequestKey = k, _replCmd = cmd })
-                  (Pact._rkRequestKeys ks)
+                  (NE.toList (Pact._rkRequestKeys ks))
     Left _ -> return ()
 
 sendPrivate :: Pact.Address -> String -> Repl ()
 sendPrivate addy msg = do
   j <- use cmdData
-  e <- mkExec msg j (Just addy)
-  postAPI "private" (Pact.SubmitBatch [e]) >>= handleHttpResp (listenForResult listenDelayMs)
+  e <- mkExec msg j $ Pact.PrivateMeta (Just addy)
+  postAPI "private" (Pact.SubmitBatch (e :| [])) >>= handleHttpResp (listenForResult listenDelayMs)
 
 putJSON :: (ToJSON a) => a -> Repl ()
 putJSON a =
@@ -356,10 +359,13 @@ batchTest :: Int -> String -> Repl ()
 batchTest n cmd = do
   j <- use cmdData
   flushStrLn $ "Preparing " ++ show n ++ " messages ..."
-  es <- Pact.SubmitBatch <$> replicateM n (mkExec cmd j Nothing)
-  resp <- postAPI "send" es
-  flushStrLn $ "Sent, retrieving responses"
-  handleHttpResp (listenForLastResult listenDelayMs True) resp
+  cmdList <- replicateM n (mkExec cmd j (Pact.PrivateMeta Nothing))
+  case NE.nonEmpty cmdList of
+    Nothing -> flushStrLn $ "batchTest -- empty replicated list"
+    Just neList ->  do
+      resp <- postAPI "send" (Pact.SubmitBatch neList)
+      flushStrLn $ "Sent, retrieving responses"
+      handleHttpResp (listenForLastResult listenDelayMs True) resp
 
 chunksOf :: Int -> [e] -> [[e]]
 chunksOf i ls = map (take i) (build (splitter ls)) where
@@ -378,15 +384,18 @@ intoNumLists numLists ls = chunksOf numPerList ls
 processParBatchPerServer :: Int -> (MVar (), (Node, [[Pact.Command T.Text]])) -> IO ()
 processParBatchPerServer sleep' (sema, (Node{..}, batches)) = do
   forM_ batches $ \batch -> do
-    resp <- postWithRetry "send" _nURL $ Pact.SubmitBatch batch
-    flushStrLn $ "Sent a batch to " ++ _nURL
-    case resp ^. responseBody of
-      Left err ->
-        flushStrLn $ _nURL ++ " Failure: " ++ show err
-      Right resp -> do
-        rk <- return $ last $ Pact._rkRequestKeys resp
-        flushStrLn $ _nURL ++ " Success: " ++ show rk
-    threadDelay (sleep' * 1000)
+    case NE.nonEmpty batch of
+      Nothing -> flushStrLn $ "processParBatchPerServer -- empty batch"
+      Just neBatch -> do
+        resp <- postWithRetry "send" _nURL $ Pact.SubmitBatch neBatch
+        flushStrLn $ "Sent a batch to " ++ _nURL
+        case resp ^. responseBody of
+          Left err ->
+            flushStrLn $ _nURL ++ " Failure: " ++ show err
+          Right resp -> do
+            rk <- return $ NE.last $ Pact._rkRequestKeys resp
+            flushStrLn $ _nURL ++ " Success: " ++ show rk
+        threadDelay (sleep' * 1000)
   putMVar sema ()
 
 calcBatchSize :: Int -> Int -> Int -> Int
@@ -407,7 +416,8 @@ parallelBatchTest totalNumCmds' cmdRate' sleep' = do
   flushStrLn $ "Preparing " ++ show totalNumCmds' ++ " messages to distribute among "
     ++ show (length servers) ++ " servers in batches of " ++ show batchSize'
     ++ " with a delay of " ++ show sleep' ++ " milliseconds"
-  allocatedBatches <- zip semas . zip servers . intoNumLists (length servers) . chunksOf batchSize' <$> replicateM totalNumCmds' (mkExec cmd j Nothing)
+  allocatedBatches <- zip semas . zip servers . intoNumLists (length servers) . chunksOf batchSize'
+    <$> replicateM totalNumCmds' (mkExec cmd j (Pact.PrivateMeta Nothing))
   liftIO $ forConcurrently_ allocatedBatches $ processParBatchPerServer sleep'
   liftIO $ forM_ semas takeMVar
 
@@ -442,29 +452,24 @@ listenForLastResult :: Int -> Bool -> Pact.RequestKeys -> Repl ()
 listenForLastResult tdelay showLatency theKeys = do
   let rks = Pact._rkRequestKeys theKeys
   let cnt = fromIntegral $ length rks
-  case rks of
-    [] -> do
-      flushStrLn "Empty list of keys passed to listenForLastResult"
-      return ()
-    _ -> do
-      threadDelay tdelay
-      let lastRk = NE.last rks
-      resp <- postAPI "listen" (Pact.ListenerRequest lastRk)
-      case resp ^. responseBody of
-        Left err -> flushStrLn $ "Error: no results received: " ++ show err
-        Right ccr@ConsensusChangeResult{..} -> do
-          tell [ReplApiResponse { _apiResponseKey = lastRk,
-                                  _apiResult = ccr
-                                , _batchCnt = fromIntegral cnt}]
-          if not showLatency then putJSON ccr
-          else case fromJSON <$> _crLatMetrics of
-            Nothing -> flushStrLn "Success"
-            Just lats@CmdResultLatencyMetrics{..} -> do
-              pprintLatency lats
-              case _rlmFinExecution of
-                Nothing -> flushStrLn "Latency Measurement Unavailable"
-                Just n -> flushStrLn $ intervalOfNumerous cnt n
-            Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
+  threadDelay tdelay
+  let lastRk = NE.last rks
+  resp <- postAPI "listen" (Pact.ListenerRequest lastRk)
+  case resp ^. responseBody of
+    Left err -> flushStrLn $ "Error: no results received: " ++ show err
+    Right ccr@ConsensusChangeResult{..} -> do
+      tell [ReplApiResponse { _apiResponseKey = lastRk,
+                              _apiResult = ccr
+                            , _batchCnt = fromIntegral cnt}]
+      if not showLatency then putJSON ccr
+      else case fromJSON <$> _crLatMetrics of
+        Nothing -> flushStrLn "Success"
+        Just lats@CmdResultLatencyMetrics{..} -> do
+          pprintLatency lats
+          case _rlmFinExecution of
+            Nothing -> flushStrLn "Latency Measurement Unavailable"
+            Just n -> flushStrLn $ intervalOfNumerous cnt n
+        Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
 
 pollMaxRetry :: Int
 pollMaxRetry = 180

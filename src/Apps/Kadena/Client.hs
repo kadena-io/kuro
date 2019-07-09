@@ -462,14 +462,13 @@ listenForLastResult tdelay showLatency theKeys = do
                               _apiResult = ccr
                             , _batchCnt = fromIntegral cnt}]
       if not showLatency then putJSON ccr
-      else case fromJSON <$> _crLatMetrics of
+      else case _crLatMetrics of
         Nothing -> flushStrLn "Success"
         Just lats@CmdResultLatencyMetrics{..} -> do
           pprintLatency lats
           case _rlmFinExecution of
             Nothing -> flushStrLn "Latency Measurement Unavailable"
             Just n -> flushStrLn $ intervalOfNumerous cnt n
-        Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
 
 pollMaxRetry :: Int
 pollMaxRetry = 180
@@ -510,7 +509,7 @@ pollForResults showLatency mTrueCount theKeys = do
               return ()
 
 checkEach :: (HM.HashMap RequestKey (Pact.CommandResult Hash))
-          -> (Bool, [CommandResult]) -> RequestKey -> IO (Bool, [CommandResult])
+          -> (Bool, [Pact.CommandResult Hash]) -> RequestKey -> IO (Bool, [Pact.CommandResult Hash])
 checkEach responseMap (b, xs) theKey = do
   case HM.lookup theKey responseMap of
     Nothing -> do

@@ -1,10 +1,12 @@
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Apps.Kadena.Client
   ( main
@@ -25,6 +27,7 @@ module Apps.Kadena.Client
   , timeout
   ) where
 
+import Kadena.HTTP.ApiServer (ApiResponse)
 import Control.Error.Util (hush)
 import Control.Exception (IOException)
 import qualified Control.Exception as Exception
@@ -85,6 +88,7 @@ import qualified Pact.ApiReq as Pact
 import qualified Pact.Types.API as Pact
 import qualified Pact.Types.ChainMeta as Pact
 import qualified Pact.Types.Command as Pact
+import Pact.Types.Command ()
 import qualified Pact.Types.Crypto as Pact
 import qualified Pact.Types.Exp as Pact
 import qualified Pact.Types.PactValue as Pact
@@ -142,7 +146,7 @@ instance ToJSON ClientConfig where toJSON = lensyToJSON 3
 instance FromJSON ClientConfig where parseJSON = lensyParseJSON 3
 
 data KeyPairFile = KeyPairFile {
-    _kpKeyPairs :: [KC.KeyPair]
+    _kpKeyPairs :: [Pact.ApiKeyPair]
   } deriving (Generic)
 instance FromJSON KeyPairFile where parseJSON = lensyParseJSON 3
 
@@ -201,6 +205,11 @@ data ReplApiData =
       , _apiResult :: CommandResult
       , _batchCnt :: Int64
 } deriving Show
+
+newtype PollResponses = PollResponses (HM.HashMap RequestKey (ApiResponse CommandResult))
+  deriving (ToJSON, FromJSON)
+
+instance FromJSONKey RequestKey
 
 prompt :: String -> String
 prompt s = "\ESC[0;31m" ++ s ++ "> \ESC[0m"
@@ -491,7 +500,7 @@ pollForResults showLatency mTrueCount theKeys = do
       resp <- postAPI "poll" (Pact.Poll rks)
       case resp ^. responseBody of
         Left err -> liftIO $ putStrLn $ "\nApiFailure: no results received: " ++ show err
-        Right (Pact.PollResponses responseMap) -> do
+        Right (PollResponses responseMap) -> do
           let ks = HM.keys responseMap
           if length ks < keyCount
           then do
@@ -508,63 +517,53 @@ pollForResults showLatency mTrueCount theKeys = do
               printLatencyMetrics (last theResults) $ fromIntegral numTrueTrans
               return ()
 
-checkEach :: (HM.HashMap RequestKey (Pact.CommandResult Hash))
-          -> (Bool, [Pact.CommandResult Hash]) -> RequestKey -> IO (Bool, [Pact.CommandResult Hash])
+checkEach :: (HM.HashMap RequestKey (ApiResponse CommandResult))
+          -> (Bool, [CommandResult]) -> RequestKey -> IO (Bool, [CommandResult])
 checkEach responseMap (b, xs) theKey = do
   case HM.lookup theKey responseMap of
     Nothing -> do
       putStrLn "Request key missing from the response map"
       return (False, xs)
-    Just cmdResult -> do
-      ok <- case Pact._crResult cmdResult of
-          Pact.PactResult (Left pactError) -> do
-            putStrLn $ "Pact error in response: " ++ show (Pact.peInfo pactError)
-            return False
-          Pact.PactResult (Right pactValue) -> case pactValue of
-            Pact.PObject (Pact.ObjectMap h)
-              | M.lookup (Pact.FieldKey "status") h ==
-                  Just (Pact.PLiteral (Pact.LString "success")) -> return True
-              | M.lookup (Pact.FieldKey "tag") h ==
-                  Just (Pact.PLiteral (Pact.LString "ClusterChangeSuccess")) -> return True
-              | otherwise -> return False
-          _ -> return False
-      if ok then return (b, cmdResult : xs)
-      else do
+    Just (Left err) -> do
         putStrLn $ "Status was not successful for results of key: " ++ show theKey
         return (False, xs)
+    Just (Right cmdResult) -> return (b, cmdResult : xs)
 
 printLatencyMetrics :: CommandResult -> Int64 -> Repl ()
 printLatencyMetrics result cnt = do
-  let metrics = _crLatMetrics result
-  pprintLatency metrics
-  case _rlmFinExecution metrics of
-    Nothing -> flushStrLn "Latency Measurement Unavailable"
-    Just n -> flushStrLn $ intervalOfNumerous cnt n
+  case _crLatMetrics result of
+    Nothing -> flushStrLn "Metrics Unavailable"
+    Just metrics -> do
+      pprintLatency metrics
+      case _rlmFinExecution metrics of
+        Nothing -> flushStrLn "Latency Measurement Unavailable"
+        Just n -> flushStrLn $ intervalOfNumerous cnt n
 
 handlePollCmds :: Bool -> RequestKey -> Repl ()
 handlePollCmds printMetrics rk = do
   s <- getServer
   let opts = defaults & manager .~ Left (defaultManagerSettings
         { managerResponseTimeout = responseTimeoutMicro (timeoutSeconds * 1000000) } )
-  eR <- liftIO $ Exception.try $ postWith opts ("http://" ++ s ++ "/api/v1/poll") (toJSON (Pact.Poll [rk]))
+  eR <- liftIO $ Exception.try $ postWith opts
+            ("http://" ++ s ++ "/api/v1/poll") (toJSON (Pact.Poll (rk :| []))) -- NonEmpty List
   case eR of
     Left (SomeException err) -> flushStrLn $ show err
     Right r -> do
-      resp <- asJSON r
+      resp  <- asJSON r :: Repl (Response (ApiResponse PollResponses))
       case resp ^. responseBody of
         Left err -> flushStrLn $ "Error: no results received: " ++ show err
-        Right (Pact.PollResponses prs) -> do
-          tell (fmap (\(k, v) -> ReplApiResponse { _apiResponseKey = k, _apiResult = v, _batchCnt = 1 }) (HM.toList prs) )
-          -- TODO: are the latency metrics somewhere else now?
-          {-
-          forM_ (HM.elems prs) $ \Pact.CommandResult{..} -> do
-            putJSON _crResult
+        Right (PollResponses prs) -> do
+          let filtered = filter (isRight . snd)  (HM.toList prs)
+          tell (fmap (\(k, (Right v)) -> ReplApiResponse
+                  { _apiResponseKey = k
+                  , _apiResult = v
+                  , _batchCnt = 1 }) filtered)
+          forM_ (snd <$> filtered) $ \(Right cmdResult) -> do
+            putJSON cmdResult
             when printMetrics $
-                  case fromJSON <$>_crMetaData of
-                    Nothing -> flushStrLn "Metrics Unavailable"
-                    Just (A.Success lats@CmdResultLatencyMetrics{..}) -> pprintLatency lats
-                    Just (A.Error err) -> flushStrLn $ "metadata decode failure: " ++ err
-          -}
+              case _crLatMetrics cmdResult of
+                Nothing -> flushStrLn "Metrics Unavailable"
+                Just (lats@CmdResultLatencyMetrics{..}) -> pprintLatency lats
 
 printLatTime :: (Num a, Ord a, Show a) => a -> String
 printLatTime s
@@ -761,7 +760,7 @@ handleCmd cmd reqStr = case cmd of
     pk <- case fromJSON (String p) of
       A.Error e -> die $ "Bad public key value: " ++ show e
       A.Success k -> return k
-    keys .= [Pact.KeyPair sk pk]
+    keys .= [Pact.ApiKeyPair sk pk Nothing Nothing]
   Keys (Just (kpFile,Nothing)) -> do
     (KeyPairFile kps) <- either (die . show) return =<< liftIO (Y.decodeFileEither (T.unpack kpFile))
     keys .= kps
@@ -826,7 +825,11 @@ main = do
           _batchCmd = "\"Hello Kadena\"",
           _requestId = i,
           _cmdData = Null,
-          _keys = [Pact.KeyPair (_ccSecretKey conf) (_ccPublicKey conf)],
+          _keys = [ Pact.ApiKeyPair
+                    { _akpSecret = Pact.PrivBS (Ed25519.exportPrivate (_ccSecretKey conf))
+                    , _akpPublic = Just (Pact.PubBS (Ed25519.exportPublic (_ccPublicKey conf)))
+                    , _akpAddress = Nothing
+                    , _akpScheme =  Nothing } ],
           _fmt = Table,
           _echo = False
         }

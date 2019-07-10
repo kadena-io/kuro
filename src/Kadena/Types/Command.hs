@@ -41,6 +41,7 @@ import Control.DeepSeq
 import qualified Crypto.Ed25519.Pure as Ed25519
 import Data.Serialize (Serialize)
 import Data.ByteString (ByteString)
+import qualified Data.HashMap.Strict as HM
 import Data.Text (Text)
 import Data.Thyme.Clock
 import Data.Thyme.Time.Core ()
@@ -49,7 +50,7 @@ import GHC.Generics
 import GHC.Int (Int64)
 
 import qualified Kadena.Crypto as KC
-import Kadena.Types.Base (LogIndex, NodeId)
+import Kadena.Types.Base (LogIndex, NodeId, RequestKey)
 import Kadena.Types.Private (PrivateCiphertext,PrivateResult)
 
 import qualified Pact.ApiReq as Pact

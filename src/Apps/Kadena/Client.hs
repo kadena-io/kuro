@@ -206,10 +206,6 @@ data ReplApiData =
       , _batchCnt :: Int64
 } deriving Show
 
-newtype PollResponses = PollResponses (HM.HashMap RequestKey (ApiResponse CommandResult))
-  deriving (ToJSON, FromJSON)
-
-instance FromJSONKey RequestKey
 
 prompt :: String -> String
 prompt s = "\ESC[0;31m" ++ s ++ "> \ESC[0m"

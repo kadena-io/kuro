@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RankNTypes #-}
@@ -30,6 +31,7 @@ import Data.List.NonEmpty (nonEmpty, NonEmpty(..))
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Text as T
 import Data.Text.Encoding
+import qualified Data.HashMap.Strict as HM
 import Data.HashSet (HashSet)
 import qualified Data.HashSet as HashSet
 import Data.HashMap.Strict (HashMap)
@@ -82,6 +84,11 @@ makeLenses ''ApiEnv
 type Api a = ReaderT ApiEnv Snap a
 
 type ApiResponse a = Either String a
+
+newtype PollResponses = PollResponses (HM.HashMap RequestKey (ApiResponse CommandResult))
+  deriving (ToJSON, FromJSON)
+
+instance FromJSONKey RequestKey
 
 runApiServer :: Dispatch -> Config.GlobalConfigTMVar -> (String -> IO ())
              -> Int -> MVar PublishedConsensus -> IO UTCTime -> IO ()
@@ -223,7 +230,7 @@ poll :: Api ()
 poll = catch (do
     (Pact.Poll rks) <- readJSON
     PossiblyIncompleteResults{..} <- checkHistoryForResult (HashSet.fromList (NE.toList rks))
-    writeResponse $ Pact.PollResponses possiblyIncompleteResults)
+    writeResponse $ PollResponses possiblyIncompleteResults)
   (\e -> liftIO $ putStrLn $ "Exception caught in the handler poll: " ++ show (e :: SomeException))
 
 checkHistoryForResult :: HashSet RequestKey -> Api PossiblyIncompleteResults

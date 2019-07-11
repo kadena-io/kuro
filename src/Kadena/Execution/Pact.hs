@@ -12,6 +12,10 @@ import Control.Monad
 import Control.Monad.Catch (throwM)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (ask,ReaderT,runReaderT,reader)
+import Crypto.Noise as Dh (convert)
+import Crypto.Noise.DH (DH(..))
+import qualified Crypto.Noise.DH as Dh
+import qualified Crypto.Noise.DH.Curve25519 as Dh
 import Data.Aeson as A
 import Data.Default
 import Data.List.NonEmpty (NonEmpty(..))
@@ -38,6 +42,7 @@ import Pact.Types.Gas (GasEnv(..))
 import Pact.Types.Logger (logLog,Logger,Loggers,newLogger)
 import Pact.Types.Pretty
 import Pact.Types.RPC
+import qualified Pact.Types.Runtime as P (PublicKey)
 import Pact.Types.Runtime
 import Pact.Types.Scheme
 import Pact.Types.SPV
@@ -165,7 +170,7 @@ debug m = reader _peLogger >>= \l -> liftIO $ logLog l "DEBUG" m
 -- | TODO!! The old Kadena pact model keeps the sigs around from the original exec in memory
 -- but there is no mechanism for this now. Thus keeping the '_sigs' argument around to reevaluate
 -- if this model is sustainable going forward
-handlePactExec :: S.Set PublicKey -> Value -> PactExec -> PactM p ()
+handlePactExec :: S.Set P.PublicKey -> Value -> PactExec -> PactM p ()
 handlePactExec _sigs edata PactExec{..} = when (_peExecuted == Just True) $ do
   PactEnv{..} <- ask
   let EntityConfig{..} = _peEntity
@@ -230,11 +235,13 @@ publishCont pactTid step rollback cData = do
         addy = fmap (reverseAddy me) $ _pmAddress  $ _pMeta $ _cmdPayload $ _peCommand
         nonce = fromString $ show (step,rollback)
         (rpc :: PactRPC ()) = Continuation $ ContMsg pactTid step rollback cData Nothing
-        (KCrypto.KeyPair kpk ksk) = _ecSigner
+        (EntityKeyPair kpk ksk) = _ecSigner
     signer <- either (throwPactError . pretty) return $
-              PCrypto.importKeyPair (PCrypto.toScheme ED25519)
-              (Just $ PCrypto.PubBS $ KCrypto.exportPublic kpk)
-              (PCrypto.PrivBS $ KCrypto.exportPrivate ksk)
+              -- TODO: Do we need a Scheme for this?
+              PCrypto.importKeyPair (PCrypto.toScheme Curve25519)
+              (Just $ PCrypto.PubBS $ Dh.convert (Dh.dhPubToBytes kpk))
+              (PCrypto.PrivBS $ Dh.convert (Dh.dhSecToBytes ksk))
+
     cmd <- liftIO $ mkCommand [signer] addy nonce rpc
     debug $ "Sending success continuation for pact: " ++ show rpc
     _rks <- publish _pePublish throwCmdEx $ (buildCmdRpcBS cmd) :| [] -- NonEmpty List

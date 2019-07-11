@@ -31,7 +31,7 @@ import GHC.Generics (Generic)
 import Pact.Types.Runtime (EntityName)
 import Pact.Types.Util (AsString(..),lensyToJSON,lensyParseJSON,toB16JSON,parseB16JSON,toB16Text)
 
-import qualified Kadena.Crypto as Crypto
+import qualified Kadena.Crypto as KC
 
 ----------------------------------------------------------------------------------------------------
 newtype EntityPublicKey = EntityPublicKey { epPublicKey :: Dh.PublicKey Dh.Curve25519 }
@@ -121,7 +121,7 @@ data EntityConfig = EntityConfig
   { _ecLocal :: EntityLocal
   , _ecRemotes :: [EntityRemote]
   , _ecSending :: Bool
-  , _ecSigner :: Crypto.KeyPair
+  , _ecSigner :: EntityKeyPair
   } deriving (Show, Generic)
 
 instance ToJSON EntityConfig where toJSON = lensyToJSON 3

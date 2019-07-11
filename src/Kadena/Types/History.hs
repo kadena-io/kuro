@@ -43,7 +43,7 @@ newtype ExistenceResult = ExistenceResult
   } deriving (Show, Eq)
 
 newtype PossiblyIncompleteResults = PossiblyIncompleteResults
-  { possiblyIncompleteResults :: HashMap RequestKey (Pact.CommandResult Hash)
+  { possiblyIncompleteResults :: (HashMap RequestKey (ApiResponse CommandResult))
   } deriving (Show, Eq)
 
 data ListenerResult =

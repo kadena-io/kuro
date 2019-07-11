@@ -226,7 +226,7 @@ sendPrivateBatch = catch (do
     queueRpcs rpcs)
   (\e -> liftIO $ putStrLn $ "Exception caught in the handler 'sendPrivateBatch': " ++ show (e :: SomeException))
 
-poll :: Api ()
+  poll :: Api ()
 poll = catch (do
     (Pact.Poll rks) <- readJSON
     PossiblyIncompleteResults{..} <- checkHistoryForResult (HashSet.fromList (NE.toList rks))

@@ -19,15 +19,14 @@ import Data.Default
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Serialize (Serialize)
-import qualified Data.Serialize as S
 import Data.Text (Text)
 import GHC.Generics
 
 import qualified Pact.Types.Hash as P
-import Pact.Types.Util (lensyParseJSON, lensyToJSON, ParseText(..), parseB16Text, toB16JSON)
+import Pact.Types.Util (lensyParseJSON, lensyToJSON, toB16JSON)
 
 import Kadena.Orphans ()
-import Kadena.Types.Base (Alias, failMaybe)
+import Kadena.Types.Base (Alias)
 
 ----------------------------------------------------------------------------------------------------
 data KeyPair = KeyPair
@@ -65,7 +64,7 @@ makeLenses ''Signer
 ----------------------------------------------------------------------------------------------------
 data KeySet = KeySet
   { _ksCluster :: !(Map Alias Ed25519.PublicKey)
-  }
+  } deriving Eq
 makeLenses ''KeySet
 
 instance Default KeySet where

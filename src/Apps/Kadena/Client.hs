@@ -59,7 +59,6 @@ import Data.Int
 import Data.List.Extra hiding (chunksOf)
 import Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.List.NonEmpty as NE
-import qualified Data.Map.Strict as M
 import Data.Maybe
 import qualified Data.Set as S
 import Data.String
@@ -90,20 +89,15 @@ import qualified Pact.Types.ChainMeta as Pact
 import qualified Pact.Types.Command as Pact
 import Pact.Types.Command ()
 import qualified Pact.Types.Crypto as Pact
-import qualified Pact.Types.Exp as Pact
-import qualified Pact.Types.PactValue as Pact
 import Pact.Types.RPC
-import qualified Pact.Types.Runtime as Pact
-import qualified Pact.Types.Scheme as Pact
-import qualified Pact.Types.Term as Pact
 import Pact.Types.Util
+
 import Kadena.Command
 import Kadena.ConfigChange (mkConfigChangeApiReq)
-import qualified Kadena.Crypto as KC
-import Kadena.HTTP.ApiServer (ApiResponse)
 import Kadena.Types.Base hiding (printLatTime)
-import Kadena.Types.Entity (EntityName)
 import Kadena.Types.Command
+import Kadena.Types.Entity (EntityName)
+import Kadena.Types.HTTP
 
 data ClientOpts = ClientOpts {
       _oConfig :: FilePath
@@ -397,8 +391,8 @@ processParBatchPerServer sleep' (sema, (Node{..}, batches)) = do
         case resp ^. responseBody of
           Left err ->
             flushStrLn $ _nURL ++ " Failure: " ++ show err
-          Right resp -> do
-            rk <- return $ NE.last $ Pact._rkRequestKeys resp
+          Right r -> do
+            rk <- return $ NE.last $ Pact._rkRequestKeys r
             flushStrLn $ _nURL ++ " Success: " ++ show rk
         threadDelay (sleep' * 1000)
   putMVar sema ()

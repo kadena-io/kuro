@@ -31,10 +31,8 @@ import Data.List.NonEmpty (nonEmpty, NonEmpty(..))
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Text as T
 import Data.Text.Encoding
-import qualified Data.HashMap.Strict as HM
 import Data.HashSet (HashSet)
 import qualified Data.HashSet as HashSet
-import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Set as Set
 import qualified Data.Serialize as SZ
@@ -46,12 +44,8 @@ import System.FilePath
 import System.Directory
 import Data.Thyme.Clock
 
-import qualified Pact.Server.ApiServer as Pact
 import qualified Pact.Types.Runtime as Pact
-import qualified Pact.Types.ChainMeta as Pact
 import qualified Pact.Types.Command as Pact
-import qualified Pact.Types.Hash as Pact
-import Pact.Types.RPC (PactRPC)
 import qualified Pact.Types.API as Pact
 
 import Kadena.Command (SubmitCC(..))
@@ -59,6 +53,7 @@ import Kadena.Types.Command
 import Kadena.Types.Base
 import Kadena.Types.Comms
 import Kadena.Types.Config as Config
+import Kadena.Types.HTTP
 import Kadena.Config.TMVar as Config
 import Kadena.Types.Spec
 import Kadena.Types.Entity
@@ -67,7 +62,7 @@ import qualified Kadena.Types.History as History
 import qualified Kadena.Types.Execution as Exec
 import Kadena.Types.Dispatch
 import Kadena.Private.Service (encrypt)
-import Kadena.Types.Private (PrivatePlaintext(..),PrivateCiphertext(..),Labeled(..),PrivateResult(..))
+import Kadena.Types.Private (PrivatePlaintext(..),PrivateCiphertext(..),Labeled(..))
 import Kadena.Consensus.Publish
 
 import Kadena.HTTP.Static
@@ -82,13 +77,6 @@ data ApiEnv = ApiEnv
 makeLenses ''ApiEnv
 
 type Api a = ReaderT ApiEnv Snap a
-
-type ApiResponse a = Either String a
-
-newtype PollResponses = PollResponses (HM.HashMap RequestKey (ApiResponse CommandResult))
-  deriving (ToJSON, FromJSON)
-
-instance FromJSONKey RequestKey
 
 runApiServer :: Dispatch -> Config.GlobalConfigTMVar -> (String -> IO ())
              -> Int -> MVar PublishedConsensus -> IO UTCTime -> IO ()
@@ -220,17 +208,15 @@ sendPrivateBatch = catch (do
                           let hsh = Pact.hash $ _lPayload $ _pcEntity
                               hc = Hashed pc hsh
                           return (RequestKey (Pact.toUntypedHash hsh), PCWire $ SZ.encode hc)
-            -- case _pMeta is not (Pact.PrivateMeta pm)
-            _ -> die $ "sendPrivateBatch: expecting PrivateMeta in payload: " ++ show c
-
     queueRpcs rpcs)
   (\e -> liftIO $ putStrLn $ "Exception caught in the handler 'sendPrivateBatch': " ++ show (e :: SomeException))
 
-  poll :: Api ()
+poll :: Api ()
 poll = catch (do
     (Pact.Poll rks) <- readJSON
     PossiblyIncompleteResults{..} <- checkHistoryForResult (HashSet.fromList (NE.toList rks))
-    writeResponse $ PollResponses possiblyIncompleteResults)
+    writeResponse $ PollResponses $ fmap Right possiblyIncompleteResults)
+    -- ^ convert PossiblyIncompleteResults to PollResponses
   (\e -> liftIO $ putStrLn $ "Exception caught in the handler poll: " ++ show (e :: SomeException))
 
 checkHistoryForResult :: HashSet RequestKey -> Api PossiblyIncompleteResults

@@ -98,6 +98,7 @@ library
                      , Kadena.Types.Evidence
                      , Kadena.Types.Execution
                      , Kadena.Types.History
+                     , Kadena.Types.HTTP
                      , Kadena.Types.Log
                      , Kadena.Types.Message
                      , Kadena.Types.Message.AE

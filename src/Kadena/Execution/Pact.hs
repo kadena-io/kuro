@@ -235,12 +235,16 @@ publishCont pactTid step rollback cData = do
         addy = fmap (reverseAddy me) $ _pmAddress  $ _pMeta $ _cmdPayload $ _peCommand
         nonce = fromString $ show (step,rollback)
         (rpc :: PactRPC ()) = Continuation $ ContMsg pactTid step rollback cData Nothing
-        (EntityKeyPair kpk ksk) = _ecSigner
+        (EntityKeyPair ksk kpk) = _ecSigner
     signer <- either (throwPactError . pretty) return $
+
               -- TODO: Do we need a Scheme for this?
-              PCrypto.importKeyPair (PCrypto.toScheme Curve25519)
-              (Just $ PCrypto.PubBS $ Dh.convert (Dh.dhPubToBytes kpk))
-              (PCrypto.PrivBS $ Dh.convert (Dh.dhSecToBytes ksk))
+              -- PCrypto.importKeyPair (PCrypto.toScheme Curve25519)
+              -- for now, just to get it to compile
+              PCrypto.importKeyPair
+                (PCrypto.toScheme ED25519)
+                (Just $ PCrypto.PubBS $ Dh.convert (Dh.dhPubToBytes (epPublicKey kpk)))
+                (PCrypto.PrivBS $ Dh.convert (Dh.dhSecToBytes (esSecretKey ksk)))
 
     cmd <- liftIO $ mkCommand [signer] addy nonce rpc
     debug $ "Sending success continuation for pact: " ++ show rpc

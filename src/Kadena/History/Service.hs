@@ -51,7 +51,7 @@ initHistoryEnv
   -> GlobalConfigTMVar
   -> IO HistoryEnv
 initHistoryEnv dispatch' debugPrint' getTimestamp' cfgTmVar = do
-  rconf <- readCurrentConfig cfgTmVar 
+  rconf <- readCurrentConfig cfgTmVar
   return $ HistoryEnv
     { _henvHistoryChannel = dispatch' ^. D.dispHistoryChannel
     , _henvDebugPrint = debugPrint'

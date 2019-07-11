@@ -30,8 +30,6 @@ import Data.Thyme.Clock (UTCTime)
 
 import Database.SQLite3.Direct
 
-import qualified Pact.Types.Command as Pact
-
 import Kadena.Config.TMVar as Cfg
 import Kadena.Types.Base
 import Kadena.Types.Command
@@ -43,7 +41,7 @@ newtype ExistenceResult = ExistenceResult
   } deriving (Show, Eq)
 
 newtype PossiblyIncompleteResults = PossiblyIncompleteResults
-  { possiblyIncompleteResults :: (HashMap RequestKey (ApiResponse CommandResult))
+  { possiblyIncompleteResults :: (HashMap RequestKey CommandResult)
   } deriving (Show, Eq)
 
 data ListenerResult =

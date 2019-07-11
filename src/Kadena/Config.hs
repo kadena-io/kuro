@@ -11,7 +11,6 @@ import qualified Data.Yaml as Y
 
 import Kadena.Crypto
 import Kadena.Config.TMVar
-import Kadena.Types.Config
 import Kadena.Types.Base
 
 getConfigWhenNew :: ConfigVersion -> GlobalConfigTMVar -> STM GlobalConfig

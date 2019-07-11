@@ -17,14 +17,17 @@ import Data.Serialize (decode)
 
 import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Map.Strict as Map
+import Data.Text (Text)
 import Data.Thyme.Clock
 import Data.Maybe (fromJust)
 import Data.ByteString (ByteString)
 import Data.Aeson (Value)
 
 import qualified Pact.Types.Command as Pact
-import Pact.Types.Command ( ExecutionMode(..))
+import qualified Pact.Types.Hash as Pact
 import Pact.Types.Logger (LogRules(..),initLoggers,doLog)
+import qualified Pact.Types.Persistence as Pact
+
 
 import Kadena.Util.Util (linkAsyncTrack)
 import Kadena.Config
@@ -35,7 +38,6 @@ import Kadena.Types.Execution
 import Kadena.Types.Metric
 import Kadena.Types.Command
 import Kadena.Types.Config
-import Kadena.Types.KeySet
 import Kadena.Types.Log
 import Kadena.Types.Dispatch (Dispatch)
 import qualified Kadena.Types.Dispatch as D
@@ -45,6 +47,7 @@ import Kadena.Types.Comms (Comms(..))
 import Kadena.Command
 import Kadena.Event (pprintBeat)
 import Kadena.Private.Service (decrypt)
+import Kadena.Crypto
 import Kadena.Types.Private (PrivatePlaintext(..),PrivateResult(..))
 import Kadena.Execution.Pact
 import Kadena.Consensus.Publish
@@ -184,7 +187,7 @@ applyCommand _tEnd le@LogEntry{..} = do
   apply <- Pact._ceiApplyPPCmd <$> use csCommandExecInterface
   startTime <- now
   logApplyLatency startTime le
-  let chash = getCmdBodyHash _leCommand
+  let chash = Pact.toUntypedHash $ getCmdBodyHash _leCommand
       rkey = RequestKey chash
       stamp ppLat = do
         tEnd' <- now
@@ -203,7 +206,7 @@ applyCommand _tEnd le@LogEntry{..} = do
         Result{..}  -> do
           debug $ "WARNING: fully resolved pact command found for " ++ show _leLogIndex
           return $! (result, _leCmdLatMetrics)
-      result <- liftIO $ apply (Transactional (fromIntegral _leLogIndex)) _sccCmd pproc
+      result <- liftIO $ apply Pact.Transactional _sccCmd pproc
       lm <- stamp ppLat
       return ( rkey
              , SmartContractResult
@@ -249,19 +252,19 @@ applyCommand _tEnd le@LogEntry{..} = do
             Left e -> finish $ PrivateFailure e
             Right cr -> finish $ PrivateSuccess cr
 
-applyPrivate :: LogEntry -> PrivatePlaintext -> ExecutionService (Either String Pact.CommandResult)
+applyPrivate :: LogEntry -> PrivatePlaintext -> ExecutionService (Either String (Pact.CommandResult Hash))
 applyPrivate LogEntry{..} PrivatePlaintext{..} = case decode _ppMessage of
   Left e -> return $ Left e
   Right cmd -> case Pact.verifyCommand cmd of
     Pact.ProcFail e -> return $ Left e
     p@Pact.ProcSucc {} -> do
       apply <- Pact._ceiApplyPPCmd <$> use csCommandExecInterface
-      Right <$> liftIO (apply (Transactional (fromIntegral _leLogIndex)) cmd p)
+      Right <$> liftIO (apply Pact.Transactional cmd p)
 
-applyLocalCommand :: (Pact.Command ByteString, MVar Value) -> ExecutionService ()
+applyLocalCommand :: (Pact.Command ByteString, MVar Pact.PactResult) -> ExecutionService ()
 applyLocalCommand (cmd, mv) = do
   applyLocal <- Pact._ceiApplyCmd <$> use csCommandExecInterface
-  cr <- liftIO $ applyLocal Local cmd
+  cr <- liftIO $ applyLocal Pact.Local cmd
   liftIO $ putMVar mv (Pact._crResult cr)
 
 -- | This may be used in the future for configuration changes other than cluster membership changes.

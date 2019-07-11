@@ -31,8 +31,6 @@ import GHC.Generics (Generic)
 import Pact.Types.Runtime (EntityName)
 import Pact.Types.Util (AsString(..),lensyToJSON,lensyParseJSON,toB16JSON,parseB16JSON,toB16Text)
 
-import qualified Kadena.Crypto as KC
-
 ----------------------------------------------------------------------------------------------------
 newtype EntityPublicKey = EntityPublicKey { epPublicKey :: Dh.PublicKey Dh.Curve25519 }
 

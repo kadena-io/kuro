@@ -24,7 +24,6 @@ import Control.Lens
 import Control.Monad
 import Control.Concurrent
 import qualified Crypto.Ed25519.Pure as Ed25519
-import Crypto.Number.Serialize (i2osp, os2ip)
 import qualified Data.Aeson as A (encode)
 import Data.Aeson
 import Data.ByteString (ByteString)
@@ -43,9 +42,7 @@ import Kadena.Types.Base
 import Kadena.Types.Command
 import Kadena.Types.Message.Signed
 
-import qualified Pact.ApiReq as Pact
 import qualified Pact.Types.Command as Pact
-import qualified Pact.Types.Crypto as Pact
 import qualified Pact.Types.Hash as Pact
 import Pact.Types.Util
 
@@ -55,7 +52,8 @@ mkClusterChangeCommand ConfigChangeApiReq{..} = do
   rid <- maybe (show <$> getCurrentTime) return _ylccNonce
   let ccPayload = CCPayload
                    { _ccpInfo = _ylccInfo
-                   , _ccpNonce = toS rid }
+                   , _ccpNonce = toS rid
+                   , _ccpSigners = [] }
   let jPayload = BSL.toStrict $ A.encode ccPayload
   let theHash =  hash jPayload
   let theSigs = createSignatures _ylccKeyPairs $ Pact.toUntypedHash theHash

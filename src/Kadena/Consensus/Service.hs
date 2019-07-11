@@ -14,10 +14,10 @@ import qualified Kadena.Config.ClusterMembership as CM
 import Kadena.Config.TMVar
 import Kadena.Consensus.Handle
 import Kadena.Consensus.Util
+import Kadena.Crypto
 import Kadena.Event (foreverHeart)
 import Kadena.Types
 import Kadena.Types.Entity
-import Kadena.Types.KeySet
 import Kadena.Types.Execution
 import Kadena.Messaging.Turbine
 import qualified Kadena.Types.Turbine as Turbine
@@ -52,7 +52,7 @@ launchHistoryService :: Dispatch
   -> GlobalConfigTMVar
   -> IO ()
 launchHistoryService dispatch' dbgPrint' getTimestamp' gCfg = do
-  histEnv <- History.initHistoryEnv dispatch' dbgPrint' getTimestamp' gCfg 
+  histEnv <- History.initHistoryEnv dispatch' dbgPrint' getTimestamp' gCfg
   linkAsyncTrack "HistoryThread" (History.runHistoryService histEnv Nothing)
   linkAsyncTrack "HistoryHB" (foreverHeart (_dispHistoryChannel dispatch') 1000000 HistoryBeat)
 
@@ -64,7 +64,7 @@ launchPreProcService :: Dispatch
 launchPreProcService dispatch' dbgPrint' getTimestamp' gCfg = do
   rconf <- readCurrentConfig gCfg
   let preProcEnv = PreProc.initPreProcEnv dispatch' (_preProcThreadCount rconf) dbgPrint' getTimestamp'
-                   (_preProcUsePar rconf) gCfg 
+                   (_preProcUsePar rconf) gCfg
   linkAsyncTrack "PreProcThread" (PreProc.runPreProcService (preProcEnv))
   linkAsyncTrack "PreProcHB" (foreverHeart (_dispProcessRequestChannel dispatch') 1000000 PreProcBeat)
 

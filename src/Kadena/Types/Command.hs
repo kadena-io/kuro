@@ -38,10 +38,8 @@ module Kadena.Types.Command
 import Control.Lens (ASetter, makeLenses)
 import Control.Concurrent
 import Control.DeepSeq
-import qualified Crypto.Ed25519.Pure as Ed25519
 import Data.Serialize (Serialize)
 import Data.ByteString (ByteString)
-import qualified Data.HashMap.Strict as HM
 import Data.Text (Text)
 import Data.Thyme.Clock
 import Data.Thyme.Time.Core ()
@@ -50,13 +48,12 @@ import GHC.Generics
 import GHC.Int (Int64)
 
 import qualified Kadena.Crypto as KC
-import Kadena.Types.Base (LogIndex, NodeId, RequestKey)
+import Kadena.Types.Base (LogIndex, NodeId)
 import Kadena.Types.Private (PrivateCiphertext,PrivateResult)
 
-import qualified Pact.ApiReq as Pact
+import qualified Pact.Types.ChainMeta as Pact
 import qualified Pact.Types.Command as Pact
 import qualified Pact.Types.Hash as Pact
-import qualified Pact.Types.RPC as Pact
 import Pact.Types.Util
 
 data CmdLatencyMetrics = CmdLatencyMetrics
@@ -167,8 +164,7 @@ data ProcessedClusterChg a =
   deriving (Show, Eq, Generic, Serialize)
 instance NFData a => NFData (ProcessedClusterChg a)
 
--- TODO: use PrivateMeta instead of () ?
-type SCCPreProcResult = PendingResult (Pact.ProcessedCommand () Pact.ParsedCode)
+type SCCPreProcResult = PendingResult (Pact.ProcessedCommand Pact.PrivateMeta Pact.ParsedCode)
 type CCCPreProcResult = PendingResult (ProcessedClusterChg CCPayload)
 
 data RunPreProc =
@@ -181,8 +177,7 @@ data RunPreProc =
 
 data FinishedPreProc =
   FinishedPreProcSCC
-    -- TODO: use PrivateMeta instead of () ?
-    { _fppSccRes :: !(Pact.ProcessedCommand () Pact.ParsedCode)
+    { _fppSccRes :: !(Pact.ProcessedCommand Pact.PrivateMeta Pact.ParsedCode)
     , _fppSccMVar :: !(MVar SCCPreProcResult)} |
   FinishedPreProcCCC
     { _fppCccRes :: !(ProcessedClusterChg CCPayload)
@@ -206,8 +201,7 @@ instance NFData a => NFData (Hashed a)
 data Command =
   SmartContractCommand
   { _sccCmd :: !(Pact.Command ByteString)
-  -- TODO: use PrivateMeta instead of () ?
-  , _sccPreProc :: !(Preprocessed (Pact.ProcessedCommand () Pact.ParsedCode)) } |
+  , _sccPreProc :: !(Preprocessed (Pact.ProcessedCommand Pact.PrivateMeta Pact.ParsedCode)) } |
   ConsensusChangeCommand
   { _cccCmd :: !(ClusterChangeCommand ByteString)
   , _cccPreProc :: !(Preprocessed (ProcessedClusterChg CCPayload))} |

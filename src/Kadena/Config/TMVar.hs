@@ -26,9 +26,11 @@ import Data.Set (Set)
 import GHC.Generics
 
 import Pact.Types.Logger hiding (logRules)
+import Pact.Types.Util
 
 import qualified Kadena.Config.ClusterMembership as CM
 import Kadena.Types.PactDB
+import Kadena.Orphans ()
 import Kadena.Types.Base
 import Kadena.Types.Entity
 
@@ -59,15 +61,11 @@ data Config = Config
   deriving (Show, Generic)
 makeLenses ''Config
 
--- TODO: Fix this!
 instance ToJSON Config where
-  -- toJSON = lensyToJSON 1
-  toJSON = undefined
+  toJSON = lensyToJSON 1
 
--- TODO: Fix this!
 instance FromJSON Config where
-  -- parseJSON = lensyParseJSON 1
-  parseJSON = undefined
+  parseJSON = lensyParseJSON 1
 
 data GlobalConfig = GlobalConfig
   { _gcVersion :: !ConfigVersion

@@ -56,8 +56,7 @@ instance ToJSON Signer where toJSON = lensyToJSON 3
 instance FromJSON Signer where parseJSON = lensyParseJSON 3
 
 -- Nothing really to do for Signer as NFData, but to convice the compiler:
-instance NFData Signer where
-  rnf (Signer _ _) = ()
+instance NFData Signer where rnf (Signer _ _) = ()
 
 makeLenses ''Signer
 

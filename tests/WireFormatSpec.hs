@@ -25,7 +25,6 @@ import Kadena.Types
 import qualified Pact.Types.Command as P
 import qualified Pact.Types.Crypto as P
 import qualified Pact.Types.Hash as P
-import qualified Pact.Types.Scheme as P
 import Pact.Types.RPC
 
 spec :: Spec

@@ -456,12 +456,12 @@ listenForLastResult tdelay showLatency theKeys = do
   resp <- postAPI "listen" (Pact.ListenerRequest lastRk)
   case resp ^. responseBody of
     Left err -> flushStrLn $ "Error: no results received: " ++ show err
-    Right ccr@ConsensusChangeResult{..} -> do
-      tell [ReplApiResponse { _apiResponseKey = lastRk,
-                              _apiResult = ccr
-                            , _batchCnt = fromIntegral cnt}]
-      if not showLatency then putJSON ccr
-      else case _crLatMetrics of
+    Right cr -> do
+      tell [ReplApiResponse { _apiResponseKey = lastRk
+                              , _apiResult = cr
+                              , _batchCnt = fromIntegral cnt}]
+      if not showLatency then putJSON cr
+      else case _crLatMetrics cr of
         Nothing -> flushStrLn "Success"
         Just lats@CmdResultLatencyMetrics{..} -> do
           pprintLatency lats
@@ -516,6 +516,7 @@ checkEach responseMap (b, xs) theKey = do
       return (False, xs)
     Just (Left err) -> do
         putStrLn $ "Status was not successful for results of key: " ++ show theKey
+                ++ "(" ++ err ++ ")"
         return (False, xs)
     Just (Right cmdResult) -> return (b, cmdResult : xs)
 
@@ -543,12 +544,12 @@ handlePollCmds printMetrics rk = do
       case resp ^. responseBody of
         Left err -> flushStrLn $ "Error: no results received: " ++ show err
         Right (PollResponses prs) -> do
-          let filtered = filter (isRight . snd)  (HM.toList prs)
+          let subList = filter (isRight . snd)  (HM.toList prs)
           tell (fmap (\(k, (Right v)) -> ReplApiResponse
                   { _apiResponseKey = k
                   , _apiResult = v
-                  , _batchCnt = 1 }) filtered)
-          forM_ (snd <$> filtered) $ \(Right cmdResult) -> do
+                  , _batchCnt = 1 }) subList)
+          forM_ (snd <$> subList) $ \(Right cmdResult) -> do
             putJSON cmdResult
             when printMetrics $
               case _crLatMetrics cmdResult of

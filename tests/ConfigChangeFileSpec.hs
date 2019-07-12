@@ -14,8 +14,6 @@ import qualified Kadena.Crypto as KC
 import Kadena.Types.Base
 import Kadena.Types.Command
 
-import qualified Pact.ApiReq as Pact
-import qualified Pact.Types.Crypto as Pact
 import Pact.Types.Util (fromText')
 
 spec :: Spec

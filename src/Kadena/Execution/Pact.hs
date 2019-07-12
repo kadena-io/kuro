@@ -5,7 +5,7 @@ module Kadena.Execution.Pact
   (initPactService)
   where
 
-import Control.Concurrent (newMVar,MVar,readMVar,swapMVar)
+import Control.Concurrent (newMVar)
 import Control.Exception (SomeException)
 import Control.Exception.Safe (tryAny)
 import Control.Monad
@@ -13,13 +13,10 @@ import Control.Monad.Catch (throwM)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (ask,ReaderT,runReaderT,reader)
 import Crypto.Noise as Dh (convert)
-import Crypto.Noise.DH (DH(..))
 import qualified Crypto.Noise.DH as Dh
-import qualified Crypto.Noise.DH.Curve25519 as Dh
 import Data.Aeson as A
 import Data.Default
 import Data.List.NonEmpty (NonEmpty(..))
-import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import Data.String
 import Data.Word
@@ -49,8 +46,7 @@ import Pact.Types.SPV
 import Pact.Types.Server (throwCmdEx,userSigsToPactKeySet)
 
 import Kadena.Consensus.Publish
-import qualified Kadena.Crypto as KCrypto
-import Kadena.Types.Entity hiding (Signer)
+import Kadena.Types.Entity
 import Kadena.Types.Execution
 import Kadena.Types.PactDB
 import Kadena.Util.Util (linkAsyncBoundTrack)
@@ -117,7 +113,7 @@ initCommandInterface ent pub logger loggers p db = do
 
 applyCmd :: EntityConfig -> Publish -> Logger -> PactDbEnv p -> ExecutionMode -> Command a ->
             (ProcessedCommand PrivateMeta ParsedCode) -> IO (CommandResult Hash)
-applyCmd _ _ _ _ ex cmd (ProcFail s) =
+applyCmd _ _ _ _ _ cmd (ProcFail s) =
   return $ resultFailure
            Nothing
            (cmdToRequestKey cmd)

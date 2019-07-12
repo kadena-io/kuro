@@ -259,6 +259,7 @@ executable inserts
                      , cmdargs
                      , bytestring
                      , data-default
+                     , ed25519-donna
                      , exceptions
                      , extra
                      , hspec

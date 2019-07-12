@@ -41,8 +41,8 @@ import qualified Kadena.Types.Dispatch as D
 import Kadena.Event (pprintBeat)
 
 #define cpp_compile_time (__DATE__ ++ " " ++ __TIME__)
-compileTime :: String
-compileTime = cpp_compile_time
+_compileTime :: String
+_compileTime = cpp_compile_time
 
 initHistoryEnv
   :: Dispatch

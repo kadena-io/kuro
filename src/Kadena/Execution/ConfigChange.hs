@@ -10,12 +10,11 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString.Base16 as B16
 import qualified Data.Aeson as A
 import Data.String.Conv (toS)
-import Data.Text (Text)
-import qualified Crypto.Ed25519.Pure as Ed25519 (PublicKey, Signature(..), importPublic)
+import qualified Crypto.Ed25519.Pure as Ed25519 (PublicKey, Signature(..))
 
 import qualified Pact.Types.Command as P (UserSig(..))
-import qualified Pact.Types.Hash as P (hash, Hash(..))
-import Pact.Types.Hash (pactHash, PactHash, toUntypedHash)
+import qualified Pact.Types.Hash as P (hash)
+import Pact.Types.Hash (PactHash, toUntypedHash)
 
 import Kadena.Crypto (Signer(..), valid)
 import Kadena.Types.Message.Signed (DeserializationError(..))

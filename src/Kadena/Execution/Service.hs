@@ -17,11 +17,9 @@ import Data.Serialize (decode)
 
 import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Map.Strict as Map
-import Data.Text (Text)
 import Data.Thyme.Clock
 import Data.Maybe (fromJust)
 import Data.ByteString (ByteString)
-import Data.Aeson (Value)
 
 import qualified Pact.Types.Command as Pact
 import qualified Pact.Types.Hash as Pact

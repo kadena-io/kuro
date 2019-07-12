@@ -5,12 +5,10 @@ module Kadena.Monitoring.Server
   ( startMonitoring
   ) where
 
-import Control.Lens ((^.), to)
 import Data.Text.Encoding (decodeUtf8)
 
 import qualified Data.ByteString.Base64 as B64
 import qualified Data.Text as T
-import System.Metrics (Store)
 import qualified System.Metrics.Label as Label
 import qualified System.Metrics.Gauge as Gauge
 import qualified System.Metrics.Distribution as Dist
@@ -19,14 +17,13 @@ import qualified System.Metrics.Distribution as Dist
 
 import Kadena.Config.TMVar
 import Kadena.Util.Util (awsDashVar)
-import Kadena.Types (Metric(..), LogIndex(..), Term(..), NodeId(..), _port)
-import Kadena.Monitoring.EkgMonitor ( Server, forkServer, getLabel, getGauge, getDistribution
-                                    , serverMetricStore)
-
-startApi :: Config -> IO Server
-startApi config = undefined
+import Kadena.Types (Metric(..), LogIndex(..), Term(..), NodeId(..))
+import Kadena.Monitoring.EkgMonitor (Server, getLabel, getGauge, getDistribution)
 
 -- TODO: re-implement metrics via elasticsearch & remove this file
+startApi :: Config -> IO Server
+startApi _config = undefined
+
 {-
 startApi :: Config -> IO Server
 startApi config = do

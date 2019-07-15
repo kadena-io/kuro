@@ -9,7 +9,7 @@
 module Kadena.Sender.Service
   ( SenderService
   , ServiceEnv(..), debugPrint, serviceRequestChan, outboundGeneral
-  , logService, getEvidenceState, publishMetric, aeReplicationLogLimit
+  , logService, getEvidenceState, aeReplicationLogLimit
   , runSenderService
   , createAppendEntriesResponse' -- we need this for AER Evidence
   , willBroadcastAE
@@ -44,7 +44,6 @@ import Kadena.Types.Log (LogEntries(..))
 import Kadena.Log.Types (LogIndex(..))
 import qualified Kadena.Types.Log as Log
 import Kadena.Types.Message
-import Kadena.Types.Metric (Metric)
 import qualified Kadena.Types.Spec as Spec
 
 data ServiceEnv = ServiceEnv
@@ -57,7 +56,6 @@ data ServiceEnv = ServiceEnv
   , _logService :: !LogServiceChannel
   -- Evidence Thread's Published State
   , _getEvidenceState :: !(MVar PublishedEvidenceState)
-  , _publishMetric :: !(Metric -> IO ())
   , _config :: !Cfg.GlobalConfigTMVar
   , _pubCons :: !(MVar Spec.PublishedConsensus)
   }
@@ -86,11 +84,10 @@ runSenderService
   :: Dispatch
   -> Cfg.GlobalConfigTMVar
   -> (String -> IO ())
-  -> (Metric -> IO ())
   -> MVar PublishedEvidenceState
   -> MVar Spec.PublishedConsensus
   -> IO ()
-runSenderService dispatch gcm debugFn publishMetric' mPubEvState mPubCons = do
+runSenderService dispatch gcm debugFn mPubEvState mPubCons = do
   conf <- Cfg.readCurrentConfig gcm
   s <- return $ StateSnapshot
     { _snapNodeId = Cfg._nodeId conf
@@ -111,7 +108,6 @@ runSenderService dispatch gcm debugFn publishMetric' mPubEvState mPubCons = do
     -- Log Storage
     , _logService = dispatch ^. KD.dispLogService
     , _getEvidenceState = mPubEvState
-    , _publishMetric = publishMetric'
     , _config = gcm
     , _pubCons = mPubCons
     }
@@ -314,7 +310,7 @@ canBroadcastAE cm nodeIndexMap ct myNodeId' vts broadcastControl =
           return $! Just $! AE' $ AppendEntries ct myNodeId' pli plt es Set.empty NewMsg
       if everyoneBelieves
       then do
-        debug $ "canBroadcastAE - Backsteet -" 
+        debug $ "canBroadcastAE - Backsteet -"
               ++ "\n\tlaggingFollowers: " ++ show laggingFollowers
         return $ BackStreet inSyncRpc laggingFollowers
       else do

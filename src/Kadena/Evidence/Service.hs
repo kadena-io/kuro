@@ -24,7 +24,6 @@ import Kadena.Config.TMVar as Cfg
 import Kadena.ConfigChange as CC
 import Kadena.Event (pprintBeat)
 import Kadena.Evidence.Spec as X
-import Kadena.Types.Metric (Metric)
 import Kadena.Types.Base
 import Kadena.Types.Comms
 import Kadena.Types.Config
@@ -33,8 +32,6 @@ import Kadena.Types.Event (ResetLeaderNoFollowersTimeout(..))
 import Kadena.Types.Evidence (Evidence(..), PublishedEvidenceState(..), CommitCheckResult (..))
 import Kadena.Types.Message (AppendEntriesResponse(..))
 import Kadena.Util.Util (linkAsyncTrack, throwDiagnostics)
--- TODO: re-integrate EKG when Evidence Service is finished and hspec tests are written
--- import Kadena.Types.Metric
 import qualified Kadena.Log.Types as Log
 import qualified Kadena.Types.Log as Log
 import qualified Kadena.Types.Dispatch as Dispatch
@@ -44,16 +41,14 @@ initEvidenceEnv :: Dispatch
                 -> GlobalConfigTMVar
                 -> MVar PublishedEvidenceState
                 -> MVar ResetLeaderNoFollowersTimeout
-                -> (Metric -> IO ())
                 -> EvidenceEnv
-initEvidenceEnv dispatch debugFn' mConfig' mPubStateTo' mResetLeaderNoFollowers' publishMetric' = EvidenceEnv
+initEvidenceEnv dispatch debugFn' mConfig' mPubStateTo' mResetLeaderNoFollowers' = EvidenceEnv
   { _logService = dispatch ^. Dispatch.dispLogService
   , _evidence = dispatch ^. Dispatch.dispEvidence
   , _mResetLeaderNoFollowers = mResetLeaderNoFollowers'
   , _mConfig = mConfig'
   , _mPubStateTo = mPubStateTo'
   , _debugFn = debugFn'
-  , _publishMetric = publishMetric'
   }
 
 initializeState :: EvidenceEnv -> IO EvidenceState

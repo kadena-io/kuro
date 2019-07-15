@@ -76,10 +76,6 @@ library
                      , Kadena.Messaging.Turbine.RV
                      , Kadena.Messaging.Turbine.Util
                      , Kadena.Messaging.ZMQ
-                     , Kadena.Monitoring.EkgJson
-                     , Kadena.Monitoring.EkgMonitor
-                     , Kadena.Monitoring.EkgSnap
-                     , Kadena.Monitoring.Server
                      , Kadena.Orphans
                      , Kadena.PreProc.Service
                      , Kadena.Private.Private
@@ -179,6 +175,7 @@ library
                      , random
                      , safe
                      , safe-exceptions >= 0.1.4.0
+                     , scientific >= 0.3.6.2
                      , semigroups
                      , snap-core
                      , snap-server
@@ -317,6 +314,7 @@ test-suite hspec
                    , safe
                    , safe-exceptions
                    , scientific
+                   , scientific >= 0.3.6.2
                    , text
                    , transformers
                    , trifecta

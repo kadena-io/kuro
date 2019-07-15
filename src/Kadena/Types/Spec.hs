@@ -7,7 +7,7 @@
 module Kadena.Types.Spec
   ( Consensus
   , ConsensusSpec(..)
-  , debugPrint, publishMetric, getTimestamp, random
+  , debugPrint, getTimestamp, random
   , viewConfig, readConfig, csTimerTarget, evidenceState, timeCache
   , ConsensusEnv(..), cfg, enqueueLogQuery, rs
   , enqueue, enqueueMultiple, dequeue, enqueueLater, killEnqueued
@@ -48,7 +48,6 @@ import Kadena.Types.Base
 import Kadena.Config.TMVar
 import Kadena.Types.Event
 import Kadena.Types.Message
-import Kadena.Types.Metric
 import Kadena.Types.Comms
 import Kadena.Types.Dispatch
 import Kadena.Types.Sender (SenderServiceChannel, ServiceRequest')
@@ -68,8 +67,6 @@ data ConsensusSpec = ConsensusSpec
   {
     -- | Function to log a debug message (no newline).
     _debugPrint       :: !(String -> IO ())
-
-  , _publishMetric    :: !(Metric -> IO ())
 
   , _getTimestamp     :: !(IO UTCTime)
 

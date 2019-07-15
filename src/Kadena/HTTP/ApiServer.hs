@@ -7,6 +7,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE BangPatterns #-}
 
@@ -117,14 +118,13 @@ api = route [
       ]
 
 sendLocal :: Api ()
-
 sendLocal = catch (do
     (cmd :: Pact.Command BS.ByteString) <- fmap encodeUtf8 <$> readJSON
     mv <- liftIO newEmptyMVar
     c <- view $ aiDispatch . dispExecService
     liftIO $ writeComm c (Exec.ExecLocal cmd mv)
     r <- liftIO $ takeMVar mv
-    writeResponse r)
+    writeResponse  r )
   (\e -> liftIO $ putStrLn $ "Exception caught in the handler 'sendLocal' : " ++ show (e :: SomeException))
 
 sendPublicBatch :: Api ()
@@ -252,8 +252,10 @@ tryParseJSON b = case eitherDecode b of
 setJSON :: Api ()
 setJSON = modifyResponse $ setHeader "Content-Type" "application/json"
 
-writeResponse :: ToJSON j => j -> Api ()
-writeResponse j = setJSON >> writeLBS (encode j)
+writeResponse :: forall j. (ToJSON j) => j -> Api ()
+writeResponse r = do
+  let theRight = (Right r) :: Either String j
+  setJSON >> writeLBS (encode theRight)
 
 listenFor :: Pact.ListenerRequest -> Api ClusterChangeResult
 listenFor (Pact.ListenerRequest rk) = do

@@ -257,9 +257,11 @@ postWithRetry ep server' rq = do
       let url = "http://" ++ server' ++ "/api/v1/" ++ ep
       let opts = defaults & manager .~ Left (defaultManagerSettings
             { managerResponseTimeout = responseTimeoutMicro (timeoutSeconds * 1000000) } )
+      -- error $ "before postWith - rq:  " ++ show (toJSON rq) ++ " url: " ++ show url
       r <- liftIO $ postWith opts url (toJSON rq)
+      error $ "before asJSON - r: " ++ show r
       resp <- asJSON r
-
+      error "after asJSON call"
       case resp ^. responseBody of
         Left _err -> do
           sleep 1
@@ -267,7 +269,8 @@ postWithRetry ep server' rq = do
         Right _ -> return resp
 
 handleHttpResp :: (t -> Repl ()) -> Response (ApiResponse t) -> Repl ()
-handleHttpResp a r =
+handleHttpResp a r = do
+        error "handleHttpResp called"
         case r ^. responseBody of
           Left err -> flushStrLn $ "Apps.Kadena.Client.handleHttpResp - failure in API Send: " ++ err
           Right resp -> a resp
@@ -725,9 +728,9 @@ handleCmd cmd reqStr = case cmd of
   Batch n | n <= 50000 -> use batchCmd >>= batchTest n
           | otherwise -> void $ flushStrLn "Aborting: batch count limited to 50000"
   ParallelBatch{..}
-   | cmdRate >= 20000 -> void $ flushStrLn "Aborting: cmd rate too large (limited to 25k/s)"
-   | sleepBetweenBatches < 250 -> void $ flushStrLn "Aborting: sleep between batches needs to be >= 250"
-   | otherwise -> parallelBatchTest totalNumCmds cmdRate sleepBetweenBatches
+    | cmdRate >= 20000 -> void $ flushStrLn "Aborting: cmd rate too large (limited to 25k/s)"
+    | sleepBetweenBatches < 250 -> void $ flushStrLn "Aborting: sleep between batches needs to be >= 250"
+    | otherwise -> parallelBatchTest totalNumCmds cmdRate sleepBetweenBatches
   Load s m -> load m s
   ConfigChange fp -> loadConfigChange fp
   Poll s -> parseRK s >>= void . handlePollCmds False . RequestKey . Hash

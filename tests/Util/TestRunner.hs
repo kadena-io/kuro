@@ -126,7 +126,7 @@ serverArgs2 = "-c " ++ testConfDir ++ "10002-cluster.yaml"
 serverArgs3 = "-c " ++ testConfDir ++ "10003-cluster.yaml"
 
 runClientCommands :: [String] ->  [TestRequest] -> IO [TestResult]
-runClientCommands args testRequests =
+runClientCommands args testRequests = do
   case getOpt Permute coptions args of
     (_,_,es@(_:_)) -> print es >> exitFailure
     (o,_,_) -> do

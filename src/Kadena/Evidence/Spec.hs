@@ -17,7 +17,6 @@ module Kadena.Evidence.Spec
   , esClusterMembers
   , EvidenceProcessor
   , debugFn
-  , publishMetric
   , getEvidenceQuorumSize
   ) where
 
@@ -34,7 +33,6 @@ import Data.Thyme.Clock
 
 import Kadena.Config.TMVar
 import Kadena.Types.Base
-import Kadena.Types.Metric
 import Kadena.Config.ClusterMembership
 import Kadena.Log.Types (LogServiceChannel)
 import Kadena.Types.Message
@@ -51,7 +49,6 @@ data EvidenceEnv = EvidenceEnv
   , _mConfig :: !GlobalConfigTMVar
   , _mPubStateTo :: !(MVar PublishedEvidenceState)
   , _debugFn :: !(String -> IO ())
-  , _publishMetric :: !(Metric -> IO ())
   }
 makeLenses ''EvidenceEnv
 

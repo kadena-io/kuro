@@ -15,8 +15,6 @@ module Kadena.Consensus.Util
   , runRWS_
   , enqueueEvent
   , dequeueEvent
-  , logMetric
-  , logStaticMetrics
   , setTerm
   , setRole
   , setCurrentLeader
@@ -41,7 +39,6 @@ import Data.Map.Strict (Map)
 import Data.Thyme.Clock
 import qualified System.Random as R
 
-import qualified Kadena.Config.ClusterMembership as CM
 import Kadena.Config.TMVar
 import Kadena.Types
 import qualified Kadena.Types.Sender as Sender
@@ -164,19 +161,6 @@ enqueueEvent event = view enqueue >>= \f -> liftIO $! f event
 dequeueEvent :: Consensus Event
 dequeueEvent = view dequeue >>= \f -> liftIO f
 
-logMetric :: Metric -> Consensus ()
-logMetric metric = view (rs.publishMetric) >>= \f -> liftIO $! f metric
-
-logStaticMetrics :: Consensus ()
-logStaticMetrics = do
-  Config{..} <- readConfig
-  logMetric . MetricNodeId =<< viewConfig nodeId
-  logMetric $ MetricClusterSize (1 + CM.countOthers _clusterMembers)
-  logMetric . MetricQuorumSize $ CM.minQuorumOthers _clusterMembers
-  logMetric $ MetricChangeToClusterSize (1 + CM.countTransitional _clusterMembers)
-  logMetric . MetricChangeToQuorumSize $ CM.minQuorumTransitional _clusterMembers
-  logMetric $ MetricClusterMembers (CM.othersAsText _clusterMembers)
-
 -- NB: Yes, the strictness here is probably overkill, but this used to leak the bloom filter
 publishConsensus :: Consensus ()
 publishConsensus = do
@@ -193,19 +177,16 @@ setTerm :: Term -> Consensus ()
 setTerm t = do
   csTerm .= t
   publishConsensus
-  logMetric $! MetricTerm t
 
 setRole :: Role -> Consensus ()
 setRole newRole = do
   csNodeRole .= newRole
   publishConsensus
-  logMetric $! MetricRole newRole
 
 setCurrentLeader :: Maybe NodeId -> Consensus ()
 setCurrentLeader mNode = do
   csCurrentLeader .= mNode
   publishConsensus
-  logMetric $! MetricCurrentLeader mNode
 
 runRWS_ :: MonadIO m => RWST r w s m a -> r -> s -> m ()
 runRWS_ ma r s = void $! runRWST ma r s

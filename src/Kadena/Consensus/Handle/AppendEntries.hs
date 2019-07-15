@@ -203,10 +203,6 @@ applyNewLeader NewLeaderConfirmed{..} = do
   view KD.informEvidenceServiceOfElection >>= liftIO
   setRole _stateRole
 
-logHashChange :: Hash -> KD.Consensus ()
-logHashChange (Hash mLastHash) =
-  logMetric $ KD.MetricHash mLastHash
-
 handle :: AppendEntries -> KD.Consensus ()
 handle ae = do
   start' <- now
@@ -256,9 +252,6 @@ handle ae = do
                            ++ "\n\t(election timer reset if not leader)"
             end' <- now
             updateLogs $ Log.ULReplicate $ updateRleLats start' end' rle
-            newMv <- queryLogs $ Set.singleton Log.GetLastLogHash
-            newLastLogHash' <- return $! Log.hasQueryResult Log.LastLogHash newMv
-            logHashChange newLastLogHash'
             sendHistoryNewKeys rks
             csCmdBloomFilter %= Bloom.insertList (HashSet.toList rks)
 --          else do

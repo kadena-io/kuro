@@ -6,7 +6,7 @@ module Kadena.Types.Execution
   ( ApplyFn
   , Execution(..)
   , ExecutionEnv(..)
-  , eenvExecChannel, eenvDebugPrint, eenvPublishMetric
+  , eenvExecChannel, eenvDebugPrint
   , eenvGetTimestamp, eenvHistoryChannel, eenvMConfig
   , eenvPactPersistConfig, eenvExecLoggers, eenvEntityConfig
   , eenvPrivateChannel
@@ -35,7 +35,6 @@ import Kadena.Types.PactDB
 import Kadena.Types.Config (GlobalConfigTMVar)
 import Kadena.Types.Comms (Comms(..),initCommsNormal,readCommNormal,writeCommNormal)
 import Kadena.Crypto
-import Kadena.Types.Metric (Metric)
 import Kadena.Types.Log (LogEntry,LogEntries)
 import Kadena.Types.Event (Beat)
 import Kadena.Types.History (HistoryChannel)
@@ -68,7 +67,6 @@ data ExecutionEnv = ExecutionEnv
   , _eenvPactPersistConfig :: !PactPersistConfig
   , _eenvDebugPrint :: !(String -> IO ())
   , _eenvExecLoggers :: !Loggers
-  , _eenvPublishMetric :: !(Metric -> IO ())
   , _eenvGetTimestamp :: !(IO UTCTime)
   , _eenvMConfig :: GlobalConfigTMVar
   , _eenvEntityConfig :: !EntityConfig

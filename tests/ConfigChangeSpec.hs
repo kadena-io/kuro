@@ -35,6 +35,8 @@ testClusterCommands = do
     results <- runClientCommands clientArgs testRequests
     checkResults results
 
+  -- TODO: uncomment these tests...
+  {-
   it "Metric test - waiting for cluster size == 4..." $ do
     okSize4 <- waitForMetric testMetricSize4
     okSize4 `shouldBe` True
@@ -112,6 +114,7 @@ testClusterCommands = do
     sleep 3
     results4b <- runClientCommands clientArgs testRequestsRepeated
     checkResults results4b
+  -}
 
 clientArgs :: [String]
 clientArgs = words $ "-c " ++ testConfDir ++ "client.yaml"
@@ -120,6 +123,7 @@ checkResults :: [TestResult] -> Expectation
 checkResults xs = mapM_ checkResult xs
   where
     checkResult result = do
+        error "checkResults called"
         let req = requestTr result
         let resp = responseTr result
         case resp of
@@ -127,6 +131,7 @@ checkResults xs = mapM_ checkResult xs
             failureMessage result "Response is missing"
           Just rsp -> do
             printPassed result
+            error "checkResults - about to call the eval function"
             eval req rsp
 
 assertEither :: Either String String -> Expectation
@@ -161,6 +166,7 @@ checkCCSuccess tr = do
 
 checkScientific :: Scientific -> TestResponse -> Expectation
 checkScientific _sci tr = do
+  error "checkScientific called"
   resultSuccess tr `shouldBe` True
   case apiResult tr of
     Left err -> expectationFailure err
@@ -226,7 +232,9 @@ passMetric :: TestMetricResult -> String
 passMetric tmr = "Metric test passed: " ++ metricNameTm (requestTmr tmr)
 
 testRequests :: [TestRequest]
-testRequests = [testReq1, testReq2, testReq3, testReq4, testReq5]
+-- testRequests = [testReq1, testReq2, testReq3, testReq4, testReq5]
+-- TODO: replace with the list of all tests above
+testRequests = [testReq1]
 
 testRequestsRepeated :: [TestRequest]
 testRequestsRepeated = [testReq1, testReq4, testReq5]

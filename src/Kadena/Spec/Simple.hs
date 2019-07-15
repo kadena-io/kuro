@@ -39,11 +39,9 @@ import Kadena.Consensus.Service
 import Kadena.Types.Base
 import Kadena.Crypto
 import Kadena.Types.Spec hiding (timeCache)
-import Kadena.Types.Metric
 import Kadena.Types.Dispatch
 import Kadena.Util.Util (awsDashVar, linkAsyncTrack)
 import Kadena.Messaging.ZMQ
-import Kadena.Monitoring.Server (startMonitoring)
 import Kadena.Private.Service (runPrivateService)
 import Kadena.Types.Turbine (ReceiverEnv(..))
 
@@ -120,11 +118,9 @@ initSysLog tc = do
 
 simpleConsensusSpec
   :: (String -> IO ())
-  -> (Metric -> IO ())
   -> ConsensusSpec
-simpleConsensusSpec debugFn pubMetricFn = ConsensusSpec
+simpleConsensusSpec debugFn = ConsensusSpec
   { _debugPrint      = debugFn
-  , _publishMetric   = pubMetricFn
   , _getTimestamp = liftIO getCurrentTime
   , _random = liftIO . randomRIO
   }
@@ -171,11 +167,9 @@ runServer = do
   oNodes <- return $ Set.toList $ Set.delete me (CM.otherNodes members)-- (Map.keysSet $ rconf ^. clientPublicKeys)
   dispatch <- initDispatch
 
-  -- Each node has its own snap monitoring server
-  pubMetric <- startMonitoring rconf
   linkAsyncTrack "ZmqServerThread" $ runMsgServer dispatch me oNodes debugFn gcm
   linkAsyncTrack "PrivateThread" $ runPrivateService dispatch rconf debugFn (_entity rconf)
-  let raftSpec = simpleConsensusSpec debugFn (liftIO . pubMetric)
+  let raftSpec = simpleConsensusSpec debugFn
 
   restartTurbo <- newEmptyMVar
   receiverEnv <- return $ simpleReceiverEnv dispatch rconf debugFn restartTurbo

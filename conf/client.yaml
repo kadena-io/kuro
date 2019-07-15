@@ -1,5 +1,5 @@
-publicKey: cce05c67d40f594680379ceb97827d2acc80bea213b2dfc98ad703e647b685f9
-secretKey: 21b55b8fe05437b5f08033711c7b8de1cfdfd758cf290b056adf692b1fa4535c
+publicKey: fa92687d4b0dca3b1659d0cfcc876a82c80d57c448073c960e1e592147ca1133
+secretKey: 031e68491813fbd80bfc2d2dcc8e20795f5d5bfd9d5cffbda4aed3be81ece777
 endpoints:
   node0:
     sender: true

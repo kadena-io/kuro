@@ -25,7 +25,6 @@ import Kadena.Types.Base
 import Kadena.Types.Comms
 import Kadena.Config.TMVar
 import Kadena.Types.Command (CmdLatencyMetrics(..))
-import Kadena.Types.Metric
 import Kadena.Log.Persistence
 import Kadena.Types.Log
 import Kadena.Log
@@ -39,10 +38,9 @@ import Kadena.Event (pprintBeat)
 
 runLogService :: Dispatch
               -> (String -> IO())
-              -> (Metric -> IO())
               -> GlobalConfigTMVar
               -> IO ()
-runLogService dispatch dbg publishMetric' gCfg = do
+runLogService dispatch dbg gCfg = do
   rconf <- readCurrentConfig gCfg
   dbConn' <- if rconf ^. enablePersistence
     then do
@@ -61,7 +59,6 @@ runLogService dispatch dbg publishMetric' gCfg = do
     , _debugPrint = dbg
     , _persistedLogEntriesToKeepInMemory = (rconf ^. inMemTxCache)
     , _dbConn = dbConn'
-    , _publishMetric = publishMetric'
     , _config = gCfg
     }
   initLogState' <- case dbConn' of
@@ -197,8 +194,6 @@ tellKadenaToApplyLogEntries aerTime = do
       ues' <- return $ populateConsensusLatency aerTime logTime unappliedEntries'
       view execChannel >>= liftIO . (`writeComm` Exec.ExecuteNewEntries ues')
       debug $ "informing Kadena to apply up to: " ++ show appliedIndex'
-      publishMetric' <- view publishMetric
-      liftIO $ publishMetric' $ MetricCommitIndex appliedIndex'
     Nothing -> return ()
 
 clearPersistedEntriesFromMemory :: LogThread ()

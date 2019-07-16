@@ -257,11 +257,8 @@ postWithRetry ep server' rq = do
       let url = "http://" ++ server' ++ "/api/v1/" ++ ep
       let opts = defaults & manager .~ Left (defaultManagerSettings
             { managerResponseTimeout = responseTimeoutMicro (timeoutSeconds * 1000000) } )
-      -- error $ "before postWith - rq:  " ++ show (toJSON rq) ++ " url: " ++ show url
       r <- liftIO $ postWith opts url (toJSON rq)
-      error $ "before asJSON - r: " ++ show r
       resp <- asJSON r
-      error "after asJSON call"
       case resp ^. responseBody of
         Left _err -> do
           sleep 1
@@ -270,7 +267,6 @@ postWithRetry ep server' rq = do
 
 handleHttpResp :: (t -> Repl ()) -> Response (ApiResponse t) -> Repl ()
 handleHttpResp a r = do
-        error "handleHttpResp called"
         case r ^. responseBody of
           Left err -> flushStrLn $ "Apps.Kadena.Client.handleHttpResp - failure in API Send: " ++ err
           Right resp -> a resp

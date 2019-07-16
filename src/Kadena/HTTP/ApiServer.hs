@@ -38,6 +38,8 @@ import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Set as Set
 import qualified Data.Serialize as SZ
 
+import Debug.Trace
+
 import Snap.Core
 import Snap.Http.Server as Snap
 import Snap.Util.CORS
@@ -124,7 +126,7 @@ sendLocal = catch (do
     c <- view $ aiDispatch . dispExecService
     liftIO $ writeComm c (Exec.ExecLocal cmd mv)
     r <- liftIO $ takeMVar mv
-    writeResponse  r )
+    writeResponse r)
   (\e -> liftIO $ putStrLn $ "Exception caught in the handler 'sendLocal' : " ++ show (e :: SomeException))
 
 sendPublicBatch :: Api ()
@@ -234,20 +236,21 @@ die res = do
   _ <- getResponse -- chuck what we've done so far
   setJSON
   log res
-  writeLBS $ encode $ "Kadena.HTTP.ApiServer" ++ res
+  writeLBS $ encode  (Right (ApiException ("Kadena.HTTP.ApiServer" ++ res)) :: Either String ApiException)
   finishWith =<< getResponse
 
 readJSON :: (Show t, FromJSON t) => Api t
 readJSON = do
-  b <- readRequestBody 1000000000
-  snd <$> tryParseJSON b
+  b  <- readRequestBody 1000000000
+  trace ("ReadJSON - b: " ++ show b)
+    (snd <$> tryParseJSON b)
 
 tryParseJSON
   :: (Show t, FromJSON t) =>
      BSL.ByteString -> Api (BS.ByteString, t)
 tryParseJSON b = case eitherDecode b of
     Right v -> return (toStrict b,v)
-    Left e -> die e
+    Left e -> die $ "Left from tryParseJson check-it: " ++ e
 
 setJSON :: Api ()
 setJSON = modifyResponse $ setHeader "Content-Type" "application/json"
@@ -288,7 +291,7 @@ registerListener = do
       History.ListenerResult scr -> do
         log $ "Listener Serviced for: " ++ show rk
         setJSON
-        writeLBS $ encode scr
+        writeLBS $ encode ((Right scr) :: Either String CommandResult)
   case theEither of
     Left e -> do
       let errStr = "Exception in registerListener: " ++ show e

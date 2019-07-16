@@ -123,7 +123,6 @@ checkResults :: [TestResult] -> Expectation
 checkResults xs = mapM_ checkResult xs
   where
     checkResult result = do
-        error "checkResults called"
         let req = requestTr result
         let resp = responseTr result
         case resp of
@@ -131,7 +130,6 @@ checkResults xs = mapM_ checkResult xs
             failureMessage result "Response is missing"
           Just rsp -> do
             printPassed result
-            error "checkResults - about to call the eval function"
             eval req rsp
 
 assertEither :: Either String String -> Expectation
@@ -166,7 +164,6 @@ checkCCSuccess tr = do
 
 checkScientific :: Scientific -> TestResponse -> Expectation
 checkScientific _sci tr = do
-  error "checkScientific called"
   resultSuccess tr `shouldBe` True
   case apiResult tr of
     Left err -> expectationFailure err

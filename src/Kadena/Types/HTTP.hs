@@ -4,12 +4,15 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Kadena.Types.HTTP
-  ( ApiResponse
+  ( ApiException(..)
+  , ApiResponse
   , PollResponses(..)
   ) where
 
+import Control.Exception (Exception)
 import Data.Aeson
 import qualified Data.HashMap.Strict as HM
+import Data.String (IsString)
 
 import Pact.Types.Command (RequestKey(..))
 
@@ -22,3 +25,7 @@ newtype PollResponses = PollResponses (HM.HashMap RequestKey (ApiResponse Comman
 
 --TODO: add this to Pact (Pact.Types.Command.hs)
 instance FromJSONKey RequestKey
+
+newtype ApiException = ApiException String
+  deriving (Eq,Show,Ord,IsString, ToJSON, FromJSON)
+instance Exception ApiException

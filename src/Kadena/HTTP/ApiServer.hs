@@ -133,7 +133,6 @@ sendPublicBatch :: Api ()
 sendPublicBatch =
   catch
     (do
-      let  l
       cmdList <- readJSON
       cmds <- case nonEmpty cmdList of
                 Nothing -> die "Empty Batch"

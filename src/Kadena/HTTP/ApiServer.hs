@@ -28,7 +28,8 @@ import Data.Aeson hiding (defaultOptions, Result(..))
 import Data.ByteString.Lazy (toStrict)
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy as BSL
-import Data.List.NonEmpty (nonEmpty, NonEmpty(..))
+-- import Data.List.NonEmpty (nonEmpty, NonEmpty(..))
+import Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Text as T
 import Data.Text.Encoding
@@ -133,12 +134,14 @@ sendPublicBatch :: Api ()
 sendPublicBatch =
   catch
     (do
-      cmdList <- readJSON
-      cmds <- case nonEmpty cmdList of
-                Nothing -> die "Empty Batch"
-                Just ne -> return ne
-      log $ "public: received batch of " ++ show (NE.length cmds)
-      rpcs <- return $ fmap buildCmdRpc cmds
+      -- cmdList <- readJSON
+      -- cmds <- case nonEmpty cmdList of
+      --           Nothing -> die "Empty Batch"
+      --           Just ne -> return ne
+      cmds <- readSubmitBatchJSON
+      let neCmds = Pact._sbCmds cmds
+      log $ "public: received batch of " ++ show (NE.length neCmds)
+      rpcs <- return $ fmap buildCmdRpc neCmds
       queueRpcs rpcs)
     (\e -> liftIO $ putStrLn $ "Exception caught in the handler 'sendPublicBatch': "
                              ++ show (e :: SomeException))
@@ -246,11 +249,24 @@ readJSON = do
   trace ("ApiServer.ReadJSON - b: " ++ show b)
      (snd <$> tryParseJSON b)
 
+readSubmitBatchJSON :: Api Pact.SubmitBatch
+readSubmitBatchJSON = do
+  b  <- readRequestBody 1000000000
+  -- snd <$> tryParseJSON b
+  trace ("ApiServer.ReadJSON - b: " ++ show b)
+     (snd <$> parseSubmitBatch b)
+
 tryParseJSON
   :: (Show t, FromJSON t) =>
      BSL.ByteString -> Api (BS.ByteString, t)
 tryParseJSON b = case eitherDecode b of
     Right v -> return (toStrict b,v)
+    Left e -> die $ "Left from tryParseJson check-it: " ++ e
+
+parseSubmitBatch
+  :: BSL.ByteString -> Api (BS.ByteString, Pact.SubmitBatch)
+parseSubmitBatch b = case eitherDecode b of
+    (Right v :: Either String Pact.SubmitBatch) -> return (toStrict b,v)
     Left e -> die $ "Left from tryParseJson check-it: " ++ e
 
 setJSON :: Api ()

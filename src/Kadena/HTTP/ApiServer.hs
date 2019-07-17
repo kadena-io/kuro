@@ -133,6 +133,7 @@ sendPublicBatch :: Api ()
 sendPublicBatch =
   catch
     (do
+      let  l
       cmdList <- readJSON
       cmds <- case nonEmpty cmdList of
                 Nothing -> die "Empty Batch"
@@ -236,14 +237,15 @@ die res = do
   _ <- getResponse -- chuck what we've done so far
   setJSON
   log res
-  writeLBS $ encode  (Right (ApiException ("Kadena.HTTP.ApiServer" ++ res)) :: Either String ApiException)
+  writeLBS $ encode (Left ("Kadena.HTTP.ApiServer" ++ res) :: Either String ())
   finishWith =<< getResponse
 
 readJSON :: (Show t, FromJSON t) => Api t
 readJSON = do
   b  <- readRequestBody 1000000000
-  trace ("ReadJSON - b: " ++ show b)
-    (snd <$> tryParseJSON b)
+  -- snd <$> tryParseJSON b
+  trace ("ApiServer.ReadJSON - b: " ++ show b)
+     (snd <$> tryParseJSON b)
 
 tryParseJSON
   :: (Show t, FromJSON t) =>

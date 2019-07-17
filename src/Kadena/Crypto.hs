@@ -6,7 +6,7 @@
 module Kadena.Crypto
   ( KeyPair(..), kpPublicKey, kpPrivateKey
   , KeySet(..), ksCluster
-  , Signer(..), siPubKey, siAddress
+  , Signer(..), siPubKey, siAddress, siScheme
   , sign
   , Ed25519.exportPublic, Ed25519.exportPrivate
   , valid ) where
@@ -23,6 +23,7 @@ import Data.Text (Text)
 import GHC.Generics
 
 import qualified Pact.Types.Hash as P
+import qualified Pact.Types.Scheme as P
 import Pact.Types.Util (lensyParseJSON, lensyToJSON, toB16JSON)
 
 import Kadena.Orphans ()
@@ -47,7 +48,8 @@ instance FromJSON KeyPair where
 
 ----------------------------------------------------------------------------------------------------
 data Signer = Signer
-  { _siPubKey :: !Ed25519.PublicKey
+  { _siScheme :: P.PPKScheme
+  , _siPubKey :: !Ed25519.PublicKey
   , _siAddress :: Text }
   deriving (Show, Eq, Generic)
 
@@ -56,7 +58,7 @@ instance ToJSON Signer where toJSON = lensyToJSON 3
 instance FromJSON Signer where parseJSON = lensyParseJSON 3
 
 -- Nothing really to do for Signer as NFData, but to convice the compiler:
-instance NFData Signer where rnf (Signer _ _) = ()
+instance NFData Signer where rnf (Signer _ _ _) = ()
 
 makeLenses ''Signer
 

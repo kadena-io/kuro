@@ -70,6 +70,8 @@ import Data.Thyme.Time.Core (unUTCTime, toMicroseconds)
 import qualified Data.Vector as V
 import qualified Data.Yaml as Y
 
+import Debug.Trace
+
 import GHC.Generics (Generic)
 import Network.HTTP.Client hiding (responseBody)
 import Network.Wreq hiding (Raw)
@@ -257,13 +259,16 @@ postWithRetry ep server' rq = do
       let url = "http://" ++ server' ++ "/api/v1/" ++ ep
       let opts = defaults & manager .~ Left (defaultManagerSettings
             { managerResponseTimeout = responseTimeoutMicro (timeoutSeconds * 1000000) } )
-      r <- liftIO $ postWith opts url (toJSON rq)
+      -- r <- liftIO $ postWith opts url (toJSON rq)
+      r <- trace ("calling postWith for url: " ++ show url ++ ", with request: " ++ show (encode rq) )
+                (liftIO $ postWith opts url (toJSON rq))
       resp <- asJSON r
       case resp ^. responseBody of
         Left _err -> do
-          sleep 1
+          trace ("postWithRetry - _err: " ++ _err ++ " - sleeping and retry...") (sleep 1)
           go
-        Right _ -> return resp
+        Right _ -> do
+          trace ("postWithRetry - Right -- r: " ++ show r) (return resp)
 
 handleHttpResp :: (t -> Repl ()) -> Response (ApiResponse t) -> Repl ()
 handleHttpResp a r = do
@@ -274,15 +279,15 @@ handleHttpResp a r = do
 sendCmd :: Mode -> String -> String -> Repl ()
 sendCmd m cmd replCmd = do
   j <- use cmdData
-  e <- mkExec cmd j (Pact.PrivateMeta Nothing)
+  c <- mkExec cmd j (Pact.PrivateMeta Nothing)
   -- ^ Note: this is mkExec in this  module, not in Pact.ApiReq
   case m of
     Transactional -> do
-      resp <- postAPI "send" (Pact.SubmitBatch (e :| [])) -- NonEmpty List
+      resp <- postAPI "send" $ Pact.SubmitBatch (c :| [])
       tellKeys resp replCmd
       handleHttpResp (listenForResult listenDelayMs) resp
     Local -> do
-      y <- postAPI "local" e
+      y <- postAPI "local" $ Pact.SubmitBatch (c :| [])
       handleHttpResp (\(resp :: Value) -> putJSON resp) y
 
 sendMultiple :: String -> String -> Int -> Int -> Repl ()
@@ -302,7 +307,7 @@ sendMultiple' templateCmd replCmd startCount nRepeats singleCmd = do
   case NE.nonEmpty cmds' of
     Nothing -> flushStrLn $ "Apps.Kadena.Client.sendMultiple' - empty list of commands"
     Just ne -> do
-      resp <- postAPI "send" (Pact.SubmitBatch ne)
+      resp <- postAPI "send" $ Pact.SubmitBatch ne
       tellKeys resp replCmd
       handleHttpResp (pollForResults True (Just nRepeats)) resp
 

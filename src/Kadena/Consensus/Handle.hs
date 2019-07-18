@@ -24,6 +24,7 @@ handleEvents = forever $ do
   timerTarget' <- use csTimerTarget
   -- we use the MVar to preempt a backlog of messages when under load. This happens during a large 'many test'
   tFired <- liftIO $ tryTakeMVar timerTarget'
+  logStaticMetrics
   e <- case tFired of
     Nothing -> dequeueEvent
     Just v -> return v

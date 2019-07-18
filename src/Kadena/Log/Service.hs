@@ -27,6 +27,7 @@ import Kadena.Config.TMVar
 import Kadena.Types.Command (CmdLatencyMetrics(..))
 import Kadena.Log.Persistence
 import Kadena.Types.Log
+import Kadena.Types.Metric
 import Kadena.Log
 import Kadena.Log.Types
 import Kadena.Log.LogApi as X
@@ -38,9 +39,10 @@ import Kadena.Event (pprintBeat)
 
 runLogService :: Dispatch
               -> (String -> IO())
+              -> (Metric -> IO())
               -> GlobalConfigTMVar
               -> IO ()
-runLogService dispatch dbg gCfg = do
+runLogService dispatch dbg publishMetric' gCfg = do
   rconf <- readCurrentConfig gCfg
   dbConn' <- if rconf ^. enablePersistence
     then do
@@ -59,6 +61,7 @@ runLogService dispatch dbg gCfg = do
     , _debugPrint = dbg
     , _persistedLogEntriesToKeepInMemory = (rconf ^. inMemTxCache)
     , _dbConn = dbConn'
+    , _publishMetric = publishMetric'
     , _config = gCfg
     }
   initLogState' <- case dbConn' of

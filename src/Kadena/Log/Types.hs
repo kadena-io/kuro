@@ -18,7 +18,7 @@ module Kadena.Log.Types
   , initLogState, lesEmpty, plesEmpty
   , LogEnv(..)
   , logQueryChannel, execChannel, consensusEvent, senderChannel, debugPrint
-  , dbConn, evidence
+  , dbConn, evidence, publishMetric
   , persistedLogEntriesToKeepInMemory
   , config
   , LogThread
@@ -55,6 +55,7 @@ import Kadena.Types.Comms
 import Kadena.Types.Event (Beat,ConsensusEventChannel)
 import Kadena.Types.Evidence (EvidenceChannel)
 import Kadena.Types.Execution (ExecutionChannel)
+import Kadena.Types.Metric
 import Kadena.Types.Sender (SenderServiceChannel)
 
 data QueryApi =
@@ -80,6 +81,7 @@ data LogEnv = LogEnv
   , _persistedLogEntriesToKeepInMemory :: !Int
   , _debugPrint :: !(String -> IO ())
   , _dbConn :: !(Maybe Connection)
+  , _publishMetric :: !(Metric -> IO ())
   , _config :: !Cfg.GlobalConfigTMVar}
 makeLenses ''LogEnv
 

@@ -24,6 +24,7 @@ import Kadena.Config.TMVar as Cfg
 import Kadena.ConfigChange as CC
 import Kadena.Event (pprintBeat)
 import Kadena.Evidence.Spec as X
+import Kadena.Types.Metric (Metric)
 import Kadena.Types.Base
 import Kadena.Types.Comms
 import Kadena.Types.Config
@@ -41,14 +42,17 @@ initEvidenceEnv :: Dispatch
                 -> GlobalConfigTMVar
                 -> MVar PublishedEvidenceState
                 -> MVar ResetLeaderNoFollowersTimeout
+                -> (Metric -> IO ())
                 -> EvidenceEnv
-initEvidenceEnv dispatch debugFn' mConfig' mPubStateTo' mResetLeaderNoFollowers' = EvidenceEnv
+initEvidenceEnv dispatch debugFn' mConfig' mPubStateTo' mResetLeaderNoFollowers' publishMetric' =
+  EvidenceEnv
   { _logService = dispatch ^. Dispatch.dispLogService
   , _evidence = dispatch ^. Dispatch.dispEvidence
   , _mResetLeaderNoFollowers = mResetLeaderNoFollowers'
   , _mConfig = mConfig'
   , _mPubStateTo = mPubStateTo'
   , _debugFn = debugFn'
+  , _publishMetric = publishMetric'
   }
 
 initializeState :: EvidenceEnv -> IO EvidenceState

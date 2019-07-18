@@ -41,6 +41,7 @@ import qualified Kadena.Types.Dispatch as D
 import qualified Kadena.Types.History as History
 import qualified Kadena.Log as Log
 import Kadena.Types.Comms (Comms(..))
+import Kadena.Types.Metric
 import Kadena.Command
 import Kadena.Event (pprintBeat)
 import Kadena.Private.Service (decrypt)
@@ -56,17 +57,20 @@ initExecutionEnv
   -> (String -> IO ())
   -> PactPersistConfig
   -> LogRules
+  -> (Metric -> IO ())
   -> IO UTCTime
   -> GlobalConfigTMVar
   -> EntityConfig
   -> ExecutionEnv
-initExecutionEnv dispatch' debugPrint' persistConfig logRules' getTimestamp' gcm' ent = ExecutionEnv
+initExecutionEnv dispatch' debugPrint' persistConfig logRules'
+                 publishMetric' getTimestamp' gcm' ent = ExecutionEnv
   { _eenvExecChannel = dispatch' ^. D.dispExecService
   , _eenvHistoryChannel = dispatch' ^. D.dispHistoryChannel
   , _eenvPrivateChannel = dispatch' ^. D.dispPrivateChannel
   , _eenvPactPersistConfig = persistConfig
   , _eenvDebugPrint = debugPrint'
   , _eenvExecLoggers = initLoggers debugPrint' doLog logRules'
+  , _eenvPublishMetric = publishMetric'
   , _eenvGetTimestamp = getTimestamp'
   , _eenvMConfig = gcm'
   , _eenvEntityConfig = ent
@@ -99,6 +103,11 @@ debug s = do
 
 now :: ExecutionService UTCTime
 now = view eenvGetTimestamp >>= liftIO
+
+logMetric :: Metric -> ExecutionService ()
+logMetric m = do
+  publishMetric' <- view eenvPublishMetric
+  liftIO $! publishMetric' m
 
 handle :: ExecutionService ()
 handle = do
@@ -135,9 +144,11 @@ handle = do
       ExecConfigChange{..} -> applyConfigChange logEntriesToApply
 
 applyLogEntries :: ReplayStatus -> LogEntries -> ExecutionService ()
-applyLogEntries rs (LogEntries leToApply) = do
+applyLogEntries rs les@(LogEntries leToApply) = do
   now' <- now
   (results :: [(RequestKey, CommandResult)]) <- mapM (applyCommand now') (Map.elems leToApply)
+  commitIndex' <- return $ fromJust $ Log.lesMaxIndex les
+  logMetric $ MetricAppliedIndex commitIndex'
   if not (null results)
     then do
       debug $! "Applied " ++ show (length results) ++ " CMD(s)"
@@ -145,6 +156,12 @@ applyLogEntries rs (LogEntries leToApply) = do
       unless (rs == ReplayFromDisk) $ liftIO $! writeComm hChan (History.Update $ HashMap.fromList results)
     else debug "Applied log entries but did not send results?"
 
+logApplyLatency :: UTCTime -> LogEntry -> ExecutionService ()
+logApplyLatency startTime LogEntry{..} = case _leCmdLatMetrics of
+  Nothing -> return ()
+  Just n ->
+    logMetric $ MetricApplyLatency $ fromIntegral $ interval (_lmFirstSeen n) startTime
+{-# INLINE logApplyLatency #-}
 getPendingPreProcSCC :: UTCTime -> MVar SCCPreProcResult -> ExecutionService SCCPreProcResult
 getPendingPreProcSCC startTime mvResult = liftIO (tryReadMVar mvResult) >>= \case
   Just r -> return r
@@ -167,6 +184,7 @@ applyCommand :: UTCTime -> LogEntry -> ExecutionService (RequestKey, CommandResu
 applyCommand _tEnd le@LogEntry{..} = do
   apply <- Pact._ceiApplyPPCmd <$> use csCommandExecInterface
   startTime <- now
+  logApplyLatency startTime le
   let chash = Pact.toUntypedHash $ getCmdBodyHash _leCommand
       rkey = RequestKey chash
       stamp ppLat = do

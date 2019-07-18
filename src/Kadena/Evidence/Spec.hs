@@ -16,6 +16,7 @@ module Kadena.Evidence.Spec
   , esHashAtCommitIndex, esEvidenceCache, esMaxCachedIndex, esMaxElectionTimeout
   , esClusterMembers
   , EvidenceProcessor
+  , publishMetric
   , debugFn
   , getEvidenceQuorumSize
   ) where
@@ -38,6 +39,7 @@ import Kadena.Log.Types (LogServiceChannel)
 import Kadena.Types.Message
 import Kadena.Types.Evidence
 import Kadena.Types.Event (ResetLeaderNoFollowersTimeout)
+import Kadena.Types.Metric
 import Kadena.Util.Util
 
 import Pact.Types.Hash
@@ -49,6 +51,7 @@ data EvidenceEnv = EvidenceEnv
   , _mConfig :: !GlobalConfigTMVar
   , _mPubStateTo :: !(MVar PublishedEvidenceState)
   , _debugFn :: !(String -> IO ())
+  , _publishMetric :: !(Metric -> IO ())
   }
 makeLenses ''EvidenceEnv
 

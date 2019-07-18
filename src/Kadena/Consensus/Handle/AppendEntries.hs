@@ -252,6 +252,9 @@ handle ae = do
                            ++ "\n\t(election timer reset if not leader)"
             end' <- now
             updateLogs $ Log.ULReplicate $ updateRleLats start' end' rle
+            newMv <- queryLogs $ Set.singleton Log.GetLastLogHash
+            newLastLogHash' <- return $! Log.hasQueryResult Log.LastLogHash newMv
+            logHashChange newLastLogHash'
             sendHistoryNewKeys rks
             csCmdBloomFilter %= Bloom.insertList (HashSet.toList rks)
 --          else do
@@ -268,6 +271,10 @@ handle ae = do
       when (_csNodeRole s /= Leader) resetElectionTimer
       -- This `when` fixes a funky bug. If the leader receives an AE from itself it will reset its election timer (which can kill the leader).
       -- Ignoring this is safe because if we have an out of touch leader they will step down after 2x maxElectionTimeouts if it receives no valid AER
+
+logHashChange :: Hash -> KD.Consensus ()
+logHashChange (Hash mLastHash) =
+  logMetric $ KD.MetricHash mLastHash
 
 createAppendEntriesResponse :: Bool -> Bool -> LogIndex -> Hash -> KD.Consensus AppendEntriesResponse
 createAppendEntriesResponse success convinced maxIndex' lastLogHash' = do

@@ -162,6 +162,7 @@ logApplyLatency startTime LogEntry{..} = case _leCmdLatMetrics of
   Just n ->
     logMetric $ MetricApplyLatency $ fromIntegral $ interval (_lmFirstSeen n) startTime
 {-# INLINE logApplyLatency #-}
+
 getPendingPreProcSCC :: UTCTime -> MVar SCCPreProcResult -> ExecutionService SCCPreProcResult
 getPendingPreProcSCC startTime mvResult = liftIO (tryReadMVar mvResult) >>= \case
   Just r -> return r

@@ -27,6 +27,7 @@ import Data.Maybe
 
 import Database.SQLite3.Direct
 
+import qualified Kadena.Types.Command as KC (CommandResult(..))
 import qualified Pact.Types.Command as Pact
 import Pact.Types.Runtime (Gas(..), TxId)
 import Kadena.Types
@@ -62,16 +63,17 @@ latToField r = SText $ Utf8 $ BSL.toStrict $ A.encode r
 
 latFromField :: (Show a1, A.FromJSON a) => a1 -> ByteString -> a
 latFromField cr lat = case A.eitherDecodeStrict' lat of
-      Left err -> error $ "crFromField: unable to decode CmdResultLatMetrics from database! " ++ show err ++ "\n" ++ show cr
+      Left err -> error $ "crFromField: unable to decode CmdResultLatMetrics from database! "
+                       ++ show err ++ "\n" ++ show cr
       Right v' -> v'
 
-crFromField :: Hash -> LogIndex -> Maybe TxId -> ByteString -> ByteString -> CommandResult
+crFromField :: Hash -> LogIndex -> Maybe TxId -> ByteString -> ByteString -> KC.CommandResult
 crFromField hsh li tid cr lat =
   SmartContractResult hsh
     (Pact.CommandResult
         (Pact.RequestKey hsh)
         tid
-        v
+        (v :: Pact.PactResult)
         {- TODO: What values should be used for missing params for CommandResult:
           , _crGas :: !Gas
           , _crLogs :: !(Maybe l) -- -- | Level of logging (i.e. full TxLog vs hashed logs)
@@ -86,9 +88,9 @@ crFromField hsh li tid cr lat =
     li (latFromField cr lat)
     where
       v = case A.eitherDecodeStrict' cr of
-            Left err -> error $ "crFromField: unable to decode CommandResult from database! "
+            Left err -> error $ "crFromField: unable to decode PactResult from database! "
                                 ++ show err ++ "\n" ++ show cr
-            Right v' -> v'
+            (Right v' :: Either String Pact.PactResult) -> v'
 
 ccFromField :: Hash -> LogIndex -> ByteString -> ByteString -> CommandResult
 ccFromField hsh li ccr lat = ConsensusChangeResult hsh v li (latFromField ccr lat)

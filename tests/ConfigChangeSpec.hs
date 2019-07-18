@@ -238,8 +238,8 @@ testRequestsRepeated = [testReq1, testReq4, testReq5]
 
 testReq1 :: TestRequest
 testReq1 = TestRequest
-  { cmd = "exec (+ 1 1)"
-  , matchCmd = "exec (+ 1 1)"
+  { cmd = "exec (+ 7 8)"
+  , matchCmd = "exec (+ 7 8)"
   , eval = (\tr -> checkScientific (scientific 2 0) tr)
   , displayStr = "Executes 1 + 1 in Pact and returns 2.0" }
 

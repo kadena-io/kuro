@@ -76,6 +76,10 @@ library
                      , Kadena.Messaging.Turbine.RV
                      , Kadena.Messaging.Turbine.Util
                      , Kadena.Messaging.ZMQ
+                     , Kadena.Monitoring.EkgJson
+                     , Kadena.Monitoring.EkgMonitor
+                     , Kadena.Monitoring.EkgSnap
+                     , Kadena.Monitoring.Server
                      , Kadena.Orphans
                      , Kadena.PreProc.Service
                      , Kadena.Private.Private

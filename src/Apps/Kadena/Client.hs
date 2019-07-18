@@ -249,7 +249,9 @@ postAPI ep rq = do
 
 postWithRetry :: (ToJSON req, FromJSON t) => String -> String -> req -> IO (Response (ApiResponse t))
 postWithRetry ep server' rq = do
-  t <- timeout (fromIntegral timeoutSeconds) go
+  -- t <- timeout (fromIntegral timeoutSeconds) go
+  t <- trace ("calling postWith with request: " ++ show (encode rq) )
+             (timeout (fromIntegral timeoutSeconds) go)
   case t of
     Nothing -> die "postServerApi - timeout: no successful response received"
     Just x -> return x
@@ -259,13 +261,11 @@ postWithRetry ep server' rq = do
       let url = "http://" ++ server' ++ "/api/v1/" ++ ep
       let opts = defaults & manager .~ Left (defaultManagerSettings
             { managerResponseTimeout = responseTimeoutMicro (timeoutSeconds * 1000000) } )
-      -- r <- liftIO $ postWith opts url (toJSON rq)
-      r <- trace ("calling postWith for url: " ++ show url ++ ", with request: " ++ show (encode rq) )
-                (liftIO $ postWith opts url (toJSON rq))
+      r <- liftIO $ postWith opts url (toJSON rq)
       resp <- asJSON r
       case resp ^. responseBody of
         Left _err -> do
-          trace ("postWithRetry - _err: " ++ _err ++ " - sleeping and retry...") (sleep 1)
+          sleep 1
           go
         Right _ -> do
           trace ("postWithRetry - Right -- r: " ++ show r) (return resp)

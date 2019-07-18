@@ -39,8 +39,6 @@ import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Set as Set
 import qualified Data.Serialize as SZ
 
-import Debug.Trace
-
 import Snap.Core
 import Snap.Http.Server as Snap
 import Snap.Util.CORS
@@ -245,16 +243,17 @@ die res = do
 readJSON :: (Show t, FromJSON t) => Api t
 readJSON = do
   b  <- readRequestBody 1000000000
-  -- snd <$> tryParseJSON b
-  trace ("ApiServer.ReadJSON - b: " ++ show b)
-     (snd <$> tryParseJSON b)
+  snd <$> tryParseJSON b
+  -- trace ("ApiServer.ReadJSON - b: " ++ show b)
+  --    (snd <$> tryParseJSON b)
 
 readSubmitBatchJSON :: Api Pact.SubmitBatch
 readSubmitBatchJSON = do
   b  <- readRequestBody 1000000000
   -- snd <$> tryParseJSON b
-  trace ("ApiServer.ReadJSON - b: " ++ show b)
-     (snd <$> parseSubmitBatch b)
+  snd <$> parseSubmitBatch b
+  -- trace ("ApiServer.ReadJSON - b: " ++ show b)
+  --    (snd <$> parseSubmitBatch b)
 
 tryParseJSON
   :: (Show t, FromJSON t) =>

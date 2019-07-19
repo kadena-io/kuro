@@ -31,66 +31,66 @@ spec = do
 
 testClusterCommands :: Spec
 testClusterCommands = do
-  it "passes command tests" $ do
+  -- MLN: all tests currently disabled via xit until access to Ekg metrics is restored
+  xit "passes command tests" $ do
     results <- runClientCommands clientArgs testRequests
     checkResults results
 
-  -- TODO: uncomment these tests...
-  {-
-  it "Metric test - waiting for cluster size == 4..." $ do
+  xit "Metric test - waiting for cluster size == 4..." $ do
     okSize4 <- waitForMetric testMetricSize4
     okSize4 `shouldBe` True
 
   --checking for the right list of cluster members
-  it "gathering metrics for testMetric123" $ do
+  xit "gathering metrics for testMetric123" $ do
     m123 <- gatherMetric testMetric123
     assertEither $ getMetricResult m123
 
-  it "Config change test #1 - Dropping node02:" $ do
+  xit "Config change test #1 - Dropping node02:" $ do
     ccResults1 <- runClientCommands clientArgs [cfg0123to013]
     checkResults ccResults1
 
-  it "Metric test - waiting for cluster size == 3..." $ do
+  xit "Metric test - waiting for cluster size == 3..." $ do
     okSize3 <- waitForMetric testMetricSize3
     okSize3 `shouldBe` True
 
   --checking for the right list of cluster members
-  it "gathering metrics for testMetric13" $ do
+  xit "gathering metrics for testMetric13" $ do
     m13 <- gatherMetric testMetric13
     assertEither $ getMetricResult m13
 
-  it "Runing post config change #1 commands:" $ do
+  xit "Runing post config change #1 commands:" $ do
     sleep 3
     results1b <- runClientCommands clientArgs testRequestsRepeated
     checkResults results1b
 
-  it "Config change test #2 - Dropping node3, adding node2" $ do
+  xit "Config change test #2 - Dropping node3, adding node2" $ do
     sleep 3
     ccResults2 <- runClientCommands clientArgs [cfg013to012]
     checkResults ccResults2
 
-  it "Metric test - waiting for the set {node0, node1, node2}..." $ do
+  xit "Metric test - waiting for the set {node0, node1, node2}..." $ do
     ok012 <- waitForMetric testMetric12
     ok012 `shouldBe` True
 
-  it "Runing post config change #2 commands:" $ do
+  xit "Runing post config change #2 commands:" $ do
     sleep 3
     results2b <- runClientCommands clientArgs testRequestsRepeated
     checkResults results2b
 
-  it "Config change test #3 - adding back node3" $ do
+  xit "Config change test #3 - adding back node3" $ do
     sleep 3
     ccResults3 <- runClientCommands clientArgs [cfg012to0123]
     checkResults ccResults3
 
-  it "Metric test - waiting for cluster size == 4..." $ do
+  xit "Metric test - waiting for cluster size == 4..." $ do
     okSize4b <- waitForMetric testMetricSize4
     okSize4b `shouldBe` True
 
-  it "Runing post config change #3 commands:" $ do
+  xit "Runing post config change #3 commands:" $ do
     sleep 3
     results3b <- runClientCommands clientArgs testRequestsRepeated
     checkResults results3b
+
 
   -- MLN: Checking these in as xit === pending until they are working correctly
   xit "Changes the current server to node1:" $ do
@@ -114,7 +114,6 @@ testClusterCommands = do
     sleep 3
     results4b <- runClientCommands clientArgs testRequestsRepeated
     checkResults results4b
-  -}
 
 clientArgs :: [String]
 clientArgs = words $ "-c " ++ testConfDir ++ "client.yaml"

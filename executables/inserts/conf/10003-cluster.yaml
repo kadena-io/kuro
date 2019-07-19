@@ -2,16 +2,21 @@ pactPersist:
   writeBehind: false
   backend:
     config:
-      dbFile: ./log/node3-pact.sqlite
-      pragmas: []
+      _pragmas:
+      - synchronous = OFF
+      - journal_mode = MEMORY
+      - locking_mode = EXCLUSIVE
+      - temp_store = MEMORY
+      _dbFile: ./log/node3-pact.sqlite
     type: SQLITE
+enableDiagnostics: null
 publicKeys:
-  node0: 9679fc966039bc2f0720d7b14e9bfd0afe9ea46125ee57c625be6706e4cce411
-  node1: ee6d87802deabf0abd2dc1215a12b0f00eecbaac3dd5ed387d45c89a8dd786bf
-  node2: bf77d5479108c041bd3fc5f7fd92cf156e6121bbfd8e341f30307cadce5c03e8
-  node3: 0c297d59fccf78661f88b0b29d91c7931c30894dbdcc33bfa59dd83dd37cc834
+  node0: 54ea50ec9f2ec61d60ee194ca99ad2300eb8d7d94848957b67d0d74be8e08ae7
+  node1: 66e1b556db54a451d6923dd83de9fe46a3329528f1615fe0ee715ebd78c17d23
+  node2: 851d5bc11689055348e0ff0a1370c249c9d7bc627c43c394eaca649feaa7b4dc
+  node3: 542f27a3f87d132f9dfa213150634096370c072a058f3a5b4e840da0703a23ad
 aeBatchSize: 20000
-heartbeatTimeout: 1000000
+heartbeatTimeout: 2000000
 logDir: ./log
 apiPort: 8003
 logRules:
@@ -20,62 +25,57 @@ logRules:
     enable: null
     exclude:
     - DEBUG
-  PactPersist:
-    include: null
-    enable: null
-    exclude:
-    - DEBUG
-preProcThreadCount: 10
-hostStaticDir: true
-electionTimeoutRange:
-- 3000000
-- 6000000
 clusterMembers:
   changeToNodes: []
   otherNodes:
   - alias: node0
     fullAddr: tcp://127.0.0.1:10000
-    host: '127.0.0.1'
+    host: 127.0.0.1
     port: 10000
   - alias: node1
     fullAddr: tcp://127.0.0.1:10001
-    host: '127.0.0.1'
+    host: 127.0.0.1
     port: 10001
   - alias: node2
     fullAddr: tcp://127.0.0.1:10002
-    host: '127.0.0.1'
+    host: 127.0.0.1
     port: 10002
+preProcThreadCount: 10
+hostStaticDir: true
+electionTimeoutRange:
+- 10000000
+- 18000000
 inMemTxCache: 200000
-myPublicKey: 0c297d59fccf78661f88b0b29d91c7931c30894dbdcc33bfa59dd83dd37cc834
+myPublicKey: 542f27a3f87d132f9dfa213150634096370c072a058f3a5b4e840da0703a23ad
 nodeId:
   alias: node3
   fullAddr: tcp://127.0.0.1:10003
-  host: '127.0.0.1'
+  host: 127.0.0.1
   port: 10003
 enableDebug: true
 entity:
   signer:
-    private: 0a995cb198b22a5480b31dc6a32b07d19f81efdea02dbcad0df36ac8ec961d2b
-    public: b6ea927cd205e1369c35e5f9974c5847eafb62c16e3472eb298f20608847953f
+    secret: af9160d461217b7f37c7e05ecbdada1bfb93f0086a39f07923c288b0ab866a88
+    public: f611101032f377479587446a558cb1d72affd0772e2800265a8e741515519919
   local:
     ephemeral:
-      secret: 79720c55bd5604d9e5b8cbfac932574595c88c2d7c571fe19c481cc9211e2eed
-      public: 075f36171daabae5d0f0ad4f5c07a9d5849d138372f20ac1e3ee9419fa54bf35
+      secret: c975fbb9d836fb27c32429418d3668dc7a88a03fc5473637971e2148ef7ca4f6
+      public: 0d075cb31981ef4b0bcd9dc9ec64d49bc5a3f06e2f7348c6395fc21122ba3e1e
     static:
-      secret: 2c269038a00219437b01dcbc309d1200105c956b9ef45e1dbb13d9cdbeb77629
-      public: 721956f2b234845a69d080d42ed66657444b9bdf750d2e746acf86bcb9ed8b45
+      secret: 62d9b24f70cf5a996234ac8b6011bafc8797f6fc5565363a4472f1de5aabb45f
+      public: 3ca9b8d3822052a5d32fed41f4245ae62ddb2a0e7e7849f234b49a87f3d20f51
     name: Dinesh
   sending: true
   remotes:
-  - static: b6cf4f911dfdded4e6056e1a6f5dc71539ca5e4c81fa8b095cf872889e2d0214
+  - static: b85d5be9c694244a5288b9c02e8c15673762ab99debef5b81da6055fa4730000
     name: Alice
-  - static: 4810f0e60119f49042257081879cabfbda7b876142cedc1abb592a28dce49149
+  - static: 723ced973b7ce171e35866ef26ba9fbefbe032444d5c8b1ef797af46defe3701
     name: Bob
-  - static: 67a83131293ae6ffe36d0812f1c9f876cab4f90d595034acd00460dbc2696076
+  - static: ad0dcb8002fe64544dc147758d07a5cc9f98f70c60c9595f502c240dba79eb4b
     name: Carol
 adminKeys:
-  admin0: 31736b5c851176e5dff830df44bf0c88fb0da5522a9d9e3ac10ff0c433528c7d
+  admin0: e2b13b2dad4c843b071cc6bf04be671fc082f499f18c4381d57eacba8b47c2d4
 nodeClass: active
 enablePersistence: true
-myPrivateKey: 2d90c6e7a5492d0f49f264dd80cc988e7bd76c8bec4385e79117d2cac18d22d8
+myPrivateKey: 8f103c81053b7c5ce1e1a432ccc1c11b95f162fd7ea2433da538cfde8965a82a
 preProcUsePar: true

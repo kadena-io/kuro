@@ -84,10 +84,6 @@ genKeyPair = do
     }
 
 ----------------------------------------------------------------------------------------------------
--- TODO: remove comment after all instances of Singer are replaced
--- Singer was removed as it was essentiallky the same as EntityKeyPair
-
-----------------------------------------------------------------------------------------------------
 data EntityLocal = EntityLocal
   { _elName :: !EntityName
   , _elStatic :: !EntityKeyPair

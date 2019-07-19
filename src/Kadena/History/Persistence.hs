@@ -74,7 +74,7 @@ crFromField hsh li tid cr lat =
         (Pact.RequestKey hsh)
         tid
         (v :: Pact.PactResult)
-        {- TODO: What values should be used for missing params for CommandResult:
+        {- TODO-Pact-3.0: What values should be used for missing params for CommandResult:
           , _crGas :: !Gas
           , _crLogs :: !(Maybe l) -- -- | Level of logging (i.e. full TxLog vs hashed logs)
           , _crContinuation :: !(Maybe PactExec)-- | Output of a Cont. if one occurred in the command.
@@ -108,7 +108,7 @@ pcFromField hsh li tid pc lat = PrivateCommandResult hsh v li (latFromField pc l
                                   (Pact.RequestKey hsh)
                                   tid
                                   x -- :: PactResult
-                                  --TODO: same comment as above, extra args for Pact.CommandResult
+                                  -- TODO-Pact-3.0: same comment as above, extra args for Pact.CommandResult
                                   (Gas 0)
                                   Nothing
                                   Nothing

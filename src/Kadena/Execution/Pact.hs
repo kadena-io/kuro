@@ -234,7 +234,7 @@ publishCont pactTid step rollback cData = do
         (EntityKeyPair ksk kpk) = _ecSigner
     signer <- either (throwPactError . pretty) return $
 
-              -- TODO: Do we need a Scheme for this?
+              -- TODO-Pact-3.0: Do we need a Scheme for this?
               -- PCrypto.importKeyPair (PCrypto.toScheme Curve25519)
               -- for now, just to get it to compile
               PCrypto.importKeyPair

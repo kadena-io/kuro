@@ -228,9 +228,7 @@ passMetric :: TestMetricResult -> String
 passMetric tmr = "Metric test passed: " ++ metricNameTm (requestTmr tmr)
 
 testRequests :: [TestRequest]
--- testRequests = [testReq1, testReq2, testReq3, testReq4, testReq5]
--- TODO: replace with the list of all tests above
-testRequests = [testReq1]
+testRequests = [testReq1, testReq2, testReq3, testReq4, testReq5]
 
 testRequestsRepeated :: [TestRequest]
 testRequestsRepeated = [testReq1, testReq4, testReq5]

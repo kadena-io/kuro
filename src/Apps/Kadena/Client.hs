@@ -70,7 +70,6 @@ import Data.Thyme.Time.Core (unUTCTime, toMicroseconds)
 import qualified Data.Vector as V
 import qualified Data.Yaml as Y
 
-import Debug.Trace
 
 import GHC.Generics (Generic)
 import Network.HTTP.Client hiding (responseBody)
@@ -241,34 +240,34 @@ mkExec code mdata privMeta = do
       (Exec (ExecMsg (T.pack code) mdata))
   return $ decodeUtf8 <$> cmd
 
-postAPI :: (ToJSON req, FromJSON t) => String -> req -> Repl (Response (ApiResponse t))
+-- postAPI :: (ToJSON req, FromJSON t) => String -> req -> Repl (Response (ApiResponse t))
+postAPI :: (ToJSON req) => String -> req -> Repl (Response (ApiResponse Pact.RequestKeys))
 postAPI ep rq = do
   use echo >>= \e -> when e $ putJSON rq
   s <- getServer
   liftIO $ postWithRetry ep s rq
 
-postWithRetry :: (ToJSON req, FromJSON t) => String -> String -> req -> IO (Response (ApiResponse t))
+-- postWithRetry :: (ToJSON req, FromJSON t) => String -> String -> req -> IO (Response (ApiResponse t))
+postWithRetry :: (ToJSON req) => String -> String -> req -> IO (Response (ApiResponse Pact.RequestKeys))
 postWithRetry ep server' rq = do
-  -- t <- timeout (fromIntegral timeoutSeconds) go
-  t <- trace ("calling postWith with request: " ++ show (encode rq) )
-             (timeout (fromIntegral timeoutSeconds) go)
+  t <- timeout (fromIntegral timeoutSeconds) go
   case t of
     Nothing -> die "postServerApi - timeout: no successful response received"
     Just x -> return x
   where
-    go :: (FromJSON t) => IO (Response (ApiResponse t))
+    -- go :: (FromJSON t) => IO (Response (ApiResponse t))
+    go :: IO (Response (ApiResponse Pact.RequestKeys))
     go = do
       let url = "http://" ++ server' ++ "/api/v1/" ++ ep
       let opts = defaults & manager .~ Left (defaultManagerSettings
             { managerResponseTimeout = responseTimeoutMicro (timeoutSeconds * 1000000) } )
       r <- liftIO $ postWith opts url (toJSON rq)
-      resp <- asJSON r
+      resp  <- asJSON r :: IO (Response (ApiResponse Pact.RequestKeys))
       case resp ^. responseBody of
         Left _err -> do
           sleep 1
           go
-        Right _ -> do
-          trace ("postWithRetry - Right -- r: " ++ show r) (return resp)
+        Right _ -> return resp
 
 handleHttpResp :: (t -> Repl ()) -> Response (ApiResponse t) -> Repl ()
 handleHttpResp a r = do
@@ -770,14 +769,6 @@ parseRK cmd = case B16.decode $ BS8.pack cmd of
     | B.empty /= leftovers ->
       die $ "Failed to decode RequestKey: this was converted " ++
       show rk ++ " and this was not " ++ show leftovers
-    -- TODO: is this check still valid?
-    {-
-    | B.length rk /= hashLengthAsBS ->
-      die $ "RequestKey is too short, should be "
-              ++ show hashLengthAsBase16
-              ++ " char long but was " ++ show (B.length $ BS8.pack $ drop 7 cmd) ++
-              " -> " ++ show (B16.encode rk)
-    -}
     | otherwise -> return rk
 
 help :: Repl ()

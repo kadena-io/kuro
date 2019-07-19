@@ -197,6 +197,8 @@ tellKadenaToApplyLogEntries aerTime = do
       ues' <- return $ populateConsensusLatency aerTime logTime unappliedEntries'
       view execChannel >>= liftIO . (`writeComm` Exec.ExecuteNewEntries ues')
       debug $ "informing Kadena to apply up to: " ++ show appliedIndex'
+      publishMetric' <- view publishMetric
+      liftIO $ publishMetric' $ MetricCommitIndex appliedIndex'
     Nothing -> return ()
 
 clearPersistedEntriesFromMemory :: LogThread ()

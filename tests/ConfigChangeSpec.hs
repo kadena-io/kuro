@@ -31,11 +31,11 @@ spec = do
 
 testClusterCommands :: Spec
 testClusterCommands = do
-  -- MLN: all tests currently disabled via xit until access to Ekg metrics is restored
-  xit "passes command tests" $ do
+  it "passes command tests" $ do
     results <- runClientCommands clientArgs testRequests
     checkResults results
 
+  -- MLN: all tests currently disabled via xit until access to Ekg metrics is restored
   xit "Metric test - waiting for cluster size == 4..." $ do
     okSize4 <- waitForMetric testMetricSize4
     okSize4 `shouldBe` True

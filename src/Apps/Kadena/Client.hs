@@ -256,6 +256,7 @@ postWithRetry ep server' rq = do
       let opts = defaults & manager .~ Left (defaultManagerSettings
             { managerResponseTimeout = responseTimeoutMicro (timeoutSeconds * 1000000) } )
       r <- liftIO $ postWith opts url (toJSON rq)
+      putStrLn $ "&&&&& Response from postWith: &&&&&" ++ show r
       resp  <- asJSON r -- :: IO (Response (ApiResponse Pact.RequestKeys))
       case resp ^. responseBody of
         Left _err -> do

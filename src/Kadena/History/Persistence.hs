@@ -202,22 +202,24 @@ sqlSelectCompletedCommands =
 selectCompletedCommands :: DbEnv -> HashSet RequestKey -> IO (HashMap RequestKey CommandResult)
 selectCompletedCommands e v = foldM f HashMap.empty v
   where
-    f m rk = do
-      rs' <- qrys "selectCompletedCommands.1" (_qryCompletedStmt e) [hashToField $ unRequestKey rk]
+    f :: HashMap RequestKey CommandResult -> RequestKey -> IO (HashMap RequestKey CommandResult)
+    f hMap reqKey = do
+      rs' <- qrys "selectCompletedCommands.1" (_qryCompletedStmt e) [hashToField $ unRequestKey reqKey]
              [RInt, RInt, RText, RText, RText]
+      -- ^ rs' :: [[SType]]
       if null rs'
-        then return m
+        then return hMap
         else case head rs' of
           [SInt li, SInt tid, type'@SText{}, SText (Utf8 cr),SText (Utf8 lat)] -> do
             let tid' = if tid < 0 then Nothing else Just (fromIntegral tid)
             case htFromField type' of
               Left err -> dbError "selectCompletedCommands.2" $
                 "unmatched 'type': " ++ err ++ "\n## ROW ##\n" ++ show (head rs')
-              Right SCC -> return $ HashMap.insert rk
-                (crFromField (unRequestKey rk) (fromIntegral li) tid' cr lat) m
-              Right CCC -> return $ HashMap.insert rk
-                (ccFromField (unRequestKey rk) (fromIntegral li) cr lat) m
-              Right PC -> return $ HashMap.insert rk
-                (pcFromField (unRequestKey rk) (fromIntegral li) tid' cr lat) m
+              Right SCC -> return $ HashMap.insert reqKey
+                (crFromField (unRequestKey reqKey) (fromIntegral li) tid' cr lat) hMap
+              Right CCC -> return $ HashMap.insert reqKey
+                (ccFromField (unRequestKey reqKey) (fromIntegral li) cr lat) hMap
+              Right PC -> return $ HashMap.insert reqKey
+                (pcFromField (unRequestKey reqKey) (fromIntegral li) tid' cr lat) hMap
           r -> dbError "selectCompletedCommands.3" $
             "Invalid result from query `History.selectCompletedCommands`: " ++ show r

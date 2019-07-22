@@ -28,7 +28,6 @@ import Data.Aeson hiding (defaultOptions, Result(..))
 import Data.ByteString.Lazy (toStrict)
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy as BSL
--- import Data.List.NonEmpty (nonEmpty, NonEmpty(..))
 import Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Text as T
@@ -55,7 +54,7 @@ import Kadena.Types.Command
 import Kadena.Types.Base
 import Kadena.Types.Comms
 import Kadena.Types.Config as Config
-import Kadena.Types.HTTP
+import Kadena.Types.HTTP as K
 import Kadena.Config.TMVar as Config
 import Kadena.Types.Spec
 import Kadena.Types.Entity
@@ -120,33 +119,33 @@ api = route [
 
 sendLocal :: Api ()
 sendLocal = catch (do
-    (cmd :: Pact.Command BS.ByteString) <- fmap encodeUtf8 <$> readJSON
-    mv <- liftIO newEmptyMVar
-    c <- view $ aiDispatch . dispExecService
-    liftIO $ writeComm c (Exec.ExecLocal cmd mv)
-    r <- liftIO $ takeMVar mv
-    writeResponse r)
-  (\e -> liftIO $ putStrLn $ "Exception caught in the handler 'sendLocal' : " ++ show (e :: SomeException))
+    Pact.SubmitBatch neCmds <- readSubmitBatchJSON
+    if length neCmds /= 1
+      then do
+        let msg = "Batches of more than one local commands is not currently supported"
+        log msg >> die msg
+      else do
+        let cmd = fmap encodeUtf8 (NE.head neCmds)
+        mv <- liftIO newEmptyMVar
+        c <- view $ aiDispatch . dispExecService
+        liftIO $ writeComm c (Exec.ExecLocal cmd mv)
+        r <- liftIO $ takeMVar mv -- :: PactResult
+        writeResponse r)
+    (\e -> liftIO $ putStrLn $ "Exception caught in the handler 'sendLocal' : "
+                            ++ show (e :: SomeException))
 
 sendPublicBatch :: Api ()
-sendPublicBatch =
-  catch
-    (do
-      -- cmdList <- readJSON
-      -- cmds <- case nonEmpty cmdList of
-      --           Nothing -> die "Empty Batch"
-      --           Just ne -> return ne
-      cmds <- readSubmitBatchJSON
-      let neCmds = Pact._sbCmds cmds
-      log $ "public: received batch of " ++ show (NE.length neCmds)
-      rpcs <- return $ fmap buildCmdRpc neCmds
-      queueRpcs rpcs)
-    (\e -> liftIO $ putStrLn $ "Exception caught in the handler 'sendPublicBatch': "
-                             ++ show (e :: SomeException))
+sendPublicBatch = catch (do
+    Pact.SubmitBatch neCmds <- readSubmitBatchJSON
+    log $ "public: received batch of " ++ show (NE.length neCmds)
+    rpcs <- return $ fmap buildCmdRpc neCmds
+    queueRpcs rpcs)
+  (\e -> liftIO $ putStrLn $ "Exception caught in the handler 'sendPublicBatch': "
+                            ++ show (e :: SomeException))
 
 sendClusterChange :: Api ()
 sendClusterChange = catch (do
-    SubmitCC ccCmds <- readJSON
+    SubmitCC ccCmds <- readSubmitCCJSON
     when (null ccCmds) $ die "Empty cluster change batch"
     when (length ccCmds /= 2) $ die "Exactly two cluster change commands required -- one Transitional, one Final"
     let transCmd = head ccCmds
@@ -218,7 +217,7 @@ poll :: Api ()
 poll = catch (do
     (Pact.Poll rks) <- readJSON
     PossiblyIncompleteResults{..} <- checkHistoryForResult (HashSet.fromList (NE.toList rks))
-    writeResponse $ PollResponses $ fmap Right possiblyIncompleteResults)
+    writeResponse $ K.PollResponses $ fmap Right possiblyIncompleteResults)
     -- ^ convert PossiblyIncompleteResults to PollResponses
   (\e -> liftIO $ putStrLn $ "Exception caught in the handler poll: " ++ show (e :: SomeException))
 
@@ -244,16 +243,16 @@ readJSON :: (Show t, FromJSON t) => Api t
 readJSON = do
   b  <- readRequestBody 1000000000
   snd <$> tryParseJSON b
-  -- trace ("ApiServer.ReadJSON - b: " ++ show b)
-  --    (snd <$> tryParseJSON b)
 
 readSubmitBatchJSON :: Api Pact.SubmitBatch
 readSubmitBatchJSON = do
   b  <- readRequestBody 1000000000
-  -- snd <$> tryParseJSON b
   snd <$> parseSubmitBatch b
-  -- trace ("ApiServer.ReadJSON - b: " ++ show b)
-  --    (snd <$> parseSubmitBatch b)
+
+readSubmitCCJSON :: Api SubmitCC
+readSubmitCCJSON = do
+  b  <- readRequestBody 1000000000
+  snd <$> parseSubmitCC b
 
 tryParseJSON
   :: (Show t, FromJSON t) =>
@@ -262,10 +261,14 @@ tryParseJSON b = case eitherDecode b of
     Right v -> return (toStrict b,v)
     Left e -> die $ "Left from tryParseJson check-it: " ++ e
 
-parseSubmitBatch
-  :: BSL.ByteString -> Api (BS.ByteString, Pact.SubmitBatch)
+parseSubmitBatch :: BSL.ByteString -> Api (BS.ByteString, Pact.SubmitBatch)
 parseSubmitBatch b = case eitherDecode b of
     (Right v :: Either String Pact.SubmitBatch) -> return (toStrict b,v)
+    Left e -> die $ "Left from tryParseJson check-it: " ++ e
+
+parseSubmitCC :: BSL.ByteString -> Api (BS.ByteString, SubmitCC)
+parseSubmitCC b = case eitherDecode b of
+    (Right v :: Either String SubmitCC) -> return (toStrict b,v)
     Left e -> die $ "Left from tryParseJson check-it: " ++ e
 
 setJSON :: Api ()
@@ -304,10 +307,10 @@ registerListener = do
       History.GCed msg -> do
         log $ "Listener GCed for: " ++ show rk ++ " because " ++ msg
         die msg
-      History.ListenerResult scr -> do
+      History.ListenerResult cr -> do
         log $ "Listener Serviced for: " ++ show rk
         setJSON
-        writeLBS $ encode ((Right scr) :: Either String CommandResult)
+        writeLBS $ encode $ K.ListenResponse cr
   case theEither of
     Left e -> do
       let errStr = "Exception in registerListener: " ++ show e

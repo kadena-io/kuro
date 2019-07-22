@@ -49,7 +49,7 @@ import GHC.Int (Int64)
 
 import qualified Kadena.Crypto as KC
 import Kadena.Types.Base (LogIndex, NodeId)
-import Kadena.Types.Private (PrivateCiphertext,PrivateResult)
+import Kadena.Types.Private (PrivateCiphertext,PrivateResult(..))
 
 import qualified Pact.Types.ChainMeta as Pact
 import qualified Pact.Types.Command as Pact

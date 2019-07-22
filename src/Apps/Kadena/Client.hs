@@ -70,7 +70,6 @@ import Data.Thyme.Time.Core (unUTCTime, toMicroseconds)
 import qualified Data.Vector as V
 import qualified Data.Yaml as Y
 
-
 import GHC.Generics (Generic)
 import Network.HTTP.Client hiding (responseBody)
 import Network.Wreq hiding (Raw)
@@ -98,7 +97,7 @@ import Kadena.ConfigChange (mkConfigChangeApiReq)
 import Kadena.Types.Base hiding (printLatTime)
 import Kadena.Types.Command
 import Kadena.Types.Entity (EntityName)
-import Kadena.Types.HTTP
+import Kadena.Types.HTTP as K
 
 data ClientOpts = ClientOpts {
       _oConfig :: FilePath
@@ -114,9 +113,8 @@ coptions =
            "Configuration File"
   ]
 
--- MLN replace original 30, for now its more useful to let this run longer when errors occur.
 timeoutSeconds :: Int
-timeoutSeconds = 300
+timeoutSeconds = 30
 
 listenDelayMs :: Int
 listenDelayMs = 10000
@@ -201,7 +199,6 @@ data ReplApiData =
       , _batchCnt :: Int64
 } deriving Show
 
-
 prompt :: String -> String
 prompt s = "\ESC[0;31m" ++ s ++ "> \ESC[0m"
 
@@ -240,29 +237,26 @@ mkExec code mdata privMeta = do
       (Exec (ExecMsg (T.pack code) mdata))
   return $ decodeUtf8 <$> cmd
 
--- postAPI :: (ToJSON req, FromJSON t) => String -> req -> Repl (Response (ApiResponse t))
-postAPI :: (ToJSON req) => String -> req -> Repl (Response (ApiResponse Pact.RequestKeys))
+postAPI :: (ToJSON req, FromJSON t) => String -> req -> Repl (Response (ApiResponse t))
 postAPI ep rq = do
   use echo >>= \e -> when e $ putJSON rq
   s <- getServer
   liftIO $ postWithRetry ep s rq
 
--- postWithRetry :: (ToJSON req, FromJSON t) => String -> String -> req -> IO (Response (ApiResponse t))
-postWithRetry :: (ToJSON req) => String -> String -> req -> IO (Response (ApiResponse Pact.RequestKeys))
+postWithRetry :: (ToJSON req, FromJSON t) => String -> String -> req -> IO (Response (ApiResponse t))
 postWithRetry ep server' rq = do
   t <- timeout (fromIntegral timeoutSeconds) go
   case t of
     Nothing -> die "postServerApi - timeout: no successful response received"
     Just x -> return x
   where
-    -- go :: (FromJSON t) => IO (Response (ApiResponse t))
-    go :: IO (Response (ApiResponse Pact.RequestKeys))
+    go :: (FromJSON t) => IO (Response (ApiResponse t))
     go = do
       let url = "http://" ++ server' ++ "/api/v1/" ++ ep
       let opts = defaults & manager .~ Left (defaultManagerSettings
             { managerResponseTimeout = responseTimeoutMicro (timeoutSeconds * 1000000) } )
       r <- liftIO $ postWith opts url (toJSON rq)
-      resp  <- asJSON r :: IO (Response (ApiResponse Pact.RequestKeys))
+      resp  <- asJSON r -- :: IO (Response (ApiResponse Pact.RequestKeys))
       case resp ^. responseBody of
         Left _err -> do
           sleep 1
@@ -346,7 +340,8 @@ sendPrivate :: Pact.Address -> String -> Repl ()
 sendPrivate addy msg = do
   j <- use cmdData
   e <- mkExec msg j $ Pact.PrivateMeta (Just addy)
-  postAPI "private" (Pact.SubmitBatch (e :| [])) >>= handleHttpResp (listenForResult listenDelayMs)
+  resp <- postAPI "private" (Pact.SubmitBatch (e :| []))
+  handleHttpResp (listenForResult listenDelayMs) resp
 
 putJSON :: (ToJSON a) => a -> Repl ()
 putJSON a =
@@ -459,7 +454,8 @@ listenForLastResult tdelay showLatency theKeys = do
   resp <- postAPI "listen" (Pact.ListenerRequest lastRk)
   case resp ^. responseBody of
     Left err -> flushStrLn $ "Error: no results received: " ++ show err
-    Right cr -> do
+    Right (K.ListenTimeout n) -> flushStrLn $ "Error: listener timeout" ++ show n
+    Right (K.ListenResponse cr) -> do -- cr :: K.CommandResult
       tell [ReplApiResponse { _apiResponseKey = lastRk
                               , _apiResult = cr
                               , _batchCnt = fromIntegral cnt}]

@@ -38,8 +38,6 @@ import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Set as Set
 import qualified Data.Serialize as SZ
 
-import Debug.Trace
-
 import Snap.Core
 import Snap.Http.Server as Snap
 import Snap.Util.CORS
@@ -145,9 +143,6 @@ sendPublicBatch = catch (do
   (\e -> liftIO $ putStrLn $ "Exception caught in the handler 'sendPublicBatch': "
                             ++ show (e :: SomeException))
 
-wrapResponse :: forall t. t -> ApiResponse t
-wrapResponse x = Right x :: Either String t
-
 sendClusterChange :: Api ()
 sendClusterChange = catch (do
     SubmitCC ccCmds <- readSubmitCCJSON
@@ -177,7 +172,6 @@ queueRpcs :: NonEmpty (RequestKey,CMDWire) -> Api ()
 queueRpcs rpcs = do
   p <- view aiPublish
   rks <- publish p die rpcs
-  -- writeResponse $ wrapResponse rks
   writeResponse rks
 
 queueRpcsNoResp :: NonEmpty (RequestKey,CMDWire) -> Api ()
@@ -283,9 +277,7 @@ setJSON = modifyResponse $ setHeader "Content-Type" "application/json"
 writeResponse :: forall j. (ToJSON j) => j -> Api ()
 writeResponse r = do
   let theRight = (Right r) :: Either String j
-  log $ "%%%%%Sending via writeLBS: %%%%%" ++ (show (encode theRight))
-  trace (show (encode theRight))
-      (setJSON >> writeLBS (encode theRight))
+  setJSON >> writeLBS (encode theRight)
 
 listenFor :: Pact.ListenerRequest -> Api ClusterChangeResult
 listenFor (Pact.ListenerRequest rk) = do
@@ -318,7 +310,7 @@ registerListener = do
       History.ListenerResult cr -> do
         log $ "Listener Serviced for: " ++ show rk
         setJSON
-        writeLBS $ encode $ K.ListenResponse cr
+        writeResponse $ K.ListenResponse cr
   case theEither of
     Left e -> do
       let errStr = "Exception in registerListener: " ++ show e

@@ -65,12 +65,12 @@ verifyCmds ks prChan (InboundCMD (rAt, srpc))  = case signedRPCtoRPC (Just rAt) 
   Right !(NEW' (NewCmdRPC pcmds _)) -> do
     lat' <- mkCmdLatMetric rAt
     cmds' <- mapM (decodeAndInformPreProc prChan) pcmds -- (\x -> decodeCommandEither x >>= \y -> Right (rAt, y)) <$> pcmds
-    return $ fmap (fmap (\c -> (lat', c))) cmds'
+    return $ fmap (fmap (lat',)) cmds'
   Right !x -> error $! "Invariant Error: verifyCmds, encountered a non-`NEW'` SRPC in the CMD turbine: " ++ show x
 verifyCmds _ prChan (InboundCMDFromApi (rAt, NewCmdInternal{..})) = do
   lat' <- mkCmdLatMetric rAt
   cmds' <- mapM (decodeAndInformPreProc prChan) _newCmdInternal -- (\x -> decodeCommandEither x >>= \y -> Right (rAt, y)) <$> _newCmdInternal
-  return $ fmap (fmap (\c -> (lat', c))) cmds'
+  return $ fmap (fmap (lat',)) cmds'
 {-# INLINE verifyCmds #-}
 
 decodeAndInformPreProc :: ProcessRequestChannel -> CMDWire -> IO (Either String Command)

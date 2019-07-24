@@ -26,16 +26,7 @@ import Kadena.Monitoring.EkgMonitor ( Server, forkServer, getLabel, getGauge, ge
 startApi :: Config -> IO Server
 startApi config = do
   let port = 80 + fromIntegral (config ^. nodeId . to _port)
-  server <- forkServer "0.0.0.0" port
-  -- let store = serverMetricStore server
-  -- _ <- mkRegistry store $ port + 256
-  return server
-
--- mkRegistry :: System.Metrics.Store -> R.Port -> IO ()
--- mkRegistry store port = do
---   let rOptions = R.newOptions [] R.defaultMetrics
---   _ <- R.startRidleyWithStore rOptions ["metrics"] port store
---   return ()
+  forkServer "0.0.0.0" port
 
 startMonitoring :: Config -> IO (Metric -> IO ())
 startMonitoring config = do

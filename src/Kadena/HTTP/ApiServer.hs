@@ -8,7 +8,6 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE BangPatterns #-}
 
 -- TODO: add latency back into the apiResult

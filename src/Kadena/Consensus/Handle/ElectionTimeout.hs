@@ -1,6 +1,5 @@
 {-# LANGUAGE ImpredicativeTypes #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TemplateHaskell #-}
 

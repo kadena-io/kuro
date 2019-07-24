@@ -77,7 +77,7 @@ runHistoryService env mState = catchAndRethrow "historyService" $ do
 
 debug :: String -> HistoryService ()
 debug s = do
-  when (not (null s)) $ do
+  unless (null s) $ do
     dbg <- view henvDebugPrint
     liftIO $! dbg $ "[Service|History] " ++ s
 
@@ -210,7 +210,7 @@ queryForExisting (srks, mRes) = do
   start <- now
   case pers of
     InMemory m -> do
-      found <- return $! HashSet.intersection srks $ HashSet.fromMap $ const () <$> m
+      found <- return $! HashSet.intersection srks $ HashSet.fromMap $ void m
       liftIO $! putMVar mRes $ ExistenceResult found
     OnDisk{..} -> do
       foundInMem <- return $ HashSet.intersection srks incompleteRequestKeys
@@ -229,7 +229,7 @@ queryForPriorApplication (srks, mRes) = do
   start <- now
   case pers of
     InMemory m -> do
-      found <- return $! HashSet.fromMap $ const () <$> HashMap.filterWithKey (\k v -> HashSet.member k srks && isJust v) m
+      found <- return $! HashSet.fromMap $ void HashMap.filterWithKey (\k v -> HashSet.member k srks && isJust v) m
       liftIO $! putMVar mRes $ ExistenceResult found
     OnDisk{..} -> do
       found <- liftIO $ DB.queryForExisting dbConn srks
@@ -265,12 +265,12 @@ checkForIndividualResultInMem s k (Just _) = HashSet.member k s
 registerNewListeners :: HashMap RequestKey (MVar ListenerResult) -> HistoryService ()
 registerNewListeners newListeners' = do
   start <- now
-  srks <- return $! HashSet.fromMap $ const () <$> newListeners'
+  srks <- return $! HashSet.fromMap $ void newListeners'
   pers <- use persistence
   found <- case pers of
     InMemory m -> return $! fromJust <$> HashMap.filterWithKey (checkForIndividualResultInMem srks) m
     OnDisk{..} -> liftIO $! DB.selectCompletedCommands dbConn srks
-  noNeedToListen <- return $! HashSet.intersection (HashSet.fromMap $ const () <$> found) srks
+  noNeedToListen <- return $! HashSet.intersection (HashSet.fromMap $ void found) srks
   readyToServiceListeners <- return $! HashMap.filterWithKey (\k _ -> HashSet.member k noNeedToListen) newListeners'
   realListeners <- return $! HashMap.filterWithKey (\k _ -> not $ HashSet.member k noNeedToListen) newListeners'
   unless (HashMap.null readyToServiceListeners) $ do

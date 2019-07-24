@@ -1,4 +1,3 @@
-{-# LANGUAGE TemplateHaskell #-}
 module Kadena.Messaging.Turbine.Util
   ( turbineRv
   , turbineAer

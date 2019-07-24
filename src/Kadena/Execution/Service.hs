@@ -97,7 +97,7 @@ runExecutionService env pub nodeId' keySet' = do
 
 debug :: String -> ExecutionService ()
 debug s = do
-  when (not (null s)) $ do
+  unless (null s) $ do
     dbg <- view eenvDebugPrint
     liftIO $! dbg $ "[Service|Execution] " ++ s
 

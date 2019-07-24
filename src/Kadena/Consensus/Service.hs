@@ -1,4 +1,3 @@
-{-# LANGUAGE RecordWildCards #-}
 module Kadena.Consensus.Service
   ( runConsensusService
   ) where

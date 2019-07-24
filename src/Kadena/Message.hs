@@ -47,4 +47,4 @@ directMsg :: [(NodeId, ByteString)] -> OutboundGeneral
 directMsg msgs = OutboundGeneral $! Envelope . (\(n,b) -> (Topic $ unAlias $ _alias n, b)) <$> msgs
 
 broadcastMsg :: [ByteString] -> OutboundGeneral
-broadcastMsg msgs = OutboundGeneral $! Envelope . (\b -> (Topic $ "all", b)) <$> msgs
+broadcastMsg msgs = OutboundGeneral $! Envelope . (Topic $ "all",) <$> msgs

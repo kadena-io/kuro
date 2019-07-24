@@ -71,7 +71,7 @@ runLogService dispatch dbg publishMetric' gCfg = do
 
 debug :: String -> LogThread ()
 debug s = do
-  when (not (null s)) $ do
+  unless (null s) $ do
     dbg <- view debugPrint
     liftIO $ dbg $ "[Service|Log]: " ++ s
 

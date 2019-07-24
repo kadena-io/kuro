@@ -113,8 +113,9 @@ coptions =
            "Configuration File"
   ]
 
+-- TODO: restore timeout to 30 seconds, longer value temporarily for debugging
 timeoutSeconds :: Int
-timeoutSeconds = 30
+timeoutSeconds = 300
 
 listenDelayMs :: Int
 listenDelayMs = 10000

@@ -229,7 +229,7 @@ queryForPriorApplication (srks, mRes) = do
   start <- now
   case pers of
     InMemory m -> do
-      found <- return $! HashSet.fromMap $ void HashMap.filterWithKey (\k v -> HashSet.member k srks && isJust v) m
+      found <- return $! HashSet.fromMap $ const () <$> HashMap.filterWithKey (\k v -> HashSet.member k srks && isJust v) m
       liftIO $! putMVar mRes $ ExistenceResult found
     OnDisk{..} -> do
       found <- liftIO $ DB.queryForExisting dbConn srks

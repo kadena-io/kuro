@@ -185,21 +185,13 @@ cmdRPC2 = do
           , _newProvenance = NewMsg }
 
 cmdSignedRPC1, cmdSignedRPC2 :: IO SignedRPC
-cmdSignedRPC1 = do
-  cmd1 <- cmdRPC1
-  return $ toWire nodeIdLeader pubKeyLeader privKeyLeader cmd1
-cmdSignedRPC2 = do
-  cmd2 <- cmdRPC2
-  return $ toWire nodeIdFollower pubKeyFollower privKeyFollower cmd2
+cmdSignedRPC1 = toWire nodeIdLeader pubKeyLeader privKeyLeader <$> cmdRPC1
+cmdSignedRPC2 = toWire nodeIdFollower pubKeyFollower privKeyFollower <$> cmdRPC2
 
 -- these are signed (received) provenance versions
 cmdRPC1', cmdRPC2' :: IO Command
-cmdRPC1' = do
-  signed1 <- cmdSignedRPC1
-  return $ either error (decodeCommand . head . _newCmd) $ fromWire Nothing keySet signed1
-cmdRPC2' = do
-  signed2 <- cmdSignedRPC2
-  return $ either error (decodeCommand . head . _newCmd) $ fromWire Nothing keySet signed2
+cmdRPC1' = either error (decodeCommand . head . _newCmd) . fromWire Nothing keySet <$> cmdSignedRPC1
+cmdRPC2' = either error (decodeCommand . head . _newCmd) . fromWire Nothing keySet <$> cmdSignedRPC2
 
 -- ########################################################
 -- LogEntry(s) and Seq LogEntry with correct hashes.
@@ -232,14 +224,10 @@ leSeq = do
   entry1 <- logEntry1
   entry2 <- logEntry2
   return $ (\(Right v) -> v) $ checkLogEntries $ Map.fromList [(0,entry1),(1,entry2)]
-leSeqDecoded = do
-  lew <- leWire
-  return $ (\(Right v) -> v) $ decodeLEWire Nothing lew
+leSeqDecoded = (\(Right v) -> v) . decodeLEWire Nothing <$> leWire
 
 leWire :: IO [LEWire]
-leWire = do
-  theSeq <- leSeq
-  return $ encodeLEWire theSeq
+leWire = encodeLEWire <$> leSeq
 
 -- ################################################
 -- RequestVoteResponse, with and without provenance
@@ -295,9 +283,7 @@ aeRPC = do
 
 
 aeSignedRPC :: IO SignedRPC
-aeSignedRPC = do
-  aerpc <- aeRPC
-  return $ toWire nodeIdLeader pubKeyLeader privKeyLeader aerpc
+aeSignedRPC = toWire nodeIdLeader pubKeyLeader privKeyLeader <$> aeRPC
 
 
 -- #####################

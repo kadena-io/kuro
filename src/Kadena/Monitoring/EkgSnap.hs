@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
- module Kadena.Monitoring.EkgSnap
+module Kadena.Monitoring.EkgSnap
     ( startServer
     ) where
 
@@ -25,11 +25,11 @@ import qualified Snap.Http.Server.Config as Config
 
 import System.Metrics
 
- -- Kadena Change!
+-- Kadena Change!
 import Kadena.Monitoring.EkgJson
 import qualified Snap.Core as Snap
 
- ------------------------------------------------------------------------
+------------------------------------------------------------------------
 
 -- | Convert a host name (e.g. \"localhost\" or \"127.0.0.1\") to a
 -- numeric host address (e.g. \"127.0.0.1\").
@@ -65,7 +65,7 @@ startServer store host port = do
                Config.defaultConfig
     httpServe conf (monitor store)
 
- -- | A handler that can be installed into an existing Snap application.
+-- | A handler that can be installed into an existing Snap application.
 monitor :: Store -> Snap ()
 monitor store = do
     -- Kadena Change!
@@ -75,7 +75,7 @@ monitor store = do
     jsonHandler = wrapHandler "application/json"
     wrapHandler fmt handler = method GET $ format fmt $ handler
 
- -- | The Accept header of the request.
+-- | The Accept header of the request.
 acceptHeader :: Request -> Maybe S.ByteString
 acceptHeader = getHeader "Accept"
 

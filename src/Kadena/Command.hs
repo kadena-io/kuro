@@ -55,7 +55,7 @@ mkClusterChangeCommand ConfigChangeApiReq{..} = do
                    , _ccpNonce = toS rid
                    , _ccpSigners = [] }
   let jPayload = BSL.toStrict $ A.encode ccPayload
-  let theHash =  hash jPayload
+  let theHash = hash jPayload
   let theSigs = createSignatures _ylccKeyPairs $ Pact.toUntypedHash theHash
   return ClusterChangeCommand
             { _cccPayload = jPayload

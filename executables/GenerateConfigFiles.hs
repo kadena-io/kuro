@@ -62,12 +62,6 @@ makeEdKeys n g = case Ed25519.generateKeyPair g of
   Left err -> error $ show err
   Right (s,p,g') -> (s,p) : makeEdKeys (n-1) g'
 
--- makeKeys :: CryptoRandomGen g => Int -> g -> [(PrivateKey,PublicKey)]
--- makeKeys 0 _ = []
--- makeKeys n g = case generateKeyPair g of
---   Left err -> error $ show err
---   Right (s,p,g') -> (s,p) : makeKeys (n-1) g'
-
 awsNodes :: [String] -> [NodeId]
 awsNodes = fmap (\h -> NodeId h 10000 ("tcp://" ++ h ++ ":10000") $ Alias (BSC.pack h))
 
@@ -286,11 +280,6 @@ mkEntities nids ec = do
     kps <- (,) <$> genKeyPair <*> genKeyPair
     return (en,kps)
   ents <- sequence $ (`M.mapWithKey` kpMap) (toEntityConfig kpMap)
-  -- let nodePerEnt = length nids `div` ec
-  -- let setHeadSending = set (ix 0 . _2 . ecSending) True
-  -- let alloc [] _ = []
-  -- let alloc _ [] = error $ "Ran out of entities! Bad entity count: " ++ show ec
-  -- let alloc nids' (e:es) = (setHeadSending $ map (,e) $ take nodePerEnt nids') ++ alloc (drop nodePerEnt nids') es
   return $ M.fromList $ alloc nids (M.elems ents)
     where
       nodePerEnt = length nids `div` ec

@@ -26,7 +26,6 @@ import qualified Pact.Types.Hash as Pact
 import Pact.Types.Logger (LogRules(..),initLoggers,doLog)
 import qualified Pact.Types.Persistence as Pact
 
-
 import Kadena.Util.Util (linkAsyncTrack)
 import Kadena.Config
 import Kadena.Config.TMVar as Cfg

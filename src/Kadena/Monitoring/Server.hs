@@ -15,8 +15,6 @@ import qualified Data.Text as T
 import qualified System.Metrics.Label as Label
 import qualified System.Metrics.Gauge as Gauge
 import qualified System.Metrics.Distribution as Dist
--- import qualified System.Metrics.Prometheus.Ridley as R
--- import qualified System.Metrics.Prometheus.Ridley.Types as R
 
 import Kadena.Config.TMVar
 import Kadena.Util.Util (awsDashVar)

@@ -121,7 +121,7 @@ updateLogs q = do
 
 debug :: String -> Consensus ()
 debug s = do
-  unless (null s) $ do
+  when (not (null s)) $ do   
     dbg <- view (rs.debugPrint)
     role' <- use csNodeRole
     case role' of

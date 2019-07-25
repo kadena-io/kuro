@@ -22,20 +22,20 @@ module Kadena.Monitoring.EkgMonitor
       -- * Required configuration
       -- $configuration
 
-       -- * Security considerations
+      -- * Security considerations
       -- $security
 
-       -- * REST API
+      -- * REST API
       -- $api
 
-       -- * The monitoring server
+      -- * The monitoring server
       Server
     , serverThreadId
     , serverMetricStore
     , forkServer
     , forkServerWith
 
-       -- * Defining metrics
+      -- * Defining metrics
       -- $userdefined
     , getCounter
     , getGauge
@@ -57,7 +57,7 @@ import qualified System.Metrics.Gauge as Gauge
 import qualified System.Metrics.Label as Label
 import Network.Socket (withSocketsDo)
 
- -- Kadena Change!
+-- Kadena Change!
 import Kadena.Monitoring.EkgSnap
 
 -- $configuration
@@ -137,7 +137,7 @@ import Kadena.Monitoring.EkgSnap
 -- >   }
 -- > }
 
- -- $userdefined
+-- $userdefined
 -- The monitoring server can store and serve integer-valued counters
 -- and gauges, string-valued labels, and statistical distributions. A
 -- counter is a monotonically increasing value (e.g. TCP connections
@@ -176,7 +176,7 @@ import Kadena.Monitoring.EkgSnap
 ------------------------------------------------------------------------
 -- * The monitoring server
 
- -- | A handle that can be used to control the monitoring server.
+-- | A handle that can be used to control the monitoring server.
 -- Created by 'forkServer'.
 data Server = Server {
       -- | The thread ID of the server. You can kill the server by
@@ -184,7 +184,7 @@ data Server = Server {
       -- exception.)
       serverThreadId :: {-# UNPACK #-} !ThreadId
 
-       -- | The metric store associated with the server. If you want to
+      -- | The metric store associated with the server. If you want to
       -- add metric to the default store created by 'forkServer' you
       -- need to use this function to retrieve it.
     , serverMetricStore :: {-# UNPACK #-} !Metrics.Store
@@ -236,7 +236,7 @@ forkServerWith store host port = do
     getTimeMs :: IO Int64
     getTimeMs = (round . (* 1000)) `fmap` getPOSIXTime
 
- ------------------------------------------------------------------------
+------------------------------------------------------------------------
 -- * Defining metrics
 
 -- | Return a new, zero-initialized counter associated with the given

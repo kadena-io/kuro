@@ -11,9 +11,11 @@ module Kadena.Types.Execution
   , eenvPactPersistConfig, eenvExecLoggers, eenvEntityConfig
   , eenvPrivateChannel
   , ExecutionState(..)
-  , csNodeId,csKeySet,csCommandExecInterface
+  , KCommandExecInterface(..)
+  , esNodeId, esKeySet, esKCommandExecInterface, esModuleCache
   , ExecutionChannel(..)
   , ExecutionService
+  , ModuleCache
   ) where
 
 import Control.Lens hiding (Index)
@@ -22,13 +24,16 @@ import Control.Monad.Trans.RWS.Strict (RWST)
 import Control.Concurrent.Chan (Chan)
 import Control.Concurrent (MVar)
 
+import Data.HashMap.Strict (HashMap)
 import Data.Thyme.Clock (UTCTime)
 import Data.ByteString (ByteString)
 
 import qualified Pact.Types.ChainMeta as Pact
 import qualified Pact.Types.Hash as Pact (Hash)
-import qualified Pact.Types.Command as Pact (CommandExecInterface, CommandResult, Command, PactResult, ParsedCode)
+import qualified Pact.Types.Command as Pact
 import Pact.Types.Logger (Loggers)
+import qualified Pact.Types.Term as Pact (ModuleName, Ref)
+import qualified Pact.Types.Persistence as Pact (ExecutionMode, ModuleData)
 
 import Kadena.Types.Base (NodeId)
 import Kadena.Types.PactDB
@@ -40,7 +45,10 @@ import Kadena.Types.Log (LogEntry,LogEntries)
 import Kadena.Types.Event (Beat)
 import Kadena.Types.History (HistoryChannel)
 import Kadena.Types.Private (PrivateChannel)
+-- import Kadena.Types.Spec
 import Kadena.Types.Entity (EntityConfig)
+
+type ModuleCache = HashMap Pact.ModuleName (Pact.ModuleData Pact.Ref, Bool)
 
 type ApplyFn = LogEntry -> IO (Pact.CommandResult (Pact.Hash))
 
@@ -75,10 +83,21 @@ data ExecutionEnv = ExecutionEnv
   }
 makeLenses ''ExecutionEnv
 
+type KApplyCmd l = Pact.ExecutionMode -> ModuleCache -> Pact.Command ByteString
+                 -> IO (Pact.CommandResult l)
+type KApplyPPCmd m a l = Pact.ExecutionMode -> ModuleCache -> Pact.Command ByteString
+                       -> Pact.ProcessedCommand m a -> IO (Pact.CommandResult l)
+
+data KCommandExecInterface m a l = KCommandExecInterface
+  { _kceiApplyCmd :: KApplyCmd l
+  , _kceiApplyPPCmd :: KApplyPPCmd m a l
+  }
+
 data ExecutionState = ExecutionState
-  { _csNodeId :: !NodeId
-  , _csKeySet :: !KeySet
-  , _csCommandExecInterface :: !(Pact.CommandExecInterface Pact.PrivateMeta Pact.ParsedCode Pact.Hash)
+  { _esNodeId :: !NodeId
+  , _esKeySet :: !KeySet
+  , _esKCommandExecInterface :: !(KCommandExecInterface Pact.PrivateMeta Pact.ParsedCode Pact.Hash)
+  , _esModuleCache :: ModuleCache
   }
 makeLenses ''ExecutionState
 

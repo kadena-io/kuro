@@ -26,6 +26,7 @@ bin/*
 .stack-work/
 .stack-work*
 stack-docker.yaml
+stack.yaml.lock
 *~
 log/*
 test-files/log*/node*

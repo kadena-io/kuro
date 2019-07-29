@@ -26,6 +26,7 @@ import Control.Concurrent (MVar)
 
 import Data.HashMap.Strict (HashMap)
 import Data.Thyme.Clock (UTCTime)
+import Data.Tuple.Strict (T2(..))
 import Data.ByteString (ByteString)
 
 import qualified Pact.Types.ChainMeta as Pact
@@ -84,9 +85,9 @@ data ExecutionEnv = ExecutionEnv
 makeLenses ''ExecutionEnv
 
 type KApplyCmd l = Pact.ExecutionMode -> ModuleCache -> Pact.Command ByteString
-                 -> IO (Pact.CommandResult l)
+                 -> IO (T2 (Pact.CommandResult l) ModuleCache)
 type KApplyPPCmd m a l = Pact.ExecutionMode -> ModuleCache -> Pact.Command ByteString
-                       -> Pact.ProcessedCommand m a -> IO (Pact.CommandResult l)
+                       -> Pact.ProcessedCommand m a -> IO (T2 (Pact.CommandResult l) ModuleCache)
 
 data KCommandExecInterface m a l = KCommandExecInterface
   { _kceiApplyCmd :: KApplyCmd l

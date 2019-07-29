@@ -10,7 +10,7 @@ import Control.Exception (SomeException)
 import Control.Exception.Safe (tryAny)
 import Control.Lens
 import Control.Monad
-import Control.Monad.Catch (throwM)
+import Control.Monad.Catch (catches, Handler(..), MonadCatch, throwM)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (ask, ReaderT, runReaderT, reader)
 import Crypto.Noise as Dh (convert)
@@ -20,6 +20,7 @@ import Data.Default
 import Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.Set as S
 import Data.String
+import Data.Tuple.Strict (T2(..))
 import Data.Word
 import System.Directory (doesFileExist,removeFile)
 
@@ -44,7 +45,7 @@ import Pact.Types.Persistence
 import Pact.Types.Pretty
 import Pact.Types.RPC
 import qualified Pact.Types.Runtime as P (PublicKey)
-import Pact.Types.Runtime
+import Pact.Types.Runtime hiding (catchesPactError)
 import Pact.Types.Scheme
 import Pact.Types.SPV
 import Pact.Types.Server (throwCmdEx,userSigsToPactKeySet)
@@ -130,12 +131,14 @@ applyCmd
   -> ModuleCache
   -> Pact.Command a
   -> (ProcessedCommand PrivateMeta ParsedCode)
-  -> IO (Pact.CommandResult Hash)
-applyCmd _ _ _ _ _ _ cmd (ProcFail s) =
-  return $ resultFailure
-           Nothing
-           (cmdToRequestKey cmd)
-           (PactError TxFailure def def . viaShow $ s)
+  -> IO (T2 (Pact.CommandResult Hash) ModuleCache)
+applyCmd _ _ _ _ _ moduleCache cmd (ProcFail s) =
+  return $ (T2 (resultFailure
+                   Nothing
+                   (cmdToRequestKey cmd)
+                   (PactError TxFailure def def . viaShow $ s))
+           moduleCache) -- Not updating moduleCache on failure
+
 applyCmd ent pub logger dbv exMode moduleCache _ (ProcSucc cmd) = do
   -- TODO read tx gasLimit from config
   let gasLimit = 10000
@@ -150,12 +153,24 @@ applyCmd ent pub logger dbv exMode moduleCache _ (ProcSucc cmd) = do
                     , _peModuleCache = moduleCache}
             $ runPayload cmd
   case r of
-    Right cr -> do
+    Right (T2 cr moduleCache') -> do
       logLog logger "DEBUG" $ "success for requestKey: " ++ show (cmdToRequestKey cmd)
-      return cr
+      return (T2 cr moduleCache')
     Left e -> do
-      logLog logger "ERROR" $ "tx failure for requestKey: " ++ show (cmdToRequestKey cmd) ++ ": " ++ show e
-      return $ resultFailure Nothing (cmdToRequestKey cmd) e
+      logLog logger "ERROR" $ "tx failure for requestKey: " ++ show (cmdToRequestKey cmd)
+                            ++ ": " ++ show e
+      return $ T2 (resultFailure Nothing (cmdToRequestKey cmd) e) moduleCache
+      -- ^ Not updating moduleCache in case of failure
+
+catchesPactError
+  :: (MonadCatch m)
+  => m (T2 (Pact.CommandResult Hash) ModuleCache)
+  -> m (Either PactError (T2 (Pact.CommandResult Hash) ModuleCache))
+catchesPactError action =
+  catches (Right <$> action)
+  [ Handler (\(e :: PactError) -> return $ Left e)
+   ,Handler (\(e :: SomeException) -> return $ Left . PactError EvalError def def . viaShow $ e)
+  ]
 
 -- | Private hardcodes gas rate to 1
 gasRate :: Word64
@@ -165,13 +180,15 @@ gasRate = 1
 gasPrice :: GasPrice
 gasPrice = 0.0
 
-runPayload :: Pact.Command (Payload PrivateMeta ParsedCode) -> PactM p (Pact.CommandResult Hash)
+runPayload
+  :: Pact.Command (Payload PrivateMeta ParsedCode)
+  -> PactM p (T2 (Pact.CommandResult Hash) ModuleCache)
 runPayload c@Pact.Command{..} = case _pPayload _cmdPayload of
     Exec pm -> applyExec c pm (_pSigners _cmdPayload)
     Continuation ym -> applyContinuation c ym (_pSigners _cmdPayload)
 
 applyExec :: Pact.Command (Payload PrivateMeta ParsedCode) ->
-             ExecMsg ParsedCode -> [Signer] -> PactM p (Pact.CommandResult Hash)
+             ExecMsg ParsedCode -> [Signer] -> PactM p (T2 (Pact.CommandResult Hash) ModuleCache)
 applyExec cmd (ExecMsg parsedCode edata) ks = do
   PactEnv {..} <- ask
   when (null (_pcExps parsedCode)) $ throwCmdEx "No expressions found"
@@ -182,7 +199,9 @@ applyExec cmd (ExecMsg parsedCode edata) ks = do
                 initRefStore gasEnv permissiveNamespacePolicy noSPVSupport def
   EvalResult{..} <- liftIO $ evalExec (mkNewEvalState _peModuleCache) evalEnv parsedCode
   mapM_ (handlePactExec sigs edata) _erExec
-  return $ resultSuccess _erTxId (cmdToRequestKey cmd) _erGas (last _erOutput) _erExec _erLogs
+  return $ T2
+    (resultSuccess _erTxId (cmdToRequestKey cmd) _erGas (last _erOutput) _erExec _erLogs)
+    _erLoadedModules
 
 mkNewEvalState :: ModuleCache -> EvalState
 mkNewEvalState moduleCache = set (evalRefs . rsLoadedModules) moduleCache def
@@ -206,7 +225,7 @@ applyContinuation
   :: Pact.Command (Payload PrivateMeta ParsedCode)
   -> ContMsg
   -> [Signer]
-  -> PactM p (Pact.CommandResult Hash)
+  -> PactM p (T2 (Pact.CommandResult Hash) ModuleCache)
 applyContinuation cmd cm@ContMsg{..} ks = do
   pe@PactEnv{..} <- ask
   let sigs = userSigsToPactKeySet ks
@@ -216,12 +235,22 @@ applyContinuation cmd cm@ContMsg{..} ks = do
                   (Just $ PactStep _cmStep _cmRollback _cmPactId Nothing)
                   (toUntypedHash $ _cmdHash _peCommand))
                 initRefStore gasEnv permissiveNamespacePolicy noSPVSupport def
-  tryAny (liftIO $ evalContinuation (mkNewEvalState _peModuleCache) evalEnv cm) >>=
-    either (handleContFailure pe cm)
-           (handleContSuccess (cmdToRequestKey cmd) pe cm)
+  ei <- tryAny (liftIO $ evalContinuation (mkNewEvalState _peModuleCache) evalEnv cm)
 
-handleContFailure :: PactEnv p -> ContMsg -> SomeException -> PactM p (Pact.CommandResult Hash)
-handleContFailure pe cm ex = doRollback pe cm (Just True) >> throwM ex
+  -- for continuations, the updated moduleCache (inside EvalResult) is returned
+  -- by handleContSucess or handleContFailure
+  either (handleContFailure pe cm)
+         (handleContSuccess (cmdToRequestKey cmd) pe cm)
+         ei
+
+handleContFailure
+  :: PactEnv p
+  -> ContMsg
+  -> SomeException
+  -> PactM p (T2 (Pact.CommandResult Hash) ModuleCache)
+handleContFailure pe cm ex = do
+  doRollback pe cm (Just True)
+  throwM ex
 
 doRollback :: PactEnv p -> ContMsg -> Maybe Bool -> PactM p ()
 doRollback PactEnv{..} ContMsg{..} executed = do
@@ -230,14 +259,24 @@ doRollback PactEnv{..} ContMsg{..} executed = do
   unless done $ do
       when (executed == Just True) $ publishCont _cmPactId prevStep True _cmData
 
-handleContSuccess :: RequestKey -> PactEnv p -> ContMsg -> EvalResult -> PactM p (Pact.CommandResult Hash)
+handleContSuccess
+  :: RequestKey
+  -> PactEnv p
+  -> ContMsg
+  -> EvalResult
+  -> PactM p (T2 (Pact.CommandResult Hash) ModuleCache)
 handleContSuccess rk pe@PactEnv{..} cm@ContMsg{..} er@EvalResult{..} = do
   py@PactExec {..} <- maybe (throwCmdEx "No yield from continuation exec!") return _erExec
-  if _cmRollback then
-    doRollback pe cm _peExecuted
-  else
-    doResume pe cm er py
-  return $ resultSuccess _erTxId rk _erGas (last _erOutput) _erExec _erLogs
+  moduleCache' <- if _cmRollback
+        then do
+          doRollback pe cm _peExecuted
+          return _peModuleCache -- original module cache returned on rollback
+        else do
+          doResume pe cm er py
+          return _erLoadedModules -- return updated cache
+  return $ T2
+    (resultSuccess _erTxId rk _erGas (last _erOutput) _erExec _erLogs)
+    moduleCache'
 
 doResume :: PactEnv p -> ContMsg -> EvalResult -> PactExec -> PactM p ()
 doResume PactEnv{..} ContMsg{..} EvalResult{..} PactExec{..} = do

@@ -206,8 +206,9 @@ applyCommand _tEnd le@LogEntry{..} = do
         Result{..}  -> do
           debug $ "WARNING: fully resolved pact command found for " ++ show _leLogIndex
           return $! (result, _leCmdLatMetrics)
-      result <- liftIO $ apply Pact.Transactional moduleCache _sccCmd pproc
+      (T2 result moduleCache') <- liftIO $ apply Pact.Transactional moduleCache _sccCmd pproc
       lm <- stamp ppLat
+      TODO: update _esModuleCache in ExecutionState here
       return ( rkey
              , SmartContractResult
                { _crHash = chash
@@ -231,6 +232,7 @@ applyCommand _tEnd le@LogEntry{..} = do
       gcm <- view eenvMConfig
       result <- liftIO $ CfgChange.mutateGlobalConfig gcm pproc
       lm <- stamp ppLat
+      TODO: update _esModuleCache in ExecutionState here
       return ( rkey
              , ConsensusChangeResult
                { _crHash = chash
@@ -244,6 +246,7 @@ applyCommand _tEnd le@LogEntry{..} = do
       let finish pr = stamp _leCmdLatMetrics >>= \l ->
             return (rkey, PrivateCommandResult chash pr _leLogIndex l)
       case r of
+        TODO: update _esModuleCache in ExecutionState in these cases
         Left e -> finish (PrivateFailure (show e))
         Right Nothing -> finish PrivatePrivate
         Right (Just pm) -> do

@@ -17,6 +17,7 @@ extra-deps:
   - lz4-0.2.3.1
   - monad-gen-0.3.0.1
   - prelude-extras-0.4.0.3
+  - strict-tuple-0.1.2
   - unagi-chan-0.4.0.0
   - katip-0.6.3.0
   - FloatingHex-0.4

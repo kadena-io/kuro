@@ -87,12 +87,12 @@ onUpdateConf oChan conf@Config{ _nodeId = nodeId' } = do
 runExecutionService :: ExecutionEnv -> Publish -> NodeId -> KeySet -> IO ()
 runExecutionService env pub nodeId' keySet' = do
   cmdExecInter <- initPactService env pub
-  initExecutionState <- return $! ExecutionState {
+  let initExecutionState = ExecutionState {
     _esNodeId = nodeId',
     _esKeySet = keySet',
     _esKCommandExecInterface = cmdExecInter,
     _esModuleCache = mempty}
-  let cu = ConfigUpdater (env ^. eenvDebugPrint) "Service|Execution" (onUpdateConf (env ^. eenvExecChannel))
+  let cu = ConfigUpdater (_eenvDebugPrint env) "Service|Execution" (onUpdateConf (_eenvExecChannel env))
   linkAsyncTrack "ExecutionConfUpdater" $ CfgChange.runConfigUpdater cu (env ^. eenvMConfig)
   void $ runRWST handle env initExecutionState
 

@@ -1,8 +1,11 @@
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
+
 module Kadena.Execution.Pact
-  (initPactService)
+  ( PactEnv(..), peMode, peDbEnv, peCommand, peLogger, pePublish ,peEntity, peGasLimit, peModuleCache
+  , initPactService )
   where
 
 import Control.Concurrent (newMVar)
@@ -66,6 +69,7 @@ data PactEnv p = PactEnv {
     , _peGasLimit :: GasLimit
     , _peModuleCache ::  ModuleCache
     }
+makeLenses ''PactEnv
 
 type PactM p = ReaderT (PactEnv p) IO
 
@@ -185,7 +189,11 @@ runPayload
   -> PactM p (T2 (Pact.CommandResult Hash) ModuleCache)
 runPayload c@Pact.Command{..} = case _pPayload _cmdPayload of
     Exec pm -> applyExec c pm (_pSigners _cmdPayload)
-    Continuation ym -> applyContinuation c ym (_pSigners _cmdPayload)
+    Continuation ym -> do
+      cr <- applyContinuation c ym (_pSigners _cmdPayload)
+      moduleCache <- view peModuleCache
+      return (T2 cr moduleCache) -- no module cache updates for continuations
+
 
 applyExec :: Pact.Command (Payload PrivateMeta ParsedCode) ->
              ExecMsg ParsedCode -> [Signer] -> PactM p (T2 (Pact.CommandResult Hash) ModuleCache)
@@ -225,7 +233,7 @@ applyContinuation
   :: Pact.Command (Payload PrivateMeta ParsedCode)
   -> ContMsg
   -> [Signer]
-  -> PactM p (T2 (Pact.CommandResult Hash) ModuleCache)
+  -> PactM p (Pact.CommandResult Hash)
 applyContinuation cmd cm@ContMsg{..} ks = do
   pe@PactEnv{..} <- ask
   let sigs = userSigsToPactKeySet ks
@@ -236,9 +244,6 @@ applyContinuation cmd cm@ContMsg{..} ks = do
                   (toUntypedHash $ _cmdHash _peCommand))
                 initRefStore gasEnv permissiveNamespacePolicy noSPVSupport def
   ei <- tryAny (liftIO $ evalContinuation (mkNewEvalState _peModuleCache) evalEnv cm)
-
-  -- for continuations, the updated moduleCache (inside EvalResult) is returned
-  -- by handleContSucess or handleContFailure
   either (handleContFailure pe cm)
          (handleContSuccess (cmdToRequestKey cmd) pe cm)
          ei
@@ -247,7 +252,7 @@ handleContFailure
   :: PactEnv p
   -> ContMsg
   -> SomeException
-  -> PactM p (T2 (Pact.CommandResult Hash) ModuleCache)
+  -> PactM p (Pact.CommandResult Hash)
 handleContFailure pe cm ex = do
   doRollback pe cm (Just True)
   throwM ex
@@ -264,15 +269,13 @@ handleContSuccess
   -> PactEnv p
   -> ContMsg
   -> EvalResult
-  -> PactM p (T2 (Pact.CommandResult Hash) ModuleCache)
+  -> PactM p (Pact.CommandResult Hash)
 handleContSuccess rk pe@PactEnv{..} cm@ContMsg{..} er@EvalResult{..} = do
   py@PactExec {..} <- maybe (throwCmdEx "No yield from continuation exec!") return _erExec
   if _cmRollback
     then doRollback pe cm _peExecuted
     else doResume pe cm er py
-  return $ T2
-    (resultSuccess _erTxId rk _erGas (last _erOutput) _erExec _erLogs)
-     _erLoadedModules
+  return (resultSuccess _erTxId rk _erGas (last _erOutput) _erExec _erLogs)
 
 doResume :: PactEnv p -> ContMsg -> EvalResult -> PactExec -> PactM p ()
 doResume PactEnv{..} ContMsg{..} EvalResult{..} PactExec{..} = do

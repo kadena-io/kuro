@@ -87,7 +87,7 @@ onUpdateConf oChan conf@Config{ _nodeId = nodeId' } = do
 runExecutionService :: ExecutionEnv -> Publish -> NodeId -> KeySet -> IO ()
 runExecutionService env pub nodeId' keySet' = do
   cmdExecInter <- initPactService env pub
-  let initExecutionState = ExecutionState {
+  initExecutionState <- return ExecutionState {
     _esNodeId = nodeId',
     _esKeySet = keySet',
     _esKCommandExecInterface = cmdExecInter,

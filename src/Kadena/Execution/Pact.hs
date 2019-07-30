@@ -267,16 +267,12 @@ handleContSuccess
   -> PactM p (T2 (Pact.CommandResult Hash) ModuleCache)
 handleContSuccess rk pe@PactEnv{..} cm@ContMsg{..} er@EvalResult{..} = do
   py@PactExec {..} <- maybe (throwCmdEx "No yield from continuation exec!") return _erExec
-  moduleCache' <- if _cmRollback
-        then do
-          doRollback pe cm _peExecuted
-          return _peModuleCache -- original module cache returned on rollback
-        else do
-          doResume pe cm er py
-          return _erLoadedModules -- return updated cache
+  if _cmRollback
+    then doRollback pe cm _peExecuted
+    else doResume pe cm er py
   return $ T2
     (resultSuccess _erTxId rk _erGas (last _erOutput) _erExec _erLogs)
-    moduleCache'
+     _erLoadedModules
 
 doResume :: PactEnv p -> ContMsg -> EvalResult -> PactExec -> PactM p ()
 doResume PactEnv{..} ContMsg{..} EvalResult{..} PactExec{..} = do

@@ -18,6 +18,7 @@ import Data.Serialize (decode)
 import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Map.Strict as Map
 import Data.Thyme.Clock
+import Data.Tuple.Strict (T2(..))
 import Data.Maybe (fromJust)
 import Data.ByteString (ByteString)
 
@@ -208,7 +209,7 @@ applyCommand _tEnd le@LogEntry{..} = do
           return $! (result, _leCmdLatMetrics)
       (T2 result moduleCache') <- liftIO $ apply Pact.Transactional moduleCache _sccCmd pproc
       lm <- stamp ppLat
-      TODO: update _esModuleCache in ExecutionState here
+      assign esModuleCache moduleCache' -- update the cache stored in ExecutionState
       return ( rkey
              , SmartContractResult
                { _crHash = chash
@@ -232,7 +233,7 @@ applyCommand _tEnd le@LogEntry{..} = do
       gcm <- view eenvMConfig
       result <- liftIO $ CfgChange.mutateGlobalConfig gcm pproc
       lm <- stamp ppLat
-      TODO: update _esModuleCache in ExecutionState here
+      -- Note: no module cache update required for ConcensusChangeCommand
       return ( rkey
              , ConsensusChangeResult
                { _crHash = chash
@@ -246,7 +247,7 @@ applyCommand _tEnd le@LogEntry{..} = do
       let finish pr = stamp _leCmdLatMetrics >>= \l ->
             return (rkey, PrivateCommandResult chash pr _leLogIndex l)
       case r of
-        TODO: update _esModuleCache in ExecutionState in these cases
+        -- Note: module cache updates for PrivateCommands are done in applyPrivate
         Left e -> finish (PrivateFailure (show e))
         Right Nothing -> finish PrivatePrivate
         Right (Just pm) -> do
@@ -263,13 +264,17 @@ applyPrivate LogEntry{..} PrivatePlaintext{..} = case decode _ppMessage of
     p@Pact.ProcSucc {} -> do
       moduleCache <- use esModuleCache
       apply <- _kceiApplyPPCmd <$> use esKCommandExecInterface
-      Right <$> liftIO (apply Pact.Transactional moduleCache cmd p)
+      (T2 result moduleCache') <- liftIO (apply Pact.Transactional moduleCache cmd p)
+      assign esModuleCache moduleCache' -- update the cache stored in ExecutionState
+      liftIO $ return $ Right result
+
 
 applyLocalCommand :: (Pact.Command ByteString, MVar Pact.PactResult) -> ExecutionService ()
 applyLocalCommand (cmd, mv) = do
   moduleCache <- use esModuleCache
   applyLocal <- _kceiApplyCmd <$> use esKCommandExecInterface
-  cr <- liftIO $ applyLocal Pact.Local moduleCache cmd
+  (T2 cr moduleCache') <- liftIO $ applyLocal Pact.Local moduleCache cmd
+  assign esModuleCache moduleCache' -- update the cache stored in ExecutionState
   liftIO $ putMVar mv (Pact._crResult cr)
 
 -- | This may be used in the future for configuration changes other than cluster membership changes.

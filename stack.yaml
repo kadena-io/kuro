@@ -1,4 +1,4 @@
-resolver: lts-13.23
+resolver: lts-13.24
 
 build:
   copy-bins: true
@@ -21,13 +21,15 @@ extra-deps:
   - unagi-chan-0.4.0.0
   - katip-0.6.3.0
   - FloatingHex-0.4
+
   - git: git@github.com:kadena-io/pact.git
-    commit: f42a48fad4f1b2abd554f3a7c2514239666bebeb
+    commit: c7bb9fbad7d9ff39f9385db4b92bf3cce3be76e9
   # - /Users/marklnichols/dev/pdev/pact-3-kadena/pact
   # - /home/mark/dev/pdev/pact-3-kadena/pact
 
-  - git: git@github.com:kadena-io/pact-persist.git
-    commit: 21760a2b590e5e76ded6d89222607d286fecfb32
+  # - git: git@github.com:kadena-io/pact-persist.git
+  #  commit: version for Pact 3.1 TBD
+  - /Users/marklnichols/dev/ppersist/pact-3.1/pact-persist
 
   - git: https://github.com/abbradar/hdbc-odbc.git
     commit: 79ffd1f5060d2c8b5cbdfd4eba8ae6414372d6b7

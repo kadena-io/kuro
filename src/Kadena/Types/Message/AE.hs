@@ -20,7 +20,7 @@ import qualified Data.Set as Set
 import Data.Thyme.Time.Core ()
 import GHC.Generics
 
-import Kadena.Crypto (sign)
+import Kadena.Types.Crypto (sign)
 import Kadena.Log
 import Kadena.Types.Base
 import Kadena.Types.Message.Signed

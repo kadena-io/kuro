@@ -10,7 +10,7 @@ import Data.Either
 import qualified Data.Yaml as Y
 import Test.Hspec
 
-import qualified Kadena.Crypto as KC
+import qualified Kadena.Types.Crypto as KC
 import Kadena.Types.Base
 import Kadena.Types.Command
 

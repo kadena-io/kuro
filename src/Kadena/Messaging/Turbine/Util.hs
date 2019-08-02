@@ -13,7 +13,7 @@ import Control.Parallel.Strategies
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 
-import Kadena.Crypto
+import Kadena.Types.Crypto
 import Kadena.Message
 import Kadena.Types hiding (debugPrint)
 

@@ -258,17 +258,17 @@ tryParseJSON
      BSL.ByteString -> Api (BS.ByteString, t)
 tryParseJSON b = case eitherDecode b of
     Right v -> return (toStrict b,v)
-    Left e -> die $ "Left from tryParseJson check-it: " ++ e
+    Left e -> die $ "Left from tryParseJson: " ++ e
 
 parseSubmitBatch :: BSL.ByteString -> Api (BS.ByteString, Pact.SubmitBatch)
 parseSubmitBatch b = case eitherDecode b of
     (Right v :: Either String Pact.SubmitBatch) -> return (toStrict b,v)
-    Left e -> die $ "Left from tryParseJson check-it: " ++ e
+    Left e -> die $ "Left from tryParseJson: " ++ e
 
 parseSubmitCC :: BSL.ByteString -> Api (BS.ByteString, SubmitCC)
 parseSubmitCC b = case eitherDecode b of
     (Right v :: Either String SubmitCC) -> return (toStrict b,v)
-    Left e -> die $ "Left from tryParseJson check-it: " ++ e
+    Left e -> die $ "Left from tryParseJson: " ++ e
 
 setJSON :: Api ()
 setJSON = modifyResponse $ setHeader "Content-Type" "application/json"

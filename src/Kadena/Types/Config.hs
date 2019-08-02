@@ -28,21 +28,3 @@ data DiffNodes = DiffNodes
   { nodesToAdd :: !(Set NodeId)
   , nodesToRemove :: !(Set NodeId)
   } deriving (Show,Eq,Ord,Generic)
-
--- Not implemented
-data AdminUpdateCommand =
-    AddAdminKey
-      { _aucAlias :: !Alias
-      , _cucPublicKey :: !Ed25519.PublicKey } |
-    UpdateAdminKey
-      { _aucAlias :: !Alias
-      , _cucPublicKey :: !Ed25519.PublicKey } |
-    RemoveAdminKey
-      { _aucAlias :: !Alias }
-    deriving (Show, Eq, Ord, Generic, Serialize)
-
--- Not implemented
-data AdminCommand =
-    RotateLeader
-      { _cucTerm :: !Term }
-    deriving (Show, Eq, Ord, Generic, Serialize)

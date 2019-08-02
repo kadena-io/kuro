@@ -19,7 +19,7 @@ import Data.Maybe
 import System.Exit
 
 import Kadena.Command
-import qualified Kadena.Crypto as KC
+import qualified Kadena.Types.Crypto as KC
 import Kadena.Log
 import Kadena.Types
 import qualified Pact.Types.Command as P

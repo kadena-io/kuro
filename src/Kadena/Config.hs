@@ -9,7 +9,7 @@ module Kadena.Config
 import Control.Concurrent.STM
 import qualified Data.Yaml as Y
 
-import Kadena.Crypto
+import Kadena.Types.Crypto
 import Kadena.Config.TMVar
 import Kadena.Types.Base
 

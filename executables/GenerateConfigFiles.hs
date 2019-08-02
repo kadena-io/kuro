@@ -32,7 +32,7 @@ import System.Exit
 
 import qualified Kadena.Config.ClusterMembership as CM
 import Kadena.Config.TMVar
-import Kadena.Crypto
+import Kadena.Types.Crypto
 import Kadena.Types.PactDB
 import Kadena.Types
 import Kadena.Types.Entity

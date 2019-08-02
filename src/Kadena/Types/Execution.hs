@@ -34,7 +34,7 @@ import Kadena.Types.Base (NodeId)
 import Kadena.Types.PactDB
 import Kadena.Types.Config (GlobalConfigTMVar)
 import Kadena.Types.Comms (Comms(..),initCommsNormal,readCommNormal,writeCommNormal)
-import Kadena.Crypto
+import Kadena.Types.Crypto
 import Kadena.Types.Metric (Metric)
 import Kadena.Types.Log (LogEntry,LogEntries)
 import Kadena.Types.Event (Beat)

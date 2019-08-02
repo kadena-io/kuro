@@ -83,7 +83,8 @@ data TestResult = TestResult
 
 -- TODO Make `metricNameTm` a path type from `paths`
 data TestMetric = TestMetric
-  { metricNameTm :: String
+  { testNameTm :: String
+  , metricNameTm :: String
   , evalTm :: String -> Bool
   }
 instance Show TestMetric where
@@ -224,7 +225,7 @@ getMetric :: String -> Int -> IO String
 getMetric path node = do
   let opts = defaults & header "Accept" .~ ["application/json"]
   let portStr = show $ (10080 + node)
-  rbs <- WR.getWith opts $ "http://0.0.0.0:" ++ portStr ++ path
+  rbs <- WR.getWith opts $ "http://localhost:" ++ portStr ++ path
   let str = C8.unpack $ rbs ^. responseBody
       val = takeWhile (/= '}') $ takeWhileEnd (/= ':') str
   pure val

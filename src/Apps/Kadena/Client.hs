@@ -260,6 +260,7 @@ postWithRetry ep server' rq = do
       resp  <- asJSON r -- :: IO (Response (ApiResponse Pact.RequestKeys))
       case resp ^. responseBody of
         Left _err -> do
+          error "Error in postWithRetry"
           sleep 1
           go
         Right _ -> return resp
@@ -325,7 +326,10 @@ loadMultiple' filePath replCmd startCount nRepeats singleCmd = do
 sendConfigChangeCmd :: ConfigChangeApiReq -> String -> Repl ()
 sendConfigChangeCmd ccApiReq@ConfigChangeApiReq{..} fileName = do
   execs <- liftIO $ mkConfigChangeExecs ccApiReq
+  let themJSONs = BSL.unpack $ encode (SubmitCC execs)
+  liftIO $ putStrLn $ "Client.sendConfigChangeCmd: \n" ++ themJSONs
   resp <- postAPI "config" (SubmitCC execs)
+  liftIO $ putStrLn $ "Response from postAPI: " ++ show resp
   tellKeys resp fileName
   handleHttpResp (listenForLastResult listenDelayMs False) resp
 
@@ -764,7 +768,7 @@ parseRK :: String -> Repl B.ByteString
 parseRK cmd = case B16.decode $ BS8.pack cmd of
   (rk,leftovers)
     | B.empty /= leftovers ->
-      die $ "Failed to decode RequestKey: this was converted " ++
+     die $ "Failed to decode RequestKey: this was converted " ++
       show rk ++ " and this was not " ++ show leftovers
     | otherwise -> return rk
 

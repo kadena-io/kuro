@@ -3,7 +3,7 @@ pact-macos:
     - macos
   script:
     # - nix-build
-    - nix-shell --pure -p stack libiconv zlib ncurses gmp git perl darwin.security_tool gcc zeromq odbc -I nixpkgs=https://github.com/NixOS/nixpkgs-channels/archive/754763ff4ba1dd03fe3fad3a0fea36d2e39f5860.tar.gz
+    - nix-shell --pure -p stack libiconv zlib ncurses gmp git perl darwin.security_tool gcc zeromq unixODBC openssl -I nixpkgs=https://github.com/NixOS/nixpkgs-channels/archive/754763ff4ba1dd03fe3fad3a0fea36d2e39f5860.tar.gz
 
 pact-linux:
   tags:

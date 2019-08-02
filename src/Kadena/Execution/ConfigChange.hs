@@ -22,6 +22,7 @@ import Kadena.Types.Command(CCPayload(..), ClusterChangeCommand(..), ProcessedCl
 processClusterChange :: ClusterChangeCommand ByteString -> ProcessedClusterChg CCPayload
 processClusterChange cmd =
   let
+    _ = error "Execution.ConfigChange.processClusterchange"
     hash' = P.hash $ _cccPayload cmd
     payload = _cccPayload $ decodeCCPayload cmd
     sigZips = zip (_ccpSigners payload) (_cccSigs cmd)
@@ -39,7 +40,8 @@ processClusterChange cmd =
 
 decodeCCPayload :: ClusterChangeCommand ByteString -> ClusterChangeCommand CCPayload
 decodeCCPayload bsCmd =
-  let decoded = A.eitherDecodeStrict' (_cccPayload bsCmd) :: Either String CCPayload
+  let _ =  error "ConfigChange.decodeCCPayload"
+      decoded = A.eitherDecodeStrict' (_cccPayload bsCmd) :: Either String CCPayload
   in case decoded of
     Left err -> throw $ DeserializationError $ err ++ "\n### for ###\n" ++ show (_cccPayload bsCmd)
     Right ccpl -> ClusterChangeCommand

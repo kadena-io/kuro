@@ -29,8 +29,8 @@ extra-deps:
 
   # - git: git@github.com:kadena-io/pact-persist.git
   #  commit: version for Pact 3.1 TBD
-  # - /Users/marklnichols/dev/ppersist/pact-3.1/pact-persist
-  - /home/mark/dev/ppersist/pact-3.1/pact-persist
+  - /Users/marklnichols/dev/ppersist/pact-3.1/pact-persist
+  # - /home/mark/dev/ppersist/pact-3.1/pact-persist
 
   - git: https://github.com/abbradar/hdbc-odbc.git
     commit: 79ffd1f5060d2c8b5cbdfd4eba8ae6414372d6b7

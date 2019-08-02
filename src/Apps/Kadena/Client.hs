@@ -27,7 +27,6 @@ module Apps.Kadena.Client
   , timeout
   ) where
 
-import Kadena.HTTP.ApiServer (ApiResponse)
 import Control.Error.Util (hush)
 import Control.Exception (IOException)
 import qualified Control.Exception as Exception
@@ -71,8 +70,10 @@ import qualified Data.Vector as V
 import qualified Data.Yaml as Y
 
 import GHC.Generics (Generic)
+
 import Network.HTTP.Client hiding (responseBody)
 import Network.Wreq hiding (Raw)
+
 import System.Console.GetOpt
 import System.Environment
 import System.Exit hiding (die)
@@ -94,6 +95,7 @@ import Pact.Types.Util
 
 import Kadena.Command
 import Kadena.ConfigChange (mkConfigChangeApiReq)
+import Kadena.HTTP.ApiServer (ApiResponse)
 import Kadena.Types.Base hiding (printLatTime)
 import Kadena.Types.Command
 import Kadena.Types.Entity (EntityName)
@@ -238,13 +240,13 @@ mkExec code mdata privMeta = do
       (Exec (ExecMsg (T.pack code) mdata))
   return $ decodeUtf8 <$> cmd
 
-postAPI :: (ToJSON req, FromJSON t) => String -> req -> Repl (Response (ApiResponse t))
+postAPI :: (ToJSON req, FromJSON t, Show t) => String -> req -> Repl (Response (ApiResponse t))
 postAPI ep rq = do
   use echo >>= \e -> when e $ putJSON rq
   s <- getServer
   liftIO $ postWithRetry ep s rq
 
-postWithRetry :: (ToJSON req, FromJSON t) => String -> String -> req -> IO (Response (ApiResponse t))
+postWithRetry :: forall req t. (ToJSON req, FromJSON t, Show t) => String -> String -> req -> IO (Response (ApiResponse t))
 postWithRetry ep server' rq = do
   t <- timeout (fromIntegral timeoutSeconds) go
   case t of
@@ -258,12 +260,16 @@ postWithRetry ep server' rq = do
             { managerResponseTimeout = responseTimeoutMicro (timeoutSeconds * 1000000) } )
       r <- liftIO $ postWith opts url (toJSON rq)
       resp  <- asJSON r -- :: IO (Response (ApiResponse Pact.RequestKeys))
+                        -- aka IO (Respose (Either String Pact.RequestKeys))
       case resp ^. responseBody of
         Left _err -> do
-          error "Error in postWithRetry"
+          putStrLn $ "postWithRetry responseBody is Left: " ++ _err
+          -- error "Error in postWithRetry"
           sleep 1
           go
-        Right _ -> return resp
+        Right _r -> do
+          putStrLn $ "postWithRetry responseBody is Right: "
+          return resp
 
 handleHttpResp :: (t -> Repl ()) -> Response (ApiResponse t) -> Repl ()
 handleHttpResp a r = do
@@ -328,8 +334,10 @@ sendConfigChangeCmd ccApiReq@ConfigChangeApiReq{..} fileName = do
   execs <- liftIO $ mkConfigChangeExecs ccApiReq
   let themJSONs = BSL.unpack $ encode (SubmitCC execs)
   liftIO $ putStrLn $ "Client.sendConfigChangeCmd: \n" ++ themJSONs
+  -- Y: error "sendConfigChangeCmd - B4 return of postAPI"
   resp <- postAPI "config" (SubmitCC execs)
-  liftIO $ putStrLn $ "Response from postAPI: " ++ show resp
+  -- N: error "sendConfigChangeCmd - after return of postAPI"
+  liftIO $ putStrLn $ "sendConfigChangeCmd - Response from postAPI: " ++ show resp
   tellKeys resp fileName
   handleHttpResp (listenForLastResult listenDelayMs False) resp
 

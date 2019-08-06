@@ -10,8 +10,6 @@ module Kadena.Types.Config
   , GlobalConfigTMVar
   ) where
 
-import qualified Crypto.Ed25519.Pure as Ed25519
-import Data.Serialize (Serialize)
 import Data.Set (Set)
 import Data.Thyme.Time.Core ()
 import GHC.Generics

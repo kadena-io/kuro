@@ -8,16 +8,15 @@ module Kadena.Types.Base
   , Term(..), startTerm
   , LogIndex(..), startIndex
   , RequestId(..)
-  , RequestKey(..), initialRequestKey
+  , RequestKey(..)
   , ReceivedAt(..)
   -- for simplicity, re-export some core types that we need all over the place
   , parseB16JSON, toB16JSON, toB16Text, parseB16Text, failMaybe
-  , PublicKey, PrivateKey, Signature(..), sign, valid, importPublic, importPrivate, exportPublic
   , Role(..)
   , EncryptionKey(..)
   , Alias(..)
   , interval, printLatTime, printInterval
-  , hash, hashLengthAsBS, hashLengthAsBase16
+  , hash
   , Hash(..), initialHash
   , NodeClass(..)
   , ConfigVersion(..), initialConfigVersion
@@ -41,10 +40,9 @@ import GHC.Int (Int64)
 import GHC.Generics hiding (from)
 
 import Pact.Types.Orphans ()
-import Pact.Types.Crypto
 import Pact.Types.Util
-import Pact.Types.Command (RequestKey(..), initialRequestKey)
-import Pact.Types.Hash
+import Pact.Types.Command (RequestKey(..))
+import Pact.Types.Hash (hash, Hash(..), initialHash)
 
 
 newtype Alias = Alias { unAlias :: ByteString }

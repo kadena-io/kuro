@@ -1,6 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE CPP #-}
 
@@ -37,10 +36,10 @@ import qualified Kadena.Config.ClusterMembership as CM
 import Kadena.Config.TMVar
 import Kadena.Consensus.Service
 import Kadena.Types.Base
+import Kadena.Types.Crypto
 import Kadena.Types.Spec hiding (timeCache)
 import Kadena.Types.Metric
 import Kadena.Types.Dispatch
-import Kadena.Types.KeySet
 import Kadena.Util.Util (awsDashVar, linkAsyncTrack)
 import Kadena.Messaging.ZMQ
 import Kadena.Monitoring.Server (startMonitoring)
@@ -124,7 +123,7 @@ simpleConsensusSpec
   -> ConsensusSpec
 simpleConsensusSpec debugFn pubMetricFn = ConsensusSpec
   { _debugPrint      = debugFn
-  , _publishMetric   = pubMetricFn
+  , _publishMetric = pubMetricFn
   , _getTimestamp = liftIO getCurrentTime
   , _random = liftIO . randomRIO
   }
@@ -171,7 +170,7 @@ runServer = do
   oNodes <- return $ Set.toList $ Set.delete me (CM.otherNodes members)-- (Map.keysSet $ rconf ^. clientPublicKeys)
   dispatch <- initDispatch
 
-  -- Each node has its own snap monitoring server
+ -- Each node has its own snap monitoring server
   pubMetric <- startMonitoring rconf
   linkAsyncTrack "ZmqServerThread" $ runMsgServer dispatch me oNodes debugFn gcm
   linkAsyncTrack "PrivateThread" $ runPrivateService dispatch rconf debugFn (_entity rconf)
@@ -185,29 +184,29 @@ runServer = do
   runConsensusService receiverEnv gcm raftSpec rstate getCurrentTime mPubConsensus'
 
 #if WITH_KILL_SWITCH
-isBetaKillSwitch :: Bool
-isBetaKillSwitch = True
+_isBetaKillSwitch :: Bool
+_isBetaKillSwitch = True
 #else
-isBetaKillSwitch :: Bool
-isBetaKillSwitch = False
+_isBetaKillSwitch :: Bool
+_isBetaKillSwitch = False
 #endif
 
 #if WITH_AWS_KILL_SWITCH
-isAWSKillSwitch :: Bool
-isAWSKillSwitch = True
+_isAWSKillSwitch :: Bool
+_isAWSKillSwitch = True
 #else
-isAWSKillSwitch :: Bool
-isAWSKillSwitch = False
+_isAWSKillSwitch :: Bool
+_isAWSKillSwitch = False
 #endif
 
-killSwitchNodeCheck :: Config -> IO ()
-killSwitchNodeCheck rconf = do
+_killSwitchNodeCheck :: Config -> IO ()
+_killSwitchNodeCheck rconf = do
   let beta_node_limit = 16
   let aws_node_limit = 4
   let currNodeCount = (CM.countOthers (_clusterMembers rconf)) -- doesn't include node executing this code
-  
-  let betaSwitch = isBetaKillSwitch
-  let awsSwitch = isAWSKillSwitch
+
+  let betaSwitch = _isBetaKillSwitch
+  let awsSwitch = _isAWSKillSwitch
 
   case (betaSwitch,awsSwitch) of
     (False, False) -> return ()

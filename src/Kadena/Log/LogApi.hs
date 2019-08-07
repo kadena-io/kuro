@@ -25,6 +25,8 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Thyme.Clock
 
+import qualified Pact.Types.Hash as P
+
 import Kadena.Types.Base
 import Kadena.Types.Comms
 import Kadena.Types.Command (Command(..), CmdLatencyMetrics)
@@ -161,7 +163,7 @@ logInfoForNextIndex (Just myNextIdx) = do
 
 -- | Latest hash or empty
 lastLogHash :: LogThread Hash
-lastLogHash = maybe initialHash _leHash <$> lastEntry
+lastLogHash = maybe P.pactInitialHash _leHash <$> lastEntry
 {-# INLINE lastLogHash #-}
 
 -- | Latest term on log or 'startTerm'
@@ -275,7 +277,7 @@ appendLogEntry NewLogEntries{..} = do
           lsNextLogIndex .= lastIdx' + 1
           lsLastLogTerm  .= _leTerm lastLog'
     Nothing -> do
-      nle <- return $! newEntriesToLog _nleTerm initialHash nli (unNleEntries _nleEntries)
+      nle <- return $! newEntriesToLog _nleTerm P.pactInitialHash nli (unNleEntries _nleEntries)
       mLastLog' <- return $! lesMaxEntry nle
       case mLastLog' of
         Nothing -> return ()
@@ -293,10 +295,10 @@ newEntriesToLog ct prevHash idx cmds = res `seq` LogEntries res
   where
     res = Map.fromList $! go (Just prevHash) idx cmds
     go _ _ [] = []
-    go prevHash' i [(mLat, c)] = [(i,hashLogEntry prevHash' (LogEntry ct i c initialHash mLat))]
+    go prevHash' i [(mLat, c)] = [(i,hashLogEntry prevHash' (LogEntry ct i c P.pactInitialHash mLat))]
     go prevHash' i ((mLat, c):cs) =
       let
-        hashedEntry = hashLogEntry prevHash' $ LogEntry ct i c initialHash mLat
+        hashedEntry = hashLogEntry prevHash' $ LogEntry ct i c P.pactInitialHash mLat
       in (:) (i, hashedEntry) $! go (Just $ _leHash hashedEntry) (i + 1) cs
 {-# INLINE newEntriesToLog #-}
 

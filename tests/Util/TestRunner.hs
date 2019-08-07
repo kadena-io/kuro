@@ -24,6 +24,7 @@ import           Control.Concurrent
 import           Control.Lens
 import           Control.Monad
 import           Control.Monad.Trans.RWS.Lazy
+import qualified Crypto.Ed25519.Pure as Ed25519
 import           Data.Aeson hiding (Success)
 import qualified Data.ByteString.Lazy.Char8 as C8
 import           Data.Default
@@ -31,14 +32,14 @@ import qualified Data.HashMap.Strict as HM
 import           Data.Int
 import           Data.List
 import           Data.List.Extra
-import qualified Data.Text as T
 import qualified Data.Yaml as Y
 import           GHC.Generics (Generic)
+import           Kadena.Types.Command (CommandResult(..))
+import           Kadena.Types.HTTP (ApiResponse)
 import           Network.Wreq
 import qualified Network.Wreq as WR (getWith)
-import           Pact.ApiReq
-import           Pact.Types.API
--- import           System.Command
+import qualified Pact.ApiReq as Pact
+import qualified Pact.Types.Crypto as Pact
 import           System.Console.GetOpt
 import           System.Environment
 import           System.Exit
@@ -66,7 +67,7 @@ instance Show TestRequest where
 
 data TestResponse = TestResponse
   { resultSuccess :: Bool
-  , apiResult :: ApiResult
+  , apiResult :: ApiResponse CommandResult
   , _batchCount :: Int64
   } deriving (Eq, Generic)
 
@@ -125,7 +126,7 @@ serverArgs2 = "-c " ++ testConfDir ++ "10002-cluster.yaml"
 serverArgs3 = "-c " ++ testConfDir ++ "10003-cluster.yaml"
 
 runClientCommands :: [String] ->  [TestRequest] -> IO [TestResult]
-runClientCommands args testRequests =
+runClientCommands args testRequests = do
   case getOpt Permute coptions args of
     (_,_,es@(_:_)) -> print es >> exitFailure
     (o,_,_) -> do
@@ -138,7 +139,11 @@ runClientCommands args testRequests =
         , _batchCmd = "\"Hello Kadena\""
         , _requestId = i
         , _cmdData = Null
-        , _keys = [KeyPair (_ccSecretKey conf) (_ccPublicKey conf)]
+        , _keys = [Pact.ApiKeyPair
+                   (Pact.PrivBS (Ed25519.exportPrivate (_ccSecretKey conf)))
+                   (Just (Pact.PubBS (Ed25519.exportPublic (_ccPublicKey conf))))
+                   Nothing
+                   Nothing]
         , _fmt = Table
         , _echo = False }
       buildResults testRequests w
@@ -173,29 +178,20 @@ matchResponses requests@(ReplApiRequest _ _ : _)
 matchResponses _ _ _ acc = acc -- this shouldn't happen
 
 convertResponse :: ReplApiData -> Maybe TestResponse
-convertResponse (ReplApiResponse _ apiRslt batchCnt) =
-  let ok = case _arResult apiRslt of
-        Object h | HM.lookup (T.pack "status") h == Just "success" -> True
-                 | HM.lookup (T.pack "tag") h == Just "ClusterChangeSuccess" -> True
-                 | otherwise -> False
-        _ -> False
-  in Just TestResponse { resultSuccess = ok
-                       , apiResult = apiRslt
-                       , _batchCount = batchCnt }
+convertResponse (ReplApiResponse _ cr batchCnt) =
+  Just TestResponse { resultSuccess = True
+                     , apiResult = Right cr
+                     , _batchCount = batchCnt }
 convertResponse _ = Nothing  -- this shouldn't happen
 
 _printResponses :: [ReplApiData] -> IO ()
 _printResponses xs =
   forM_ xs printResponse where
     printResponse :: ReplApiData -> IO ()
-    printResponse (ReplApiResponse _ apiRslt batchCnt) = do
+    printResponse (ReplApiResponse _ cr batchCnt) = do
       putStrLn $ "Batch count: " ++ show batchCnt
       putStrLn "\n***** printResponse *****"
-      print $ _arResult apiRslt
-      case _arMetaData apiRslt of
-        Nothing -> putStrLn "(No meta data)"
-        Just v -> putStrLn $ "Meta data: \n" ++ show v
-
+      print $ cr
     printResponse _ = return ()
 
 isRequest :: ReplApiData -> Bool

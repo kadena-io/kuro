@@ -5,64 +5,60 @@ module Kadena.Execution.Pact
   (initPactService)
   where
 
-import Control.Concurrent (newMVar,MVar,readMVar,swapMVar)
+import Control.Concurrent (newMVar)
 import Control.Exception (SomeException)
+import Control.Exception.Safe (tryAny)
 import Control.Monad
+import Control.Monad.Catch (throwM)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (ask,ReaderT,runReaderT,reader)
-import Control.Monad.Catch (throwM)
-import System.Directory (doesFileExist,removeFile)
-import Control.Exception.Safe (tryAny)
+import Crypto.Noise as Dh (convert)
+import qualified Crypto.Noise.DH as Dh
 import Data.Aeson as A
+import Data.Default
+import Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.Set as S
 import Data.String
-import qualified Data.Map.Strict as M
+import Data.Word
+import System.Directory (doesFileExist,removeFile)
 
-import Pact.Types.Command
-import Pact.Types.Gas (GasEnv(..))
-import Pact.Types.RPC
-import Pact.Types.Logger (logLog,Logger,Loggers,newLogger)
-import qualified Pact.Persist.SQLite as SQLite
-import qualified Pact.Persist.Pure as Pure
-import qualified Pact.Persist.MSSQL as MSSQL
-import qualified Pact.Persist.MySQL as MySQL
-import qualified Pact.Persist.WriteBehind as WB
-import Pact.Persist.CacheAdapter (initPureCacheWB)
 import Pact.Gas (constGasModel)
 import Pact.Interpreter
-import Pact.Types.Server (throwCmdEx,userSigsToPactKeySet)
-import Pact.PersistPactDb (initDbEnv,pactdb)
 import Pact.Persist (Persister)
-import Pact.Server.PactService (jsonResult)
+import Pact.Persist.CacheAdapter (initPureCacheWB)
+import qualified Pact.Persist.MSSQL as MSSQL
+import qualified Pact.Persist.MySQL as MySQL
+import qualified Pact.Persist.Pure as Pure
+import qualified Pact.Persist.SQLite as SQLite
+import qualified Pact.Persist.WriteBehind as WB
+import Pact.PersistPactDb (initDbEnv,pactdb)
+import Pact.Server.PactService (resultFailure,resultSuccess)
+import Pact.Types.Command
+import qualified Pact.Types.Crypto as PCrypto
+import Pact.Types.Gas (GasEnv(..))
+import Pact.Types.Logger (logLog,Logger,Loggers,newLogger)
+import Pact.Types.Pretty
+import Pact.Types.RPC
+import qualified Pact.Types.Runtime as P (PublicKey)
 import Pact.Types.Runtime
+import Pact.Types.Scheme
+import Pact.Types.SPV
+import Pact.Types.Server (throwCmdEx,userSigsToPactKeySet)
 
-import Kadena.Types.PactDB
 import Kadena.Consensus.Publish
-import Kadena.Types.Execution
 import Kadena.Types.Entity
+import Kadena.Types.Execution
+import Kadena.Types.PactDB
 import Kadena.Util.Util (linkAsyncBoundTrack)
-
-data Pact = Pact
-  { _pTxId :: TxId
-  , _pContinuation :: Term Name
-  , _pSigs :: S.Set PublicKey
-  , _pStepCount :: Int
-  , _pYield :: Maybe (Term Name)
-  }
-
-data PactState = PactState
-  { _psRefStore :: RefStore
-  , _psPacts :: M.Map TxId Pact -- TODO need hashable for TxId mebbe
-  }
 
 data PactEnv p = PactEnv {
       _peMode :: ExecutionMode
     , _peDbEnv :: PactDbEnv p
-    , _peState :: MVar PactState
-    , _peCommand :: Command (Payload (PactRPC ParsedCode))
+    , _peCommand :: Command (Payload PrivateMeta ParsedCode)
     , _pePublish :: Publish
     , _peEntity :: EntityConfig
     , _peLogger :: Logger
+    , _peGasLimit :: GasLimit
     }
 
 type PactM p = ReaderT (PactEnv p) IO
@@ -74,7 +70,8 @@ runPact e a = runReaderT a e
 logInit :: Logger -> String -> IO ()
 logInit l = logLog l "INIT"
 
-initPactService :: ExecutionEnv -> Publish -> IO (CommandExecInterface (PactRPC ParsedCode))
+initPactService :: ExecutionEnv -> Publish ->
+                   IO (CommandExecInterface PrivateMeta ParsedCode Hash)
 initPactService ExecutionEnv{..} pub = do
   let PactPersistConfig{..} = _eenvPactPersistConfig
       logger = newLogger _eenvExecLoggers "PactService"
@@ -90,8 +87,8 @@ initPactService ExecutionEnv{..} pub = do
       logInit logger "Initializing pure pact"
       initCI Pure.persister Pure.initPureDb
     PPBSQLite conf@SQLite.SQLiteConfig{..} -> do
-      dbExists <- doesFileExist dbFile
-      when dbExists $ logInit logger "Deleting Existing Pact DB File" >> removeFile dbFile
+      dbExists <- doesFileExist _dbFile
+      when dbExists $ logInit logger "Deleting Existing Pact DB File" >> removeFile _dbFile
       logInit logger "Initializing SQLite"
       initWB SQLite.persister =<< SQLite.initSQLite conf _eenvExecLoggers
     PPBMSSQL conf connStr -> do
@@ -102,155 +99,146 @@ initPactService ExecutionEnv{..} pub = do
       initWB MySQL.persister =<< MySQL.initMySQL conf _eenvExecLoggers
 
 initCommandInterface :: EntityConfig -> Publish -> Logger -> Loggers -> Persister w -> w ->
-                        IO (CommandExecInterface (PactRPC ParsedCode))
+                        IO (CommandExecInterface PrivateMeta ParsedCode Hash)
 initCommandInterface ent pub logger loggers p db = do
   pde <- PactDbEnv pactdb <$> newMVar (initDbEnv loggers p db)
-  cmdVar <- newMVar (PactState initRefStore M.empty)
   logInit logger "Creating Pact Schema"
   initSchema pde
   return CommandExecInterface
-    { _ceiApplyCmd = \eMode cmd -> applyCmd ent pub logger pde cmdVar eMode cmd (verifyCommand cmd)
-    , _ceiApplyPPCmd = applyCmd ent pub logger pde cmdVar }
+    { _ceiApplyCmd = \eMode cmd -> applyCmd ent pub logger pde eMode cmd (verifyCommand cmd)
+    , _ceiApplyPPCmd = applyCmd ent pub logger pde }
 
 
 
 
-applyCmd :: EntityConfig -> Publish -> Logger -> PactDbEnv p -> MVar PactState -> ExecutionMode -> Command a ->
-            ProcessedCommand (PactRPC ParsedCode) -> IO CommandResult
-applyCmd _ _ _ _ _ ex cmd (ProcFail s) = return $ jsonResult ex (cmdToRequestKey cmd) s
-applyCmd ent pub logger dbv cv exMode _ (ProcSucc cmd) = do
-  r <- tryAny $ runPact (PactEnv exMode dbv cv cmd pub ent logger) $ runPayload cmd
+applyCmd :: EntityConfig -> Publish -> Logger -> PactDbEnv p -> ExecutionMode -> Command a ->
+            (ProcessedCommand PrivateMeta ParsedCode) -> IO (CommandResult Hash)
+applyCmd _ _ _ _ _ cmd (ProcFail s) =
+  return $ resultFailure
+           Nothing
+           (cmdToRequestKey cmd)
+           (PactError TxFailure def def . viaShow $ s)
+applyCmd ent pub logger dbv exMode _ (ProcSucc cmd) = do
+  -- TODO read tx gasLimit from config
+  let gasLimit = 10000
+  r <- catchesPactError $ runPact (PactEnv exMode dbv cmd pub ent logger gasLimit) $ runPayload cmd
   case r of
     Right cr -> do
       logLog logger "DEBUG" $ "success for requestKey: " ++ show (cmdToRequestKey cmd)
       return cr
     Left e -> do
       logLog logger "ERROR" $ "tx failure for requestKey: " ++ show (cmdToRequestKey cmd) ++ ": " ++ show e
-      return $ jsonResult exMode (cmdToRequestKey cmd) $
-               CommandError "Command execution failed" (Just $ show e)
+      return $ resultFailure Nothing (cmdToRequestKey cmd) e
 
-jsonResult' :: ToJSON a => a -> PactM p CommandResult
-jsonResult' a = do
-  PactEnv{..} <- ask
-  return $ jsonResult _peMode (cmdToRequestKey _peCommand) a
+-- | Private hardcodes gas rate to 1
+gasRate :: Word64
+gasRate = 1
 
-
-runPayload :: Command (Payload (PactRPC ParsedCode)) -> PactM p CommandResult
-runPayload Command{..} = case _pPayload _cmdPayload of
-    Exec pm -> applyExec pm _cmdSigs
-    Continuation ym -> applyContinuation ym
+-- | Private hardcodes free gas
+gasPrice :: GasPrice
+gasPrice = 0.0
 
 
-applyExec :: ExecMsg ParsedCode -> [UserSig] -> PactM p CommandResult
-applyExec (ExecMsg parsedCode edata) ks = do
+runPayload :: Command (Payload PrivateMeta ParsedCode) -> PactM p (CommandResult Hash)
+runPayload c@Command{..} = case _pPayload _cmdPayload of
+    Exec pm -> applyExec c pm (_pSigners _cmdPayload)
+    Continuation ym -> applyContinuation c ym (_pSigners _cmdPayload)
+
+
+applyExec :: Command (Payload PrivateMeta ParsedCode) ->
+             ExecMsg ParsedCode -> [Signer] -> PactM p (CommandResult Hash)
+applyExec cmd (ExecMsg parsedCode edata) ks = do
   PactEnv {..} <- ask
   when (null (_pcExps parsedCode)) $ throwCmdEx "No expressions found"
-  PactState{..} <- liftIO $ readMVar _peState
   let sigs = userSigsToPactKeySet ks
-  let gasLimit = (0 :: Integer) -- TODO implement
-  let gasRate = (0 :: Integer) -- TODO implement
-  let gasEnv = (GasEnv (fromIntegral gasLimit) 0.0 (constGasModel (fromIntegral gasRate)))
+  let gasEnv = (GasEnv _peGasLimit gasPrice (constGasModel (fromIntegral gasRate)))
       evalEnv = setupEvalEnv _peDbEnv (Just (_elName $ _ecLocal $ _peEntity)) _peMode
-                (MsgData sigs edata Nothing (_cmdHash _peCommand)) _psRefStore gasEnv
-  EvalResult{..} <- liftIO $ evalExec evalEnv parsedCode
-  mp <- join <$> mapM (handleYield erInput sigs edata) erExec
-  let newState = PactState erRefStore $ case mp of
-        Nothing -> _psPacts
-        Just (p@Pact{..}) -> M.insert _pTxId p _psPacts
-  void $ liftIO $ swapMVar _peState newState
-  jsonResult' $ CommandSuccess (last erOutput)
+                (MsgData sigs edata Nothing (toUntypedHash $ _cmdHash _peCommand))
+                initRefStore gasEnv permissiveNamespacePolicy noSPVSupport def
+  EvalResult{..} <- liftIO $ evalExec def evalEnv parsedCode
+  mapM_ (handlePactExec sigs edata) _erExec
+  return $ resultSuccess _erTxId (cmdToRequestKey cmd) _erGas (last _erOutput) _erExec _erLogs
 
 debug :: String -> PactM p ()
 debug m = reader _peLogger >>= \l -> liftIO $ logLog l "DEBUG" m
 
-handleYield :: [Term Name] -> S.Set PublicKey -> Value -> PactExec -> PactM p (Maybe Pact)
-handleYield em sigs edata PactExec{..} = do
+
+-- | TODO!! The old Kadena pact model keeps the sigs around from the original exec in memory
+-- but there is no mechanism for this now. Thus keeping the '_sigs' argument around to reevaluate
+-- if this model is sustainable going forward
+handlePactExec :: S.Set P.PublicKey -> Value -> PactExec -> PactM p ()
+handlePactExec _sigs edata PactExec{..} = when (_peExecuted == Just True) $ do
   PactEnv{..} <- ask
   let EntityConfig{..} = _peEntity
-  unless (length em == 1) $
-    throwCmdEx $ "handleYield: defpact execution must occur as a single command: " ++ show em
-  case _peMode of
-    Local -> return Nothing
-    Transactional tid -> do
-      when _peExecuted $ publishCont tid tid 1 False edata
-      return $ Just $ Pact tid (head em) sigs _peStepCount _peYield
+  publishCont _pePactId 1 False edata
 
 reverseAddy :: EntityName -> Address -> Address
 reverseAddy me Address{..} = Address me (S.delete me $ S.insert _aFrom _aTo)
 
-applyContinuation :: ContMsg -> PactM p CommandResult
-applyContinuation cm@ContMsg{..} = do
+applyContinuation :: Command (Payload PrivateMeta ParsedCode) ->
+                     ContMsg -> [Signer] -> PactM p (CommandResult Hash)
+applyContinuation cmd cm@ContMsg{..} ks = do
   pe@PactEnv{..} <- ask
-  case _peMode of
-    Local -> throwCmdEx "Local continuation exec not supported"
-    Transactional tid -> do
-      ps@PactState{..} <- liftIO $ readMVar _peState
-      case M.lookup _cmTxId _psPacts of
-        Nothing -> throwCmdEx $ "applyContinuation: txid not found: " ++ show _cmTxId
-        Just pact@Pact{..} -> do
-          when (_cmStep < 0 || _cmStep >= _pStepCount) $ throwCmdEx $ "Invalid step value: " ++ show _cmStep
-          let gasLimit = (0 :: Integer) -- TODO implement
-          let gasRate = (0 :: Integer) -- TODO implement
-          let gasEnv = (GasEnv (fromIntegral gasLimit) 0.0 (constGasModel (fromIntegral gasRate)))
-          let evalEnv = setupEvalEnv _peDbEnv (Just (_elName $ _ecLocal $ _peEntity)) _peMode
-                (MsgData _pSigs Null
-                  (Just $ PactStep _cmStep _cmRollback (fromString $ show $ _cmTxId) _pYield)
-                  (_cmdHash _peCommand))
-                _psRefStore gasEnv
-          tryAny (liftIO $ evalContinuation evalEnv _pContinuation) >>=
-            either (handleContFailure tid pe cm ps pact) (handleContSuccess tid pe cm ps pact)
+  let sigs = userSigsToPactKeySet ks
+  let gasEnv = (GasEnv (fromIntegral _peGasLimit) gasPrice (constGasModel (fromIntegral gasRate)))
+  let evalEnv = setupEvalEnv _peDbEnv (Just (_elName $ _ecLocal $ _peEntity)) _peMode
+                (MsgData sigs Null
+                  (Just $ PactStep _cmStep _cmRollback _cmPactId Nothing)
+                  (toUntypedHash $ _cmdHash _peCommand))
+                initRefStore gasEnv permissiveNamespacePolicy noSPVSupport def
+  tryAny (liftIO $ evalContinuation def evalEnv cm) >>=
+    either (handleContFailure pe cm)
+           (handleContSuccess (cmdToRequestKey cmd) pe cm)
 
 
-handleContFailure :: TxId -> PactEnv p -> ContMsg -> PactState -> Pact -> SomeException -> PactM p CommandResult
-handleContFailure tid pe cm ps p ex = doRollback tid pe cm ps p True >> throwM ex
+handleContFailure :: PactEnv p -> ContMsg -> SomeException ->
+                     PactM p (CommandResult Hash)
+handleContFailure pe cm ex = doRollback pe cm (Just True) >> throwM ex
 
-doRollback :: TxId -> PactEnv p -> ContMsg -> PactState -> Pact -> Bool -> PactM p ()
-doRollback tid PactEnv{..} ContMsg{..} PactState{..} Pact{..} executed = do
+doRollback :: PactEnv p -> ContMsg -> Maybe Bool -> PactM p ()
+doRollback PactEnv{..} ContMsg{..} executed = do
   let prevStep = pred _cmStep
       done = prevStep < 0
-      updateState pacts = void $ liftIO $ swapMVar _peState (PactState _psRefStore pacts)
-  if done
-    then do
-    debug $ "handleContFailure: reaping pact: " ++ show _cmTxId
-    void $ liftIO $ swapMVar _peState $ PactState _psRefStore $ M.delete _cmTxId _psPacts
-    else do
-      let newPact = Pact _pTxId _pContinuation _pSigs _pStepCount Nothing
-      when executed $ publishCont _cmTxId tid prevStep True _cmData
-      updateState $ M.insert _pTxId newPact _psPacts
+  unless done $ do
+      when (executed == Just True) $ publishCont _cmPactId prevStep True _cmData
 
-handleContSuccess :: TxId -> PactEnv p -> ContMsg -> PactState -> Pact -> EvalResult -> PactM p CommandResult
-handleContSuccess tid pe@PactEnv{..} cm@ContMsg{..} ps@PactState{..} p@Pact{..} er@EvalResult{..} = do
-  py@PactExec {..} <- maybe (throwCmdEx "No yield from continuation exec!") return erExec
+handleContSuccess :: RequestKey -> PactEnv p -> ContMsg -> EvalResult ->
+                     PactM p (CommandResult Hash)
+handleContSuccess rk pe@PactEnv{..} cm@ContMsg{..} er@EvalResult{..} = do
+  py@PactExec {..} <- maybe (throwCmdEx "No yield from continuation exec!") return _erExec
   if _cmRollback then
-    doRollback tid pe cm ps p _peExecuted
+    doRollback pe cm _peExecuted
   else
-    doResume tid pe cm ps p er py
-  jsonResult' $ CommandSuccess (last erOutput)
+    doResume pe cm er py
+  return $ resultSuccess _erTxId rk _erGas (last _erOutput) _erExec _erLogs
 
-doResume :: TxId -> PactEnv p -> ContMsg -> PactState -> Pact -> EvalResult -> PactExec -> PactM p ()
-doResume tid PactEnv{..} ContMsg{..} PactState{..} Pact{..} EvalResult{..} PactExec{..} = do
+doResume :: PactEnv p -> ContMsg -> EvalResult -> PactExec -> PactM p ()
+doResume PactEnv{..} ContMsg{..} EvalResult{..} PactExec{..} = do
   let nextStep = succ _cmStep
-      isLast = nextStep >= _pStepCount
-      updateState pacts = void $ liftIO $ swapMVar _peState (PactState _psRefStore pacts)
-  if isLast
-    then debug $ "handleContSuccess: reaping pact [disabled]: " ++ show _cmTxId
-      -- updateState $ M.delete _cmTxId _psPacts
-    else do
-      let newPact = Pact _pTxId _pContinuation _pSigs _pStepCount _peYield
-      when _peExecuted $ publishCont _cmTxId tid nextStep False _cmData
-      updateState $ M.insert _pTxId newPact _psPacts
+      isLast = nextStep >= _peStepCount
+  unless isLast $ do
+      when (_peExecuted == Just True) $ publishCont _cmPactId nextStep False _cmData
 
-publishCont :: TxId -> TxId -> Int -> Bool -> Value -> PactM p ()
-publishCont pactTid tid step rollback cData = do
+throwPactError :: Doc -> PactM p e
+throwPactError = throwM . PactError EvalError def def
+
+publishCont :: PactId -> Int -> Bool -> Value -> PactM p ()
+publishCont pactTid step rollback cData = do
   PactEnv{..} <- ask
   let EntityConfig{..} = _peEntity
   when _ecSending $ do
     let me = _elName _ecLocal
-        addy = fmap (reverseAddy me) $ _pAddress $ _cmdPayload $ _peCommand
-        nonce = fromString $ show tid
-        (rpc :: PactRPC ()) = Continuation $ ContMsg pactTid step rollback cData
-        cmd = mkCommand [signer _ecSigner] addy nonce rpc
+        addy = fmap (reverseAddy me) $ _pmAddress  $ _pMeta $ _cmdPayload $ _peCommand
+        nonce = fromString $ show (step,rollback)
+        (rpc :: PactRPC ()) = Continuation $ ContMsg pactTid step rollback cData Nothing
+        (EntityKeyPair ksk kpk) = _ecSigner
+    signer <- either (throwPactError . pretty) return $
+      PCrypto.importKeyPair
+        (PCrypto.toScheme ED25519)
+        (Just $ PCrypto.PubBS $ Dh.convert (Dh.dhPubToBytes (epPublicKey kpk)))
+        (PCrypto.PrivBS $ Dh.convert (Dh.dhSecToBytes (esSecretKey ksk)))
+    cmd <- liftIO $ mkCommand [signer] addy nonce rpc
     debug $ "Sending success continuation for pact: " ++ show rpc
-    _rks <- publish _pePublish throwCmdEx [(buildCmdRpcBS cmd)]
+    _rks <- publish _pePublish throwCmdEx $ (buildCmdRpcBS cmd) :| [] -- NonEmpty List
     -- TODO would be good to somehow return all the request keys?
     return ()

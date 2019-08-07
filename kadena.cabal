@@ -90,13 +90,14 @@ library
                      , Kadena.Types.Comms
                      , Kadena.Types.Config
                      , Kadena.Types.ConfigChange
+                     , Kadena.Types.Crypto
                      , Kadena.Types.Dispatch
                      , Kadena.Types.Entity
                      , Kadena.Types.Event
                      , Kadena.Types.Evidence
                      , Kadena.Types.Execution
                      , Kadena.Types.History
-                     , Kadena.Types.KeySet
+                     , Kadena.Types.HTTP
                      , Kadena.Types.Log
                      , Kadena.Types.Message
                      , Kadena.Types.Message.AE
@@ -167,7 +168,7 @@ library
                      , mtl-compat
                      , mysql >= 0.1 && < 0.2
                      , network
-                     , pact == 2.6.*
+                     , pact == 3.0.*
                      , pact-persist == 1.0.*
                      , parallel
                      , parsers
@@ -175,9 +176,9 @@ library
                      , primitive
                      , process
                      , random
-                     , ridley
                      , safe
                      , safe-exceptions >= 0.1.4.0
+                     , scientific >= 0.3.6.2
                      , semigroups
                      , snap-core
                      , snap-server
@@ -193,7 +194,7 @@ library
                      , unordered-containers
                      , utf8-string >= 1.0.1.1
                      , vector >= 0.11.0.0
-                     , vector-space >= 0.10.4 && < 0.14
+                     , vector-space >= 0.10.4 && < 0.16
                      , wreq
                      , yaml
                      , zeromq4-haskell >= 0.6.3
@@ -258,6 +259,7 @@ executable inserts
                      , cmdargs
                      , bytestring
                      , data-default
+                     , ed25519-donna
                      , exceptions
                      , extra
                      , hspec
@@ -315,6 +317,7 @@ test-suite hspec
                    , safe
                    , safe-exceptions
                    , scientific
+                   , scientific >= 0.3.6.2
                    , text
                    , transformers
                    , trifecta

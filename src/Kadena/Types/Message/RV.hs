@@ -13,6 +13,9 @@ import qualified Data.Serialize as S
 import Data.Thyme.Time.Core ()
 import GHC.Generics
 
+import Pact.Types.Hash
+
+import Kadena.Types.Crypto
 import Kadena.Types.Base
 import Kadena.Types.Message.Signed
 
@@ -36,7 +39,7 @@ instance WireFormat RequestVote where
                                           , _rvCandidateId
                                           , _rvLastLogIndex
                                           , _rvLastLogTerm)
-                  hsh = hash bdy
+                  hsh = pactHash bdy
                   sig = sign hsh privKey pubKey
                   dig = Digest (_alias nid) sig pubKey RV hsh
               in SignedRPC dig bdy

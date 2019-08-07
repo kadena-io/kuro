@@ -11,8 +11,8 @@ module Kadena.Types.Turbine
 import Control.Concurrent (MVar)
 import Control.Lens
 
+import Kadena.Types.Crypto (KeySet(..))
 import Kadena.Types.Dispatch (Dispatch(..))
-import Kadena.Types.KeySet (KeySet(..))
 
 data ReceiverEnv = ReceiverEnv
   { _turbineDispatch :: Dispatch
@@ -21,4 +21,3 @@ data ReceiverEnv = ReceiverEnv
   , _restartTurbo :: MVar String
   }
 makeLenses ''ReceiverEnv
-

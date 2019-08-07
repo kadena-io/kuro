@@ -6,21 +6,22 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Kadena.Types.Sender
   ( SenderServiceChannel(..)
   , ServiceRequest'(..)
   , ServiceRequest(..)
-  , StateSnapshot(..), snapNodeId, snapNodeRole, snapClusterMembers, snapLeader, snapTerm, snapPublicKey
+  , StateSnapshot(..), snapNodeId, snapNodeRole, snapClusterMembers, snapLeader, snapTerm
+  , snapPublicKey
   , snapPrivateKey, snapYesVotes
   , AEBroadcastControl(..)
   ) where
 
 import Control.Lens
 import Control.Concurrent.Chan (Chan)
+
+import qualified Crypto.Ed25519.Pure as Ed25519
 
 import Data.Set (Set)
 import Data.Thyme.Clock
@@ -79,8 +80,8 @@ data StateSnapshot = StateSnapshot
   , _snapClusterMembers :: !ClusterMembership
   , _snapLeader :: !(Maybe NodeId)
   , _snapTerm :: !Term
-  , _snapPublicKey :: !PublicKey
-  , _snapPrivateKey :: !PrivateKey
+  , _snapPublicKey :: !Ed25519.PublicKey
+  , _snapPrivateKey :: !Ed25519.PrivateKey
   , _snapYesVotes :: !(Set RequestVoteResponse)
   } deriving (Eq, Show)
 makeLenses ''StateSnapshot

@@ -1,6 +1,5 @@
 {-# LANGUAGE ImpredicativeTypes #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TemplateHaskell #-}
 
@@ -14,6 +13,8 @@ import Control.Monad.Catch (MonadThrow)
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer
+
+import qualified Crypto.Ed25519.Pure as Ed25519
 
 import Data.Set (Set)
 import qualified Data.Set as Set
@@ -34,8 +35,8 @@ data ElectionTimeoutEnv = ElectionTimeoutEnv {
     , _nodeId :: NodeId
     , _eteClusterMembers :: ClusterMembership
     , _leaderWithoutFollowers :: Bool
-    , _myPrivateKey :: PrivateKey
-    , _myPublicKey :: PublicKey
+    , _myPrivateKey :: Ed25519.PrivateKey
+    , _myPublicKey :: Ed25519.PublicKey
     }
 makeLenses ''ElectionTimeoutEnv
 
@@ -163,7 +164,7 @@ createRequestVoteResponse :: NodeId -> NodeId -> Term -> Bool -> RequestVoteResp
 createRequestVoteResponse me' target' term' vote =
   RequestVoteResponse term' Nothing me' vote target' NewMsg
 
-createRequestVote :: Term -> NodeId -> PublicKey -> PrivateKey -> KD.Consensus (Signature, RequestVote)
+createRequestVote :: Term -> NodeId -> Ed25519.PublicKey -> Ed25519.PrivateKey -> KD.Consensus (Ed25519.Signature, RequestVote)
 createRequestVote curTerm' nodeId' myPublicKey' myPrivateKey' = do
   mv <- queryLogs $ Set.fromList [Log.GetMaxIndex, Log.GetLastLogTerm]
   lastLogIndex' <- return $ Log.hasQueryResult Log.MaxIndex mv

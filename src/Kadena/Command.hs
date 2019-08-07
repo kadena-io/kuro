@@ -23,6 +23,7 @@ import Control.Exception
 import Control.Lens
 import Control.Monad
 import Control.Concurrent
+import qualified Crypto.Ed25519.Pure as Ed25519
 import qualified Data.Aeson as A (encode)
 import Data.Aeson
 import Data.ByteString (ByteString)
@@ -35,14 +36,14 @@ import Data.Thyme.Clock
 import Data.Thyme.Time.Core ()
 import GHC.Generics
 
+import qualified Kadena.Types.Crypto as KC
 import Kadena.Execution.ConfigChange
 import Kadena.Types.Base
 import Kadena.Types.Command
 import Kadena.Types.Message.Signed
 
-import qualified Pact.ApiReq as Pact
 import qualified Pact.Types.Command as Pact
-import qualified Pact.Types.Crypto as Pact
+import qualified Pact.Types.Hash as Pact
 import Pact.Types.Util
 
 -- | Similar to mkCommand in the Pact.Types.Command module
@@ -51,10 +52,11 @@ mkClusterChangeCommand ConfigChangeApiReq{..} = do
   rid <- maybe (show <$> getCurrentTime) return _ylccNonce
   let ccPayload = CCPayload
                    { _ccpInfo = _ylccInfo
-                   , _ccpNonce = toS rid }
+                   , _ccpNonce = toS rid
+                   , _ccpSigners = [] }
   let jPayload = BSL.toStrict $ A.encode ccPayload
   let theHash = hash jPayload
-  let theSigs = createSignatures Pact.ED25519 _ylccKeyPairs theHash
+  let theSigs = createSignatures _ylccKeyPairs $ Pact.toUntypedHash theHash
   return ClusterChangeCommand
             { _cccPayload = jPayload
             , _cccSigs = theSigs
@@ -69,16 +71,15 @@ mkConfigChangeExecs ccApiReq = do
   finalCmd <- mkClusterChangeCommand finalApiReq
   return $ (fmap . fmap) decodeUtf8 [transCmd, finalCmd]
 
-createSignatures :: Pact.PPKScheme -> [Pact.KeyPair] -> Hash -> [Pact.UserSig]
-createSignatures scheme keypairs msg =
-  fmap (\Pact.KeyPair{..} -> createSignature scheme _kpSecret _kpPublic msg) keypairs
+createSignatures :: [KC.KeyPair] -> Hash -> [Pact.UserSig]
+createSignatures kps msg =
+  fmap (\kp -> createSignature (KC._kpPrivateKey kp) (KC._kpPublicKey kp) msg) kps
 
-createSignature :: Pact.PPKScheme -> PrivateKey -> PublicKey -> Hash -> Pact.UserSig
-createSignature scheme sk pk msg =
-  let theSig = sign msg sk pk
-      sig16 = toB16Text $ Pact.exportSignature theSig
-      pk16 = toB16Text $ Pact.exportPublic pk
-  in Pact.UserSig scheme pk16 sig16
+createSignature :: Ed25519.PrivateKey -> Ed25519.PublicKey -> Hash -> Pact.UserSig
+createSignature sk pk msg =
+  let Ed25519.Sig sigBS = KC.sign msg sk pk
+      sig16 = toB16Text sigBS
+  in Pact.UserSig sig16
 
 -- | similar to Pact.Types.API.SubmitBatch but for a single config change command
 data SubmitCC = SubmitCC
@@ -243,7 +244,7 @@ verifyCommand cmd@PrivateCommand{} = cmd
 {-# INLINE verifyCommand #-}
 
 toRequestKey :: Command -> RequestKey
-toRequestKey = RequestKey . getCmdBodyHash
+toRequestKey cmd = RequestKey $ Pact.toUntypedHash $ getCmdBodyHash cmd
 {-# INLINE toRequestKey #-}
 
 mkLatResults :: CmdLatencyMetrics -> CmdResultLatencyMetrics

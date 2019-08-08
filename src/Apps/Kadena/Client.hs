@@ -264,7 +264,6 @@ postWithRetry ep server' rq = do
       case resp ^. responseBody of
         Left _err -> do
           putStrLn $ "postWithRetry responseBody is Left: " ++ _err
-          -- error "Error in postWithRetry"
           sleep 1
           go
         Right _r -> do
@@ -334,9 +333,7 @@ sendConfigChangeCmd ccApiReq@ConfigChangeApiReq{..} fileName = do
   execs <- liftIO $ mkConfigChangeExecs ccApiReq
   let themJSONs = BSL.unpack $ encode (SubmitCC execs)
   liftIO $ putStrLn $ "Client.sendConfigChangeCmd: \n" ++ themJSONs
-  -- Y: error "sendConfigChangeCmd - B4 return of postAPI"
   resp <- postAPI "config" (SubmitCC execs)
-  -- N: error "sendConfigChangeCmd - after return of postAPI"
   liftIO $ putStrLn $ "sendConfigChangeCmd - Response from postAPI: " ++ show resp
   tellKeys resp fileName
   handleHttpResp (listenForLastResult listenDelayMs False) resp

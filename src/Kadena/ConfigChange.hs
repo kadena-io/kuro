@@ -45,7 +45,6 @@ mutateGlobalConfig gc (ProcClusterChgSucc cmd) = do
 
 execClusterChangeCmd :: Config -> ClusterChangeCommand CCPayload -> IO Config
 execClusterChangeCmd cfg ClusterChangeCommand{..} = do
-  error "ConfigChange.execClusterChangeCmd"
   let changeInfo = _ccpInfo _cccPayload
   let theMembers = _clusterMembers cfg
   let newMembers = case _cciState changeInfo of

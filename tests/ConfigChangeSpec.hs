@@ -51,7 +51,7 @@ testClusterCommands = do
 ----------------------------------------------------------------------------------------------------
 -- Current test being debugged (Pact 3.0 / 3.1)
 ----------------------------------------------------------------------------------------------------
-  it "Config change test #1 - Dropping node02:" $ do
+  xit "Config change test #1 - Dropping node02:" $ do
     ccResults1 <- runClientCommands clientArgs [cfg0123to013]
     checkResults ccResults1
 
@@ -234,7 +234,6 @@ testReq1 :: TestRequest
 testReq1 = TestRequest
   { cmd = "exec (+ 1 1)"
   , matchCmd = "exec (+ 1 1)"
-  -- , eval = (\tr -> checkScientific (scientific 2 0) tr)
   , eval = checkSuccess
   , displayStr = "Executes 1 + 1 in Pact and returns 2.0" }
 
@@ -359,17 +358,8 @@ waitForMetric' tm node =
   where
     go :: IO ()
     go = do
-      -- res <- gatherMetric' tm node
-      -- when (isLeft $ getMetricResult res) $ sleep 1 >> go
       res <- gatherMetric' tm node
-
-      putStrLn $ "\nwaitForMetric' --"
-        ++ "\n\r Node: " ++ show node
-        ++ "\n\r test name: " ++  testNameTm tm
-        ++ "\n\r metric name: " ++  metricNameTm tm
-        ++ "\n\r TestMetricResult value: " ++ show (valueTmr res)
       let z = getMetricResult res
-      putStrLn $ "\nEither value from getMetricResult: " ++ show z
       when (isLeft z) $ do
         sleep 1
         go

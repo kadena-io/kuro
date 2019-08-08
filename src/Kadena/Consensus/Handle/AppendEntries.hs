@@ -203,6 +203,10 @@ applyNewLeader NewLeaderConfirmed{..} = do
   view KD.informEvidenceServiceOfElection >>= liftIO
   setRole _stateRole
 
+logHashChange :: Hash -> KD.Consensus ()
+logHashChange (Hash mLastHash) =
+  logMetric $ KD.MetricHash mLastHash
+
 handle :: AppendEntries -> KD.Consensus ()
 handle ae = do
   start' <- now
@@ -271,10 +275,6 @@ handle ae = do
       when (_csNodeRole s /= Leader) resetElectionTimer
       -- This `when` fixes a funky bug. If the leader receives an AE from itself it will reset its election timer (which can kill the leader).
       -- Ignoring this is safe because if we have an out of touch leader they will step down after 2x maxElectionTimeouts if it receives no valid AER
-
-logHashChange :: Hash -> KD.Consensus ()
-logHashChange (Hash mLastHash) =
-  logMetric $ KD.MetricHash mLastHash
 
 createAppendEntriesResponse :: Bool -> Bool -> LogIndex -> Hash -> KD.Consensus AppendEntriesResponse
 createAppendEntriesResponse success convinced maxIndex' lastLogHash' = do

@@ -31,7 +31,7 @@ mutateGlobalConfig :: GlobalConfigTMVar -> ProcessedClusterChg CCPayload -> IO C
 mutateGlobalConfig _ (ProcClusterChgFail err) = return $ ClusterChangeFailure err
 mutateGlobalConfig gc (ProcClusterChgSucc cmd) = do
   origGc@GlobalConfig{..} <- atomically $ takeTMVar gc
-  missingKeys <- getMissingKeys _gcConfig (_cccPayload cmd)
+  missingKeys <- getMissingKeys _gcConfig (_cccSigs cmd)
   if null missingKeys
   then do
     conf' <- execClusterChangeCmd _gcConfig cmd

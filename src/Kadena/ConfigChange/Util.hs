@@ -1,5 +1,3 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
-
 module Kadena.ConfigChange.Util
   ( getMissingKeys
   ) where
@@ -7,13 +5,16 @@ module Kadena.ConfigChange.Util
 import qualified Data.Map as Map
 
 import Kadena.Config.TMVar
-import qualified Kadena.Types.Crypto as KC
 import Kadena.Types.Base
-import Kadena.Types.Command (CCPayload(..))
 
-getMissingKeys :: Config -> CCPayload -> IO [Alias]
-getMissingKeys cfg payload = do
-  let signerKeys = KC._siPubKey <$> _ccpSigners payload
+import Pact.Bench (eitherDie)
+import Pact.Types.Command
+import Pact.Types.Util (fromText')
+
+getMissingKeys :: Config -> [UserSig]-> IO [Alias]
+getMissingKeys cfg sigs = do
+  let textKeys = fmap _usPubKey sigs
+  pubKeys <- traverse (eitherDie . fromText') textKeys :: IO [PublicKey]
   let filtered = filter f (Map.toList (_adminKeys cfg)) where
-        f (_, k) = notElem k signerKeys
+        f (_, k) = notElem k pubKeys
   return $ fmap fst filtered

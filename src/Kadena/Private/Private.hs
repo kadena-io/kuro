@@ -25,9 +25,8 @@ import Crypto.Noise ( defaultHandshakeOpts, HandshakePattern, HandshakeOpts, Han
                     , noiseState, writeMessage, readMessage, setLocalStatic, setLocalEphemeral
                     , setRemoteStatic, NoiseResult(..), NoiseState )
 import Crypto.Noise.Cipher (Cipher(..), Plaintext)
-import qualified Crypto.Noise.DH as Dh
 import Crypto.Noise.DH (KeyPair, DH(..))
-import qualified Crypto.Noise.DH.Curve25519 as Dh (Curve25519)
+import Crypto.Noise.DH.Curve25519 (Curve25519)
 import Crypto.Noise.HandshakePatterns (noiseK)
 import Data.ByteArray (ScrubbedBytes, convert)
 import Data.ByteString (ByteString)
@@ -45,10 +44,10 @@ import Kadena.Types.Private
 import Kadena.Types.Entity
 
 noise :: HandshakePattern -> HandshakeRole
-        -> EntityLocal -> Dh.PublicKey Dh.Curve25519
+        -> EntityLocal -> PublicKey Curve25519
         -> Noise
 noise pat rol EntityLocal{..} remoteStatic =
-  let dho = defaultHandshakeOpts rol "prologue" :: HandshakeOpts Dh.Curve25519
+  let dho = defaultHandshakeOpts rol "prologue" :: HandshakeOpts Curve25519
       iho = setLocalStatic (Just (toKeyPair _elStatic))
             . setRemoteStatic (Just remoteStatic)
             . setLocalEphemeral (Just (toKeyPair _elEphemeral))
@@ -68,24 +67,24 @@ instance Exception NoiseMessageException
 
 initEntitySession :: EntityLocal -> EntitySession
 initEntitySession el@EntityLocal{..} = EntitySession
-  (noise noiseK InitiatorRole el (epPublicKey (ekPublic _elStatic)))
-  (noise noiseK ResponderRole el (epPublicKey (ekPublic _elStatic)))
+  (noise noiseK InitiatorRole el (_ekPublic _elStatic))
+  (noise noiseK ResponderRole el (_ekPublic _elStatic))
   lblr lblr (makeLabel lblr) 0
   where lblr = initLabeler (encodeUtf8 $ asString _elName)
-               (esSecretKey (ekSecret _elStatic)) (epPublicKey (ekPublic _elStatic))
+               (_ekSecret _elStatic) (_ekPublic _elStatic)
 
-initLabeler :: ByteString -> Dh.SecretKey Dh.Curve25519 -> Dh.PublicKey Dh.Curve25519 -> Labeler
+initLabeler :: ByteString -> SecretKey Curve25519 -> PublicKey Curve25519 -> Labeler
 initLabeler ad sk pk = Labeler (cipherBytesToSym $ dhPerform sk pk) cipherZeroNonce (convert ad)
 
 initRemote :: MonadThrow m => EntityLocal -> EntityRemote -> m RemoteSession
 initRemote el@EntityLocal{..} EntityRemote{..} = do
   let outName = asString _elName <> ":" <> asString _erName
       inName = asString _erName <> ":" <> asString _elName
-      sendL = initLabeler (encodeUtf8 outName) (esSecretKey (ekSecret _elStatic)) $ epPublicKey _erStatic
-      recvL = initLabeler (encodeUtf8 inName) (esSecretKey (ekSecret _elStatic)) $ epPublicKey _erStatic
+      sendL = initLabeler (encodeUtf8 outName) (_ekSecret _elStatic) $ _epPublic _erStatic
+      recvL = initLabeler (encodeUtf8 inName) (_ekSecret _elStatic) $ _epPublic _erStatic
   return $ RemoteSession outName _erName
-    (noise noiseK InitiatorRole el $ epPublicKey _erStatic)
-    (noise noiseK ResponderRole el $ epPublicKey _erStatic)
+    (noise noiseK InitiatorRole el $ _epPublic _erStatic)
+    (noise noiseK ResponderRole el $ _epPublic _erStatic)
     sendL recvL (makeLabel recvL) 0
 
 initSessions :: MonadThrow m => EntityLocal -> [EntityRemote] -> m Sessions

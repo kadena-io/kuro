@@ -64,7 +64,7 @@ insertArgs = InsertArgs
   }
 
 insertsConfDir,  kadenaDemoDir :: String
-insertsConfDir = "conf/"
+insertsConfDir = "executables/inserts/conf/"
 kadenaDemoDir = "demo/"
 
 startupStuff :: InsertArgs -> IO ()

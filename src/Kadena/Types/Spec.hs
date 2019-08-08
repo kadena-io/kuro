@@ -31,8 +31,6 @@ import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.RWS.Strict (RWST)
 
-import qualified Crypto.Ed25519.Pure as Ed25519
-
 import Data.BloomFilter (Bloom)
 import qualified Data.BloomFilter as Bloom
 import qualified Data.BloomFilter.Hash as BHash
@@ -68,14 +66,18 @@ data ConsensusSpec = ConsensusSpec
   {
     -- | Function to log a debug message (no newline).
     _debugPrint       :: !(String -> IO ())
+
   , _publishMetric    :: !(Metric -> IO ())
+
   , _getTimestamp     :: !(IO UTCTime)
+
   , _random           :: !(forall a . Random a => (a, a) -> IO a)
+
   }
 makeLenses (''ConsensusSpec)
 
 data InvalidCandidateResults = InvalidCandidateResults
-  { _icrMyReqVoteSig :: !Ed25519.Signature
+  { _icrMyReqVoteSig :: !Signature
   , _icrNoVotes :: !(Set NodeId)
   } deriving (Show, Eq)
 makeLenses ''InvalidCandidateResults

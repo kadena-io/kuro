@@ -1,8 +1,5 @@
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE UndecidableInstances #-}
 
 module Kadena.Config.TMVar
   ( Config(..), clusterMembers, nodeId, publicKeys, adminKeys, myPrivateKey, myPublicKey
@@ -18,29 +15,25 @@ module Kadena.Config.TMVar
 
 import Control.Concurrent.STM
 import Control.Lens (makeLenses)
-
-import qualified Crypto.Ed25519.Pure as Ed25519
 import Data.Aeson
 import Data.Map (Map)
 import Data.Set (Set)
 import GHC.Generics
 
-import Pact.Types.Logger hiding (logRules)
-import Pact.Types.Util
-
 import qualified Kadena.Config.ClusterMembership as CM
 import Kadena.Types.PactDB
-import Kadena.Types.Crypto ()
 import Kadena.Types.Base
 import Kadena.Types.Entity
+import Pact.Types.Logger hiding (logRules)
+import Pact.Types.Util
 
 data Config = Config
   { _clusterMembers       :: !CM.ClusterMembership
   , _nodeId               :: !NodeId
-  , _publicKeys           :: !(Map Alias Ed25519.PublicKey)
-  , _adminKeys            :: !(Map Alias Ed25519.PublicKey)
-  , _myPrivateKey         :: !Ed25519.PrivateKey
-  , _myPublicKey          :: !Ed25519.PublicKey
+  , _publicKeys           :: !(Map Alias PublicKey)
+  , _adminKeys            :: !(Map Alias PublicKey)
+  , _myPrivateKey         :: !PrivateKey
+  , _myPublicKey          :: !PublicKey
   , _electionTimeoutRange :: !(Int,Int)
   , _heartbeatTimeout     :: !Int
   , _enableDebug          :: !Bool
@@ -60,12 +53,11 @@ data Config = Config
   }
   deriving (Show, Generic)
 makeLenses ''Config
-
 instance ToJSON Config where
   toJSON = lensyToJSON 1
-
 instance FromJSON Config where
   parseJSON = lensyParseJSON 1
+
 
 data GlobalConfig = GlobalConfig
   { _gcVersion :: !ConfigVersion

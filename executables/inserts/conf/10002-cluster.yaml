@@ -1,5 +1,5 @@
 pactPersist:
-  writeBehind: true
+  writeBehind: false
   backend:
     config:
       dbFile: ./log/node2-pact.sqlite
@@ -15,14 +15,21 @@ heartbeatTimeout: 1000000
 logDir: ./log
 apiPort: 8002
 logRules:
-  PactPersist:
-    exclude:
-    - DEBUG
   PactService:
     include: null
     enable: null
     exclude:
     - DEBUG
+  PactPersist:
+    include: null
+    enable: null
+    exclude:
+    - DEBUG
+preProcThreadCount: 10
+hostStaticDir: true
+electionTimeoutRange:
+- 3000000
+- 6000000
 clusterMembers:
   changeToNodes: []
   otherNodes:
@@ -38,11 +45,6 @@ clusterMembers:
     fullAddr: tcp://127.0.0.1:10003
     host: '127.0.0.1'
     port: 10003
-preProcThreadCount: 10
-hostStaticDir: true
-electionTimeoutRange:
-- 3000000
-- 6000000
 inMemTxCache: 200000
 myPublicKey: bf77d5479108c041bd3fc5f7fd92cf156e6121bbfd8e341f30307cadce5c03e8
 nodeId:
@@ -77,4 +79,3 @@ nodeClass: active
 enablePersistence: true
 myPrivateKey: 84e6b8503273f69d86e71d6ed6d020abee8af7f8efa4f4f173ff95bcff57a56e
 preProcUsePar: true
-enableDiagnostics: false

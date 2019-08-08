@@ -22,7 +22,6 @@ module Kadena.Types.Message.RVR
   ) where
 
 import Control.Lens
-import qualified Crypto.Ed25519.Pure as Ed25519
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Serialize (Serialize)
@@ -30,15 +29,13 @@ import qualified Data.Serialize as S
 import Data.Thyme.Time.Core ()
 import GHC.Generics
 
-import Pact.Types.Hash
-
-import Kadena.Types.Crypto
 import Kadena.Types.Base
+import Kadena.Types.KeySet
 import Kadena.Types.Message.Signed
 
 data HeardFromLeader = HeardFromLeader
   { _hflLeaderId :: !NodeId
-  , _hflYourRvSig :: !Ed25519.Signature
+  , _hflYourRvSig :: !Signature
   , _hflLastLogIndex :: !LogIndex
   , _hflLastLogTerm :: !Term
   } deriving (Show, Eq, Ord, Generic, Serialize)
@@ -62,7 +59,7 @@ instance Serialize RVRWire
 instance WireFormat RequestVoteResponse where
   toWire nid pubKey privKey RequestVoteResponse{..} = case _rvrProvenance of
     NewMsg -> let bdy = S.encode $ RVRWire (_rvrTerm,_rvrHeardFromLeader,_rvrNodeId,_voteGranted,_rvrCandidateId)
-                  hsh = pactHash bdy
+                  hsh = hash bdy
                   sig = sign hsh privKey pubKey
                   dig = Digest (_alias nid) sig pubKey RVR hsh
               in SignedRPC dig bdy

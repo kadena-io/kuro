@@ -5,15 +5,15 @@ module ConfigChangeFileSpec where
 import Control.Monad.Catch
 import Control.Monad
 import Control.Monad.IO.Class
-import qualified Crypto.Ed25519.Pure as Ed25519
 import Data.Either
 import qualified Data.Yaml as Y
 import Test.Hspec
 
-import qualified Kadena.Types.Crypto as KC
 import Kadena.Types.Base
 import Kadena.Types.Command
 
+import qualified Pact.ApiReq as Pact
+import qualified Pact.Types.Crypto as Pact
 import Pact.Types.Util (fromText')
 
 spec :: Spec
@@ -65,12 +65,12 @@ yamlExample3 =
       , _ylccKeyPairs = keyPairs
       , _ylccNonce = Nothing } )
 
-keyPairs :: [KC.KeyPair]
+keyPairs :: [Pact.KeyPair]
 keyPairs = foldr f [] keyPairs' where
-    f ::  (Ed25519.PublicKey, Ed25519.PrivateKey) -> [KC.KeyPair] -> [KC.KeyPair]
-    f (pk, sk) r = KC.KeyPair {KC._kpPublicKey = pk, KC._kpPrivateKey = sk} : r
+    f ::  (Pact.PublicKey, Pact.PrivateKey) -> [Pact.KeyPair] -> [Pact.KeyPair]
+    f (pk, sk) r = Pact.KeyPair {Pact._kpPublic = pk, Pact._kpSecret = sk} : r
 
-keyPairs' :: [(Ed25519.PublicKey, Ed25519.PrivateKey)]
+keyPairs' :: [(Pact.PublicKey, Pact.PrivateKey)]
 keyPairs' =
   let eList = [keyPair1]
       pairs = rights (fmap fst eList) `zip` rights (fmap snd eList)
@@ -78,7 +78,7 @@ keyPairs' =
             then fail "Error creating key pairs"
             else pairs
 
-keyPair1 :: (Either String Ed25519.PublicKey, Either String Ed25519.PrivateKey)
+keyPair1 :: (Either String Pact.PublicKey, Either String Pact.PrivateKey)
 keyPair1 =
   ( fromText' "31736b5c851176e5dff830df44bf0c88fb0da5522a9d9e3ac10ff0c433528c7d"
   , fromText' "b737c6b7d950b9ecbd7e2e187d05b07fc8f3ec2dab8220f19f7b4b68ae6d9319" )

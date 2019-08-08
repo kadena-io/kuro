@@ -1,6 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PackageImports #-}
-{-# OPTIONS_GHC -fno-warn-overlapping-patterns #-}
 
 module ConfigSpec where
 
@@ -10,14 +9,15 @@ import qualified Data.HashSet as HS
 import qualified Data.Map.Strict as M
 import qualified Data.HashMap.Strict as HM
 import "crypto-api" Crypto.Random
-import qualified Crypto.Ed25519.Pure as Ed25519
+import Crypto.Ed25519.Pure
 
 import qualified Kadena.Config.ClusterMembership as CM
 import Kadena.Types.PactDB
 import Kadena.Config.TMVar
 import Kadena.Types.Base
-import Kadena.Types.Entity as EN
+import Kadena.Types.Entity
 
+import qualified Pact.Types.Crypto as Signing
 import Pact.Types.Logger
 
 import Test.Hspec
@@ -26,23 +26,22 @@ spec :: Spec
 spec =
   describe "testConfigRT" $ testConfigRT
 
-makeEdKeys :: CryptoRandomGen g => Int -> g -> [(Ed25519.PrivateKey, Ed25519.PublicKey)]
-makeEdKeys 0 _ = []
-makeEdKeys n g = case Ed25519.generateKeyPair g of
+makeKeys :: CryptoRandomGen g => Int -> g -> [(PrivateKey,PublicKey)]
+makeKeys 0 _ = []
+makeKeys n g = case generateKeyPair g of
   Left err -> error $ show err
-  Right (s,p,g') -> (s,p) : makeEdKeys (n-1) g'
+  Right (s,p,g') -> (s,p) : makeKeys (n-1) g'
 
 dummyConfig :: IO Config
 dummyConfig = do
-  [(as,ap),(_bs,bp),(_cs,cp)] <- makeEdKeys 3 <$> (newGenIO :: IO SystemRandom)
+  [(as,ap),(_bs,bp),(_cs,cp)] <- makeKeys 3 <$> (newGenIO :: IO SystemRandom)
+  aStatic <- genKeyPair
+  aEph <- genKeyPair
+  bStatic <- genKeyPair
 
-  aStatic <- EN.genKeyPair
-  aEph <- EN.genKeyPair
-  bStatic <- EN.genKeyPair
-  cSigner <- EN.genKeyPair
-
-  let aRemote = EntityRemote "A" (ekPublic aStatic)
-  let bRemote = EntityRemote "B" (ekPublic bStatic)
+  let toPub = EntityPublicKey . _ekPublic
+      aRemote = EntityRemote "A" (toPub $ aStatic)
+      bRemote = EntityRemote "B" (toPub $ bStatic)
 
   return $ Config
     { _clusterMembers = CM.mkClusterMembership
@@ -59,9 +58,9 @@ dummyConfig = do
     , _apiPort              = 4
     , _entity               = EntityConfig
         { _ecLocal = EntityLocal "A" aStatic aEph
-        , _ecRemotes = [aRemote, bRemote]
+        , _ecRemotes = [aRemote,bRemote]
         , _ecSending = True
-        , _ecSigner = cSigner
+        , _ecSigner = Signer (Signing.ED25519,as,ap)
         }
     , _logDir               = "/tmp/foo"
     , _enablePersistence    = False

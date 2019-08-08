@@ -33,6 +33,8 @@ import Kadena.Types.Event (ResetLeaderNoFollowersTimeout(..))
 import Kadena.Types.Evidence (Evidence(..), PublishedEvidenceState(..), CommitCheckResult (..))
 import Kadena.Types.Message (AppendEntriesResponse(..))
 import Kadena.Util.Util (linkAsyncTrack, throwDiagnostics)
+-- TODO: re-integrate EKG when Evidence Service is finished and hspec tests are written
+-- import Kadena.Types.Metric
 import qualified Kadena.Log.Types as Log
 import qualified Kadena.Types.Log as Log
 import qualified Kadena.Types.Dispatch as Dispatch
@@ -44,8 +46,7 @@ initEvidenceEnv :: Dispatch
                 -> MVar ResetLeaderNoFollowersTimeout
                 -> (Metric -> IO ())
                 -> EvidenceEnv
-initEvidenceEnv dispatch debugFn' mConfig' mPubStateTo' mResetLeaderNoFollowers' publishMetric' =
-  EvidenceEnv
+initEvidenceEnv dispatch debugFn' mConfig' mPubStateTo' mResetLeaderNoFollowers' publishMetric' = EvidenceEnv
   { _logService = dispatch ^. Dispatch.dispLogService
   , _evidence = dispatch ^. Dispatch.dispEvidence
   , _mResetLeaderNoFollowers = mResetLeaderNoFollowers'
@@ -207,7 +208,7 @@ updateLogs q = do
 
 debug :: String -> EvidenceService EvidenceState ()
 debug s = do
-  unless (null s) $ do
+  when (not (null s)) $ do
     debugFn' <- view debugFn
     liftIO $ debugFn' $ "[Service|Evidence]: " ++ s
 
@@ -237,8 +238,8 @@ checkPartialEvidence' nodes chgToNodes evidenceNeeded changeToEvNeeded partialEv
         Map.foldrWithKey f (emptyMap, emptyMap) partialEvidence where
           f :: LogIndex -> (Set NodeId)-> (Map LogIndex Int, Map LogIndex Int) -> (Map LogIndex Int, Map LogIndex Int)
           f k x (r1, r2) =
-            let inNodeSet = Set.filter (`elem` nodes) x
-                inChangeToNodeSet = Set.filter (`elem` chgToNodes) x
+            let inNodeSet = Set.filter (\nId -> nId `elem` nodes ) x
+                inChangeToNodeSet = Set.filter (\nId -> nId `elem` chgToNodes) x
             in (Map.insert k (length inNodeSet) r1, Map.insert k (length inChangeToNodeSet) r2)
   in if null changeToNodeMap
       then go (Map.toDescList nodeMap) evidenceNeeded

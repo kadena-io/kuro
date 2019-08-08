@@ -1,6 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE TupleSections #-}
 
 module Kadena.Message
   ( signedRPCtoRPC, rpcToSignedRPC
@@ -8,13 +7,11 @@ module Kadena.Message
   , broadcastMsg, directMsg
   ) where
 
-import qualified Crypto.Ed25519.Pure as Ed25519
-
 import Data.ByteString (ByteString)
 import Data.List.NonEmpty (NonEmpty(..))
 
-import Kadena.Types.Crypto
 import Kadena.Types.Base
+import Kadena.Types.KeySet
 import Kadena.Types.Message
 
 sealEnvelope :: Envelope -> NonEmpty ByteString
@@ -36,7 +33,7 @@ signedRPCtoRPC ts ks s@(SignedRPC (Digest _ _ _ RVR _)  _) = (\rpc -> rpc `seq` 
 signedRPCtoRPC ts ks s@(SignedRPC (Digest _ _ _ NEW _)  _) = (\rpc -> rpc `seq` NEW'  rpc) <$> fromWire ts ks s
 {-# INLINE signedRPCtoRPC #-}
 
-rpcToSignedRPC :: NodeId -> Ed25519.PublicKey -> Ed25519.PrivateKey -> RPC -> SignedRPC
+rpcToSignedRPC :: NodeId -> PublicKey -> PrivateKey -> RPC -> SignedRPC
 rpcToSignedRPC nid pubKey privKey (AE' v) = toWire nid pubKey privKey v
 rpcToSignedRPC nid pubKey privKey (AER' v) = toWire nid pubKey privKey v
 rpcToSignedRPC nid pubKey privKey (RV' v) = toWire nid pubKey privKey v
@@ -48,4 +45,4 @@ directMsg :: [(NodeId, ByteString)] -> OutboundGeneral
 directMsg msgs = OutboundGeneral $! Envelope . (\(n,b) -> (Topic $ unAlias $ _alias n, b)) <$> msgs
 
 broadcastMsg :: [ByteString] -> OutboundGeneral
-broadcastMsg msgs = OutboundGeneral $! Envelope . (Topic $ "all",) <$> msgs
+broadcastMsg msgs = OutboundGeneral $! Envelope . (\b -> (Topic $ "all", b)) <$> msgs

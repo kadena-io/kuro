@@ -1,4 +1,3 @@
-
 {-# LANGUAGE RecordWildCards #-}
 
 module Kadena.Config
@@ -10,10 +9,9 @@ module Kadena.Config
 import Control.Concurrent.STM
 import qualified Data.Yaml as Y
 
+import Kadena.Types.Crypto
 import Kadena.Config.TMVar
-import Kadena.Types.Config
 import Kadena.Types.Base
-import Kadena.Types.KeySet
 
 getConfigWhenNew :: ConfigVersion -> GlobalConfigTMVar -> STM GlobalConfig
 getConfigWhenNew cv gcm = do

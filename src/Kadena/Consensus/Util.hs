@@ -121,7 +121,7 @@ updateLogs q = do
 
 debug :: String -> Consensus ()
 debug s = do
-  when (not (null s)) $ do
+  when (not (null s)) $ do   
     dbg <- view (rs.debugPrint)
     role' <- use csNodeRole
     case role' of
@@ -209,35 +209,6 @@ setCurrentLeader mNode = do
 
 runRWS_ :: MonadIO m => RWST r w s m a -> r -> s -> m ()
 runRWS_ ma r s = void $! runRWST ma r s
-
-
---newtype ExistenceResult = ExistenceResult
---  { rksThatAlreadyExist :: Set RequestKey
---  } deriving (Show, Eq)
---
---newtype PossiblyIncompleteResults = PossiblyIncompleteResults
---  { possiblyIncompleteResults :: Map RequestKey CommandResult
---  } deriving (Show, Eq)
---
---data ListenerResult =
---  ListenerResult CommandResult |
---  GCed
---  deriving (Show, Eq)
---
---data History =
---  AddNew
---    { hNewKeys :: !(Set RequestKey) } |
---  Update
---    { hUpdateRks :: !(Map RequestKey CommandResult) } |
---  QueryForExistence
---    { hQueryForExistence :: !(Set RequestKey, MVar ExistenceResult) } |
---  QueryForResults
---    { hQueryForResults :: !(Set RequestKey, MVar PossiblyIncompleteResults) } |
---  RegisterListener
---    { hNewListener :: !(Map RequestKey (MVar ListenerResult))} |
---  Bounce |
---  Heart Beat
---  deriving (Eq)
 
 sendHistoryNewKeys :: HashSet RequestKey -> Consensus ()
 sendHistoryNewKeys srks = do

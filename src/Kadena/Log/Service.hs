@@ -25,9 +25,9 @@ import Kadena.Types.Base
 import Kadena.Types.Comms
 import Kadena.Config.TMVar
 import Kadena.Types.Command (CmdLatencyMetrics(..))
-import Kadena.Types.Metric
 import Kadena.Log.Persistence
 import Kadena.Types.Log
+import Kadena.Types.Metric
 import Kadena.Log
 import Kadena.Log.Types
 import Kadena.Log.LogApi as X
@@ -71,7 +71,7 @@ runLogService dispatch dbg publishMetric' gCfg = do
 
 debug :: String -> LogThread ()
 debug s = do
-  when (not (null s)) $ do
+  unless (null s) $ do
     dbg <- view debugPrint
     liftIO $ dbg $ "[Service|Log]: " ++ s
 

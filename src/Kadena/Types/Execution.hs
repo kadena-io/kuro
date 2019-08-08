@@ -24,18 +24,17 @@ import Control.Concurrent (MVar)
 
 import Data.Thyme.Clock (UTCTime)
 import Data.ByteString (ByteString)
-import Data.Aeson (Value)
 
-import Pact.Types.Command (ParsedCode,CommandExecInterface)
-import qualified Pact.Types.Command as Pact (CommandResult,Command)
+import qualified Pact.Types.ChainMeta as Pact
+import qualified Pact.Types.Hash as Pact (Hash)
+import qualified Pact.Types.Command as Pact (CommandExecInterface, CommandResult, Command, PactResult, ParsedCode)
 import Pact.Types.Logger (Loggers)
-import Pact.Types.RPC (PactRPC)
 
 import Kadena.Types.Base (NodeId)
 import Kadena.Types.PactDB
 import Kadena.Types.Config (GlobalConfigTMVar)
 import Kadena.Types.Comms (Comms(..),initCommsNormal,readCommNormal,writeCommNormal)
-import Kadena.Types.KeySet
+import Kadena.Types.Crypto
 import Kadena.Types.Metric (Metric)
 import Kadena.Types.Log (LogEntry,LogEntries)
 import Kadena.Types.Event (Beat)
@@ -43,7 +42,7 @@ import Kadena.Types.History (HistoryChannel)
 import Kadena.Types.Private (PrivateChannel)
 import Kadena.Types.Entity (EntityConfig)
 
-type ApplyFn = LogEntry -> IO Pact.CommandResult
+type ApplyFn = LogEntry -> IO (Pact.CommandResult (Pact.Hash))
 
 data Execution =
   ReloadFromDisk { logEntriesToApply :: !LogEntries } |
@@ -52,7 +51,7 @@ data Execution =
   UpdateKeySet { newKeySet :: !KeySet } |
   ExecutionBeat Beat |
   ExecLocal { localCmd :: !(Pact.Command ByteString),
-              localResult :: !(MVar Value) } |
+              localResult :: !(MVar Pact.PactResult) } |
   ExecConfigChange { logEntriesToApply :: !LogEntries }
 
 newtype ExecutionChannel = ExecutionChannel (Chan Execution)
@@ -79,7 +78,7 @@ makeLenses ''ExecutionEnv
 data ExecutionState = ExecutionState
   { _csNodeId :: !NodeId
   , _csKeySet :: !KeySet
-  , _csCommandExecInterface :: !(CommandExecInterface (PactRPC ParsedCode))
+  , _csCommandExecInterface :: !(Pact.CommandExecInterface Pact.PrivateMeta Pact.ParsedCode Pact.Hash)
   }
 makeLenses ''ExecutionState
 

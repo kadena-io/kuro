@@ -32,7 +32,7 @@ import Database.SQLite3.Direct
 
 import Kadena.Config.TMVar as Cfg
 import Kadena.Types.Base
-import Kadena.Types.Command
+import Kadena.Types.Command as KC
 import Kadena.Types.Comms
 import Kadena.Types.Event (Beat)
 
@@ -41,11 +41,11 @@ newtype ExistenceResult = ExistenceResult
   } deriving (Show, Eq)
 
 newtype PossiblyIncompleteResults = PossiblyIncompleteResults
-  { possiblyIncompleteResults :: HashMap RequestKey CommandResult
+  { possiblyIncompleteResults :: (HashMap RequestKey CommandResult)
   } deriving (Show, Eq)
 
 data ListenerResult =
-  ListenerResult CommandResult |
+  ListenerResult KC.CommandResult |
   GCed String
   deriving (Show, Eq)
 

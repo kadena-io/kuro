@@ -10,7 +10,7 @@ module Main (main) where
 import Control.Arrow
 import Control.Monad
 import "crypto-api" Crypto.Random
-import Crypto.Ed25519.Pure
+import qualified Crypto.Ed25519.Pure as Ed25519
 import Text.Read
 import System.IO
 import System.FilePath
@@ -32,17 +32,20 @@ import System.Exit
 
 import qualified Kadena.Config.ClusterMembership as CM
 import Kadena.Config.TMVar
+import Kadena.Types.Crypto
 import Kadena.Types.PactDB
 import Kadena.Types
 import Kadena.Types.Entity
 import Apps.Kadena.Client hiding (main)
 
 import Pact.Types.SQLite
-import Pact.Types.Crypto
 import Pact.Types.Logger
 
 
-mkNodes :: (Word64 -> NodeId) -> [(PrivateKey,PublicKey)] -> (Map NodeId PrivateKey, Map NodeId PublicKey)
+mkNodes
+  :: (Word64 -> NodeId)
+  -> [(Ed25519.PrivateKey,Ed25519.PublicKey)]
+  -> (Map NodeId Ed25519.PrivateKey, Map NodeId Ed25519.PublicKey)
 mkNodes nodeG keys = (ss,ps) where
     ps = M.fromList $ map (second snd) ns
     ss = M.fromList $ map (second fst) ns
@@ -53,16 +56,16 @@ mkNode host msgPortRoot namePrefix n =
     let np = msgPortRoot+n in
     NodeId host np ("tcp://" ++ host ++ ":" ++ show np) (Alias (BSC.pack $ namePrefix ++ show n))
 
-makeKeys :: CryptoRandomGen g => Int -> g -> [(PrivateKey,PublicKey)]
-makeKeys 0 _ = []
-makeKeys n g = case generateKeyPair g of
+makeEdKeys :: CryptoRandomGen g => Int -> g -> [(Ed25519.PrivateKey, Ed25519.PublicKey)]
+makeEdKeys 0 _ = []
+makeEdKeys n g = case Ed25519.generateKeyPair g of
   Left err -> error $ show err
-  Right (s,p,g') -> (s,p) : makeKeys (n-1) g'
+  Right (s,p,g') -> (s,p) : makeEdKeys (n-1) g'
 
 awsNodes :: [String] -> [NodeId]
 awsNodes = fmap (\h -> NodeId h 10000 ("tcp://" ++ h ++ ":10000") $ Alias (BSC.pack h))
 
-awsKeyMaps :: [NodeId] -> [(PrivateKey, PublicKey)] -> (Map NodeId PrivateKey, Map NodeId PublicKey)
+awsKeyMaps :: [NodeId] -> [(Ed25519.PrivateKey, Ed25519.PublicKey)] -> (Map NodeId Ed25519.PrivateKey, Map NodeId Ed25519.PublicKey)
 awsKeyMaps nodes' ls = (M.fromList $ zip nodes' (fst <$> ls), M.fromList $ zip nodes' (snd <$> ls))
 
 getUserInput :: forall b. (Show b, Read b) => String -> ConfigType -> Maybe b ->
@@ -230,7 +233,7 @@ getParams cfgMode = do
 
 makeAdminKeys :: Int -> IO (Map Alias KeyPair)
 makeAdminKeys cnt = do
-  adminKeys' <- fmap (\(sk,pk) -> KeyPair pk sk) . makeKeys cnt <$> (newGenIO :: IO SystemRandom)
+  adminKeys' <- fmap (\(sk,pk) -> KeyPair pk sk) . makeEdKeys cnt <$> (newGenIO :: IO SystemRandom)
   let adminAliases = (\i -> Alias $ BSC.pack $ "admin" ++ show i) <$> [0..cnt-1]
   return $ M.fromList $ zip adminAliases adminKeys'
 
@@ -238,7 +241,7 @@ mainAws :: FilePath -> IO ()
 mainAws clustersFile = do
   !clusters <- lines <$> readFile clustersFile
   clusterIds <- return $ awsNodes clusters
-  clusterKeys <- makeKeys (length clusters) <$> (newGenIO :: IO SystemRandom)
+  clusterKeys <- makeEdKeys (length clusters) <$> (newGenIO :: IO SystemRandom)
   clusterKeyMaps <- return $ awsKeyMaps clusterIds clusterKeys
   cfgParams@ConfigParams{..} <- getParams AWS { awsClusterCnt = length clusterIds }
   adminKeyPairs <- makeAdminKeys cpAdminKeyCnt
@@ -252,7 +255,7 @@ mainLocal = do
   cfgParams@ConfigParams{..} <- getParams LOCAL
   adminKeyPairs <- makeAdminKeys cpAdminKeyCnt
   adminKeys' <- return $ fmap _kpPublicKey adminKeyPairs
-  clusterKeyMaps <- mkNodes (mkNode "127.0.0.1" 10000 "node") . makeKeys cpClusterCnt <$> (newGenIO :: IO SystemRandom)
+  clusterKeyMaps <- mkNodes (mkNode "127.0.0.1" 10000 "node") . makeEdKeys cpClusterCnt <$> (newGenIO :: IO SystemRandom)
   let nids = M.keys (fst clusterKeyMaps)
   ents <- mkEntities nids cpEntityCnt
   clusterConfs <- return $ zipWith (createClusterConfig cfgParams adminKeys' clusterKeyMaps ents)
@@ -265,7 +268,7 @@ mkConfs confDir clusterConfs adminKeyPairs useHostForId = do
   let getNodeName nid = if not useHostForId then show (_port $ _nodeId nid) else _host $ _nodeId nid
   mapM_ (\c' -> Y.encodeFile ("conf" </> getNodeName c' ++ "-cluster.yaml") c') clusterConfs
   mapM_ (\(a,kp) -> Y.encodeFile (confDir </> (BSC.unpack $ unAlias a) ++ "-keypair.yaml") kp) $ M.toList adminKeyPairs
-  [clientKey] <- makeKeys 1 <$> (newGenIO :: IO SystemRandom)
+  [clientKey] <- makeEdKeys 1 <$> (newGenIO :: IO SystemRandom)
   Y.encodeFile (confDir </> "client.yaml") . createClientConfig clusterConfs $ clientKey
 
 entNames :: [EntityName]
@@ -276,25 +279,38 @@ mkEntities nids ec = do
   kpMap <- fmap M.fromList $ forM (take ec entNames) $ \en -> do
     kps <- (,) <$> genKeyPair <*> genKeyPair
     return (en,kps)
-  [(spub,spriv)] <- makeKeys 1 <$> (newGenIO :: IO SystemRandom)
-  let mkR (ren,(rstatic,_)) = EntityRemote ren (EntityPublicKey (_ekPublic rstatic))
-      ents = (`M.mapWithKey` kpMap) $ \en (static,eph) ->
-        EntityConfig
-        (EntityLocal en static eph)
-        (map mkR $ M.toList $ M.delete en kpMap)
-        False
-        (Signer (ED25519,spub,spriv))
+  ents <- sequence $ (`M.mapWithKey` kpMap) (toEntityConfig kpMap)
+  return $ M.fromList $ alloc nids (M.elems ents)
+    where
       nodePerEnt = length nids `div` ec
       setHeadSending = set (ix 0 . _2 . ecSending) True
+
+      alloc :: [NodeId] -> [EntityConfig] -> [(NodeId, EntityConfig)]
       alloc [] _ = []
       alloc _ [] = error $ "Ran out of entities! Bad entity count: " ++ show ec
       alloc nids' (e:es) = (setHeadSending $ map (,e) $ take nodePerEnt nids') ++ alloc (drop nodePerEnt nids') es
-  return $ M.fromList $ alloc nids (M.elems ents)
+
+mkEntRemote :: (EntityName, (EntityKeyPair, EntityKeyPair)) -> EntityRemote
+mkEntRemote (entName, (static, _ephem)) = EntityRemote entName (ekPublic static)
+
+toEntityConfig
+  :: Map EntityName (EntityKeyPair, EntityKeyPair)
+  -> EntityName
+  -> (EntityKeyPair, EntityKeyPair)
+  -> IO EntityConfig
+toEntityConfig theMap entName (static, eph) = do
+  entKP <- genKeyPair
+  return EntityConfig
+    { _ecLocal = (EntityLocal entName static eph)
+    , _ecRemotes = (map mkEntRemote $ M.toList $ M.delete entName theMap)
+    , _ecSending = False
+    , _ecSigner = entKP
+    }
 
 toAliasMap :: Map NodeId a -> Map Alias a
 toAliasMap = M.fromList . map (first _alias) . M.toList
 
-createClusterConfig :: ConfigParams -> (Map Alias PublicKey) -> (Map NodeId PrivateKey, Map NodeId PublicKey) ->
+createClusterConfig :: ConfigParams -> (Map Alias Ed25519.PublicKey) -> (Map NodeId Ed25519.PrivateKey, Map NodeId Ed25519.PublicKey) ->
                        (Map NodeId EntityConfig) -> Int -> NodeId -> Config
 createClusterConfig cp@ConfigParams{..} adminKeys' (privMap, pubMap) entMap apiP nid = Config
   { _clusterMembers       = CM.mkClusterMembership (Set.delete nid $ M.keysSet pubMap) Set.empty
@@ -327,12 +343,12 @@ mkPactPersistConfig ConfigParams{..} enablePersist NodeId{..} = PactPersistConfi
   , _ppcBackend = if enablePersist
                   then PPBSQLite
                        { _ppbSqliteConfig = SQLiteConfig {
-                             dbFile = cpLogDir </> (show $ _alias) ++ "-pact.sqlite"
-                           , pragmas = if cpEnableWB then [] else fastNoJournalPragmas } }
+                             _dbFile = cpLogDir </> (show $ _alias) ++ "-pact.sqlite"
+                           , _pragmas = if cpEnableWB then [] else fastNoJournalPragmas } }
                   else PPBInMemory
   }
 
-createClientConfig :: [Config] -> (PrivateKey,PublicKey) -> ClientConfig
+createClientConfig :: [Config] -> (Ed25519.PrivateKey,Ed25519.PublicKey) -> ClientConfig
 createClientConfig clusterConfs (priv,pub) =
     ClientConfig
     { _ccSecretKey = priv

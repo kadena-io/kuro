@@ -16,8 +16,10 @@ import Data.Serialize (Serialize)
 import qualified Data.Serialize as S
 import GHC.Generics
 
+import Pact.Types.Hash
+
+import Kadena.Types.Crypto
 import Kadena.Types.Base
-import Kadena.Types.KeySet
 import Kadena.Types.Message.Signed
 
 -- TODO: perhaps add leaderId into the AER's to protect against a possible attack vector of dual leaders where followers still come to consensus
@@ -55,7 +57,7 @@ instance WireFormat AppendEntriesResponse where
                                                , _aerConvinced
                                                , _aerIndex
                                                , _aerHash)
-                  hsh = hash bdy
+                  hsh = pactHash bdy
                   sig = sign hsh privKey pubKey
                   dig = Digest (_alias nid) sig pubKey AER hsh
               in SignedRPC dig bdy

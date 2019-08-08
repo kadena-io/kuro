@@ -4,7 +4,8 @@
 {-# LANGUAGE TemplateHaskell #-}
 
 module Kadena.Types.Message.AE
-  ( AppendEntries(..), aeTerm, leaderId, prevLogIndex, prevLogTerm, aeEntries, aeQuorumVotes, aeProvenance
+  ( AppendEntries(..), aeTerm, leaderId, prevLogIndex, prevLogTerm, aeEntries, aeQuorumVotes,
+    aeProvenance
   , AEWire(..)
   ) where
 
@@ -17,16 +18,16 @@ import Data.Maybe (fromMaybe)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Thyme.Time.Core ()
-import GHC.Generics 
- 
-import Kadena.Log  
+import GHC.Generics
+
+import Kadena.Types.Crypto (sign)
+import Kadena.Log
 import Kadena.Types.Base
 import Kadena.Types.Message.Signed
 import Kadena.Types.Message.RVR
 import Kadena.Types.Log
 
-import Pact.Types.Crypto (sign)
-import Pact.Types.Hash (hash)
+import qualified Pact.Types.Hash as P (pactHash)
 
 data AppendEntries = AppendEntries
   { _aeTerm        :: !Term
@@ -34,7 +35,7 @@ data AppendEntries = AppendEntries
   , _prevLogIndex  :: !LogIndex
   , _prevLogTerm   :: !Term
   , _aeEntries     :: !LogEntries
-  , _aeQuorumVotes :: !(Set RequestVoteResponse) 
+  , _aeQuorumVotes :: !(Set RequestVoteResponse)
   , _aeProvenance  :: !Provenance
   }
   deriving (Show, Eq, Generic)
@@ -46,17 +47,20 @@ instance Serialize AEWire
 
 instance WireFormat AppendEntries where
   toWire nid pubKey privKey AppendEntries{..} = case _aeProvenance of
-    NewMsg -> let bdy = fromMaybe (error "failure to compress AE") $ compressHC $ S.encode $ AEWire (_aeTerm
-                                          ,_leaderId
-                                          ,_prevLogIndex
-                                          ,_prevLogTerm
-                                          ,encodeLEWire _aeEntries
-                                          ,toWire nid pubKey privKey <$> Set.toList _aeQuorumVotes)
-                  hsh = hash bdy
-                  sig = sign hsh privKey pubKey
-                  dig = Digest (_alias nid) sig pubKey AE hsh
-              in SignedRPC dig bdy
     ReceivedMsg{..} -> SignedRPC _pDig _pOrig
+    NewMsg ->
+      let ae = S.encode $ AEWire ( _aeTerm
+                                  , _leaderId
+                                  , _prevLogIndex
+                                  , _prevLogTerm
+                                  , encodeLEWire _aeEntries
+                                  , toWire nid pubKey privKey <$> Set.toList _aeQuorumVotes )
+          bdy = fromMaybe ae (compressHC ae)
+          hsh = P.pactHash bdy
+          sig = sign hsh privKey pubKey
+          dig = Digest (_alias nid) sig pubKey AE hsh
+      in SignedRPC dig bdy
+
   fromWire !ts !ks s@(SignedRPC !dig !bdy) = case verifySignedRPC ks s of
     Left !err -> Left err
     Right () -> if _digType dig /= AE

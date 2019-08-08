@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TupleSections #-}
 
 module Kadena.Types.Message.NewCMD
   ( NewCmdInternal(..), newCmdInternal
@@ -15,6 +16,9 @@ import qualified Data.Serialize as S
 import Data.Thyme.Time.Core ()
 import GHC.Generics
 
+import Pact.Types.Hash as P
+
+import Kadena.Types.Crypto
 import Kadena.Types.Base
 import Kadena.Types.Command
 import Kadena.Types.Message.Signed
@@ -41,7 +45,7 @@ instance Serialize NewCmdWire
 instance WireFormat NewCmdRPC where
   toWire nid pubKey privKey NewCmdRPC{..} = case _newProvenance of
     NewMsg -> let bdy = S.encode $ NewCmdWire $ _newCmd
-                  hsh = hash bdy
+                  hsh = P.pactHash bdy
                   sig = sign hsh privKey pubKey
                   dig = Digest (_alias nid) sig pubKey NEW hsh
               in SignedRPC dig bdy

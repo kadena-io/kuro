@@ -1,6 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
 
+-- TODO: References to Prometheus (Ridley) have been removed, this will not function
+-- until some replacement is found
 module Kadena.Monitoring.Server
   ( startMonitoring
   ) where
@@ -10,34 +12,19 @@ import Data.Text.Encoding (decodeUtf8)
 
 import qualified Data.ByteString.Base64 as B64
 import qualified Data.Text as T
-import System.Metrics (Store)
 import qualified System.Metrics.Label as Label
 import qualified System.Metrics.Gauge as Gauge
 import qualified System.Metrics.Distribution as Dist
-import qualified System.Metrics.Prometheus.Ridley as R
-import qualified System.Metrics.Prometheus.Ridley.Types as R
 
 import Kadena.Config.TMVar
 import Kadena.Util.Util (awsDashVar)
 import Kadena.Types (Metric(..), LogIndex(..), Term(..), NodeId(..), _port)
-import Kadena.Monitoring.EkgMonitor ( Server, forkServer, getLabel, getGauge, getDistribution
-                                    , serverMetricStore)
-
--- TODO: possibly switch to 'newStore' API. this allows us to use groups.
+import Kadena.Monitoring.EkgMonitor ( Server, forkServer, getLabel, getGauge, getDistribution)
 
 startApi :: Config -> IO Server
 startApi config = do
   let port = 80 + fromIntegral (config ^. nodeId . to _port)
-  server <- forkServer "0.0.0.0" port
-  let store = serverMetricStore server
-  _ <- mkRegistry store $ port + 256
-  return server
-
-mkRegistry :: System.Metrics.Store -> R.Port -> IO ()
-mkRegistry store port = do
-  let rOptions = R.newOptions [] R.defaultMetrics
-  _ <- R.startRidleyWithStore rOptions ["metrics"] port store
-  return ()
+  forkServer "0.0.0.0" port
 
 startMonitoring :: Config -> IO (Metric -> IO ())
 startMonitoring config = do

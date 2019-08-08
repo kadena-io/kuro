@@ -54,7 +54,6 @@ library
                      , Kadena.Consensus.Publish
                      , Kadena.Consensus.Service
                      , Kadena.Consensus.Util
-                     , Kadena.Crypto
                      , Kadena.Event
                      , Kadena.Evidence.Service
                      , Kadena.Evidence.Spec
@@ -80,7 +79,6 @@ library
                      , Kadena.Monitoring.EkgMonitor
                      , Kadena.Monitoring.EkgSnap
                      , Kadena.Monitoring.Server
-                     , Kadena.Orphans
                      , Kadena.PreProc.Service
                      , Kadena.Private.Private
                      , Kadena.Private.Service
@@ -92,6 +90,7 @@ library
                      , Kadena.Types.Comms
                      , Kadena.Types.Config
                      , Kadena.Types.ConfigChange
+                     , Kadena.Types.Crypto
                      , Kadena.Types.Dispatch
                      , Kadena.Types.Entity
                      , Kadena.Types.Event

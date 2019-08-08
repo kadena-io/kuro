@@ -13,7 +13,7 @@ import qualified Crypto.Ed25519.Pure as Ed25519
 import Data.ByteString (ByteString)
 import Data.List.NonEmpty (NonEmpty(..))
 
-import Kadena.Crypto
+import Kadena.Types.Crypto
 import Kadena.Types.Base
 import Kadena.Types.Message
 

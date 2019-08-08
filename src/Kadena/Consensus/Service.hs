@@ -13,7 +13,7 @@ import qualified Kadena.Config.ClusterMembership as CM
 import Kadena.Config.TMVar
 import Kadena.Consensus.Handle
 import Kadena.Consensus.Util
-import Kadena.Crypto
+import Kadena.Types.Crypto
 import Kadena.Event (foreverHeart)
 import Kadena.Types
 import Kadena.Types.Entity

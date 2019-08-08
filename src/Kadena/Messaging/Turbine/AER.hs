@@ -17,7 +17,7 @@ import qualified Data.Set as Set
 
 import Data.Thyme.Clock (getCurrentTime)
 
-import Kadena.Crypto
+import Kadena.Types.Crypto
 import Kadena.Types hiding (debugPrint)
 import Kadena.Types.Evidence (Evidence(VerifiedAER))
 

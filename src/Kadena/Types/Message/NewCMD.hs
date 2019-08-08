@@ -18,7 +18,7 @@ import GHC.Generics
 
 import Pact.Types.Hash as P
 
-import Kadena.Crypto
+import Kadena.Types.Crypto
 import Kadena.Types.Base
 import Kadena.Types.Command
 import Kadena.Types.Message.Signed

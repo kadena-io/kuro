@@ -45,7 +45,7 @@ import Kadena.Types.Metric
 import Kadena.Command
 import Kadena.Event (pprintBeat)
 import Kadena.Private.Service (decrypt)
-import Kadena.Crypto
+import Kadena.Types.Crypto
 import Kadena.Types.Private (PrivatePlaintext(..),PrivateResult(..))
 import Kadena.Execution.Pact
 import Kadena.Consensus.Publish

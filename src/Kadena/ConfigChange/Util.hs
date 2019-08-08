@@ -7,7 +7,7 @@ module Kadena.ConfigChange.Util
 import qualified Data.Map as Map
 
 import Kadena.Config.TMVar
-import qualified Kadena.Crypto as KC
+import qualified Kadena.Types.Crypto as KC
 import Kadena.Types.Base
 import Kadena.Types.Command (CCPayload(..))
 

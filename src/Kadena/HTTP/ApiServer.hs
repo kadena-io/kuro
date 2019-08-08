@@ -52,9 +52,9 @@ import Kadena.Command (SubmitCC(..))
 import Kadena.Types.Command
 import Kadena.Types.Base
 import Kadena.Types.Comms
-import Kadena.Types.Config as Config
+import Kadena.Types.Config as KCfg
 import Kadena.Types.HTTP as K
-import Kadena.Config.TMVar as Config
+import Kadena.Config.TMVar as KCfg
 import Kadena.Types.Spec
 import Kadena.Types.Entity
 import Kadena.Types.History (History(..), PossiblyIncompleteResults(..))
@@ -78,7 +78,7 @@ makeLenses ''ApiEnv
 
 type Api a = ReaderT ApiEnv Snap a
 
-runApiServer :: Dispatch -> Config.GlobalConfigTMVar -> (String -> IO ())
+runApiServer :: Dispatch -> KCfg.GlobalConfigTMVar -> (String -> IO ())
              -> Int -> MVar PublishedConsensus -> IO UTCTime -> IO ()
 runApiServer dispatch gcm logFn port mPubConsensus' timeCache' = do
   logFn $ "[Service|API]: starting on port " ++ show port
@@ -180,37 +180,47 @@ queueRpcsNoResp rpcs = do
     return ()
 
 sendPrivateBatch :: Api ()
-sendPrivateBatch = catch (do
-    conf <- view aiConfig >>= liftIO . readCurrentConfig
-    unless (_ecSending $ _entity conf) $ die "Node is not configured as private sending node"
-    Pact.SubmitBatch cmds <- readJSON
-    log $ "private: received batch of " ++ show (length cmds)
-    when (null cmds) $ die "Empty Batch"
-    rpcs <- forM cmds $ \c -> do
-      let cb@Pact.Command{..} = fmap encodeUtf8 c
-      case eitherDecodeStrict' _cmdPayload of
-        Left e -> die $ "JSON payload decode failed: " ++ show e
-        Right (Pact.Payload{..} :: Pact.Payload Pact.PrivateMeta T.Text) -> do
-          case _pMeta of
-            Pact.PrivateMeta addr ->
-              case addr of
-                Nothing -> die $ "sendPrivateBatch: missing address in payload: " ++ show c
-                Just Pact.Address{..} -> do
-                  pchan <- view (aiDispatch.dispPrivateChannel)
-                  if _aFrom `Set.member` _aTo || _aFrom /= (_elName $ _ecLocal$ _entity conf)
-                    then die $ "sendPrivateBatch: invalid address in payload: " ++ show c
-                    else do
-                      er <- liftIO $ encrypt pchan $
-                        PrivatePlaintext _aFrom (_alias (_nodeId conf)) _aTo (SZ.encode cb)
-                      case er of
-                        Left e -> die $ "sendPrivateBatch: encrypt failed: " ++ show e
-                                     ++ ", command: " ++ show c
-                        Right pc@PrivateCiphertext{..} -> do
-                          let hsh = Pact.hash $ _lPayload $ _pcEntity
-                              hc = Hashed pc hsh
-                          return (RequestKey (Pact.toUntypedHash hsh), PCWire $ SZ.encode hc)
-    queueRpcs rpcs)
-  (\e -> liftIO $ putStrLn $ "Exception caught in the handler 'sendPrivateBatch': " ++ show (e :: SomeException))
+sendPrivateBatch = catch sendBatch (\e -> liftIO $ putStrLn $
+    "Exception caught in the handler 'sendPrivateBatch': " ++ show (e :: SomeException))
+  where
+    sendBatch = do
+      conf <- view aiConfig >>= liftIO . readCurrentConfig
+      unless (_ecSending $ _entity conf) $ die "Node is not configured as private sending node"
+      Pact.SubmitBatch cmds <- readJSON
+      log $ "private: received batch of " ++ show (length cmds)
+      when (null cmds) $ die "Empty Batch"
+      rpcs <- mapM (cmdToWire conf) cmds
+      queueRpcs rpcs
+
+cmdToWire :: KCfg.Config -> Pact.Command T.Text -> Api (RequestKey, CMDWire)
+cmdToWire config cmd = do
+  let cb@Pact.Command{..} = fmap encodeUtf8 cmd
+  case eitherDecodeStrict' _cmdPayload of
+    Left e -> die $ "JSON payload decode failed: " ++ show e
+    Right (Pact.Payload{..} :: Pact.Payload Pact.PrivateMeta T.Text) -> do
+      addr@Pact.Address{..} <- addressFromMeta _pMeta cmd
+      if _aFrom `Set.member` _aTo || _aFrom /= (_elName $ _ecLocal$ _entity config)
+        then die $ "sendPrivateBatch: invalid address in payload: " ++ show cmd
+        else do
+          pc@PrivateCiphertext{..} <- addressToCipher addr cb config
+          let hsh = Pact.pactHash $ _lPayload $ _pcEntity
+              hc = Hashed pc $ Pact.hash $ _lPayload $ _pcEntity
+          return (RequestKey hsh, PCWire $ SZ.encode hc)
+
+addressToCipher :: Pact.Address -> Pact.Command BS.ByteString -> KCfg.Config -> Api PrivateCiphertext
+addressToCipher Pact.Address{..} cmd config = do
+  pchan <- view (aiDispatch.dispPrivateChannel)
+  plainTxt <- liftIO $ encrypt pchan $
+    PrivatePlaintext _aFrom (_alias (_nodeId config)) _aTo (SZ.encode cmd)
+  case plainTxt of
+    Left e -> die $ "sendPrivateBatch: encrypt failed: " ++ show e ++ "\n"
+                  ++ show plainTxt ++ ", command: " ++ show cmd
+    Right pc -> return pc
+
+addressFromMeta :: Pact.PrivateMeta -> Pact.Command T.Text -> Api Pact.Address
+addressFromMeta (Pact.PrivateMeta (Just addr)) _cmd = return addr
+addressFromMeta (Pact.PrivateMeta Nothing) cmd =
+  die $ "sendPrivateBatch: missing address in payload: " ++ show cmd
 
 poll :: Api ()
 poll = catch (do
@@ -258,17 +268,17 @@ tryParseJSON
      BSL.ByteString -> Api (BS.ByteString, t)
 tryParseJSON b = case eitherDecode b of
     Right v -> return (toStrict b,v)
-    Left e -> die $ "Left from tryParseJson check-it: " ++ e
+    Left e -> die $ "Left from tryParseJson: " ++ e
 
 parseSubmitBatch :: BSL.ByteString -> Api (BS.ByteString, Pact.SubmitBatch)
 parseSubmitBatch b = case eitherDecode b of
     (Right v :: Either String Pact.SubmitBatch) -> return (toStrict b,v)
-    Left e -> die $ "Left from tryParseJson check-it: " ++ e
+    Left e -> die $ "Left from tryParseJson: " ++ e
 
 parseSubmitCC :: BSL.ByteString -> Api (BS.ByteString, SubmitCC)
 parseSubmitCC b = case eitherDecode b of
     (Right v :: Either String SubmitCC) -> return (toStrict b,v)
-    Left e -> die $ "Left from tryParseJson check-it: " ++ e
+    Left e -> die $ "Left from tryParseJson: " ++ e
 
 setJSON :: Api ()
 setJSON = modifyResponse $ setHeader "Content-Type" "application/json"

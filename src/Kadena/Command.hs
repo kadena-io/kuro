@@ -36,7 +36,7 @@ import Data.Thyme.Clock
 import Data.Thyme.Time.Core ()
 import GHC.Generics
 
-import qualified Kadena.Crypto as KC
+import qualified Kadena.Types.Crypto as KC
 import Kadena.Execution.ConfigChange
 import Kadena.Types.Base
 import Kadena.Types.Command

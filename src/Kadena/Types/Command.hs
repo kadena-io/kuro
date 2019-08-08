@@ -47,7 +47,7 @@ import Data.Aeson
 import GHC.Generics
 import GHC.Int (Int64)
 
-import qualified Kadena.Crypto as KC
+import qualified Kadena.Types.Crypto as KC
 import Kadena.Types.Base (LogIndex, NodeId)
 import Kadena.Types.Private (PrivateCiphertext,PrivateResult(..))
 

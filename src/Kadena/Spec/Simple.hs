@@ -36,7 +36,7 @@ import qualified Kadena.Config.ClusterMembership as CM
 import Kadena.Config.TMVar
 import Kadena.Consensus.Service
 import Kadena.Types.Base
-import Kadena.Crypto
+import Kadena.Types.Crypto
 import Kadena.Types.Spec hiding (timeCache)
 import Kadena.Types.Metric
 import Kadena.Types.Dispatch

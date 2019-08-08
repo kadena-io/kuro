@@ -31,7 +31,6 @@ import GHC.Generics (Generic)
 import Pact.Types.Runtime (EntityName)
 import Pact.Types.Util (AsString(..),lensyToJSON,lensyParseJSON,toB16JSON,parseB16JSON,toB16Text)
 
-----------------------------------------------------------------------------------------------------
 newtype EntityPublicKey = EntityPublicKey { epPublicKey :: Dh.PublicKey Dh.Curve25519 }
 
 instance ToJSON EntityPublicKey  where
@@ -42,10 +41,8 @@ instance FromJSON EntityPublicKey where
     Nothing -> fail $ "Bad public key value: " ++ show v
     Just k -> return $ EntityPublicKey k
 
-----------------------------------------------------------------------------------------------------
 newtype EntitySecretKey = EntitySecretKey { esSecretKey :: Dh.SecretKey Dh.Curve25519 }
 
-----------------------------------------------------------------------------------------------------
 data EntityKeyPair = EntityKeyPair
   { ekSecret :: EntitySecretKey
   , ekPublic :: EntityPublicKey
@@ -83,7 +80,6 @@ genKeyPair = do
     , ekPublic = EntityPublicKey thePublicKey
     }
 
-----------------------------------------------------------------------------------------------------
 data EntityLocal = EntityLocal
   { _elName :: !EntityName
   , _elStatic :: !EntityKeyPair
@@ -97,7 +93,6 @@ instance Show EntityLocal where
 instance ToJSON EntityLocal where toJSON = lensyToJSON 3
 instance FromJSON EntityLocal where parseJSON = lensyParseJSON 3
 
-----------------------------------------------------------------------------------------------------
 data EntityRemote = EntityRemote
   { _erName :: !EntityName
   , _erStatic :: !EntityPublicKey
@@ -110,7 +105,6 @@ instance Show EntityRemote where
 instance ToJSON EntityRemote where toJSON = lensyToJSON 3
 instance FromJSON EntityRemote where parseJSON = lensyParseJSON 3
 
-----------------------------------------------------------------------------------------------------
 data EntityConfig = EntityConfig
   { _ecLocal :: EntityLocal
   , _ecRemotes :: [EntityRemote]

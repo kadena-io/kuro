@@ -20,7 +20,7 @@ import qualified Data.Set as Set
 import Data.Thyme.Time.Core ()
 import GHC.Generics
 
-import Kadena.Crypto (sign)
+import Kadena.Types.Crypto (sign)
 import Kadena.Log
 import Kadena.Types.Base
 import Kadena.Types.Message.Signed
@@ -49,14 +49,13 @@ instance WireFormat AppendEntries where
   toWire nid pubKey privKey AppendEntries{..} = case _aeProvenance of
     ReceivedMsg{..} -> SignedRPC _pDig _pOrig
     NewMsg ->
-      let bdy = fromMaybe (error "failure to compress AE") $
-                  compressHC $ S.encode $
-                  AEWire ( _aeTerm
-                         , _leaderId
-                         , _prevLogIndex
-                         , _prevLogTerm
-                         , encodeLEWire _aeEntries
-                         , toWire nid pubKey privKey <$> Set.toList _aeQuorumVotes )
+      let ae = S.encode $ AEWire ( _aeTerm
+                                  , _leaderId
+                                  , _prevLogIndex
+                                  , _prevLogTerm
+                                  , encodeLEWire _aeEntries
+                                  , toWire nid pubKey privKey <$> Set.toList _aeQuorumVotes )
+          bdy = fromMaybe ae (compressHC ae)
           hsh = P.pactHash bdy
           sig = sign hsh privKey pubKey
           dig = Digest (_alias nid) sig pubKey AE hsh

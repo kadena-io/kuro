@@ -298,15 +298,10 @@ publishCont pactTid step rollback cData = do
         (rpc :: PactRPC ()) = Continuation $ ContMsg pactTid step rollback cData Nothing
         (EntityKeyPair ksk kpk) = _ecSigner
     signer <- either (throwPactError . pretty) return $
-
-              -- TODO-Pact-3.0: Do we need a Scheme for this?
-              -- PCrypto.importKeyPair (PCrypto.toScheme Curve25519)
-              -- for now, just to get it to compile
-              PCrypto.importKeyPair
-                (PCrypto.toScheme ED25519)
-                (Just $ PCrypto.PubBS $ Dh.convert (Dh.dhPubToBytes (epPublicKey kpk)))
-                (PCrypto.PrivBS $ Dh.convert (Dh.dhSecToBytes (esSecretKey ksk)))
-
+      PCrypto.importKeyPair
+        (PCrypto.toScheme ED25519)
+        (Just $ PCrypto.PubBS $ Dh.convert (Dh.dhPubToBytes (epPublicKey kpk)))
+        (PCrypto.PrivBS $ Dh.convert (Dh.dhSecToBytes (esSecretKey ksk)))
     cmd <- liftIO $ mkCommand [signer] addy nonce rpc
     debug $ "Sending success continuation for pact: " ++ show rpc
     _rks <- publish _pePublish throwCmdEx $ (buildCmdRpcBS cmd) :| [] -- NonEmpty List

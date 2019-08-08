@@ -1,7 +1,6 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TupleSections #-}
 
 module Kadena.Messaging.Turbine.NewCMD
   ( newCmdTurbine
@@ -17,8 +16,8 @@ import Data.Foldable (toList)
 import Data.Thyme.Clock (getCurrentTime)
 
 import Kadena.Command
-import Kadena.Types.Crypto
 import Kadena.Types hiding (debugPrint)
+import Kadena.Types.KeySet
 import Kadena.Message
 import Kadena.Messaging.Turbine.Util
 import Kadena.Types.PreProc (ProcessRequestChannel(..), ProcessRequest(..))
@@ -66,12 +65,12 @@ verifyCmds ks prChan (InboundCMD (rAt, srpc))  = case signedRPCtoRPC (Just rAt) 
   Right !(NEW' (NewCmdRPC pcmds _)) -> do
     lat' <- mkCmdLatMetric rAt
     cmds' <- mapM (decodeAndInformPreProc prChan) pcmds -- (\x -> decodeCommandEither x >>= \y -> Right (rAt, y)) <$> pcmds
-    return $ fmap (fmap (lat',)) cmds'
+    return $ fmap (fmap (\c -> (lat', c))) cmds'
   Right !x -> error $! "Invariant Error: verifyCmds, encountered a non-`NEW'` SRPC in the CMD turbine: " ++ show x
 verifyCmds _ prChan (InboundCMDFromApi (rAt, NewCmdInternal{..})) = do
   lat' <- mkCmdLatMetric rAt
   cmds' <- mapM (decodeAndInformPreProc prChan) _newCmdInternal -- (\x -> decodeCommandEither x >>= \y -> Right (rAt, y)) <$> _newCmdInternal
-  return $ fmap (fmap (lat',)) cmds'
+  return $ fmap (fmap (\c -> (lat', c))) cmds'
 {-# INLINE verifyCmds #-}
 
 decodeAndInformPreProc :: ProcessRequestChannel -> CMDWire -> IO (Either String Command)

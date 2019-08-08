@@ -27,12 +27,9 @@ import Data.Maybe
 
 import Database.SQLite3.Direct
 
-import qualified Pact.Types.Hash as Pact (Hash)
 import qualified Pact.Types.Command as Pact
-
-import qualified Kadena.Types.Command as K (CommandResult(..))
+import Pact.Types.Runtime (TxId)
 import Kadena.Types
-import Kadena.Types.Private
 import Kadena.Types.Sqlite
 
 data HistType = SCC | CCC | PC deriving (Show, Eq)
@@ -53,62 +50,37 @@ htFromField s = Left $ "unrecognized 'type' field in history db: " ++ show s
 hashToField :: Hash -> SType
 hashToField h = SText $ Utf8 $ BSL.toStrict $ A.encode h
 
-crToField :: Pact.CommandResult Pact.Hash -> SType
-crToField cr = SText $ Utf8 $ BSL.toStrict $ A.encode cr
-
-clusterCrToField :: ClusterChangeResult -> SType
-clusterCrToField ccr = SText $ Utf8 $ BSL.toStrict $ A.encode ccr
-
-prToField :: PrivateResult (Pact.CommandResult Pact.Hash) -> SType
-prToField pr = SText $ Utf8 $ BSL.toStrict $ A.encode pr
+crToField :: A.Value -> SType
+crToField r = SText $ Utf8 $ BSL.toStrict $ A.encode r
 
 latToField :: Maybe CmdResultLatencyMetrics -> SType
 latToField r = SText $ Utf8 $ BSL.toStrict $ A.encode r
 
 latFromField :: (Show a1, A.FromJSON a) => a1 -> ByteString -> a
 latFromField cr lat = case A.eitherDecodeStrict' lat of
-      Left err -> error $ "crFromField: unable to decode CmdResultLatMetrics from database! "
-                        ++ show err ++ "\n" ++ show cr
+      Left err -> error $ "crFromField: unable to decode CmdResultLatMetrics from database! " ++ show err ++ "\n" ++ show cr
       Right v' -> v'
 
-scrFromField :: Pact.Hash -> LogIndex -> ByteString -> ByteString -> K.CommandResult
-scrFromField hsh logIndex crBytes latBytes =
-  SmartContractResult
-  { _crHash = hsh
-  , _scrResult = cr
-  , _crLogIndex = logIndex
-  , _crLatMetrics = (latFromField crBytes latBytes)
-  } where
-      cr = case A.eitherDecodeStrict' crBytes of
-        Left err -> error $ "crFromField: unable to decode Pact.CommandResult from database! "
-                          ++ show err ++ "\n" ++ show cr
-        Right (v' :: (Pact.CommandResult Hash)) -> v'
+crFromField :: Hash -> LogIndex -> Maybe TxId -> ByteString -> ByteString -> CommandResult
+crFromField hsh li tid cr lat = SmartContractResult hsh (Pact.CommandResult (Pact.RequestKey hsh) tid v) li (latFromField cr lat)
+  where
+    v = case A.eitherDecodeStrict' cr of
+      Left err -> error $ "crFromField: unable to decode CommandResult from database! " ++ show err ++ "\n" ++ show cr
+      Right v' -> v'
 
-consCrFromField :: Pact.Hash -> LogIndex -> ByteString -> ByteString -> K.CommandResult
-consCrFromField hsh logIndex ccrBytes latBytes =
-  ConsensusChangeResult
-  { _crHash = hsh
-  , _concrResult = ccr
-  , _crLogIndex = logIndex
-  , _crLatMetrics = (latFromField ccrBytes latBytes)
-  } where
-      ccr = case A.eitherDecodeStrict' ccrBytes of
-        Left err -> error $ "ccFromField: unable to decode ClusterChangeResult from database! "
-                          ++ show err ++ "\n" ++ show ccr
-        Right (v' :: ClusterChangeResult) -> v'
+ccFromField :: Hash -> LogIndex -> ByteString -> ByteString -> CommandResult
+ccFromField hsh li ccr lat = ConsensusChangeResult hsh v li (latFromField ccr lat)
+  where
+    v = case A.eitherDecodeStrict' ccr of
+      Left err -> error $ "ccFromField: unable to decode CommandResult from database! " ++ show err ++ "\n" ++ show ccr
+      Right v' -> v'
 
-pcrFromField :: Pact.Hash -> LogIndex -> ByteString -> ByteString -> K.CommandResult
-pcrFromField hsh logIndex pcrBytes latBytes =
-  PrivateCommandResult
-  { _crHash = hsh
-  , _pcrResult = pcr
-  , _crLogIndex = logIndex
-  , _crLatMetrics = (latFromField pcrBytes latBytes)
-  } where
-      pcr = case A.eitherDecodeStrict' pcrBytes of
-        Left err -> error $ "pcFromField: unable to decode PrivateCommandResult from database! "
-                          ++ show err ++ "\n" ++ show pcr
-        Right (v' :: (PrivateResult (Pact.CommandResult Hash))) -> v'
+pcFromField :: Hash -> LogIndex -> Maybe TxId -> ByteString -> ByteString -> CommandResult
+pcFromField hsh li tid pc lat = PrivateCommandResult hsh v li (latFromField pc lat)
+  where
+    v = case A.eitherDecodeStrict' pc of
+      Left err -> error $ "ccFromField: unable to decode CommandResult from database! " ++ show err ++ "\n" ++ show pc
+      Right v' -> fmap (Pact.CommandResult (Pact.RequestKey hsh) tid) v'
 
 sqlDbSchema :: Utf8
 sqlDbSchema =
@@ -154,21 +126,21 @@ insertRow s SmartContractResult{..} =
             ,SInt $ fromIntegral _crLogIndex
             ,SInt $ fromIntegral (fromMaybe (-1) (Pact._crTxId _scrResult))
             ,htToField SCC
-            ,crToField _scrResult
+            ,crToField (Pact._crResult _scrResult)
             ,latToField _crLatMetrics]
 insertRow s ConsensusChangeResult{..} =
     execs "insertRow" s [hashToField _crHash
             ,SInt $ fromIntegral _crLogIndex
             ,SInt $ -1
             ,htToField CCC
-            ,clusterCrToField _concrResult
+            ,crToField $ A.toJSON _concrResult
             ,latToField _crLatMetrics]
 insertRow s PrivateCommandResult{..} =
   execs "insertRow" s [hashToField _crHash
             ,SInt $ fromIntegral _crLogIndex
             ,SInt $ -1
             ,htToField PC
-            ,prToField  _pcrResult
+            ,crToField $ A.toJSON (Pact._crResult <$> _pcrResult)
             ,latToField _crLatMetrics]
 
 insertCompletedCommand :: DbEnv -> [CommandResult] -> IO ()
@@ -203,15 +175,16 @@ selectCompletedCommands e v = foldM f HashMap.empty v
       if null rs'
         then return m
         else case head rs' of
-          [SInt li, _, type'@SText{}, SText (Utf8 cr),SText (Utf8 lat)] -> do
+          [SInt li, SInt tid, type'@SText{}, SText (Utf8 cr),SText (Utf8 lat)] -> do
+            let tid' = if tid < 0 then Nothing else Just (fromIntegral tid)
             case htFromField type' of
               Left err -> dbError "selectCompletedCommands.2" $
                 "unmatched 'type': " ++ err ++ "\n## ROW ##\n" ++ show (head rs')
               Right SCC -> return $ HashMap.insert rk
-                (scrFromField (unRequestKey rk) (fromIntegral li) cr lat) m
+                (crFromField (unRequestKey rk) (fromIntegral li) tid' cr lat) m
               Right CCC -> return $ HashMap.insert rk
-                (consCrFromField (unRequestKey rk) (fromIntegral li) cr lat) m
+                (ccFromField (unRequestKey rk) (fromIntegral li) cr lat) m
               Right PC -> return $ HashMap.insert rk
-                (pcrFromField (unRequestKey rk) (fromIntegral li) cr lat) m
+                (pcFromField (unRequestKey rk) (fromIntegral li) tid' cr lat) m
           r -> dbError "selectCompletedCommands.3" $
             "Invalid result from query `History.selectCompletedCommands`: " ++ show r

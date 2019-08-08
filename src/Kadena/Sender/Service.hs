@@ -1,6 +1,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ImpredicativeTypes #-}
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -30,7 +31,7 @@ import Data.Thyme.Clock (UTCTime, getCurrentTime)
 import Kadena.Types.Base
 import Kadena.Types.Evidence
 import Kadena.Event (pprintBeat)
-import Kadena.Log.Types (LogIndex(..), LogServiceChannel)
+import Kadena.Log.Types (LogServiceChannel)
 import qualified Kadena.Log.Types as Log
 import Kadena.Message
 import Kadena.Types.Sender
@@ -40,6 +41,7 @@ import Kadena.Types.Comms
 import Kadena.Types.Dispatch (Dispatch(..))
 import qualified Kadena.Types.Dispatch as KD
 import Kadena.Types.Log (LogEntries(..))
+import Kadena.Log.Types (LogIndex(..))
 import qualified Kadena.Types.Log as Log
 import Kadena.Types.Message
 import Kadena.Types.Metric (Metric)
@@ -170,7 +172,7 @@ queryLogs q = do
 
 debug :: String -> SenderService StateSnapshot ()
 debug s = do
-  unless (null s) $ do
+  when (not (null s)) $ do
     dbg <- view debugPrint
     liftIO $ dbg $ "[Service|Sender] " ++ s
 
@@ -312,7 +314,7 @@ canBroadcastAE cm nodeIndexMap ct myNodeId' vts broadcastControl =
           return $! Just $! AE' $ AppendEntries ct myNodeId' pli plt es Set.empty NewMsg
       if everyoneBelieves
       then do
-        debug $ "canBroadcastAE - Backsteet -"
+        debug $ "canBroadcastAE - Backsteet -" 
               ++ "\n\tlaggingFollowers: " ++ show laggingFollowers
         return $ BackStreet inSyncRpc laggingFollowers
       else do

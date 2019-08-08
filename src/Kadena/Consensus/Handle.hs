@@ -1,3 +1,4 @@
+
 module Kadena.Consensus.Handle
   ( handleEvents )
 where

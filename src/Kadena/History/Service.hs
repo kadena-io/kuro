@@ -41,8 +41,8 @@ import qualified Kadena.Types.Dispatch as D
 import Kadena.Event (pprintBeat)
 
 #define cpp_compile_time (__DATE__ ++ " " ++ __TIME__)
-_compileTime :: String
-_compileTime = cpp_compile_time
+compileTime :: String
+compileTime = cpp_compile_time
 
 initHistoryEnv
   :: Dispatch
@@ -51,7 +51,7 @@ initHistoryEnv
   -> GlobalConfigTMVar
   -> IO HistoryEnv
 initHistoryEnv dispatch' debugPrint' getTimestamp' cfgTmVar = do
-  rconf <- readCurrentConfig cfgTmVar
+  rconf <- readCurrentConfig cfgTmVar 
   return $ HistoryEnv
     { _henvHistoryChannel = dispatch' ^. D.dispHistoryChannel
     , _henvDebugPrint = debugPrint'
@@ -77,7 +77,7 @@ runHistoryService env mState = catchAndRethrow "historyService" $ do
 
 debug :: String -> HistoryService ()
 debug s = do
-  unless (null s) $ do
+  when (not (null s)) $ do
     dbg <- view henvDebugPrint
     liftIO $! dbg $ "[Service|History] " ++ s
 
@@ -210,7 +210,7 @@ queryForExisting (srks, mRes) = do
   start <- now
   case pers of
     InMemory m -> do
-      found <- return $! HashSet.intersection srks $ HashSet.fromMap $ void m
+      found <- return $! HashSet.intersection srks $ HashSet.fromMap $ const () <$> m
       liftIO $! putMVar mRes $ ExistenceResult found
     OnDisk{..} -> do
       foundInMem <- return $ HashSet.intersection srks incompleteRequestKeys
@@ -265,12 +265,12 @@ checkForIndividualResultInMem s k (Just _) = HashSet.member k s
 registerNewListeners :: HashMap RequestKey (MVar ListenerResult) -> HistoryService ()
 registerNewListeners newListeners' = do
   start <- now
-  srks <- return $! HashSet.fromMap $ void newListeners'
+  srks <- return $! HashSet.fromMap $ const () <$> newListeners'
   pers <- use persistence
   found <- case pers of
     InMemory m -> return $! fromJust <$> HashMap.filterWithKey (checkForIndividualResultInMem srks) m
     OnDisk{..} -> liftIO $! DB.selectCompletedCommands dbConn srks
-  noNeedToListen <- return $! HashSet.intersection (HashSet.fromMap $ void found) srks
+  noNeedToListen <- return $! HashSet.intersection (HashSet.fromMap $ const () <$> found) srks
   readyToServiceListeners <- return $! HashMap.filterWithKey (\k _ -> HashSet.member k noNeedToListen) newListeners'
   realListeners <- return $! HashMap.filterWithKey (\k _ -> not $ HashSet.member k noNeedToListen) newListeners'
   unless (HashMap.null readyToServiceListeners) $ do

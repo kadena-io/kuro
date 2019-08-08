@@ -1,22 +1,12 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DefaultSignatures #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE UndecidableInstances #-}
 
 module Kadena.Types.Message.Signed
-  ( Provenance(..), pDig, pOrig, pTimeStamp
+  ( MsgType(..)
+  , Provenance(..), pDig, pOrig, pTimeStamp
   , Digest(..), digNodeId, digSig, digPubkey, digType, digHash
-  , MsgType(..)
   , SignedRPC(..)
   -- for testing & benchmarks
   , verifySignedRPC, verifySignedRPCNoReHash
@@ -27,36 +17,37 @@ module Kadena.Types.Message.Signed
 import Control.Exception
 import Control.Lens hiding (Index)
 import Control.Parallel.Strategies
-
-import qualified Crypto.Ed25519.Pure as Ed25519
+import Data.Typeable
 
 import qualified Data.Map as Map
 import Data.ByteString (ByteString)
 import Data.Serialize (Serialize)
 import Data.Thyme.Time.Core ()
-import Data.Typeable
 import GHC.Generics
 
-import Kadena.Types.Crypto
 import Kadena.Types.Base
+import Kadena.Types.KeySet
 
-import Pact.Types.Hash
-
+-- | One way or another we need a way to figure our what set of public keys to use for verification of signatures.
+-- By placing the message type in the digest, we can make the WireFormat implementation easier as well. CMD and REV
+-- need to use the Client Public Key maps.
 data MsgType = AE | AER | RV | RVR | NEW
   deriving (Show, Eq, Ord, Generic)
 instance Serialize MsgType
 
+-- | Digest containing Sender ID, Signature, Sender's Public Key and the message type
 data Digest = Digest
   { _digNodeId :: !Alias
-  , _digSig    :: !Ed25519.Signature
-  , _digPubkey :: !Ed25519.PublicKey
+  , _digSig    :: !Signature
+  , _digPubkey :: !PublicKey
   , _digType   :: !MsgType
   , _digHash   :: !Hash
-  } deriving (Show, Eq, Ord, Serialize, Generic)
+  } deriving (Show, Eq, Ord, Generic)
 makeLenses ''Digest
 
--- | Provenance is used to track if we made the message or received it. This is important for
---   re-transmission.
+instance Serialize Digest
+
+-- | Provenance is used to track if we made the message or received it. This is important for re-transmission.
 data Provenance =
   NewMsg |
   ReceivedMsg
@@ -65,18 +56,19 @@ data Provenance =
     , _pTimeStamp :: !(Maybe ReceivedAt)
     } deriving (Show, Eq, Ord, Generic)
 -- instance Serialize Provenance <== This is bait, if you uncomment it you've done something wrong
--- We really want to be sure that Provenance from one Node isn't by accident transferred to another
--- node. Without a Serialize instance, we can be REALLY sure.
+-- We really want to be sure that Provenance from one Node isn't by accident transferred to another node.
+-- Without a Serialize instance, we can be REALLY sure.
 makeLenses ''Provenance
 
 -- | Type that is serialized and sent over the wire
 data SignedRPC = SignedRPC
   { _sigDigest :: !Digest
   , _sigBody   :: !ByteString
-  } deriving (Eq, Show, Serialize, Generic)
+  } deriving (Show, Eq, Generic)
+instance Serialize SignedRPC
 
 class WireFormat a where
-  toWire   :: NodeId -> Ed25519.PublicKey -> Ed25519.PrivateKey -> a -> SignedRPC
+  toWire   :: NodeId -> PublicKey -> PrivateKey -> a -> SignedRPC
   fromWire :: Maybe ReceivedAt -> KeySet -> SignedRPC -> Either String a
 
 newtype DeserializationError = DeserializationError String deriving (Show, Eq, Typeable)
@@ -84,29 +76,27 @@ newtype DeserializationError = DeserializationError String deriving (Show, Eq, T
 instance Exception DeserializationError
 
 -- | Based on the MsgType in the SignedRPC's Digest, choose the keySet to try to find the key in
-pickKey :: KeySet -> SignedRPC -> Either String Ed25519.PublicKey
-pickKey !KeySet{..} sRpc@(SignedRPC !Digest{..} _) =
+pickKey :: KeySet -> SignedRPC -> Either String PublicKey
+pickKey !KeySet{..} s@(SignedRPC !Digest{..} _) =
   case Map.lookup _digNodeId _ksCluster of
     Nothing -> Left $! "PubKey not found for NodeId: " ++ show _digNodeId
     Just !key
-      | key /= _digPubkey -> Left $! "Public key in storage doesn't match digest's key for msg: "
-                                     ++ show sRpc
+      | key /= _digPubkey -> Left $! "Public key in storage doesn't match digest's key for msg: " ++ show s
       | otherwise -> Right $! key
 {-# INLINE pickKey #-}
 
 verifySignedRPC :: KeySet -> SignedRPC -> Either String ()
-verifySignedRPC ks signed = pickKey ks signed >>= rehashAndVerify signed
+verifySignedRPC ks s = pickKey ks s >>= rehashAndVerify s
 {-# INLINE verifySignedRPC #-}
 
 verifySignedRPCNoReHash :: KeySet -> SignedRPC -> Either String ()
 verifySignedRPCNoReHash ks s = pickKey ks s >>= verifyNoHash s
 {-# INLINE verifySignedRPCNoReHash #-}
 
-rehashAndVerify :: SignedRPC -> Ed25519.PublicKey -> Either String ()
+rehashAndVerify :: SignedRPC -> PublicKey -> Either String ()
 rehashAndVerify s@(SignedRPC !Digest{..} !bdy) !key = runEval $ do
-  h <- rpar $ pactHash bdy
+  h <- rpar $ hash bdy
   c <- rpar $ valid _digHash key _digSig
-
   hashRes <- rseq h
   if hashRes /= _digHash
   then return $! Left $! "Unable to verify SignedRPC hash: "
@@ -120,7 +110,7 @@ rehashAndVerify s@(SignedRPC !Digest{..} !bdy) !key = runEval $ do
     else return $! Right ()
 {-# INLINE rehashAndVerify #-}
 
-verifyNoHash :: SignedRPC -> Ed25519.PublicKey -> Either String ()
+verifyNoHash :: SignedRPC -> PublicKey -> Either String ()
 verifyNoHash s@(SignedRPC !Digest{..} _) key =
   if not $ valid _digHash key _digSig
   then Left $! "Unable to verify SignedRPC sig: " ++ show s

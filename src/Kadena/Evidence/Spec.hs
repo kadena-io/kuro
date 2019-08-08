@@ -16,8 +16,8 @@ module Kadena.Evidence.Spec
   , esHashAtCommitIndex, esEvidenceCache, esMaxCachedIndex, esMaxElectionTimeout
   , esClusterMembers
   , EvidenceProcessor
-  , publishMetric
   , debugFn
+  , publishMetric
   , getEvidenceQuorumSize
   ) where
 
@@ -34,15 +34,13 @@ import Data.Thyme.Clock
 
 import Kadena.Config.TMVar
 import Kadena.Types.Base
+import Kadena.Types.Metric
 import Kadena.Config.ClusterMembership
 import Kadena.Log.Types (LogServiceChannel)
 import Kadena.Types.Message
 import Kadena.Types.Evidence
 import Kadena.Types.Event (ResetLeaderNoFollowersTimeout)
-import Kadena.Types.Metric
 import Kadena.Util.Util
-
-import Pact.Types.Hash
 
 data EvidenceEnv = EvidenceEnv
   { _logService :: !LogServiceChannel
@@ -88,7 +86,7 @@ initEvidenceState clusterMembers' commidIndex' maxElectionTimeout' = EvidenceSta
   { _esClusterMembers = clusterMembers'
   , _esQuorumSize = getEvidenceQuorumSize $ countOthers clusterMembers'
   , _esChangeToQuorumSize = getEvidenceQuorumSize $ countTransitional clusterMembers'
-  , _esNodeStates = Map.fromSet (const (commidIndex',minBound)) (otherNodes clusterMembers')
+  , _esNodeStates = Map.fromSet (\_ -> (commidIndex',minBound)) (otherNodes clusterMembers')
   , _esConvincedNodes = Set.empty
   , _esPartialEvidence = Map.empty
   , _esCommitIndex = commidIndex'
@@ -96,8 +94,8 @@ initEvidenceState clusterMembers' commidIndex' maxElectionTimeout' = EvidenceSta
   , _esCacheMissAers = Set.empty
   , _esMismatchNodes = Set.empty
   , _esResetLeaderNoFollowers = False
-  , _esHashAtCommitIndex = pactInitialHash
-  , _esEvidenceCache = Map.singleton startIndex pactInitialHash
+  , _esHashAtCommitIndex = initialHash
+  , _esEvidenceCache = Map.singleton startIndex initialHash
   , _esMaxElectionTimeout = maxElectionTimeout'
   }
 

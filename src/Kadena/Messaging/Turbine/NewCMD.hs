@@ -17,7 +17,7 @@ import Data.Foldable (toList)
 import Data.Thyme.Clock (getCurrentTime)
 
 import Kadena.Command
-import Kadena.Crypto
+import Kadena.Types.Crypto
 import Kadena.Types hiding (debugPrint)
 import Kadena.Message
 import Kadena.Messaging.Turbine.Util

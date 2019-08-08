@@ -2,8 +2,9 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module Kadena.Crypto
+module Kadena.Types.Crypto
   ( KeyPair(..), kpPublicKey, kpPrivateKey
   , KeySet(..), ksCluster
   , Signer(..), siPubKey, siAddress, siScheme
@@ -13,20 +14,23 @@ module Kadena.Crypto
 
 import Control.DeepSeq
 import Control.Lens (makeLenses)
+
 import qualified Crypto.Ed25519.Pure as Ed25519
+
 import Data.Aeson
 import Data.Default
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Serialize (Serialize)
 import Data.Text (Text)
+
 import GHC.Generics
 
 import qualified Pact.Types.Hash as P
 import qualified Pact.Types.Scheme as P
 import Pact.Types.Util (lensyParseJSON, lensyToJSON, toB16JSON)
+import qualified Pact.Types.Util as P
 
-import Kadena.Orphans ()
 import Kadena.Types.Base (Alias)
 
 ----------------------------------------------------------------------------------------------------
@@ -70,6 +74,30 @@ makeLenses ''KeySet
 
 instance Default KeySet where
   def = KeySet Map.empty
+
+----------------------------------------------------------------------------------------------------
+instance ToJSON Ed25519.PublicKey where
+  toJSON = P.toB16JSON . Ed25519.exportPublic
+instance FromJSON Ed25519.PublicKey where
+  parseJSON = withText "Ed25519.PublicKey" P.parseText
+  {-# INLINE parseJSON #-}
+instance P.ParseText Ed25519.PublicKey where
+  parseText s = do
+    s' <- P.parseB16Text s
+    P.failMaybe ("Public key import failed: " ++ show s) $ Ed25519.importPublic s'
+  {-# INLINE parseText #-}
+
+----------------------------------------------------------------------------------------------------
+instance ToJSON Ed25519.PrivateKey where
+  toJSON = P.toB16JSON . Ed25519.exportPrivate
+instance FromJSON Ed25519.PrivateKey where
+  parseJSON = withText "Ed25519.PrivateKey" P.parseText
+  {-# INLINE parseJSON #-}
+instance P.ParseText Ed25519.PrivateKey where
+  parseText s = do
+    s' <- P.parseB16Text s
+    P.failMaybe ("Private key import failed: " ++ show s) $ Ed25519.importPrivate s'
+  {-# INLINE parseText #-}
 
 ----------------------------------------------------------------------------------------------------
 valid :: P.Hash -> Ed25519.PublicKey -> Ed25519.Signature -> Bool

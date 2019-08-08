@@ -11,7 +11,7 @@ module Kadena.Types.Turbine
 import Control.Concurrent (MVar)
 import Control.Lens
 
-import Kadena.Crypto (KeySet(..))
+import Kadena.Types.Crypto (KeySet(..))
 import Kadena.Types.Dispatch (Dispatch(..))
 
 data ReceiverEnv = ReceiverEnv

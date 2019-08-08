@@ -10,8 +10,6 @@ module Kadena.Types.Config
   , GlobalConfigTMVar
   ) where
 
-import qualified Crypto.Ed25519.Pure as Ed25519
-import Data.Serialize (Serialize)
 import Data.Set (Set)
 import Data.Thyme.Time.Core ()
 import GHC.Generics
@@ -28,21 +26,3 @@ data DiffNodes = DiffNodes
   { nodesToAdd :: !(Set NodeId)
   , nodesToRemove :: !(Set NodeId)
   } deriving (Show,Eq,Ord,Generic)
-
--- Not implemented
-data AdminUpdateCommand =
-    AddAdminKey
-      { _aucAlias :: !Alias
-      , _cucPublicKey :: !Ed25519.PublicKey } |
-    UpdateAdminKey
-      { _aucAlias :: !Alias
-      , _cucPublicKey :: !Ed25519.PublicKey } |
-    RemoveAdminKey
-      { _aucAlias :: !Alias }
-    deriving (Show, Eq, Ord, Generic, Serialize)
-
--- Not implemented
-data AdminCommand =
-    RotateLeader
-      { _cucTerm :: !Term }
-    deriving (Show, Eq, Ord, Generic, Serialize)

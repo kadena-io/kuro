@@ -47,7 +47,7 @@ import GHC.Generics
 import qualified Pact.Types.Hash as P
 
 import qualified Kadena.Config.TMVar as Cfg
-import Kadena.Crypto
+import Kadena.Types.Crypto
 import Kadena.Types.Base as X
 import Kadena.Types.Log
 import Kadena.Types.Comms

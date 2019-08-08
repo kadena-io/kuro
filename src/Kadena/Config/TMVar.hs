@@ -30,7 +30,7 @@ import Pact.Types.Util
 
 import qualified Kadena.Config.ClusterMembership as CM
 import Kadena.Types.PactDB
-import Kadena.Orphans ()
+import Kadena.Types.Crypto ()
 import Kadena.Types.Base
 import Kadena.Types.Entity
 

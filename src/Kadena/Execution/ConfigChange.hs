@@ -15,7 +15,7 @@ import qualified Pact.Types.Command as P (UserSig(..))
 import qualified Pact.Types.Hash as P (hash)
 import Pact.Types.Hash (PactHash, toUntypedHash)
 
-import Kadena.Crypto (Signer(..), valid)
+import Kadena.Types.Crypto (Signer(..), valid)
 import Kadena.Types.Message.Signed (DeserializationError(..))
 import Kadena.Types.Command(CCPayload(..), ClusterChangeCommand(..), ProcessedClusterChg (..))
 
@@ -51,12 +51,6 @@ decodeCCPayload bsCmd =
 
 validateSig :: PactHash -> (Signer, P.UserSig) ->  (Bool, Ed25519.PublicKey, Ed25519.Signature)
 validateSig h (signer, userSig) =
-  -- let keyBytes = toS (_siPubKey signer) :: ByteString
-  --     keyMay = Ed25519.importPublic $ fst $ B16.decode keyBytes
-  --     sigBytes = toS _usSig :: ByteString
-  --     sig = Ed25519.Sig $ fst $ B16.decode sigBytes
-  --     b = maybe False (\k -> valid h k sig) keyMay
-  -- in (b, keyMay, sig)
   let pubKey = _siPubKey signer
       sigBytes = toS $ P._usSig  userSig
       sig = Ed25519.Sig $ fst $ B16.decode sigBytes

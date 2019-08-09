@@ -18,7 +18,7 @@ publicKeys:
 aeBatchSize: 20000
 heartbeatTimeout: 2000000
 logDir: ./log
-apiPort: 8002
+apiPort: 7023
 logRules:
   PactService:
     include: null

@@ -256,6 +256,7 @@ postWithRetry ep server' rq = do
     go :: (FromJSON t) => IO (Response (ApiResponse t))
     go = do
       let url = "http://" ++ server' ++ "/api/v1/" ++ ep
+      putStrLn url
       let opts = defaults & manager .~ Left (defaultManagerSettings
             { managerResponseTimeout = responseTimeoutMicro (timeoutSeconds * 1000000) } )
       r <- liftIO $ postWith opts url (toJSON rq)
@@ -263,11 +264,9 @@ postWithRetry ep server' rq = do
                         -- aka IO (Respose (Either String Pact.RequestKeys))
       case resp ^. responseBody of
         Left _err -> do
-          putStrLn $ "postWithRetry responseBody is Left: " ++ _err
           sleep 1
           go
-        Right _r -> do
-          putStrLn $ "postWithRetry responseBody is Right: "
+        Right _r ->
           return resp
 
 handleHttpResp :: (t -> Repl ()) -> Response (ApiResponse t) -> Repl ()

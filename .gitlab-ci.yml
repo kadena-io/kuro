@@ -3,11 +3,11 @@ pact-macos:
     - macos
   script:
     # - nix-build
-    - nix-shell --pure -p stack libiconv zlib ncurses gmp git perl gcc zeromq unixODBC openssl -I nixpkgs=https://github.com/NixOS/nixpkgs-channels/archive/754763ff4ba1dd03fe3fad3a0fea36d2e39f5860.tar.gz --run "stack test --fast"
+    - nix-shell -p stack libiconv zlib ncurses gmp git perl gcc zeromq unixODBC openssl -I nixpkgs=https://github.com/NixOS/nixpkgs-channels/archive/754763ff4ba1dd03fe3fad3a0fea36d2e39f5860.tar.gz --run "stack test --fast"
 
 pact-linux:
   tags:
     - linux
   script:
     # - nix-build
-    - nix-shell --pure -p stack libiconv zlib ncurses gmp git perl gcc zeromq unixODBC openssl -I nixpkgs=https://github.com/NixOS/nixpkgs-channels/archive/754763ff4ba1dd03fe3fad3a0fea36d2e39f5860.tar.gz --run "stack test --fast"
+    - nix-shell -p stack libiconv zlib ncurses gmp git perl gcc zeromq unixODBC openssl -I nixpkgs=https://github.com/NixOS/nixpkgs-channels/archive/754763ff4ba1dd03fe3fad3a0fea36d2e39f5860.tar.gz --run "stack test --fast"

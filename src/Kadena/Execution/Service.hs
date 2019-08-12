@@ -18,6 +18,7 @@ import Data.Serialize (decode)
 import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Map.Strict as Map
 import Data.Thyme.Clock
+import Data.Tuple.Strict (T2(..))
 import Data.Maybe (fromJust)
 import Data.ByteString (ByteString)
 
@@ -86,11 +87,12 @@ onUpdateConf oChan conf@Config{ _nodeId = nodeId' } = do
 runExecutionService :: ExecutionEnv -> Publish -> NodeId -> KeySet -> IO ()
 runExecutionService env pub nodeId' keySet' = do
   cmdExecInter <- initPactService env pub
-  initExecutionState <- return $! ExecutionState {
-    _csNodeId = nodeId',
-    _csKeySet = keySet',
-    _csCommandExecInterface = cmdExecInter}
-  let cu = ConfigUpdater (env ^. eenvDebugPrint) "Service|Execution" (onUpdateConf (env ^. eenvExecChannel))
+  initExecutionState <- return ExecutionState {
+    _esNodeId = nodeId',
+    _esKeySet = keySet',
+    _esKCommandExecInterface = cmdExecInter,
+    _esModuleCache = mempty}
+  let cu = ConfigUpdater (_eenvDebugPrint env) "Service|Execution" (onUpdateConf (_eenvExecChannel env))
   linkAsyncTrack "ExecutionConfUpdater" $ CfgChange.runConfigUpdater cu (env ^. eenvMConfig)
   void $ runRWST handle env initExecutionState
 
@@ -120,14 +122,14 @@ handle = do
         conf <- liftIO $ Cfg.readCurrentConfig gCfg
         liftIO (pprintBeat t conf) >>= debug
       ChangeNodeId{..} -> do
-        prevNodeId <- use csNodeId
+        prevNodeId <- use esNodeId
         unless (prevNodeId == newNodeId) $ do
-          csNodeId .= newNodeId
+          esNodeId .= newNodeId
           debug $ "Changed NodeId: " ++ show prevNodeId ++ " -> " ++ show newNodeId
       UpdateKeySet{..} -> do
-        prevKeySet <- use csKeySet
+        prevKeySet <- use esKeySet
         unless (prevKeySet == newKeySet) $ do
-          csKeySet .= newKeySet
+          esKeySet .= newKeySet
           debug $ "Updated keyset"
       ExecuteNewEntries{..} -> do
         debug $ (show . Log.lesCnt $ logEntriesToApply)
@@ -182,7 +184,8 @@ getPendingPreProcCCC startTime mvResult = liftIO (tryReadMVar mvResult) >>= \cas
 
 applyCommand :: UTCTime -> LogEntry -> ExecutionService (RequestKey, CommandResult)
 applyCommand _tEnd le@LogEntry{..} = do
-  apply <- Pact._ceiApplyPPCmd <$> use csCommandExecInterface
+  apply <- _kceiApplyPPCmd <$> use esKCommandExecInterface
+  moduleCache <- use esModuleCache
   startTime <- now
   logApplyLatency startTime le
   let chash = Pact.toUntypedHash $ getCmdBodyHash _leCommand
@@ -204,8 +207,9 @@ applyCommand _tEnd le@LogEntry{..} = do
         Result{..}  -> do
           debug $ "WARNING: fully resolved pact command found for " ++ show _leLogIndex
           return $! (result, _leCmdLatMetrics)
-      result <- liftIO $ apply Pact.Transactional _sccCmd pproc
+      (T2 result moduleCache') <- liftIO $ apply Pact.Transactional moduleCache _sccCmd pproc
       lm <- stamp ppLat
+      assign esModuleCache moduleCache' -- update the cache stored in ExecutionState
       return ( rkey
              , SmartContractResult
                { _crHash = chash
@@ -229,6 +233,7 @@ applyCommand _tEnd le@LogEntry{..} = do
       gcm <- view eenvMConfig
       result <- liftIO $ CfgChange.mutateGlobalConfig gcm pproc
       lm <- stamp ppLat
+      -- Note: no module cache update required for ConcensusChangeCommand
       return ( rkey
              , ConsensusChangeResult
                { _crHash = chash
@@ -242,6 +247,7 @@ applyCommand _tEnd le@LogEntry{..} = do
       let finish pr = stamp _leCmdLatMetrics >>= \l ->
             return (rkey, PrivateCommandResult chash pr _leLogIndex l)
       case r of
+        -- Note: module cache updates for PrivateCommands are done in applyPrivate
         Left e -> finish (PrivateFailure (show e))
         Right Nothing -> finish PrivatePrivate
         Right (Just pm) -> do
@@ -256,13 +262,19 @@ applyPrivate LogEntry{..} PrivatePlaintext{..} = case decode _ppMessage of
   Right cmd -> case Pact.verifyCommand cmd of
     Pact.ProcFail e -> return $ Left e
     p@Pact.ProcSucc {} -> do
-      apply <- Pact._ceiApplyPPCmd <$> use csCommandExecInterface
-      Right <$> liftIO (apply Pact.Transactional cmd p)
+      moduleCache <- use esModuleCache
+      apply <- _kceiApplyPPCmd <$> use esKCommandExecInterface
+      (T2 result moduleCache') <- liftIO (apply Pact.Transactional moduleCache cmd p)
+      assign esModuleCache moduleCache' -- update the cache stored in ExecutionState
+      liftIO $ return $ Right result
+
 
 applyLocalCommand :: (Pact.Command ByteString, MVar Pact.PactResult) -> ExecutionService ()
 applyLocalCommand (cmd, mv) = do
-  applyLocal <- Pact._ceiApplyCmd <$> use csCommandExecInterface
-  cr <- liftIO $ applyLocal Pact.Local cmd
+  moduleCache <- use esModuleCache
+  applyLocal <- _kceiApplyCmd <$> use esKCommandExecInterface
+  (T2 cr moduleCache') <- liftIO $ applyLocal Pact.Local moduleCache cmd
+  assign esModuleCache moduleCache' -- update the cache stored in ExecutionState
   liftIO $ putMVar mv (Pact._crResult cr)
 
 -- | This may be used in the future for configuration changes other than cluster membership changes.

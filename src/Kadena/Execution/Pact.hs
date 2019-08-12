@@ -1,17 +1,21 @@
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
+
 module Kadena.Execution.Pact
-  (initPactService)
+  ( PactEnv(..), peMode, peDbEnv, peCommand, peLogger, pePublish ,peEntity, peGasLimit, peModuleCache
+  , initPactService )
   where
 
 import Control.Concurrent (newMVar)
 import Control.Exception (SomeException)
 import Control.Exception.Safe (tryAny)
+import Control.Lens
 import Control.Monad
-import Control.Monad.Catch (throwM)
+import Control.Monad.Catch (catches, Handler(..), MonadCatch, throwM)
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad.Reader (ask,ReaderT,runReaderT,reader)
+import Control.Monad.Reader (ask, ReaderT, runReaderT, reader)
 import Crypto.Noise as Dh (convert)
 import qualified Crypto.Noise.DH as Dh
 import Data.Aeson as A
@@ -19,6 +23,7 @@ import Data.Default
 import Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.Set as S
 import Data.String
+import Data.Tuple.Strict (T2(..))
 import Data.Word
 import System.Directory (doesFileExist,removeFile)
 
@@ -33,14 +38,17 @@ import qualified Pact.Persist.SQLite as SQLite
 import qualified Pact.Persist.WriteBehind as WB
 import Pact.PersistPactDb (initDbEnv,pactdb)
 import Pact.Server.PactService (resultFailure,resultSuccess)
+import Pact.Types.ChainMeta
+import qualified Pact.Types.Command as Pact (Command(..), CommandResult(..))
 import Pact.Types.Command
 import qualified Pact.Types.Crypto as PCrypto
-import Pact.Types.Gas (GasEnv(..))
+import Pact.Types.Gas (GasEnv(..), GasLimit)
 import Pact.Types.Logger (logLog,Logger,Loggers,newLogger)
+import Pact.Types.Persistence
 import Pact.Types.Pretty
 import Pact.Types.RPC
 import qualified Pact.Types.Runtime as P (PublicKey)
-import Pact.Types.Runtime
+import Pact.Types.Runtime hiding (catchesPactError)
 import Pact.Types.Scheme
 import Pact.Types.SPV
 import Pact.Types.Server (throwCmdEx,userSigsToPactKeySet)
@@ -54,24 +62,27 @@ import Kadena.Util.Util (linkAsyncBoundTrack)
 data PactEnv p = PactEnv {
       _peMode :: ExecutionMode
     , _peDbEnv :: PactDbEnv p
-    , _peCommand :: Command (Payload PrivateMeta ParsedCode)
+    , _peCommand :: Pact.Command (Payload PrivateMeta ParsedCode)
     , _pePublish :: Publish
     , _peEntity :: EntityConfig
     , _peLogger :: Logger
     , _peGasLimit :: GasLimit
+    , _peModuleCache ::  ModuleCache
     }
+makeLenses ''PactEnv
 
 type PactM p = ReaderT (PactEnv p) IO
 
 runPact :: PactEnv p -> (PactM p a) -> IO a
 runPact e a = runReaderT a e
 
-
 logInit :: Logger -> String -> IO ()
 logInit l = logLog l "INIT"
 
-initPactService :: ExecutionEnv -> Publish ->
-                   IO (CommandExecInterface PrivateMeta ParsedCode Hash)
+initPactService
+  :: ExecutionEnv
+  -> Publish
+  -> IO (KCommandExecInterface PrivateMeta ParsedCode Hash)
 initPactService ExecutionEnv{..} pub = do
   let PactPersistConfig{..} = _eenvPactPersistConfig
       logger = newLogger _eenvExecLoggers "PactService"
@@ -98,37 +109,72 @@ initPactService ExecutionEnv{..} pub = do
       logInit logger "Initializing MySQL"
       initWB MySQL.persister =<< MySQL.initMySQL conf _eenvExecLoggers
 
-initCommandInterface :: EntityConfig -> Publish -> Logger -> Loggers -> Persister w -> w ->
-                        IO (CommandExecInterface PrivateMeta ParsedCode Hash)
+initCommandInterface
+  :: EntityConfig
+  -> Publish
+  -> Logger
+  -> Loggers
+  -> Persister w
+  -> w
+  -> IO (KCommandExecInterface PrivateMeta ParsedCode Hash)
 initCommandInterface ent pub logger loggers p db = do
   pde <- PactDbEnv pactdb <$> newMVar (initDbEnv loggers p db)
   logInit logger "Creating Pact Schema"
   initSchema pde
-  return CommandExecInterface
-    { _ceiApplyCmd = \eMode cmd -> applyCmd ent pub logger pde eMode cmd (verifyCommand cmd)
-    , _ceiApplyPPCmd = applyCmd ent pub logger pde }
+  return KCommandExecInterface
+    { _kceiApplyCmd = \eMode modCache cmd
+        -> applyCmd ent pub logger pde eMode modCache cmd (verifyCommand cmd)
+    , _kceiApplyPPCmd = applyCmd ent pub logger pde}
 
+applyCmd
+  :: EntityConfig
+  -> Publish
+  -> Logger
+  -> PactDbEnv p
+  -> ExecutionMode
+  -> ModuleCache
+  -> Pact.Command a
+  -> (ProcessedCommand PrivateMeta ParsedCode)
+  -> IO (T2 (Pact.CommandResult Hash) ModuleCache)
+applyCmd _ _ _ _ _ moduleCache cmd (ProcFail s) =
+  return $ (T2 (resultFailure
+                   Nothing
+                   (cmdToRequestKey cmd)
+                   (PactError TxFailure def def . viaShow $ s))
+           moduleCache) -- Not updating moduleCache on failure
 
-
-
-applyCmd :: EntityConfig -> Publish -> Logger -> PactDbEnv p -> ExecutionMode -> Command a ->
-            (ProcessedCommand PrivateMeta ParsedCode) -> IO (CommandResult Hash)
-applyCmd _ _ _ _ _ cmd (ProcFail s) =
-  return $ resultFailure
-           Nothing
-           (cmdToRequestKey cmd)
-           (PactError TxFailure def def . viaShow $ s)
-applyCmd ent pub logger dbv exMode _ (ProcSucc cmd) = do
+applyCmd ent pub logger dbv exMode moduleCache _ (ProcSucc cmd) = do
   -- TODO read tx gasLimit from config
   let gasLimit = 10000
-  r <- catchesPactError $ runPact (PactEnv exMode dbv cmd pub ent logger gasLimit) $ runPayload cmd
+  r <- catchesPactError $
+    runPact PactEnv { _peMode = exMode
+                    , _peDbEnv = dbv
+                    , _peCommand = cmd
+                    , _pePublish = pub
+                    , _peEntity = ent
+                    , _peLogger = logger
+                    , _peGasLimit = gasLimit
+                    , _peModuleCache = moduleCache}
+            $ runPayload cmd
   case r of
-    Right cr -> do
+    Right (T2 cr moduleCache') -> do
       logLog logger "DEBUG" $ "success for requestKey: " ++ show (cmdToRequestKey cmd)
-      return cr
+      return (T2 cr moduleCache')
     Left e -> do
-      logLog logger "ERROR" $ "tx failure for requestKey: " ++ show (cmdToRequestKey cmd) ++ ": " ++ show e
-      return $ resultFailure Nothing (cmdToRequestKey cmd) e
+      logLog logger "ERROR" $ "tx failure for requestKey: " ++ show (cmdToRequestKey cmd)
+                            ++ ": " ++ show e
+      return $ T2 (resultFailure Nothing (cmdToRequestKey cmd) e) moduleCache
+      -- ^ Not updating moduleCache in case of failure
+
+catchesPactError
+  :: (MonadCatch m)
+  => m (T2 (Pact.CommandResult Hash) ModuleCache)
+  -> m (Either PactError (T2 (Pact.CommandResult Hash) ModuleCache))
+catchesPactError action =
+  catches (Right <$> action)
+  [ Handler (\(e :: PactError) -> return $ Left e)
+   ,Handler (\(e :: SomeException) -> return $ Left . PactError EvalError def def . viaShow $ e)
+  ]
 
 -- | Private hardcodes gas rate to 1
 gasRate :: Word64
@@ -138,15 +184,19 @@ gasRate = 1
 gasPrice :: GasPrice
 gasPrice = 0.0
 
-
-runPayload :: Command (Payload PrivateMeta ParsedCode) -> PactM p (CommandResult Hash)
-runPayload c@Command{..} = case _pPayload _cmdPayload of
+runPayload
+  :: Pact.Command (Payload PrivateMeta ParsedCode)
+  -> PactM p (T2 (Pact.CommandResult Hash) ModuleCache)
+runPayload c@Pact.Command{..} = case _pPayload _cmdPayload of
     Exec pm -> applyExec c pm (_pSigners _cmdPayload)
-    Continuation ym -> applyContinuation c ym (_pSigners _cmdPayload)
+    Continuation ym -> do
+      cr <- applyContinuation c ym (_pSigners _cmdPayload)
+      moduleCache <- view peModuleCache
+      return (T2 cr moduleCache) -- no module cache updates for continuations
 
 
-applyExec :: Command (Payload PrivateMeta ParsedCode) ->
-             ExecMsg ParsedCode -> [Signer] -> PactM p (CommandResult Hash)
+applyExec :: Pact.Command (Payload PrivateMeta ParsedCode) ->
+             ExecMsg ParsedCode -> [Signer] -> PactM p (T2 (Pact.CommandResult Hash) ModuleCache)
 applyExec cmd (ExecMsg parsedCode edata) ks = do
   PactEnv {..} <- ask
   when (null (_pcExps parsedCode)) $ throwCmdEx "No expressions found"
@@ -155,13 +205,17 @@ applyExec cmd (ExecMsg parsedCode edata) ks = do
       evalEnv = setupEvalEnv _peDbEnv (Just (_elName $ _ecLocal $ _peEntity)) _peMode
                 (MsgData sigs edata Nothing (toUntypedHash $ _cmdHash _peCommand))
                 initRefStore gasEnv permissiveNamespacePolicy noSPVSupport def
-  EvalResult{..} <- liftIO $ evalExec def evalEnv parsedCode
+  EvalResult{..} <- liftIO $ evalExec (mkNewEvalState _peModuleCache) evalEnv parsedCode
   mapM_ (handlePactExec sigs edata) _erExec
-  return $ resultSuccess _erTxId (cmdToRequestKey cmd) _erGas (last _erOutput) _erExec _erLogs
+  return $ T2
+    (resultSuccess _erTxId (cmdToRequestKey cmd) _erGas (last _erOutput) _erExec _erLogs)
+    _erLoadedModules
+
+mkNewEvalState :: ModuleCache -> EvalState
+mkNewEvalState moduleCache = set (evalRefs . rsLoadedModules) moduleCache def
 
 debug :: String -> PactM p ()
 debug m = reader _peLogger >>= \l -> liftIO $ logLog l "DEBUG" m
-
 
 -- | TODO!! The old Kadena pact model keeps the sigs around from the original exec in memory
 -- but there is no mechanism for this now. Thus keeping the '_sigs' argument around to reevaluate
@@ -175,8 +229,11 @@ handlePactExec _sigs edata PactExec{..} = when (_peExecuted == Just True) $ do
 reverseAddy :: EntityName -> Address -> Address
 reverseAddy me Address{..} = Address me (S.delete me $ S.insert _aFrom _aTo)
 
-applyContinuation :: Command (Payload PrivateMeta ParsedCode) ->
-                     ContMsg -> [Signer] -> PactM p (CommandResult Hash)
+applyContinuation
+  :: Pact.Command (Payload PrivateMeta ParsedCode)
+  -> ContMsg
+  -> [Signer]
+  -> PactM p (Pact.CommandResult Hash)
 applyContinuation cmd cm@ContMsg{..} ks = do
   pe@PactEnv{..} <- ask
   let sigs = userSigsToPactKeySet ks
@@ -186,14 +243,19 @@ applyContinuation cmd cm@ContMsg{..} ks = do
                   (Just $ PactStep _cmStep _cmRollback _cmPactId Nothing)
                   (toUntypedHash $ _cmdHash _peCommand))
                 initRefStore gasEnv permissiveNamespacePolicy noSPVSupport def
-  tryAny (liftIO $ evalContinuation def evalEnv cm) >>=
-    either (handleContFailure pe cm)
-           (handleContSuccess (cmdToRequestKey cmd) pe cm)
+  ei <- tryAny (liftIO $ evalContinuation (mkNewEvalState _peModuleCache) evalEnv cm)
+  either (handleContFailure pe cm)
+         (handleContSuccess (cmdToRequestKey cmd) pe cm)
+         ei
 
-
-handleContFailure :: PactEnv p -> ContMsg -> SomeException ->
-                     PactM p (CommandResult Hash)
-handleContFailure pe cm ex = doRollback pe cm (Just True) >> throwM ex
+handleContFailure
+  :: PactEnv p
+  -> ContMsg
+  -> SomeException
+  -> PactM p (Pact.CommandResult Hash)
+handleContFailure pe cm ex = do
+  doRollback pe cm (Just True)
+  throwM ex
 
 doRollback :: PactEnv p -> ContMsg -> Maybe Bool -> PactM p ()
 doRollback PactEnv{..} ContMsg{..} executed = do
@@ -202,15 +264,18 @@ doRollback PactEnv{..} ContMsg{..} executed = do
   unless done $ do
       when (executed == Just True) $ publishCont _cmPactId prevStep True _cmData
 
-handleContSuccess :: RequestKey -> PactEnv p -> ContMsg -> EvalResult ->
-                     PactM p (CommandResult Hash)
+handleContSuccess
+  :: RequestKey
+  -> PactEnv p
+  -> ContMsg
+  -> EvalResult
+  -> PactM p (Pact.CommandResult Hash)
 handleContSuccess rk pe@PactEnv{..} cm@ContMsg{..} er@EvalResult{..} = do
   py@PactExec {..} <- maybe (throwCmdEx "No yield from continuation exec!") return _erExec
-  if _cmRollback then
-    doRollback pe cm _peExecuted
-  else
-    doResume pe cm er py
-  return $ resultSuccess _erTxId rk _erGas (last _erOutput) _erExec _erLogs
+  if _cmRollback
+    then doRollback pe cm _peExecuted
+    else doResume pe cm er py
+  return (resultSuccess _erTxId rk _erGas (last _erOutput) _erExec _erLogs)
 
 doResume :: PactEnv p -> ContMsg -> EvalResult -> PactExec -> PactM p ()
 doResume PactEnv{..} ContMsg{..} EvalResult{..} PactExec{..} = do

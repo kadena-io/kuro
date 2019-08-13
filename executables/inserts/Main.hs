@@ -119,7 +119,8 @@ passMetric tmr = "Metric test passed: " ++ metricNameTm (requestTmr tmr)
 
 testMetricSize4 :: TestMetric
 testMetricSize4 = TestMetric
-  { metricNameTm = "/kadena/cluster/size"
+  { testNameTm = "testMetricSize4"
+  , metricNameTm = "/kadena/cluster/size"
   , evalTm = (\s -> readDef (0.0 :: Float) s == 4.0) }
 
 delLogFiles :: IO ()

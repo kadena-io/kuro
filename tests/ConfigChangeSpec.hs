@@ -31,24 +31,33 @@ spec = do
 
 testClusterCommands :: Spec
 testClusterCommands = do
+
+----------------------------------------------------------------------------------------------------
+-- Tests that work in Pact (3.0 / 3.1)
+----------------------------------------------------------------------------------------------------
   it "passes command tests" $ do
     results <- runClientCommands clientArgs testRequests
     checkResults results
 
-  -- MLN: all tests currently disabled via xit until access to Ekg metrics is restored
-  xit "Metric test - waiting for cluster size == 4..." $ do
+  it "Metric test - waiting for cluster size == 4..." $ do
     okSize4 <- waitForMetric testMetricSize4
     okSize4 `shouldBe` True
 
   --checking for the right list of cluster members
-  xit "gathering metrics for testMetric123" $ do
+  it "gathering metrics for testMetric123" $ do
     m123 <- gatherMetric testMetric123
     assertEither $ getMetricResult m123
 
+----------------------------------------------------------------------------------------------------
+-- Current test being debugged (Pact 3.0 / 3.1)
+----------------------------------------------------------------------------------------------------
   xit "Config change test #1 - Dropping node02:" $ do
     ccResults1 <- runClientCommands clientArgs [cfg0123to013]
     checkResults ccResults1
 
+----------------------------------------------------------------------------------------------------
+-- Tests not yet re-enabled (Pact 3.0 / 3.1)
+----------------------------------------------------------------------------------------------------
   xit "Metric test - waiting for cluster size == 3..." $ do
     okSize3 <- waitForMetric testMetricSize3
     okSize3 `shouldBe` True
@@ -215,10 +224,8 @@ failMetric tmr addlInfo = unlines
 passMetric :: TestMetricResult -> String
 passMetric tmr = "Metric test passed: " ++ metricNameTm (requestTmr tmr)
 
--- TODO: replace the full list of tests...
 testRequests :: [TestRequest]
 testRequests = [testReq1, testReq2, testReq3, testReq4, testReq5]
--- testRequests = [testReq1]
 
 testRequestsRepeated :: [TestRequest]
 testRequestsRepeated = [testReq1, testReq4, testReq5]
@@ -227,7 +234,6 @@ testReq1 :: TestRequest
 testReq1 = TestRequest
   { cmd = "exec (+ 1 1)"
   , matchCmd = "exec (+ 1 1)"
-  -- , eval = (\tr -> checkScientific (scientific 2 0) tr)
   , eval = checkSuccess
   , displayStr = "Executes 1 + 1 in Pact and returns 2.0" }
 
@@ -312,27 +318,32 @@ serverCmd n =
 
 testMetricSize4 :: TestMetric
 testMetricSize4 = TestMetric
-  { metricNameTm = "/kadena/cluster/size"
+  { testNameTm = "testMetricSize4"
+  , metricNameTm = "/kadena/cluster/size"
   , evalTm = (\s -> readDef (0.0 :: Float) s == 4.0) }
 
 testMetricSize3 :: TestMetric
 testMetricSize3 = TestMetric
-  { metricNameTm = "/kadena/cluster/size"
+  { testNameTm = "testMetricSize3"
+  , metricNameTm = "/kadena/cluster/size"
   , evalTm = (\s -> readDef (0.0 :: Float) s == 3.0) }
 
 testMetric123 :: TestMetric
 testMetric123 = TestMetric
-  { metricNameTm = "/kadena/cluster/members"
+  { testNameTm = "testMetric123"
+  , metricNameTm = "/kadena/cluster/members"
   , evalTm = (\s -> (splitOn ", " s) /= ["node1", "node2", "node3"]) }
 
 testMetric13 :: TestMetric
 testMetric13 = TestMetric
-  { metricNameTm = "/kadena/cluster/members"
+  { testNameTm = "testMetric13"
+  , metricNameTm = "/kadena/cluster/members"
   , evalTm = (\s -> (splitOn ", " s) /= ["node1", "node3"]) }
 
 testMetric12 :: TestMetric
 testMetric12 = TestMetric
-  { metricNameTm = "/kadena/cluster/members"
+  { testNameTm = "testMetric12"
+  , metricNameTm = "/kadena/cluster/members"
   , evalTm = (\s -> (splitOn ", " s) /= ["node1", "node2"]) }
 
 -- | Adding `sleep` between failures prevents the metrics server
@@ -348,4 +359,7 @@ waitForMetric' tm node =
     go :: IO ()
     go = do
       res <- gatherMetric' tm node
-      when (isLeft $ getMetricResult res) $ sleep 1 >> go
+      let z = getMetricResult res
+      when (isLeft z) $ do
+        sleep 1
+        go

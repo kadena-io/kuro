@@ -24,12 +24,13 @@ import Kadena.Types.Command as K (CommandResult(..))
 
 type ApiResponse a = Either String a
 
-newtype PollResponses = PollResponses (HM.HashMap RequestKey (ApiResponse CommandResult))
-  deriving (Generic, ToJSON, FromJSON)
+newtype PollResponses = PollResponses (HM.HashMap RequestKey (ApiResponse K.CommandResult))
+  deriving (Generic, ToJSON, FromJSON, Show)
 
 data ListenResponse  =
   ListenTimeout Int
   | ListenResponse K.CommandResult
+  deriving Show
 
 instance ToJSON ListenResponse where
   toJSON (ListenResponse r) = toJSON r

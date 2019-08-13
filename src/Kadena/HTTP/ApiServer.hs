@@ -144,12 +144,15 @@ sendPublicBatch = catch (do
 
 sendClusterChange :: Api ()
 sendClusterChange = catch (do
+    log $ "ApiServer - Cluster Change command received"
     SubmitCC ccCmds <- readSubmitCCJSON
     when (null ccCmds) $ die "Empty cluster change batch"
     when (length ccCmds /= 2) $ die "Exactly two cluster change commands required -- one Transitional, one Final"
     let transCmd = head ccCmds
     let finalCmd = head $ tail $ ccCmds
     let transRpc = buildCCCmdRpc transCmd
+    log $ "ApiServer - queuing RPC for transitional CC request"
+
     queueRpcsNoResp (transRpc :| []) -- NonEmpty List
     let transListenerReq = Pact.ListenerRequest (fst transRpc) --listen for the result of the transitional command
     ccTransResult <- listenFor transListenerReq
@@ -157,13 +160,15 @@ sendClusterChange = catch (do
       ClusterChangeSuccess -> do
         log "Transitional CC was sucessful, now ok to send the Final"
         let finalRpc = buildCCCmdRpc finalCmd
+        log $ "ApiServer - queuing RPC for final CC request"
         queueRpcs (finalRpc :| []) -- NonEmpty List
         let finalListenerReq = Pact.ListenerRequest (fst finalRpc)
         ccFinalResult <- listenFor finalListenerReq
         case ccFinalResult of
           ClusterChangeSuccess -> log "Final CC was sucessful, Config change complete"
           ClusterChangeFailure eFinal -> log $ "Final cluster change failed: " ++ eFinal
-      ClusterChangeFailure eTrans  -> log $ "Transitional cluster change failed: " ++ eTrans
+      ClusterChangeFailure eTrans  -> do
+        log $ "Transitional cluster change failed: " ++ eTrans
   )
   (\e -> liftIO $ putStrLn $ "Exception caught in the handler 'sendClusterChange': " ++ show (e :: SomeException))
 

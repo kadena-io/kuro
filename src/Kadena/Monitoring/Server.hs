@@ -8,8 +8,8 @@ module Kadena.Monitoring.Server
   ) where
 
 import Control.Lens ((^.), to)
-import Data.Text.Encoding (decodeUtf8)
 
+import Data.Text.Encoding (decodeUtf8)
 import qualified Data.ByteString.Base64 as B64
 import qualified Data.Text as T
 import qualified System.Metrics.Label as Label
@@ -24,12 +24,11 @@ import Kadena.Monitoring.EkgMonitor ( Server, forkServer, getLabel, getGauge, ge
 startApi :: Config -> IO Server
 startApi config = do
   let port = 80 + fromIntegral (config ^. nodeId . to _port)
-  forkServer "0.0.0.0" port
+  forkServer "localhost" port
 
 startMonitoring :: Config -> IO (Metric -> IO ())
 startMonitoring config = do
   ekg <- startApi config
-
   let awsDashVar' = awsDashVar False -- (config ^. enableAwsIntegration)
 
   -- Consensus

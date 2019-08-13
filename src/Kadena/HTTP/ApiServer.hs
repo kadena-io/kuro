@@ -167,7 +167,6 @@ sendClusterChange = catch (do
         case ccFinalResult of
           ClusterChangeSuccess -> log "Final CC was sucessful, Config change complete"
           ClusterChangeFailure eFinal -> log $ "Final cluster change failed: " ++ eFinal
-
       ClusterChangeFailure eTrans  -> do
         log $ "Transitional cluster change failed: " ++ eTrans
   )

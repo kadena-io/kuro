@@ -256,7 +256,6 @@ postWithRetry ep server' rq = do
     go :: (FromJSON t) => IO (Response (ApiResponse t))
     go = do
       let url = "http://" ++ server' ++ "/api/v1/" ++ ep
-      putStrLn url
       let opts = defaults & manager .~ Left (defaultManagerSettings
             { managerResponseTimeout = responseTimeoutMicro (timeoutSeconds * 1000000) } )
       r <- liftIO $ postWith opts url (toJSON rq)
@@ -331,9 +330,7 @@ sendConfigChangeCmd :: ConfigChangeApiReq -> String -> Repl ()
 sendConfigChangeCmd ccApiReq@ConfigChangeApiReq{..} fileName = do
   execs <- liftIO $ mkConfigChangeExecs ccApiReq
   let themJSONs = BSL.unpack $ encode (SubmitCC execs)
-  liftIO $ putStrLn $ "Client.sendConfigChangeCmd: \n" ++ themJSONs
   resp <- postAPI "config" (SubmitCC execs)
-  liftIO $ putStrLn $ "sendConfigChangeCmd - Response from postAPI: " ++ show resp
   tellKeys resp fileName
   handleHttpResp (listenForLastResult listenDelayMs False) resp
 

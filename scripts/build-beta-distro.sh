@@ -40,8 +40,9 @@ if [ -z "$target" -o "$target" = "dist" ]; then
     safe rm -rf kadena-beta/log && mkdir kadena-beta/log
     safe rm -rf kadena-beta/conf && mkdir kadena-beta/conf
     safe rm -rf kadena-beta/demo && mkdir kadena-beta/demo
-    safe rm -rf kadena-beta/setup && mkdir kadena-beta/setup
 fi
+
+safe rm -rf kadena-beta/setup && mkdir kadena-beta/setup
 
 version=`egrep "^version:" kadena.cabal | sed -e 's/^version: *\(.*\) *$/\1/'`
 if [ -z "$version" ]; then barf "Could not determine version"; fi

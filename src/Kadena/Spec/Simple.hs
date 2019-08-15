@@ -158,7 +158,7 @@ runServer = do
   rconf <- getConfig
   gcm <- initGlobalConfigTMVar rconf
 #if WITH_KILL_SWITCH || WITH_AWS_KILL_SWITCH
-  killSwitchNodeCheck rconf
+  _killSwitchNodeCheck rconf
 #endif
 
   utcTimeCache' <- utcTimeCache

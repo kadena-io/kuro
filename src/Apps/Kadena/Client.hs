@@ -329,7 +329,6 @@ loadMultiple' filePath replCmd startCount nRepeats singleCmd = do
 sendConfigChangeCmd :: ConfigChangeApiReq -> String -> Repl ()
 sendConfigChangeCmd ccApiReq@ConfigChangeApiReq{..} fileName = do
   execs <- liftIO $ mkConfigChangeExecs ccApiReq
-  let themJSONs = BSL.unpack $ encode (SubmitCC execs)
   resp <- postAPI "config" (SubmitCC execs)
   tellKeys resp fileName
   handleHttpResp (listenForLastResult listenDelayMs False) resp

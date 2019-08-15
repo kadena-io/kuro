@@ -54,7 +54,11 @@ RUN bash -c "cd && source ./build-exports && \
     make install && \
     cd .. && rm -rf zeromq-4.1.4* "
 
-RUN stack --resolver lts-8.15 setup
+RUN stack --version
+RUN curl -sSL https://get.haskellstack.org/ | sh -s - -f
+RUN stack --version
+
+RUN stack --resolver lts-13.24 setup
 
 RUN apt-get install -y build-essential wget libodbc1 unixodbc unixodbc-dev freetds-bin tdsodbc
 

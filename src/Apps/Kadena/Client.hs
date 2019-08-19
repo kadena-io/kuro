@@ -90,6 +90,7 @@ import qualified Pact.Types.ChainMeta as Pact
 import qualified Pact.Types.Command as Pact
 import Pact.Types.Command ()
 import qualified Pact.Types.Crypto as Pact
+import qualified Pact.Types.Hash as Pact
 import Pact.Types.RPC
 import Pact.Types.Util
 
@@ -100,6 +101,7 @@ import Kadena.Types.Base hiding (printLatTime)
 import Kadena.Types.Command
 import Kadena.Types.Entity (EntityName)
 import Kadena.Types.HTTP as K
+import Kadena.Types.Private (PrivateResult)
 
 data ClientOpts = ClientOpts {
       _oConfig :: FilePath
@@ -348,6 +350,14 @@ sendPrivate addy msg = do
   resp <- postAPI "private" (Pact.SubmitBatch (e :| []))
   handleHttpResp (listenForResult listenDelayMs) resp
 
+
+putJSONResult :: CommandResult -> Repl ()
+putJSONResult SmartContractResult{..} = putJSON ((Pact._crResult _scrResult) :: Pact.PactResult)
+putJSONResult ConsensusChangeResult{..} = putJSON (_concrResult :: ClusterChangeResult)
+putJSONResult PrivateCommandResult{..}
+  = putJSON (_pcrResult :: PrivateResult (Pact.CommandResult Pact.Hash))
+
+
 putJSON :: (ToJSON a) => a -> Repl ()
 putJSON a =
   use fmt >>= \f -> flushStrLn $ case f of
@@ -464,14 +474,15 @@ listenForLastResult tdelay showLatency theKeys = do
       tell [ReplApiResponse { _apiResponseKey = lastRk
                               , _apiResult = cr
                               , _batchCnt = fromIntegral cnt}]
-      if not showLatency then putJSON cr
-      else case _crLatMetrics cr of
-        Nothing -> flushStrLn "Success"
-        Just lats@CmdResultLatencyMetrics{..} -> do
-          pprintLatency lats
-          case _rlmFinExecution of
-            Nothing -> flushStrLn "Latency Measurement Unavailable"
-            Just n -> flushStrLn $ intervalOfNumerous cnt n
+      if showLatency then
+        case _crLatMetrics cr of
+          Nothing -> flushStrLn "Success"
+          Just lats@CmdResultLatencyMetrics{..} -> do
+            pprintLatency lats
+            case _rlmFinExecution of
+              Nothing -> flushStrLn "Latency Measurement Unavailable"
+              Just n -> flushStrLn $ intervalOfNumerous cnt n
+      else putJSONResult cr
 
 pollMaxRetry :: Int
 pollMaxRetry = 180

@@ -21,3 +21,7 @@
 * Upgrade to Pact 2.3.6
 * `keys` command in client now accepts YAML file
 * new `echo` command to show request in `exec`, `local`, `private`, `batch`
+
+# Version 1.2
+* Upgrade to Pact version 3.2
+* Includes Ansible playbooks for Azure deployment

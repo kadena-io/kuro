@@ -34,14 +34,12 @@ if [ -n "$target" ]; then
     [[ ! "$target" =~ $targets ]] && barf $usage
 fi
 
-if [ -z "$target" -o "$target" = "dist" ]; then
-    chirp "Creating build directories"
-    safe rm -rf kadena-beta/aws && mkdir kadena-beta/aws
-    safe rm -rf kadena-beta/log && mkdir kadena-beta/log
-    safe rm -rf kadena-beta/conf && mkdir kadena-beta/conf
-    safe rm -rf kadena-beta/demo && mkdir kadena-beta/demo
-    safe rm -rf kadena-beta/setup && mkdir kadena-beta/setup
-fi
+chirp "Creating build directories"
+safe rm -rf kadena-beta/aws && mkdir kadena-beta/aws
+safe rm -rf kadena-beta/log && mkdir kadena-beta/log
+safe rm -rf kadena-beta/conf && mkdir kadena-beta/conf
+safe rm -rf kadena-beta/demo && mkdir kadena-beta/demo
+safe rm -rf kadena-beta/setup && mkdir kadena-beta/setup
 
 version=`egrep "^version:" kadena.cabal | sed -e 's/^version: *\(.*\) *$/\1/'`
 if [ -z "$version" ]; then barf "Could not determine version"; fi
@@ -103,30 +101,28 @@ if [ -z "$target" -o "$target" = "perform" ]; then
 
 fi
 
-if [ -z "$target" -o "$target" = "dist" ]; then
-    chirp "Copying Scripts and Ansible Playbooks"
-    safe rm -rf ./kadena-beta/aws/*
-    safe cp -r ./scripts/aws/* ./kadena-beta/aws
-    safe mv ./kadena-beta/aws/Ansible-README.md ./kadena-beta/docs
-    safe cp ./demo/{demo.repl,demo.pact,demo.yaml} ./kadena-beta/demo
-    safe cp ./scripts/setup-ubuntu-base.sh ./kadena-beta/setup
+chirp "Copying Scripts and Ansible Playbooks"
+safe rm -rf ./kadena-beta/aws/*
+safe cp -r ./scripts/aws/* ./kadena-beta/aws
+safe mv ./kadena-beta/aws/Ansible-README.md ./kadena-beta/docs
+safe cp ./demo/{demo.repl,demo.pact,demo.yaml} ./kadena-beta/demo
+safe cp ./scripts/setup-ubuntu-base.sh ./kadena-beta/setup
 
-    safe cp CHANGELOG.md kadena-beta/
+safe cp CHANGELOG.md kadena-beta/
 
 
-    chirp "taring the result"
-    if [[ "$type" = "aws" ]]; then
-      safe cp -r kadena-beta kadena-aws
-      safe rm -r kadena-aws/aws/edit_conf.yml
-      safe rm -r kadena-aws/aws/templates/conf.j2
-      safe rm -rf kadena-aws/bin/ubuntu-16.04/start-no-persistence.sh  # Not used
-      safe rm -rf kadena-aws/bin/centos-6.8     # Not supported in AWS
-      safe rm -rf kadena-aws/bin/osx            # Not supported in AWS
-      safe tar cvz kadena-aws/* > kadena-aws-$version.tgz
-      safe rm -rf kadena-aws
-    else
-      safe tar cvz kadena-beta/* > kadena-beta-$version.tgz
-    fi
+chirp "taring the result"
+if [[ "$type" = "aws" ]]; then
+    safe cp -r kadena-beta kadena-aws
+    safe rm -r kadena-aws/aws/edit_conf.yml
+    safe rm -r kadena-aws/aws/templates/conf.j2
+    safe rm -rf kadena-aws/bin/ubuntu-16.04/start-no-persistence.sh  # Not used
+    safe rm -rf kadena-aws/bin/centos-6.8     # Not supported in AWS or Azure
+    safe rm -rf kadena-aws/bin/osx            # Not supported in AWS or Azure
+    safe tar cvz kadena-aws/* > kadena-aws-$version.tgz
+    safe rm -rf kadena-aws
+else
+    safe tar cvz kadena-beta/* > kadena-beta-$version.tgz
 fi
 
 exit 0

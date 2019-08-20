@@ -117,8 +117,8 @@ if [[ "$type" = "aws" ]]; then
     safe rm -r kadena-aws/aws/edit_conf.yml
     safe rm -r kadena-aws/aws/templates/conf.j2
     safe rm -rf kadena-aws/bin/ubuntu-16.04/start-no-persistence.sh  # Not used
-    safe rm -rf kadena-aws/bin/centos-6.8     # Not supported in AWS
-    safe rm -rf kadena-aws/bin/osx            # Not supported in AWS
+    safe rm -rf kadena-aws/bin/centos-6.8     # Not supported in AWS or Azure
+    safe rm -rf kadena-aws/bin/osx            # Not supported in AWS or Azure
     safe tar cvz kadena-aws/* > kadena-aws-$version.tgz
     safe rm -rf kadena-aws
 else

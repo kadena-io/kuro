@@ -1,3 +1,6 @@
+# Version 1.2.1.0
+* Upgrade to Pact version 3.2.1
+
 # Version 1.2.0.0
 * Upgrade to Pact version 3.2
 * Includes Ansible playbooks for Azure deployment

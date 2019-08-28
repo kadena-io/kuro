@@ -35,7 +35,6 @@ import           Data.List.Extra
 import qualified Data.Yaml as Y
 import           GHC.Generics (Generic)
 import           Kadena.Types.Command (CommandResult(..))
-import           Kadena.Types.HTTP (ApiResponse)
 import           Network.Wreq
 import qualified Network.Wreq as WR (getWith)
 import qualified Pact.ApiReq as Pact
@@ -67,7 +66,7 @@ instance Show TestRequest where
 
 data TestResponse = TestResponse
   { resultSuccess :: Bool
-  , apiResult :: ApiResponse CommandResult
+  , apiResult :: CommandResult
   , _batchCount :: Int64
   } deriving (Eq, Generic)
 
@@ -181,7 +180,7 @@ matchResponses _ _ _ acc = acc -- this shouldn't happen
 convertResponse :: ReplApiData -> Maybe TestResponse
 convertResponse (ReplApiResponse _ cr batchCnt) =
   Just TestResponse { resultSuccess = True
-                     , apiResult = Right cr
+                     , apiResult = cr
                      , _batchCount = batchCnt }
 convertResponse _ = Nothing  -- this shouldn't happen
 

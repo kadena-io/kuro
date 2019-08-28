@@ -165,8 +165,6 @@ checkSuccess tr = do
 checkCCSuccess :: TestResponse -> Expectation
 checkCCSuccess tr = do
   resultSuccess tr `shouldBe` True
-  isRight (apiResult tr) `shouldBe` True
-
 
 checkBatchPerSecond :: Integer -> TestResponse -> Expectation
 checkBatchPerSecond minPerSec tr = do
@@ -181,14 +179,12 @@ perSecMay tr = do
     let cnt = _batchCount tr
     if cnt == 1 then Nothing
     else do
-      case apiResult tr of
-        Left _err -> Nothing
-        Right cr -> case _crLatMetrics cr of
+      let res = apiResult tr
+      case _crLatMetrics res of
           Nothing -> Nothing
           Just lats -> do
             microSeconds <- _rlmFinExecution lats
             return $ snd $ calcInterval cnt microSeconds
-
 
 parseCCStatus :: AE.Value -> Bool
 parseCCStatus (AE.Object o) =

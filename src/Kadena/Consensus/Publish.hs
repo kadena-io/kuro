@@ -8,6 +8,7 @@ module Kadena.Consensus.Publish
   ) where
 
 import Control.Concurrent
+import Control.Exception
 import Control.Monad.IO.Class
 
 import Data.ByteString (ByteString)
@@ -44,19 +45,20 @@ publish
   -> NonEmpty (RequestKey,CMDWire)
   -> m P.RequestKeys
 publish Publish{..} die rpcs = do
-  PublishedConsensus{..} <- liftIO (tryReadMVar pConsensus) >>=
-    fromMaybeM (die "Invariant error: consensus unavailable")
+  z <- liftIO (tryReadMVar pConsensus)
+  PublishedConsensus{..} <- fromMaybeM (die "Invariant error: consensus unavailable") z
   ldr <- fromMaybeM
-    (die (show pNodeId ++ ": There is no current leader. System unavaiable, please try again later"))
+    (liftIO $ throwIO $ NotReadyException $ show pNodeId
+       ++ ": There is no current leader. System unavaiable, please try again later")
     _pcLeader
   rAt <- ReceivedAt <$> liftIO pNow
   cmds' <- return $! fmap snd rpcs
   let rks' = return $ P.RequestKeys (fmap fst rpcs)
   if pNodeId == ldr
-    then  -- dispatch internally if we're leader, otherwise send outbound
+    then do -- dispatch internally if we're leader, otherwise send outbound
       liftIO $ writeComm (_dispInboundCMD pDispatch) $ InboundCMDFromApi
         (rAt, NewCmdInternal (toList cmds'))
-    else
+    else do
       liftIO $ writeComm (_dispSenderService pDispatch)
         $! ForwardCommandToLeader (NewCmdRPC (toList cmds') NewMsg)
   rks'
@@ -73,8 +75,6 @@ buildCmdRpc c@Pact.Command{..} = (Pact.cmdToRequestKey c, pactTextToCMDWire c)
 buildCmdRpcBS :: Pact.Command ByteString -> (RequestKey,CMDWire)
 buildCmdRpcBS c@Pact.Command{..} = (Pact.cmdToRequestKey c, pactBSToCMDWire c)
 
--- TODO: Try to implment ClusterChangeCommand as Pact.Command ClusterChangeCommand.  If possible,
--- this can be removed in favor of using Pact's buildCmdRpc
 buildCCCmdRpc :: ClusterChangeCommand Text -> (RequestKey, CMDWire)
 buildCCCmdRpc c@ClusterChangeCommand {..} = (RequestKey (P.toUntypedHash _cccHash), clusterChgTextToCMDWire c)
 

@@ -74,11 +74,13 @@ latFromField cr lat = case A.eitherDecodeStrict' lat of
 scrFromField :: Pact.Hash -> LogIndex -> ByteString -> ByteString -> K.CommandResult
 scrFromField hsh logIndex crBytes latBytes =
   SmartContractResult
-  { _crHash = hsh
-  , _scrResult = cr
-  , _crLogIndex = logIndex
-  , _crLatMetrics = (latFromField crBytes latBytes)
-  } where
+    { _scrPactResult = PactContractResult
+        { _pcrHash = hsh
+        , _pcrResult = cr
+        , _pcrLogIndex = logIndex
+        , _pcrLatMetrics  = (latFromField crBytes latBytes)
+        }
+    } where
       cr = case A.eitherDecodeStrict' crBytes of
         Left err -> error $ "crFromField: unable to decode Pact.CommandResult from database! "
                           ++ show err ++ "\n" ++ show cr
@@ -101,7 +103,7 @@ pcrFromField :: Pact.Hash -> LogIndex -> ByteString -> ByteString -> K.CommandRe
 pcrFromField hsh logIndex pcrBytes latBytes =
   PrivateCommandResult
   { _crHash = hsh
-  , _pcrResult = pcr
+  , _privResult = pcr
   , _crLogIndex = logIndex
   , _crLatMetrics = (latFromField pcrBytes latBytes)
   } where
@@ -149,13 +151,13 @@ sqlInsertHistoryRow =
     \) VALUES (?,?,?,?,?,?)"
 
 insertRow :: Statement -> CommandResult -> IO ()
-insertRow s SmartContractResult{..} =
-    execs "insertRow" s [hashToField _crHash
-            ,SInt $ fromIntegral _crLogIndex
-            ,SInt $ fromIntegral (fromMaybe (-1) (Pact._crTxId _scrResult))
+insertRow s (SmartContractResult PactContractResult{..}) =
+    execs "insertRow" s [hashToField _pcrHash
+            ,SInt $ fromIntegral _pcrLogIndex
+            ,SInt $ fromIntegral (fromMaybe (-1) (Pact._crTxId _pcrResult))
             ,htToField SCC
-            ,crToField _scrResult
-            ,latToField _crLatMetrics]
+            ,crToField _pcrResult
+            ,latToField _pcrLatMetrics]
 insertRow s ConsensusChangeResult{..} =
     execs "insertRow" s [hashToField _crHash
             ,SInt $ fromIntegral _crLogIndex
@@ -168,12 +170,18 @@ insertRow s PrivateCommandResult{..} =
             ,SInt $ fromIntegral _crLogIndex
             ,SInt $ -1
             ,htToField PC
-            ,prToField  _pcrResult
+            ,prToField  _privResult
             ,latToField _crLatMetrics]
+
+sortCmds :: CommandResult -> CommandResult -> Ordering
+sortCmds (SmartContractResult prA) (SmartContractResult prB) = compare (_pcrLogIndex prA)
+                                                                       (_pcrLogIndex prB)
+sortCmds (SmartContractResult prA) b = compare (_pcrLogIndex prA) (_crLogIndex b)
+sortCmds a (SmartContractResult prB) = compare (_crLogIndex a) (_pcrLogIndex prB)
+sortCmds a b = compare (_crLogIndex a) (_crLogIndex b)
 
 insertCompletedCommand :: DbEnv -> [CommandResult] -> IO ()
 insertCompletedCommand DbEnv{..} v = do
-  let sortCmds a b = compare (_crLogIndex a) (_crLogIndex b)
   eitherToError "start insert transaction" <$> exec _conn "BEGIN TRANSACTION"
   mapM_ (insertRow _insertStatement) $ sortBy sortCmds v
   eitherToError "end insert transaction" <$> exec _conn "END TRANSACTION"

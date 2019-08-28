@@ -20,12 +20,12 @@ module Kadena.Types.Command
   , Preprocessed(..)
   , RunPreProc(..)
   , FinishedPreProc(..)
+  , PactContractResult(..), pcrHash, pcrResult, pcrLogIndex, pcrLatMetrics
   , PendingResult(..)
   , ProcessedClusterChg (..)
   , SCCPreProcResult, CCCPreProcResult
   , CMDWire(..)
-  , CommandResult(..), crHash, crLogIndex, crLatMetrics
-  , scrResult, concrResult, pcrResult
+  , CommandResult(..), scrPactResult, crHash, concrResult, crLogIndex, crLatMetrics, privResult
   , CmdLatencyMetrics(..), rlmFirstSeen, rlmHitTurbine, rlmHitConsensus, rlmFinConsensus, rlmAerConsensus, rlmLogConsensus
   , rlmHitPreProc, rlmFinPreProc, rlmHitExecution, rlmFinExecution
   , lmFirstSeen, lmHitTurbine, lmHitPreProc, lmAerConsensus, lmLogConsensus
@@ -250,12 +250,21 @@ instance ToJSON CmdResultLatencyMetrics where
 instance FromJSON CmdResultLatencyMetrics where
   parseJSON = lensyParseJSON 4
 
+data PactContractResult = PactContractResult
+    { _pcrHash :: !Pact.Hash
+    , _pcrResult :: !(Pact.CommandResult Pact.Hash)
+    , _pcrLogIndex :: !LogIndex
+    , _pcrLatMetrics :: !(Maybe CmdResultLatencyMetrics) }
+  deriving (Show, Eq, Generic)
+makeLenses ''PactContractResult
+
+instance ToJSON PactContractResult where
+  toJSON = lensyToJSON 4
+instance FromJSON PactContractResult where
+  parseJSON = lensyParseJSON 4
+
 data CommandResult =
-  SmartContractResult
-    { _crHash :: !Pact.Hash
-    , _scrResult :: !(Pact.CommandResult Pact.Hash)
-    , _crLogIndex :: !LogIndex
-    , _crLatMetrics :: !(Maybe CmdResultLatencyMetrics) } |
+   SmartContractResult { _scrPactResult :: PactContractResult} |
    ConsensusChangeResult
     { _crHash :: !Pact.Hash
     , _concrResult :: !ClusterChangeResult
@@ -263,7 +272,7 @@ data CommandResult =
     , _crLatMetrics :: !(Maybe CmdResultLatencyMetrics) } |
   PrivateCommandResult
     { _crHash :: !Pact.Hash
-    , _pcrResult :: !(PrivateResult (Pact.CommandResult Pact.Hash))
+    , _privResult :: !(PrivateResult (Pact.CommandResult Pact.Hash))
     , _crLogIndex :: !LogIndex
     , _crLatMetrics :: !(Maybe CmdResultLatencyMetrics) }
   deriving (Show, Eq, Generic)

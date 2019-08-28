@@ -5,6 +5,7 @@
 
 module Kadena.Util.Util
   ( DiagnosticException(..)
+  , NotReadyException(..)
   , TrackedError(..)
   , awsDashVar
   , catchAndRethrow
@@ -22,7 +23,7 @@ import Control.DeepSeq
 import Control.Exception (SomeAsyncException)
 import Control.Monad
 import Control.Monad.Catch
-import Data.List (intersperse)
+import Data.List
 import Data.Maybe
 import Data.String (IsString)
 import Data.Typeable
@@ -63,14 +64,16 @@ data TrackedError e = TrackedError
   } deriving (Eq, Ord, Typeable)
 
 instance Show e => Show (TrackedError e) where
-  show TrackedError{..} = "[" ++ concat (intersperse "." teTrace) ++ "] Uncaught Exception: " ++ show teError
+  show TrackedError{..} = "[" ++ intercalate "." teTrace ++ "] Uncaught Exception: " ++ show teError
 
 instance (Exception e) => Exception (TrackedError e)
 
 catchAndRethrow :: MonadCatch m => String -> m a -> m a
-catchAndRethrow loc fn = fn `catches` [Handler (\(e@TrackedError{..} :: TrackedError SomeException) -> throwM $ e {teTrace = [loc] ++ teTrace})
-                                      ,Handler (\(e :: SomeAsyncException)  -> throwM e)
-                                      ,Handler (\(e :: SomeException)  -> throwM $ TrackedError [loc] e)]
+catchAndRethrow loc fn
+  = fn `catches` [ Handler (\(e@TrackedError{..} :: TrackedError SomeException)
+                   -> throwM $ e {teTrace = loc : teTrace})
+                 , Handler (\(e :: SomeAsyncException)  -> throwM e)
+                 , Handler (\(e :: SomeException)  -> throwM $ TrackedError [loc] e)]
 
 -- | Run an action asynchronously on a new thread. If an uncaught exception is encountered in the
 --   thread, capture it, track its location, and re-throw it to the parent thread.
@@ -90,3 +93,7 @@ throwDiagnostics mDiag str = do
 newtype DiagnosticException = DiagnosticException String
   deriving (Eq,Show,Ord,IsString)
 instance Exception DiagnosticException
+
+newtype NotReadyException = NotReadyException String
+  deriving (Eq,Show,Ord,IsString)
+instance Exception NotReadyException

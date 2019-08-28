@@ -131,6 +131,7 @@ library
                      , bloomfilter
                      , bound
                      , bytestring
+                     , Cabal
                      , cacophony
                      , cereal >= 0.5.4.0
                      , containers
@@ -200,6 +201,7 @@ library
                      , yaml
                      , zeromq4-haskell >= 0.6.3
                      , zlib
+  other-modules:     Paths_kadena
   hs-source-dirs:      src
   ghc-options:         -Wall -fno-warn-unused-do-bind -O3
   ghc-prof-options:    -fprof-auto -fprof-auto-calls

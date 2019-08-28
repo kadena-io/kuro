@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RankNTypes #-}
@@ -10,17 +11,14 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE BangPatterns #-}
 
--- TODO: add latency back into the apiResult
-
 module Kadena.HTTP.ApiServer
-  ( ApiResponse
-  , runApiServer
+  ( runApiServer
   ) where
 
 import Prelude hiding (log)
 import Control.Lens
 import Control.Concurrent
-import Control.Exception.Lifted (catch, SomeException(..), throw, try)
+import Control.Exception.Lifted
 import Control.Monad.Reader
 
 import Data.Aeson hiding (defaultOptions, Result(..))
@@ -37,11 +35,16 @@ import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Set as Set
 import qualified Data.Serialize as SZ
 
+-- Cabal version info
+import Paths_kadena (version)
+import Data.Version (showVersion)
+
 import Snap.Core
 import Snap.Http.Server as Snap
 import Snap.Util.CORS
 import System.FilePath
 import System.Directory
+import System.Time.Extra (sleep)
 import Data.Thyme.Clock
 
 import qualified Pact.Types.Runtime as Pact
@@ -49,23 +52,22 @@ import qualified Pact.Types.Command as Pact
 import qualified Pact.Types.API as Pact
 
 import Kadena.Command (SubmitCC(..))
+import Kadena.Config.TMVar as KCfg
+import Kadena.Consensus.Publish
 import Kadena.Types.Command
 import Kadena.Types.Base
 import Kadena.Types.Comms
-import Kadena.Types.Config as KCfg
-import Kadena.Types.HTTP as K
-import Kadena.Config.TMVar as KCfg
-import Kadena.Types.Spec
+import Kadena.Types.Dispatch
 import Kadena.Types.Entity
+import qualified Kadena.Types.HTTP as K
+import Kadena.HTTP.Static
+import qualified Kadena.Types.Execution as Exec
 import Kadena.Types.History (History(..), PossiblyIncompleteResults(..))
 import qualified Kadena.Types.History as History
-import qualified Kadena.Types.Execution as Exec
-import Kadena.Types.Dispatch
-import Kadena.Private.Service (encrypt)
 import Kadena.Types.Private (PrivatePlaintext(..),PrivateCiphertext(..),Labeled(..))
-import Kadena.Consensus.Publish
-
-import Kadena.HTTP.Static
+import Kadena.Types.Spec
+import Kadena.Private.Service (encrypt)
+import Kadena.Util.Util
 
 data ApiEnv = ApiEnv
   { _aiLog :: String -> IO ()
@@ -94,7 +96,7 @@ runApiServer dispatch gcm logFn port mPubConsensus' timeCache' = do
   serverConf' <- serverConf port logFn logFilePrefix
   httpServe serverConf' $
     applyCORS defaultOptions $ methods [GET, POST] $
-    route $ ("api/v1", runReaderT api conf'):(staticRoutes hostStaticDir')
+    route $ ("", runReaderT api conf'):(staticRoutes hostStaticDir')
 
 serverConf :: MonadSnap m => Int -> (String -> IO ()) -> String -> IO (Snap.Config m a)
 serverConf port dbgFn logFilePrefix = do
@@ -106,14 +108,21 @@ serverConf port dbgFn logFilePrefix = do
     setAccessLog (ConfigFileLog accessLog) $
     setPort port defaultConfig
 
+apiVer :: BS.ByteString
+apiVer = "/api/v1/"
+
 api :: Api ()
 api = route [
-       ("send",sendPublicBatch)
-      ,("poll",poll)
-      ,("listen",registerListener)
-      ,("local",sendLocal)
-      ,("private",sendPrivateBatch)
-      ,("config", sendClusterChange)
+       (apiVer `BS.append` "send",sendPublicBatch)
+      ,(apiVer `BS.append` "poll",pactPoll)
+      ,(apiVer `BS.append` "pollSBFT",poll)
+      ,(apiVer `BS.append` "listen",registerPactListener)
+      ,(apiVer `BS.append` "listenCC",registerListener)
+      ,(apiVer `BS.append` "listenSBFT", registerListener)
+      ,(apiVer `BS.append` "local",sendLocal)
+      ,(apiVer `BS.append` "private",sendPrivateBatch)
+      ,(apiVer `BS.append` "config", sendClusterChange)
+      ,("version", sendVersionInfo)
       ]
 
 sendLocal :: Api ()
@@ -133,14 +142,26 @@ sendLocal = catch (do
     (\e -> liftIO $ putStrLn $ "Exception caught in the handler 'sendLocal' : "
                             ++ show (e :: SomeException))
 
+-- retries here are due to leader election startup time
 sendPublicBatch :: Api ()
-sendPublicBatch = catch (do
+sendPublicBatch = do
+    let retryCount = 30 :: Int
     Pact.SubmitBatch neCmds <- readSubmitBatchJSON
     log $ "public: received batch of " ++ show (NE.length neCmds)
-    rpcs <- return $ fmap buildCmdRpc neCmds
-    queueRpcs rpcs)
-  (\e -> liftIO $ putStrLn $ "Exception caught in the handler 'sendPublicBatch': "
-                            ++ show (e :: SomeException))
+    go neCmds retryCount
+  where
+    go _ 0 = die "timeout waiting for a valid leader"
+    go cmds count = catches
+        (do
+            rpcs <- return $ fmap buildCmdRpc cmds
+            queueRpcs rpcs)
+        [ Handler (\ (_e :: NotReadyException) -> do
+            liftIO $ sleep 1
+            log $ "sendPublicBatch - Current retry-until-ready count = " ++ show count
+               ++ ", trying again..."
+            go cmds (count - 1))
+        , Handler (\e -> liftIO $ putStrLn $ "Exception caught in the handler 'sendPublicBatch': "
+                                ++ show (e :: SomeException)) ]
 
 sendClusterChange :: Api ()
 sendClusterChange = catch (do
@@ -176,6 +197,7 @@ queueRpcs :: NonEmpty (RequestKey,CMDWire) -> Api ()
 queueRpcs rpcs = do
   p <- view aiPublish
   rks <- publish p die rpcs
+  log $ "queueRpcs - writing reponse: " ++ show rks
   writeResponse rks
 
 queueRpcsNoResp :: NonEmpty (RequestKey,CMDWire) -> Api ()
@@ -227,12 +249,21 @@ addressFromMeta (Pact.PrivateMeta (Just addr)) _cmd = return addr
 addressFromMeta (Pact.PrivateMeta Nothing) cmd =
   die $ "sendPrivateBatch: missing address in payload: " ++ show cmd
 
+pactPoll :: Api ()
+pactPoll = catch (do
+    (Pact.Poll rks) <- readJSON
+    PossiblyIncompleteResults{..} <- checkHistoryForResult (HashSet.fromList (NE.toList rks))
+
+    --this endpoint is Pact-Web compatible, so need to return the inner Pact result type
+    let responses = Pact.PollResponses $ fmap (_pcrResult . _scrPactResult) possiblyIncompleteResults
+    writeResponse responses)
+  (\e -> liftIO $ putStrLn $ "Exception caught in the handler pactPoll" ++ show (e :: SomeException))
+
 poll :: Api ()
 poll = catch (do
     (Pact.Poll rks) <- readJSON
     PossiblyIncompleteResults{..} <- checkHistoryForResult (HashSet.fromList (NE.toList rks))
-    writeResponse $ K.PollResponses $ fmap Right possiblyIncompleteResults)
-    -- ^ convert PossiblyIncompleteResults to PollResponses
+    writeResponse $ K.PollResponses possiblyIncompleteResults)
   (\e -> liftIO $ putStrLn $ "Exception caught in the handler poll: " ++ show (e :: SomeException))
 
 checkHistoryForResult :: HashSet RequestKey -> Api PossiblyIncompleteResults
@@ -271,27 +302,31 @@ readSubmitCCJSON = do
 tryParseJSON
   :: (Show t, FromJSON t) =>
      BSL.ByteString -> Api (BS.ByteString, t)
-tryParseJSON b = case eitherDecode b of
+tryParseJSON b = do
+  case eitherDecode b of
     Right v -> return (toStrict b,v)
     Left e -> die $ "Left from tryParseJson: " ++ e
 
 parseSubmitBatch :: BSL.ByteString -> Api (BS.ByteString, Pact.SubmitBatch)
-parseSubmitBatch b = case eitherDecode b of
+parseSubmitBatch b = do
+  let z = eitherDecode b :: Either String Pact.SubmitBatch
+  case eitherDecode b of
     (Right v :: Either String Pact.SubmitBatch) -> return (toStrict b,v)
-    Left e -> die $ "Left from tryParseJson: " ++ e
+    Left e -> error ( "Left from parseSubmitBatch?: "
+                    ++ "\n\t trying to decode: " ++ show b
+                    ++ "\n\t decoded: " ++ show z
+                    ++ "\n\terror: " ++ show e )
 
 parseSubmitCC :: BSL.ByteString -> Api (BS.ByteString, SubmitCC)
 parseSubmitCC b = case eitherDecode b of
     (Right v :: Either String SubmitCC) -> return (toStrict b,v)
-    Left e -> die $ "Left from tryParseJson: " ++ e
+    Left e -> die $ "Left from parseSubmitCC: " ++ e
 
 setJSON :: Api ()
 setJSON = modifyResponse $ setHeader "Content-Type" "application/json"
 
 writeResponse :: forall j. (ToJSON j) => j -> Api ()
-writeResponse r = do
-  let theRight = (Right r) :: Either String j
-  setJSON >> writeLBS (encode theRight)
+writeResponse r = setJSON >> writeLBS (encode r)
 
 listenFor :: Pact.ListenerRequest -> Api ClusterChangeResult
 listenFor (Pact.ListenerRequest rk) = do
@@ -307,6 +342,32 @@ listenFor (Pact.ListenerRequest rk) = do
     History.ListenerResult cr -> do
       log $ "listenFor -- Listener Serviced for: " ++ show rk
       return $ _concrResult cr
+
+registerPactListener :: Api ()
+registerPactListener = do
+  (theEither :: Either SomeException ()) <- try $ do
+    (Pact.ListenerRequest rk) <- readJSON
+    hChan <- view (aiDispatch.dispHistoryChannel)
+    m <- liftIO $ newEmptyMVar
+    liftIO $ writeComm hChan $ RegisterListener (HashMap.fromList [(rk,m)])
+    log $ "Registered Listener for: " ++ show rk
+    res <- liftIO $ readMVar m
+    case res of
+      History.GCed msg -> do
+        log $ "Listener GCed for: " ++ show rk ++ " because " ++ msg
+        die msg
+      History.ListenerResult cr -> do
+        log $ "Listener Serviced for: " ++ show rk
+        setJSON
+        let pactCr = _pcrResult $ _scrPactResult cr
+        writeResponse $ Pact.ListenResponse pactCr
+  case theEither of
+    Left e -> do
+      let errStr = "Exception in registerListener: " ++ show e
+      log errStr
+      liftIO $ putStrLn errStr
+      throw e
+    Right y -> return y
 
 registerListener :: Api ()
 registerListener = do
@@ -332,3 +393,12 @@ registerListener = do
       liftIO $ putStrLn errStr
       throw e
     Right y -> return y
+
+-- | Require just to respond with an HTTP 200 for pact-web, but some more useful info can be added..
+sendVersionInfo :: Api ()
+sendVersionInfo = do
+  writeResponse cabalVersion
+
+-- | Get version info from cabal
+cabalVersion :: String
+cabalVersion = showVersion version

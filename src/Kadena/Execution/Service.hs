@@ -212,11 +212,14 @@ applyCommand _tEnd le@LogEntry{..} = do
       assign esModuleCache moduleCache' -- update the cache stored in ExecutionState
       return ( rkey
              , SmartContractResult
-               { _crHash = chash
-               , _scrResult = result
-               , _crLogIndex = _leLogIndex
-               , _crLatMetrics = lm
-               })
+               { _scrPactResult = PactContractResult
+                 { _pcrHash = chash
+                 , _pcrResult = result
+                 , _pcrLogIndex = _leLogIndex
+                 , _pcrLatMetrics = lm
+                 }
+               }
+             )
     ConsensusChangeCommand{..} -> do
       (pproc, ppLat) <- case _cccPreProc of
         Unprocessed -> do

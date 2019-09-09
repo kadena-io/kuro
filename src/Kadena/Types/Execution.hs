@@ -46,7 +46,6 @@ import Kadena.Types.Log (LogEntry,LogEntries)
 import Kadena.Types.Event (Beat)
 import Kadena.Types.History (HistoryChannel)
 import Kadena.Types.Private (PrivateChannel)
--- import Kadena.Types.Spec
 import Kadena.Types.Entity (EntityConfig)
 
 type ModuleCache = HashMap Pact.ModuleName (Pact.ModuleData Pact.Ref, Bool)
@@ -60,7 +59,7 @@ data Execution =
   UpdateKeySet { newKeySet :: !KeySet } |
   ExecutionBeat Beat |
   ExecLocal { localCmd :: !(Pact.Command ByteString),
-              localResult :: !(MVar Pact.PactResult) } |
+              localResult :: !(MVar (Pact.CommandResult Pact.Hash)) } |
   ExecConfigChange { logEntriesToApply :: !LogEntries }
 
 newtype ExecutionChannel = ExecutionChannel (Chan Execution)

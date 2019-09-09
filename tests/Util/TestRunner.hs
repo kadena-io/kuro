@@ -71,7 +71,7 @@ data TestResponse = TestResponse
   } deriving (Eq, Generic)
 
 instance Show TestResponse where
-  show tr = "resultSuccess: " ++ show (resultSuccess tr) ++ "\n"
+  show tr = "lesultSuccess: " ++ show (resultSuccess tr) ++ "\n"
     ++ "Batch count: " ++ show (_batchCount tr) ++ "\n"
     ++ take 100 (show (apiResult tr)) ++ "..."
 
@@ -134,25 +134,35 @@ runClientCommands args testRequests = do
       i <- newMVar =<< initRequestId
       (conf :: ClientConfig) <- either (\e -> print e >> exitFailure) return
         =<< Y.decodeFileEither (_oConfig opts)
-      (_, _, w) <- runRWST (simpleRunREPL testRequests) conf ReplState
-        { _server = fst (minimum $ HM.toList (_ccEndpoints conf))
-        , _batchCmd = "\"Hello Kadena\""
-        , _requestId = i
-        , _cmdData = Null
-        , _keys = [Pact.ApiKeyPair
-                   (Pact.PrivBS (Ed25519.exportPrivate (_ccSecretKey conf)))
-                   (Just (Pact.PubBS (Ed25519.exportPublic (_ccPublicKey conf))))
-                   Nothing
-                   Nothing]
-        , _fmt = Table
-        , _echo = False }
+      let replState = ReplState
+            { _server = fst (minimum $ HM.toList (_ccEndpoints conf))
+            , _batchCmd = "\"Hello Kadena\""
+            , _requestId = i
+            , _cmdData = Null
+            , _keys = [Pact.ApiKeyPair
+                      (Pact.PrivBS (Ed25519.exportPrivate (_ccSecretKey conf)))
+                      (Just (Pact.PubBS (Ed25519.exportPublic (_ccPublicKey conf))))
+                      Nothing
+                      Nothing]
+            , _fmt = Table
+            , _echo = False }
+      let server = getServer conf replState
+      clientEnv <- getClientEnv server
+      let replConfig = ReplConfig
+            { _rcClientConfig = conf
+            , _rcClientEnv = clientEnv
+            }
+      (_, _, w) <- runRWST (simpleRunREPL testRequests) replConfig replState
       buildResults testRequests w
 
 buildResults :: [TestRequest] -> [ReplApiData] -> IO [TestResult]
 buildResults testRequests ys = do
   let requests = filter isRequest ys
   let responses = filter (not . isRequest) ys
-  return $ foldr (matchResponses requests responses) [] testRequests
+  let matched = foldr (matchResponses requests responses) [] testRequests
+  let outStr = concatMap show matched
+  putStrLn $ "Matched results from buildResults: " ++ outStr
+  return matched
 
 -- Fold function that matches a given TestRequest to:
 --   a corresponding ReplApiRequest (matching via. the full text of the command)

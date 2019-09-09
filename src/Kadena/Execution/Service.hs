@@ -272,13 +272,15 @@ applyPrivate LogEntry{..} PrivatePlaintext{..} = case decode _ppMessage of
       liftIO $ return $ Right result
 
 
-applyLocalCommand :: (Pact.Command ByteString, MVar Pact.PactResult) -> ExecutionService ()
+applyLocalCommand
+  :: (Pact.Command ByteString, MVar (Pact.CommandResult Pact.Hash))
+  -> ExecutionService ()
 applyLocalCommand (cmd, mv) = do
   moduleCache <- use esModuleCache
   applyLocal <- _kceiApplyCmd <$> use esKCommandExecInterface
   (T2 cr moduleCache') <- liftIO $ applyLocal Pact.Local moduleCache cmd
   assign esModuleCache moduleCache' -- update the cache stored in ExecutionState
-  liftIO $ putMVar mv (Pact._crResult cr)
+  liftIO $ putMVar mv cr
 
 -- | This may be used in the future for configuration changes other than cluster membership changes.
 --   Cluster membership changes are implemented via applyCommand

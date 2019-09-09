@@ -1,12 +1,15 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeOperators #-}
 
 module Apps.Kadena.Client
   ( main
@@ -15,13 +18,17 @@ module Apps.Kadena.Client
   , ClientConfig(..), ccSecretKey, ccPublicKey, ccEndpoints
   , ClientOpts(..), coptions, flushStrLn
   , esc
-  , Formatter(..), getServer, handleCmd
+  , Formatter(..)
+  , getClientEnv
+  , getServer
+  , handleCmd
   , initRequestId
   , Node(..)
   , parseCliCmd
   , Repl
   , replaceCounters
   , ReplApiData(..)
+  , ReplConfig(..), rcClientConfig, rcClientEnv
   , ReplState(..)
   , runREPL
   , timeout
@@ -29,12 +36,11 @@ module Apps.Kadena.Client
 
 import Control.Error.Util (hush)
 import Control.Exception (IOException)
-import qualified Control.Exception as Exception
 import Control.Monad.Extra hiding (loop)
 import Control.Monad.Reader
 import Control.Lens hiding (to,from)
 import Control.Monad.Catch
-import Control.Monad.Trans.RWS.Lazy
+import Control.Monad.Trans.RWS.Lazy as RWS
 import Control.Concurrent.Lifted (threadDelay)
 import Control.Concurrent.MVar
 import Control.Concurrent.Async
@@ -71,7 +77,9 @@ import qualified Data.Yaml as Y
 import GHC.Generics (Generic)
 
 import Network.HTTP.Client hiding (responseBody)
-import Network.Wreq hiding (Raw)
+
+import qualified Servant.Client as S
+import qualified Servant.Server as S
 
 import System.Console.GetOpt
 import System.Environment
@@ -95,8 +103,9 @@ import Pact.Types.Util
 
 import Kadena.Command
 import Kadena.ConfigChange (mkConfigChangeApiReq)
+import Kadena.HTTP.ApiServer
 import Kadena.Types.Base hiding (printLatTime)
-import Kadena.Types.Command
+import Kadena.Types.Command as K
 import Kadena.Types.Entity (EntityName)
 import qualified Kadena.Types.HTTP as K
 import Kadena.Types.Private (PrivateResult)
@@ -114,10 +123,6 @@ coptions =
            (ReqArg (\fp -> set oConfig fp) "config")
            "Configuration File"
   ]
-
--- TODO: restore timeout to 30 seconds, longer value temporarily for debugging
-timeoutSeconds :: Int
-timeoutSeconds = 300
 
 listenDelayMs :: Int
 listenDelayMs = 10000
@@ -140,6 +145,12 @@ data ClientConfig = ClientConfig {
 makeLenses ''ClientConfig
 instance ToJSON ClientConfig where toJSON = lensyToJSON 3
 instance FromJSON ClientConfig where parseJSON = lensyParseJSON 3
+
+data ReplConfig = ReplConfig
+  { _rcClientConfig :: ClientConfig
+  , _rcClientEnv :: S.ClientEnv
+  }
+makeLenses ''ReplConfig
 
 data KeyPairFile = KeyPairFile {
     _kpKeyPairs :: [Pact.ApiKeyPair]
@@ -190,7 +201,7 @@ data ReplState = ReplState {
 }
 makeLenses ''ReplState
 
-type Repl a = RWST ClientConfig [ReplApiData] ReplState IO a
+type Repl a = RWST ReplConfig [ReplApiData] ReplState IO a
 
 data ReplApiData =
   ReplApiRequest
@@ -205,22 +216,19 @@ data ReplApiData =
 prompt :: String -> String
 prompt s = "\ESC[0;31m" ++ s ++ "> \ESC[0m"
 
-die :: MonadThrow m => String -> m a
-die = throwM . userError
-
 flushStr :: MonadIO m => String -> m ()
 flushStr str = liftIO (putStr str >> hFlush stdout)
 
 flushStrLn :: MonadIO m => String -> m ()
 flushStrLn str = liftIO (putStrLn str >> hFlush stdout)
 
-getServer :: Repl String
-getServer = do
-  ss <- view ccEndpoints
-  s <- use server
-  case HM.lookup s ss of
+getServer :: ClientConfig -> ReplState -> String
+getServer clientCfg replState =
+  let ss = _ccEndpoints clientCfg
+      s = _server replState
+  in case HM.lookup s ss of
     Nothing -> die $ "Invalid server id: " ++ show s
-    Just a -> return (_nURL a)
+    Just a -> (_nURL a)
 
 readPrompt :: Repl (Maybe String)
 readPrompt = do
@@ -240,39 +248,90 @@ mkExec code mdata privMeta = do
       (Exec (ExecMsg (T.pack code) mdata))
   return $ decodeUtf8 <$> cmd
 
-postAPI :: (ToJSON req, FromJSON t, Show t) => String -> req -> Repl (Response t)
-postAPI ep rq = do
-  use echo >>= \e -> when e $ putJSON rq
-  s <- getServer
-  liftIO $ doPost ep s rq
+handleHttpResp :: (t -> Repl ()) -> t -> Repl ()
+handleHttpResp f r = f r
 
-doPost
-  :: forall req t. (ToJSON req, FromJSON t, Show t)
-  => String
-  -> String
-  -> req
-  -> IO (Response t)
-doPost ep server' rq = do
-  let url = "http://" ++ server' ++ "/api/v1/" ++ ep
-  r <- liftIO $ post url (toJSON rq)
-  asJSON r
+getClientEnv :: String -> IO S.ClientEnv
+getClientEnv str = do
+  url <- S.parseBaseUrl str
+  manager' <- newManager defaultManagerSettings
+  return $ S.mkClientEnv manager' url
 
-handleHttpResp :: (t -> Repl ()) -> Response t -> Repl ()
-handleHttpResp f r = f (r ^. responseBody)
+----------------------------------------------------------------------------------------------------
+-- Servant client endpoints
+----------------------------------------------------------------------------------------------------
+configChange :: S.ClientEnv -> SubmitCC -> IO Pact.RequestKeys
+configChange env scc = do
+  res <- S.runClientM (configChangeClient scc) env
+  either dieBadRequest return res
+
+send :: S.ClientEnv -> Pact.SubmitBatch -> IO Pact.RequestKeys
+send env sb = do
+  res <- S.runClientM (sendClient sb) env
+  either dieBadRequest return res
+
+sendLocal :: S.ClientEnv -> Pact.Command Text -> IO (Pact.CommandResult Pact.Hash)
+sendLocal env cmd = do
+  res <- S.runClientM (localClient cmd) env
+  either dieBadRequest return res
+
+sendPrivate :: S.ClientEnv -> (Pact.Command Text) -> IO Pact.RequestKeys
+sendPrivate env cmd = do
+  res <- S.runClientM (privateClient cmd) env
+  either dieBadRequest return res
+
+listenFor :: S.ClientEnv -> Pact.ListenerRequest -> IO K.CommandResult
+listenFor env listenReq = do
+  res <- S.runClientM (listenClient listenReq) env
+  either dieBadRequest success res
+  where
+    success = \case
+                Pact.ListenTimeout n -> dieListenTimeout n
+                Pact.ListenResponse cr -> toKCmdResult cr
+
+pollFor :: S.ClientEnv -> Pact.Poll -> IO K.PollResponses
+pollFor env aPoll = do
+  res <- S.runClientM (pollClient aPoll) env
+  either dieBadRequest success res
+  where
+    success (Pact.PollResponses resMap) = do
+      kResultMap <- traverse toKCmdResult resMap
+      return $ K.PollResponses kResultMap
+
+----------------------------------------------------------------------------------------------------
+toKCmdResult :: Pact.CommandResult Hash -> IO K.CommandResult
+toKCmdResult cr = do
+  case Pact._crMetaData cr of
+    Nothing -> dieBadRequestStr "Expected latency metadata in result"
+    Just metaValue -> do
+      case  fromJSON metaValue :: A.Result K.PactResultMeta of
+        A.Error s -> dieBadRequestStr $ "Failure parsing metadata from result: " ++ s
+        A.Success K.PactResultMeta{..} -> do
+          return $ K.SmartContractResult
+            { _scrPactResult = PactContractResult
+              { _pcrHash = Pact.unRequestKey $ Pact._crReqKey cr
+              , _pcrResult = cr
+              , _pcrLogIndex = _prMetaLogIndex
+              , _pcrLatMetrics = _prMetaLatMetrics
+              }
+            }
 
 sendCmd :: Mode -> String -> String -> Repl ()
 sendCmd m cmd replCmd = do
   j <- use cmdData
   c <- mkExec cmd j (Pact.PrivateMeta Nothing)
   -- ^ Note: this is mkExec in this  module, not in Pact.ApiReq
+  env <- view rcClientEnv
   case m of
     Transactional -> do
-      resp <- postAPI "send" $ Pact.SubmitBatch (c :| [])
+      resp <- liftIO $ send env $ Pact.SubmitBatch (c :| [])
       tellKeys resp replCmd
       handleHttpResp (listenForResult listenDelayMs) resp
     Local -> do
-      y <- postAPI "local" $ Pact.SubmitBatch (c :| [])
-      handleHttpResp (\(resp :: Value) -> putJSON resp) y
+      res <- liftIO $ sendLocal env c
+      -- output formatting via K.CommandResult, Pact's CommandResult represented by the
+      -- SmartContractCommand constructor
+      putJSONPactResult $ res
 
 sendMultiple :: String -> String -> Int -> Int -> Repl ()
 sendMultiple templateCmd replCmd startCount nRepeats  =
@@ -284,14 +343,14 @@ sendMultiple' :: String -> String -> Int -> Int -> Bool -> Repl ()
 sendMultiple' templateCmd replCmd startCount nRepeats singleCmd = do
   j <- use cmdData
   let cmds = replaceCounters startCount nRepeats templateCmd
+  env <- view rcClientEnv
   cmds' <- sequence $
     if singleCmd then [mkExec (unwords cmds) j (Pact.PrivateMeta Nothing)]
     else fmap (\cmd -> mkExec cmd j (Pact.PrivateMeta Nothing)) cmds
-
   case NE.nonEmpty cmds' of
     Nothing -> flushStrLn $ "Apps.Kadena.Client.sendMultiple' - empty list of commands"
     Just ne -> do
-      resp <- postAPI "send" $ Pact.SubmitBatch ne
+      resp <- liftIO $ send env $ Pact.SubmitBatch ne
       tellKeys resp replCmd
       handleHttpResp (pollForResults True (Just nRepeats)) resp
 
@@ -315,31 +374,34 @@ loadMultiple' filePath replCmd startCount nRepeats singleCmd = do
 sendConfigChangeCmd :: ConfigChangeApiReq -> String -> Repl ()
 sendConfigChangeCmd ccApiReq@ConfigChangeApiReq{..} fileName = do
   execs <- liftIO $ mkConfigChangeExecs ccApiReq
+  env <- view rcClientEnv
   let theJSONs = BSL.unpack $ encode (SubmitCC execs)
   -- TODO: remove after debugging is finished
   liftIO $ putStrLn $ "Client.sendConfigChangeCmd: \n" ++ theJSONs
-  resp <- postAPI "config" (SubmitCC execs)
+  resp <- liftIO $ configChange env (SubmitCC execs)
   tellKeys resp fileName
   handleHttpResp (listenForLastResult listenDelayMs False) resp
 
-tellKeys :: Response Pact.RequestKeys -> String -> Repl ()
-tellKeys resp cmd = do
-  let ks = resp ^. responseBody
+tellKeys :: Pact.RequestKeys -> String -> Repl ()
+tellKeys ks cmd = do
   tell $ fmap (\k -> ReplApiRequest { _apiRequestKey = k, _replCmd = cmd })
-                  (NE.toList (Pact._rkRequestKeys ks))
+                     (NE.toList (Pact._rkRequestKeys ks))
 
-sendPrivate :: Pact.Address -> String -> Repl ()
-sendPrivate addy msg = do
+sendPrivateCmd :: Pact.Address -> String -> Repl ()
+sendPrivateCmd addy msg = do
   j <- use cmdData
-  e <- mkExec msg j $ Pact.PrivateMeta (Just addy)
-  resp <- postAPI "private" (Pact.SubmitBatch (e :| []))
+  cmd <- mkExec msg j $ Pact.PrivateMeta (Just addy)
+  env <- view rcClientEnv
+  resp <- liftIO $ sendPrivate env cmd
   handleHttpResp (listenForResult listenDelayMs) resp
 
 putJSONResult :: CommandResult -> Repl ()
-putJSONResult SmartContractResult{..} = putJSON (Pact._crResult (_pcrResult _scrPactResult) :: Pact.PactResult)
+putJSONResult SmartContractResult{..} = putJSONPactResult (_pcrResult _scrPactResult)
 putJSONResult ConsensusChangeResult{..} = putJSON (_concrResult :: ClusterChangeResult)
-putJSONResult PrivateCommandResult{..}
-  = putJSON (_privResult :: PrivateResult (Pact.CommandResult Pact.Hash))
+putJSONResult PrivateCommandResult{..} = putJSON (_privResult :: PrivateResult (Pact.CommandResult Pact.Hash))
+
+putJSONPactResult :: Pact.CommandResult Pact.Hash -> Repl ()
+putJSONPactResult cr = putJSON (Pact._crResult cr :: Pact.PactResult)
 
 putJSON :: (ToJSON a) => a -> Repl ()
 putJSON a =
@@ -353,12 +415,13 @@ putJSON a =
 batchTest :: Int -> String -> Repl ()
 batchTest n cmd = do
   j <- use cmdData
+  env <- view rcClientEnv
   flushStrLn $ "Preparing " ++ show n ++ " messages ..."
   cmdList <- replicateM n (mkExec cmd j (Pact.PrivateMeta Nothing))
   case NE.nonEmpty cmdList of
     Nothing -> flushStrLn $ "batchTest -- empty replicated list"
     Just neList ->  do
-      resp <- postAPI "send" (Pact.SubmitBatch neList)
+      resp <- liftIO $ send env (Pact.SubmitBatch neList)
       flushStrLn $ "Sent, retrieving responses"
       handleHttpResp (listenForLastResult listenDelayMs True) resp
 
@@ -383,13 +446,13 @@ processParBatchPerServer sleep' (sema, (Node{..}, batches)) = do
     case NE.nonEmpty batch of
       Nothing -> flushStrLn $ "processParBatchPerServer -- empty batch"
       Just neBatch -> do
-        resp <- doPost "send" _nURL $ Pact.SubmitBatch neBatch :: (IO (Response Pact.RequestKeys))
+        clientEnv <- getClientEnv _nURL
+        resp <- send clientEnv (Pact.SubmitBatch neBatch)
         flushStrLn $ "Sent a batch to " ++ _nURL
-        let rks = resp ^. responseBody
-        rk <- return $ NE.last $ Pact._rkRequestKeys rks
+        rk <- return $ NE.last $ Pact._rkRequestKeys resp
         flushStrLn $ _nURL ++ " Success: " ++ show rk
         threadDelay (sleep' * 1000)
-  putMVar sema ()
+  liftIO $ putMVar sema ()
 
 calcBatchSize :: Int -> Int -> Int -> Int
 calcBatchSize cmdRate' sleep' clusterSize' = fromIntegral (ceiling $ cr * (sl/1000) / cs :: Int)
@@ -403,7 +466,10 @@ parallelBatchTest :: Int -> Int -> Int -> Repl ()
 parallelBatchTest totalNumCmds' cmdRate' sleep' = do
   cmd <- use batchCmd
   j <- use cmdData
-  servers <- HM.elems <$> view ccEndpoints
+  rccc <- RWS.asks _rcClientConfig
+  let eps  = _ccEndpoints rccc
+  let servers = HM.elems eps
+
   batchSize' <- return $ calcBatchSize cmdRate' sleep' (length servers)
   semas <- replicateM (length servers) $ liftIO newEmptyMVar
   flushStrLn $ "Preparing " ++ show totalNumCmds' ++ " messages to distribute among "
@@ -447,25 +513,23 @@ listenForLastResult tdelay showLatency theKeys = do
   let cnt = fromIntegral $ length rks
   threadDelay tdelay
   let lastRk = NE.last rks
-  resp <- postAPI "listenSBFT" (Pact.ListenerRequest lastRk)
-  case resp ^. responseBody of
-    (K.ListenTimeout n) -> flushStrLn $ "Error: listener timeout" ++ show n
-    (K.ListenResponse cr) -> do
-      tell [ReplApiResponse { _apiResponseKey = lastRk
-                            , _apiResult = cr
-                            , _batchCnt = fromIntegral cnt}]
-      if showLatency then do
-        let latMetrics = case cr of
-              SmartContractResult pactCr -> _pcrLatMetrics pactCr
-              nonPactCr -> _crLatMetrics nonPactCr
-        case latMetrics of
-          Nothing -> flushStrLn "Success"
-          Just lats@CmdResultLatencyMetrics{..} -> do
-            pprintLatency lats
-            case _rlmFinExecution of
-              Nothing -> flushStrLn "Latency Measurement Unavailable"
-              Just n -> flushStrLn $ intervalOfNumerous cnt n
-      else putJSONResult cr
+  env <- view rcClientEnv
+  result <- liftIO $ listenFor env $ Pact.ListenerRequest lastRk
+  tell [ReplApiResponse { _apiResponseKey = lastRk
+                        , _apiResult = result
+                        , _batchCnt = fromIntegral cnt}]
+  if showLatency then do
+    let latMetrics = case result of
+          SmartContractResult pactCr -> _pcrLatMetrics pactCr
+          nonPactCr -> _crLatMetrics nonPactCr
+    case latMetrics of
+      Nothing -> flushStrLn "Success"
+      Just lats@CmdResultLatencyMetrics{..} -> do
+        pprintLatency lats
+        case _rlmFinExecution of
+          Nothing -> flushStrLn "Latency Measurement Unavailable"
+          Just n -> flushStrLn $ intervalOfNumerous cnt n
+  else putJSONResult result
 
 pollMaxRetry :: Int
 pollMaxRetry = 180
@@ -487,8 +551,9 @@ pollForResults showLatency mTrueCount theKeys = do
       flushStrLn "Timeout on pollForResults -- not all results were received"
       return ()
     go rks keyCount retryCount = do
-      resp <- postAPI "poll" (Pact.Poll rks) :: Repl (Response K.PollResponses)
-      let (K.PollResponses responseMap)  = resp ^. responseBody
+      env <- view rcClientEnv
+      resp <- liftIO $ pollFor env $ Pact.Poll rks
+      let (K.PollResponses responseMap)  = resp
       let ks = HM.keys responseMap :: [RequestKey]
       if length ks < keyCount
       then do
@@ -526,26 +591,20 @@ printLatencyMetrics result cnt = do
 
 handlePollCmds :: Bool -> RequestKey -> Repl ()
 handlePollCmds printMetrics rk = do
-  s <- getServer
-  let opts = defaults & manager .~ Left (defaultManagerSettings
-        { managerResponseTimeout = responseTimeoutMicro (timeoutSeconds * 1000000) } )
-  eR <- liftIO $ Exception.try $ postWith opts
-            ("http://" ++ s ++ "/api/v1/poll") (toJSON (Pact.Poll (rk :| []))) -- NonEmpty List
-  case eR of
-    Left (SomeException err) -> flushStrLn $ show err
-    Right r -> do
-      resp  <- asJSON r :: Repl (Response K.PollResponses)
-      let (K.PollResponses prs) = resp ^. responseBody
-      tell (fmap (\(k, v) -> ReplApiResponse
-              { _apiResponseKey = k
-              , _apiResult = v
-              , _batchCnt = 1 }) (HM.toList prs))
-      forM_ (HM.elems prs) $ \cmdResult -> do
-        putJSON cmdResult
-        when printMetrics $
-          case _crLatMetrics cmdResult of
-            Nothing -> flushStrLn "Metrics Unavailable"
-            Just (lats@CmdResultLatencyMetrics{..}) -> pprintLatency lats
+  env <- view rcClientEnv
+  resp <- liftIO $ pollFor env $ Pact.Poll (rk :| [])
+
+  let (K.PollResponses prs) = resp
+  tell (fmap (\(k, v) -> ReplApiResponse
+          { _apiResponseKey = k
+          , _apiResult = v
+          , _batchCnt = 1 }) (HM.toList prs))
+  forM_ (HM.elems prs) $ \cmdResult -> do
+    putJSON cmdResult
+    when printMetrics $
+      case _crLatMetrics cmdResult of
+        Nothing -> flushStrLn "Metrics Unavailable"
+        Just (lats@CmdResultLatencyMetrics{..}) -> pprintLatency lats
 
 printLatTime :: (Num a, Ord a, Show a) => a -> String
 printLatTime s
@@ -714,8 +773,11 @@ handleCmd cmd reqStr = case cmd of
   Server Nothing -> do
     use server >>= \s -> flushStrLn $ "Current server: " ++ s
     flushStrLn "Servers:"
-    view ccEndpoints >>= \es -> forM_ (sort $ HM.toList es) $ \(i,e) ->
+    rccc <- RWS.asks _rcClientConfig
+    let ep  = _ccEndpoints rccc
+    forM_ (sort $ HM.toList ep) $ \(i,e) ->
       flushStrLn $ i ++ ": " ++ show e
+
   Server (Just s) -> server .= s
   Batch n | n <= 50000 -> use batchCmd >>= batchTest n
           | otherwise -> void $ flushStrLn "Aborting: batch count limited to 50000"
@@ -728,7 +790,9 @@ handleCmd cmd reqStr = case cmd of
   Poll s -> parseRK s >>= void . handlePollCmds False . RequestKey . Hash
   PollMetrics rk -> do
     s <- use server
-    sList <- HM.toList <$> view ccEndpoints
+    rccc <- RWS.asks _rcClientConfig
+    let ep  = _ccEndpoints rccc
+    let sList = HM.toList ep
     rk' <- parseRK rk
     forM_ sList $ \(s',_) -> do
       server .= s'
@@ -752,7 +816,7 @@ handleCmd cmd reqStr = case cmd of
     keys .= kps
   Format Nothing -> use fmt >>= flushStrLn . show
   Format (Just f) -> fmt .= f
-  Private to from msg -> sendPrivate (Pact.Address to (S.fromList from)) msg
+  Private to from msg -> sendPrivateCmd (Pact.Address to (S.fromList from)) msg
   Echo e -> echo .= e
 
 parseRK :: String -> Repl B.ByteString
@@ -797,20 +861,26 @@ main = do
       i <- newMVar =<< initRequestId
       (conf :: ClientConfig) <- either (\e -> print e >> exitFailure) return =<<
         Y.decodeFileEither (_oConfig opts)
-      _ <- runRWST runREPL conf ReplState
-        {
-          _server = fst (minimum $ HM.toList (_ccEndpoints conf)),
-          _batchCmd = "\"Hello Kadena\"",
-          _requestId = i,
-          _cmdData = Null,
-          _keys = [ Pact.ApiKeyPair
-                    { _akpSecret = Pact.PrivBS (Ed25519.exportPrivate (_ccSecretKey conf))
-                    , _akpPublic = Just (Pact.PubBS (Ed25519.exportPublic (_ccPublicKey conf)))
-                    , _akpAddress = Nothing
-                    , _akpScheme =  Nothing } ],
-          _fmt = Table,
-          _echo = False
-        }
+      let replState = ReplState
+            { _server = fst (minimum $ HM.toList (_ccEndpoints conf))
+            , _batchCmd = "\"Hello Kadena\""
+            , _requestId = i
+            , _cmdData = Null
+            , _keys = [ Pact.ApiKeyPair
+                        { _akpSecret = Pact.PrivBS (Ed25519.exportPrivate (_ccSecretKey conf))
+                        , _akpPublic = Just (Pact.PubBS (Ed25519.exportPublic (_ccPublicKey conf)))
+                        , _akpAddress = Nothing
+                        , _akpScheme =  Nothing } ]
+            , _fmt = Table
+            , _echo = False
+            }
+      let theServer = getServer conf replState
+      clientEnv <- getClientEnv theServer
+      let replConfig = ReplConfig
+            { _rcClientConfig = conf
+            , _rcClientEnv = clientEnv
+            }
+      _ <- runRWST runREPL replConfig replState
       return ()
 
 esc :: String -> String
@@ -830,3 +900,20 @@ replaceCounter n s = replace "${count}" (show n) s
 
 timeout :: Int -> IO a -> IO (Maybe a)
 timeout n io = hush <$> race (threadDelay $ n * 1000000) io
+
+die :: MonadThrow m => String -> m a
+die = throwM . userError
+
+dieBadRequest :: S.ServantError -> IO a
+dieBadRequest err = dieBadRequestStr $ show err
+
+dieBadRequestStr :: String -> IO a
+dieBadRequestStr str = do
+  putStrLn $ "Error: " ++ str
+  throwM S.err400 { S.errBody = BSL.pack str }
+
+dieListenTimeout :: Int -> IO a
+dieListenTimeout n = do
+  let s = "Error - listen request timeout (" ++ show n ++ ")"
+  putStrLn s
+  throwM S.err400 { S.errBody = BSL.pack s }

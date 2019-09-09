@@ -1,73 +1,131 @@
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE InstanceSigs          #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PolyKinds             #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeOperators #-}
+{-# OPTIONS_GHC -fno-warn-unused-binds #-}
+{-# OPTIONS_GHC -fno-warn-missing-signatures #-}
 
 module Kadena.HTTP.ApiServer
-  ( runApiServer
+  ( ApiV1API'
+  , apiV1API'
+  , configChangeClient
+  , listenClient
+  , localClient
+  , pollClient
+  , privateClient
+  , runApiServer
+  , sendClient
+  , versionClient
   ) where
 
 import Prelude hiding (log)
 import Control.Lens
 import Control.Concurrent
-import Control.Exception.Lifted
+import Control.Exception.Lifted (catch, catches, SomeException, throw, try)
+import qualified Control.Exception.Lifted as Ex (Handler(..))
+import Control.Monad.Except
 import Control.Monad.Reader
 
 import Data.Aeson hiding (defaultOptions, Result(..))
 import Data.ByteString.Lazy (toStrict)
-import qualified Data.ByteString.Char8 as BS
+import qualified Data.ByteString.Lazy.Char8 as BSL8
 import qualified Data.ByteString.Lazy as BSL
-import Data.List.NonEmpty (NonEmpty(..))
-import qualified Data.List.NonEmpty as NE
-import qualified Data.Text as T
-import Data.Text.Encoding
 import Data.HashSet (HashSet)
 import qualified Data.HashSet as HashSet
 import qualified Data.HashMap.Strict as HashMap
-import qualified Data.Set as Set
+import Data.List.NonEmpty (NonEmpty(..))
+import qualified Data.List.NonEmpty as NE
 import qualified Data.Serialize as SZ
+import qualified Data.Set as Set
+import Data.Proxy
+import Data.String.Conv (toS)
+import Data.Text (Text)
+import qualified Data.Text as T
+import Data.Text.Encoding
+import Data.Thyme.Clock
+import Data.Version (showVersion)
 
 -- Cabal version info
 import Paths_kadena (version)
-import Data.Version (showVersion)
 
-import Snap.Core
-import Snap.Http.Server as Snap
-import Snap.Util.CORS
+import Network.Wai.Handler.Warp hiding (setPort)
+import Network.Wai.Middleware.Cors
+
+import Servant.API
+import Servant.Client
+import Servant.Client.Core
+import Servant.Server hiding (route)
+
 import System.FilePath
-import System.Directory
 import System.Time.Extra (sleep)
-import Data.Thyme.Clock
 
-import qualified Pact.Types.Runtime as Pact
-import qualified Pact.Types.Command as Pact
-import qualified Pact.Types.API as Pact
+import qualified Pact.Server.API as P
+import qualified Pact.Types.Runtime as P
+import qualified Pact.Types.Command as P
+import qualified Pact.Types.API as P
 
 import Kadena.Command (SubmitCC(..))
 import Kadena.Config.TMVar as KCfg
 import Kadena.Consensus.Publish
-import Kadena.Types.Command
+import qualified Kadena.Types.Command as K
 import Kadena.Types.Base
 import Kadena.Types.Comms
+import Kadena.Types.ConfigChange (ConfigChangeException(..))
 import Kadena.Types.Dispatch
 import Kadena.Types.Entity
-import qualified Kadena.Types.HTTP as K
-import Kadena.HTTP.Static
 import qualified Kadena.Types.Execution as Exec
-import Kadena.Types.History (History(..), PossiblyIncompleteResults(..))
+import Kadena.Types.History (History(..))
 import qualified Kadena.Types.History as History
 import Kadena.Types.Private (PrivatePlaintext(..),PrivateCiphertext(..),Labeled(..))
 import Kadena.Types.Spec
 import Kadena.Private.Service (encrypt)
 import Kadena.Util.Util
+
+----------------------------------------------------------------------------------------------------
+#if !MIN_VERSION_servant(0,16,0)
+type ServerError = ServantErr
+#endif
+
+type ApiPrivate = "private"
+  :> ReqBody '[JSON] (P.Command Text)
+  :> Post '[JSON] P.RequestKeys
+
+type ApiConfigChange = "configChange"
+  :> ReqBody '[JSON] SubmitCC
+  :> Post '[JSON] P.RequestKeys
+
+type ApiVersion = "version"
+  :> Get '[PlainText] Text
+
+type ApiV1API' = ("api" :> "v1" :>  P.ApiSend :<|> P.ApiPoll :<|> P.ApiListen :<|> P.ApiLocal
+               :<|> ApiPrivate :<|> ApiConfigChange) :<|> ApiVersion
+
+apiV1API' :: Proxy ApiV1API'
+apiV1API' = Proxy
+
+clientM :: Proxy ClientM
+clientM = Proxy
+
+( sendClient :<|> pollClient :<|> listenClient :<|> localClient
+  :<|> privateClient :<|> configChangeClient) :<|> versionClient = apiV1API' `clientIn` clientM
+
+type Api a = ReaderT ApiEnv (ExceptT ServerError IO) a
 
 data ApiEnv = ApiEnv
   { _aiLog :: String -> IO ()
@@ -75,13 +133,10 @@ data ApiEnv = ApiEnv
   , _aiConfig :: GlobalConfigTMVar
   , _aiPublish :: Publish
   }
-
 makeLenses ''ApiEnv
 
-type Api a = ReaderT ApiEnv Snap a
-
 runApiServer :: Dispatch -> KCfg.GlobalConfigTMVar -> (String -> IO ())
-             -> Int -> MVar PublishedConsensus -> IO UTCTime -> IO ()
+              -> Int -> MVar PublishedConsensus -> IO UTCTime -> IO ()
 runApiServer dispatch gcm logFn port mPubConsensus' timeCache' = do
   logFn $ "[Service|API]: starting on port " ++ show port
   rconf <- readCurrentConfig gcm
@@ -93,180 +148,179 @@ runApiServer dispatch gcm logFn port mPubConsensus' timeCache' = do
         (_nodeId rconf)
   let logFilePrefix = _logDir rconf </> show (_alias (_nodeId rconf))
       hostStaticDir' = _hostStaticDir rconf
-  serverConf' <- serverConf port logFn logFilePrefix
-  httpServe serverConf' $
-    applyCORS defaultOptions $ methods [GET, POST] $
-    route $ ("", runReaderT api conf'):(staticRoutes hostStaticDir')
+  run port $ cors (const policy) $ serve apiV1API' (apiV1Server' conf')
+  where
+    policy = Just CorsResourcePolicy
+      { corsOrigins = Nothing
+      , corsMethods = ["GET", "POST"]
+      , corsRequestHeaders = ["authorization", "content-type"]
+      , corsExposedHeaders = Nothing
+      , corsMaxAge = Just $ 60*60*24 -- one day
+      , corsVaryOrigin = False
+      , corsRequireOrigin = False
+      , corsIgnoreFailures = False
+      }
 
-serverConf :: MonadSnap m => Int -> (String -> IO ()) -> String -> IO (Snap.Config m a)
-serverConf port dbgFn logFilePrefix = do
-  let errorLog =  logFilePrefix ++ "-snap-error.log"
-  let accessLog = logFilePrefix ++ "-snap-access.log"
-  doesFileExist errorLog >>= \x -> when x $ dbgFn ("Creating " ++ errorLog) >> writeFile errorLog ""
-  doesFileExist accessLog >>= \x -> when x $ dbgFn ("Creating " ++ accessLog) >> writeFile accessLog ""
-  return $ setErrorLog (ConfigFileLog errorLog) $
-    setAccessLog (ConfigFileLog accessLog) $
-    setPort port defaultConfig
+apiV1Server' :: ApiEnv -> Server ApiV1API'
+apiV1Server' conf = hoistServer apiV1API' nt readerServer
+  where
+    nt :: forall a. Api a -> Handler a
+    nt s = Handler $ runReaderT s conf
+    readerServer = (sendHandler :<|> pollHandler :<|> listenHandler :<|> localHandler
+                   :<|> privateHandler :<|> configChangeHandler) :<|> versionHandler
 
-apiVer :: BS.ByteString
-apiVer = "/api/v1/"
-
-api :: Api ()
-api = route [
-       (apiVer `BS.append` "send",sendPublicBatch)
-      ,(apiVer `BS.append` "poll",pactPoll)
-      ,(apiVer `BS.append` "pollSBFT",poll)
-      ,(apiVer `BS.append` "listen",registerPactListener)
-      ,(apiVer `BS.append` "listenCC",registerListener)
-      ,(apiVer `BS.append` "listenSBFT", registerListener)
-      ,(apiVer `BS.append` "local",sendLocal)
-      ,(apiVer `BS.append` "private",sendPrivateBatch)
-      ,(apiVer `BS.append` "config", sendClusterChange)
-      ,("version", sendVersionInfo)
-      ]
-
-sendLocal :: Api ()
-sendLocal = catch (do
-    Pact.SubmitBatch neCmds <- readSubmitBatchJSON
-    if length neCmds /= 1
-      then do
-        let msg = "Batches of more than one local commands is not currently supported"
-        log msg >> die msg
-      else do
-        let cmd = fmap encodeUtf8 (NE.head neCmds)
-        mv <- liftIO newEmptyMVar
-        c <- view $ aiDispatch . dispExecService
-        liftIO $ writeComm c (Exec.ExecLocal cmd mv)
-        r <- liftIO $ takeMVar mv -- :: PactResult
-        writeResponse r)
-    (\e -> liftIO $ putStrLn $ "Exception caught in the handler 'sendLocal' : "
+localHandler :: P.Command T.Text -> Api (P.CommandResult P.Hash)
+localHandler theCmd =
+  catch (do
+    let P.SubmitBatch neCmds = P.SubmitBatch (theCmd :| [])
+    let cmd = fmap encodeUtf8 theCmd
+    mv <- liftIO newEmptyMVar
+    c <- view $ aiDispatch . dispExecService
+    liftIO $ writeComm c (Exec.ExecLocal cmd mv)
+    liftIO $ takeMVar mv )
+  (\e -> dieServerError $ "Exception caught in the handler 'sendLocal' : "
                             ++ show (e :: SomeException))
 
--- retries here are due to leader election startup time
-sendPublicBatch :: Api ()
-sendPublicBatch = do
+sendHandler :: P.SubmitBatch -> Api P.RequestKeys
+sendHandler (P.SubmitBatch neCmds) = do
     let retryCount = 30 :: Int
-    Pact.SubmitBatch neCmds <- readSubmitBatchJSON
     log $ "public: received batch of " ++ show (NE.length neCmds)
     go neCmds retryCount
   where
-    go _ 0 = die "timeout waiting for a valid leader"
+    go :: NonEmpty (P.Command Text) -> Int -> Api P.RequestKeys
+    go _ 0 = dieNotFound "timeout waiting for a valid leader"
     go cmds count = catches
         (do
             rpcs <- return $ fmap buildCmdRpc cmds
-            queueRpcs rpcs)
-        [ Handler (\ (_e :: NotReadyException) -> do
+            queueRpcs rpcs
+        )
+        [ Ex.Handler (\ (_e :: NotReadyException) -> do
             liftIO $ sleep 1
             log $ "sendPublicBatch - Current retry-until-ready count = " ++ show count
-               ++ ", trying again..."
+                  ++ ", trying again..."
             go cmds (count - 1))
-        , Handler (\e -> liftIO $ putStrLn $ "Exception caught in the handler 'sendPublicBatch': "
+        , Ex.Handler (\e -> dieServerError $ "Exception caught in the handler 'sendPublicBatch': "
                                 ++ show (e :: SomeException)) ]
 
-sendClusterChange :: Api ()
-sendClusterChange = catch (do
+privateHandler :: P.Command Text -> Api P.RequestKeys
+privateHandler cmd =
+  catch (do
+    conf <- view aiConfig >>= liftIO . readCurrentConfig
+    unless (_ecSending $ _entity conf)
+      $ dieServerError "Node is not configured as private sending node"
+    let (P.SubmitBatch cmds) = P.SubmitBatch (cmd :| [])
+    log $ "private: received batch of " ++ show (length cmds)
+    when (null cmds) $ dieNotFound "Empty Batch"
+    rpcs <- mapM (cmdToWire conf) cmds
+    queueRpcs rpcs )
+  (\e -> dieServerError
+    $ "Exception caught in the handler 'sendPrivateBatch': " ++ show (e :: SomeException))
+
+configChangeHandler :: SubmitCC -> Api P.RequestKeys
+configChangeHandler (SubmitCC ccCmds) =
+  catch (do
     log $ "ApiServer - Cluster Change command received"
-    SubmitCC ccCmds <- readSubmitCCJSON
-    when (null ccCmds) $ die "Empty cluster change batch"
-    when (length ccCmds /= 2) $ die "Exactly two cluster change commands required -- one Transitional, one Final"
+    when (null ccCmds) $ dieNotFound "Empty cluster change batch"
+    when (length ccCmds /= 2) $ dieNotFound "Exactly two cluster change commands required -- one Transitional, one Final"
     let transCmd = head ccCmds
     let finalCmd = head $ tail $ ccCmds
     let transRpc = buildCCCmdRpc transCmd
     log $ "ApiServer - queuing RPC for transitional CC request"
-
-    queueRpcsNoResp (transRpc :| []) -- NonEmpty List
-    let transListenerReq = Pact.ListenerRequest (fst transRpc) --listen for the result of the transitional command
+    _ <- queueRpcs (transRpc :| []) -- NonEmpty List
+    let transListenerReq = P.ListenerRequest (fst transRpc) --listen for the result of the transitional command
     ccTransResult <- listenFor transListenerReq
     case ccTransResult of
-      ClusterChangeSuccess -> do
+      K.ClusterChangeSuccess -> do
         log "Transitional CC was sucessful, now ok to send the Final"
         let finalRpc = buildCCCmdRpc finalCmd
         log $ "ApiServer - queuing RPC for final CC request"
-        queueRpcs (finalRpc :| []) -- NonEmpty List
-        let finalListenerReq = Pact.ListenerRequest (fst finalRpc)
+        keys <- queueRpcs (finalRpc :| []) -- NonEmpty List
+        let finalListenerReq = P.ListenerRequest (fst finalRpc)
         ccFinalResult <- listenFor finalListenerReq
         case ccFinalResult of
-          ClusterChangeSuccess -> log "Final CC was sucessful, Config change complete"
-          ClusterChangeFailure eFinal -> log $ "Final cluster change failed: " ++ eFinal
-      ClusterChangeFailure eTrans  -> do
-        log $ "Transitional cluster change failed: " ++ eTrans
+          K.ClusterChangeSuccess -> do
+            log "Final CC was sucessful, Config change complete"
+            return keys
+          K.ClusterChangeFailure eFinal -> do
+            let s = "Final cluster change failed: " ++ eFinal
+            log s
+            throw $ ConfigChangeException s
+      K.ClusterChangeFailure eTrans  -> do
+        let s = "Transitional cluster change failed: " ++ eTrans
+        log s
+        throw $ ConfigChangeException s
   )
-  (\e -> liftIO $ putStrLn $ "Exception caught in the handler 'sendClusterChange': " ++ show (e :: SomeException))
+  (\e -> dieServerError $ "Exception caught in the handler 'sendClusterChange': " ++ show (e :: SomeException))
 
-queueRpcs :: NonEmpty (RequestKey,CMDWire) -> Api ()
+queueRpcs :: NonEmpty (P.RequestKey, K.CMDWire) -> Api P.RequestKeys
 queueRpcs rpcs = do
   p <- view aiPublish
-  rks <- publish p die rpcs
-  log $ "queueRpcs - writing reponse: " ++ show rks
-  writeResponse rks
+  rks <- publish p dieServerError rpcs
+  log $ "queueRpcs - returning reponse: " ++ show rks
+  return rks
 
-queueRpcsNoResp :: NonEmpty (RequestKey,CMDWire) -> Api ()
-queueRpcsNoResp rpcs = do
-    p <- view aiPublish
-    _rks <- publish p die rpcs
-    return ()
+versionHandler :: Api T.Text
+versionHandler = return $ toS cabalVersion
 
-sendPrivateBatch :: Api ()
-sendPrivateBatch = catch sendBatch (\e -> liftIO $ putStrLn $
-    "Exception caught in the handler 'sendPrivateBatch': " ++ show (e :: SomeException))
-  where
-    sendBatch = do
-      conf <- view aiConfig >>= liftIO . readCurrentConfig
-      unless (_ecSending $ _entity conf) $ die "Node is not configured as private sending node"
-      Pact.SubmitBatch cmds <- readJSON
-      log $ "private: received batch of " ++ show (length cmds)
-      when (null cmds) $ die "Empty Batch"
-      rpcs <- mapM (cmdToWire conf) cmds
-      queueRpcs rpcs
+-- | Get version info from cabal
+cabalVersion :: String
+cabalVersion = showVersion version
 
-cmdToWire :: KCfg.Config -> Pact.Command T.Text -> Api (RequestKey, CMDWire)
+dieNotFound :: String -> Api t
+dieNotFound str = throwError err404 { errBody = BSL8.pack str }
+
+dieServerError :: String -> Api t
+dieServerError str = throwError err500 { errBody = BSL8.pack str }
+
+cmdToWire :: KCfg.Config -> P.Command T.Text -> Api (P.RequestKey, K.CMDWire)
 cmdToWire config cmd = do
-  let cb@Pact.Command{..} = fmap encodeUtf8 cmd
+  let cb@P.Command{..} = fmap encodeUtf8 cmd
   case eitherDecodeStrict' _cmdPayload of
-    Left e -> die $ "JSON payload decode failed: " ++ show e
-    Right (Pact.Payload{..} :: Pact.Payload Pact.PrivateMeta T.Text) -> do
-      addr@Pact.Address{..} <- addressFromMeta _pMeta cmd
+    Left e -> dieNotFound $ "JSON payload decode failed: " ++ show e
+    Right (P.Payload{..} :: P.Payload P.PrivateMeta T.Text) -> do
+      addr@P.Address{..} <- addressFromMeta _pMeta cmd
       if _aFrom `Set.member` _aTo || _aFrom /= (_elName $ _ecLocal$ _entity config)
-        then die $ "sendPrivateBatch: invalid address in payload: " ++ show cmd
+        then dieNotFound $ "sendPrivateBatch: invalid address in payload: " ++ show cmd
         else do
-          pc@PrivateCiphertext{..} <- addressToCipher addr cb config
-          let hsh = Pact.pactHash $ _lPayload $ _pcEntity
-              hc = Hashed pc $ Pact.hash $ _lPayload $ _pcEntity
-          return (RequestKey hsh, PCWire $ SZ.encode hc)
+          pc@PrivateCiphertext{..} <- addressToCipher addr (toS <$> cb) config
+          let hsh = P.pactHash $ _lPayload $ _pcEntity
+              hc = K.Hashed pc $ P.hash $ _lPayload $ _pcEntity
+          return (RequestKey hsh, K.PCWire $ SZ.encode hc)
 
-addressToCipher :: Pact.Address -> Pact.Command BS.ByteString -> KCfg.Config -> Api PrivateCiphertext
-addressToCipher Pact.Address{..} cmd config = do
+addressToCipher :: P.Address -> P.Command BSL8.ByteString -> KCfg.Config -> Api PrivateCiphertext
+addressToCipher P.Address{..} cmd config = do
   pchan <- view (aiDispatch.dispPrivateChannel)
   plainTxt <- liftIO $ encrypt pchan $
     PrivatePlaintext _aFrom (_alias (_nodeId config)) _aTo (SZ.encode cmd)
   case plainTxt of
-    Left e -> die $ "sendPrivateBatch: encrypt failed: " ++ show e ++ "\n"
+    Left e -> dieServerError $ "sendPrivateBatch: encrypt failed: " ++ show e ++ "\n"
                   ++ show plainTxt ++ ", command: " ++ show cmd
     Right pc -> return pc
 
-addressFromMeta :: Pact.PrivateMeta -> Pact.Command T.Text -> Api Pact.Address
-addressFromMeta (Pact.PrivateMeta (Just addr)) _cmd = return addr
-addressFromMeta (Pact.PrivateMeta Nothing) cmd =
-  die $ "sendPrivateBatch: missing address in payload: " ++ show cmd
+addressFromMeta :: P.PrivateMeta -> P.Command T.Text -> Api P.Address
+addressFromMeta (P.PrivateMeta (Just addr)) _cmd = return addr
+addressFromMeta (P.PrivateMeta Nothing) cmd =
+  dieNotFound $ "sendPrivateBatch: missing address in payload: " ++ show cmd
 
-pactPoll :: Api ()
-pactPoll = catch (do
-    (Pact.Poll rks) <- readJSON
-    PossiblyIncompleteResults{..} <- checkHistoryForResult (HashSet.fromList (NE.toList rks))
+pollHandler :: P.Poll -> Api P.PollResponses
+pollHandler (P.Poll rks) =
+  catch (do
+    History.PossiblyIncompleteResults{..} <- checkHistoryForResult (HashSet.fromList (NE.toList rks))
+    pResponses <- traverse toPactCmdResult possiblyIncompleteResults
+    return $ P.PollResponses pResponses)
+  (\e -> dieServerError $ "Exception caught in the handler pactPoll" ++ show (e :: SomeException))
 
-    --this endpoint is Pact-Web compatible, so need to return the inner Pact result type
-    let responses = Pact.PollResponses $ fmap (_pcrResult . _scrPactResult) possiblyIncompleteResults
-    writeResponse responses)
-  (\e -> liftIO $ putStrLn $ "Exception caught in the handler pactPoll" ++ show (e :: SomeException))
+toPactCmdResult :: K.CommandResult -> Api (P.CommandResult Hash)
+toPactCmdResult (K.SmartContractResult K.PactContractResult{..}) = do
+  let meta = K.PactResultMeta
+             { _prMetaLogIndex = _pcrLogIndex
+             , _prMetaLatMetrics = _pcrLatMetrics
+             }
+  let metaJ = toJSON meta
+  return $ _pcrResult {P._crMetaData = Just metaJ}
+toPactCmdResult _ = dieServerError $ "Expected SmartContractResult"
 
-poll :: Api ()
-poll = catch (do
-    (Pact.Poll rks) <- readJSON
-    PossiblyIncompleteResults{..} <- checkHistoryForResult (HashSet.fromList (NE.toList rks))
-    writeResponse $ K.PollResponses possiblyIncompleteResults)
-  (\e -> liftIO $ putStrLn $ "Exception caught in the handler poll: " ++ show (e :: SomeException))
-
-checkHistoryForResult :: HashSet RequestKey -> Api PossiblyIncompleteResults
+checkHistoryForResult :: HashSet P.RequestKey -> Api History.PossiblyIncompleteResults
 checkHistoryForResult rks = do
   hChan <- view (aiDispatch.dispHistoryChannel)
   m <- liftIO $ newEmptyMVar
@@ -276,60 +330,23 @@ checkHistoryForResult rks = do
 log :: String -> Api ()
 log s = view aiLog >>= \f -> liftIO (f $ "[Service|Api]: " ++ s)
 
-die :: String -> Api t
-die res = do
-  _ <- getResponse -- chuck what we've done so far
-  setJSON
-  log res
-  writeLBS $ encode (Left ("Kadena.HTTP.ApiServer" ++ res) :: Either String ())
-  finishWith =<< getResponse
-
-readJSON :: (Show t, FromJSON t) => Api t
-readJSON = do
-  b  <- readRequestBody 1000000000
-  snd <$> tryParseJSON b
-
-readSubmitBatchJSON :: Api Pact.SubmitBatch
-readSubmitBatchJSON = do
-  b  <- readRequestBody 1000000000
-  snd <$> parseSubmitBatch b
-
-readSubmitCCJSON :: Api SubmitCC
-readSubmitCCJSON = do
-  b  <- readRequestBody 1000000000
-  snd <$> parseSubmitCC b
-
-tryParseJSON
-  :: (Show t, FromJSON t) =>
-     BSL.ByteString -> Api (BS.ByteString, t)
-tryParseJSON b = do
-  case eitherDecode b of
-    Right v -> return (toStrict b,v)
-    Left e -> die $ "Left from tryParseJson: " ++ e
-
-parseSubmitBatch :: BSL.ByteString -> Api (BS.ByteString, Pact.SubmitBatch)
+parseSubmitBatch :: BSL.ByteString -> Api (BSL8.ByteString, P.SubmitBatch)
 parseSubmitBatch b = do
-  let z = eitherDecode b :: Either String Pact.SubmitBatch
+  let z = eitherDecode b :: Either String P.SubmitBatch
   case eitherDecode b of
-    (Right v :: Either String Pact.SubmitBatch) -> return (toStrict b,v)
+    (Right v :: Either String P.SubmitBatch) -> return (toS (toStrict b),v)
     Left e -> error ( "Left from parseSubmitBatch?: "
                     ++ "\n\t trying to decode: " ++ show b
                     ++ "\n\t decoded: " ++ show z
                     ++ "\n\terror: " ++ show e )
 
-parseSubmitCC :: BSL.ByteString -> Api (BS.ByteString, SubmitCC)
+parseSubmitCC :: BSL.ByteString -> Api (BSL8.ByteString, SubmitCC)
 parseSubmitCC b = case eitherDecode b of
-    (Right v :: Either String SubmitCC) -> return (toStrict b,v)
-    Left e -> die $ "Left from parseSubmitCC: " ++ e
+    (Right v :: Either String SubmitCC) -> return (toS (toStrict b),v)
+    Left e -> dieNotFound $ "Left from parseSubmitCC: " ++ e
 
-setJSON :: Api ()
-setJSON = modifyResponse $ setHeader "Content-Type" "application/json"
-
-writeResponse :: forall j. (ToJSON j) => j -> Api ()
-writeResponse r = setJSON >> writeLBS (encode r)
-
-listenFor :: Pact.ListenerRequest -> Api ClusterChangeResult
-listenFor (Pact.ListenerRequest rk) = do
+listenFor :: P.ListenerRequest -> Api K.ClusterChangeResult
+listenFor (P.ListenerRequest rk) = do
   hChan <- view (aiDispatch.dispHistoryChannel)
   m <- liftIO $ newEmptyMVar
   liftIO $ writeComm hChan $ RegisterListener (HashMap.fromList [(rk,m)])
@@ -338,15 +355,14 @@ listenFor (Pact.ListenerRequest rk) = do
   case res of
     History.GCed msg -> do
       let errStr = "Listener GCed for: " ++ show rk ++ " because " ++ msg
-      return $ ClusterChangeFailure errStr
+      return $ K.ClusterChangeFailure errStr
     History.ListenerResult cr -> do
       log $ "listenFor -- Listener Serviced for: " ++ show rk
-      return $ _concrResult cr
+      return $ K._concrResult cr
 
-registerPactListener :: Api ()
-registerPactListener = do
-  (theEither :: Either SomeException ()) <- try $ do
-    (Pact.ListenerRequest rk) <- readJSON
+listenHandler :: P.ListenerRequest -> Api P.ListenResponse
+listenHandler (P.ListenerRequest rk) = do
+  (theEither :: Either SomeException P.ListenResponse) <- try $ do
     hChan <- view (aiDispatch.dispHistoryChannel)
     m <- liftIO $ newEmptyMVar
     liftIO $ writeComm hChan $ RegisterListener (HashMap.fromList [(rk,m)])
@@ -355,12 +371,12 @@ registerPactListener = do
     case res of
       History.GCed msg -> do
         log $ "Listener GCed for: " ++ show rk ++ " because " ++ msg
-        die msg
+        dieNotFound msg
       History.ListenerResult cr -> do
         log $ "Listener Serviced for: " ++ show rk
-        setJSON
-        let pactCr = _pcrResult $ _scrPactResult cr
-        writeResponse $ Pact.ListenResponse pactCr
+        pactCr <- toPactCmdResult cr
+        -- let pactCr = K._pcrResult $ K._scrPactResult cr
+        return $ P.ListenResponse pactCr
   case theEither of
     Left e -> do
       let errStr = "Exception in registerListener: " ++ show e
@@ -368,37 +384,3 @@ registerPactListener = do
       liftIO $ putStrLn errStr
       throw e
     Right y -> return y
-
-registerListener :: Api ()
-registerListener = do
-  (theEither :: Either SomeException ()) <- try $ do
-    (Pact.ListenerRequest rk) <- readJSON
-    hChan <- view (aiDispatch.dispHistoryChannel)
-    m <- liftIO $ newEmptyMVar
-    liftIO $ writeComm hChan $ RegisterListener (HashMap.fromList [(rk,m)])
-    log $ "Registered Listener for: " ++ show rk
-    res <- liftIO $ readMVar m
-    case res of
-      History.GCed msg -> do
-        log $ "Listener GCed for: " ++ show rk ++ " because " ++ msg
-        die msg
-      History.ListenerResult cr -> do
-        log $ "Listener Serviced for: " ++ show rk
-        setJSON
-        writeResponse $ K.ListenResponse cr
-  case theEither of
-    Left e -> do
-      let errStr = "Exception in registerListener: " ++ show e
-      log errStr
-      liftIO $ putStrLn errStr
-      throw e
-    Right y -> return y
-
--- | Require just to respond with an HTTP 200 for pact-web, but some more useful info can be added..
-sendVersionInfo :: Api ()
-sendVersionInfo = do
-  writeResponse cabalVersion
-
--- | Get version info from cabal
-cabalVersion :: String
-cabalVersion = showVersion version

@@ -21,6 +21,7 @@ module Kadena.Types.Command
   , RunPreProc(..)
   , FinishedPreProc(..)
   , PactContractResult(..), pcrHash, pcrResult, pcrLogIndex, pcrLatMetrics
+  , PactResultMeta(..), prMetaLogIndex, prMetaLatMetrics
   , PendingResult(..)
   , ProcessedClusterChg (..)
   , SCCPreProcResult, CCCPreProcResult
@@ -261,6 +262,18 @@ makeLenses ''PactContractResult
 instance ToJSON PactContractResult where
   toJSON = lensyToJSON 4
 instance FromJSON PactContractResult where
+  parseJSON = lensyParseJSON 4
+
+-- data type imbedded in Pact CommandResult's _crMetaData field
+data PactResultMeta = PactResultMeta
+    { _prMetaLogIndex :: !LogIndex
+    , _prMetaLatMetrics :: !(Maybe CmdResultLatencyMetrics) }
+  deriving (Show, Eq, Generic)
+makeLenses ''PactResultMeta
+
+instance ToJSON PactResultMeta where
+  toJSON = lensyToJSON 4
+instance FromJSON PactResultMeta where
   parseJSON = lensyParseJSON 4
 
 data CommandResult =

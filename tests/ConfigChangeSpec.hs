@@ -221,10 +221,10 @@ passMetric :: TestMetricResult -> String
 passMetric tmr = "Metric test passed: " ++ metricNameTm (requestTmr tmr)
 
 testRequests :: [TestRequest]
-testRequests = [testReq1, testReq2, testReq3, testReq4, testReq5]
+testRequests = [testReq1, testReq2, testReq3, testReq4, testReq5, testReq6]
 
 testRequestsRepeated :: [TestRequest]
-testRequestsRepeated = [testReq1, testReq4, testReq5]
+testRequestsRepeated = [testReq1, testReq4, testReq5, testReq6]
 
 testReq1 :: TestRequest
 testReq1 = TestRequest
@@ -261,6 +261,13 @@ testReq5 = TestRequest
   -- , eval = checkBatchPerSecond 25
   , eval = checkSuccess
   , displayStr = "Executes the function transferring 1.00 from Acct 1 to Acc2 100 times" }
+
+testReq6 :: TestRequest
+testReq6 = TestRequest
+  { cmd = "exec (list-modules)"
+  , matchCmd = "exec (list-modules)"
+  , eval = checkSuccess
+  , displayStr = "Executes the Pact build-in function list-modules" }
 
 _testCfgChange0 :: TestRequest
 _testCfgChange0 = TestRequest

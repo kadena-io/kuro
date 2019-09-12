@@ -113,7 +113,7 @@ type ApiConfigChange = "configChange"
 type ApiVersion = "version"
   :> Get '[PlainText] Text
 
-type ApiV1API' = ("api" :> "v1" :>  P.ApiSend :<|> P.ApiPoll :<|> P.ApiListen :<|> P.ApiLocal
+type ApiV1API' = "api" :> "v1" :>  (P.ApiSend :<|> P.ApiPoll :<|> P.ApiListen :<|> P.ApiLocal
                :<|> ApiPrivate :<|> ApiConfigChange) :<|> ApiVersion
 
 apiV1API' :: Proxy ApiV1API'
@@ -184,7 +184,6 @@ localHandler theCmd =
 sendHandler :: P.SubmitBatch -> Api P.RequestKeys
 sendHandler (P.SubmitBatch neCmds) = do
     let retryCount = 30 :: Int
-    log $ "public: received batch of " ++ show (NE.length neCmds)
     go neCmds retryCount
   where
     go :: NonEmpty (P.Command Text) -> Int -> Api P.RequestKeys
@@ -209,7 +208,7 @@ privateHandler cmd =
     unless (_ecSending $ _entity conf)
       $ dieServerError "Node is not configured as private sending node"
     let (P.SubmitBatch cmds) = P.SubmitBatch (cmd :| [])
-    log $ "private: received batch of " ++ show (length cmds)
+    log $ "privateHandler: received batch of " ++ show (length cmds)
     when (null cmds) $ dieNotFound "Empty Batch"
     rpcs <- mapM (cmdToWire conf) cmds
     queueRpcs rpcs )

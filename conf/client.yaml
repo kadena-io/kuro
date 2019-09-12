@@ -3,17 +3,17 @@ secretKey: 031e68491813fbd80bfc2d2dcc8e20795f5d5bfd9d5cffbda4aed3be81ece777
 endpoints:
   node0:
     sender: true
-    uRL: 127.0.0.1:7021
+    uRL: 127.0.0.1:9000
     entity: Alice
   node1:
     sender: true
-    uRL: 127.0.0.1:7022
+    uRL: 127.0.0.1:9001
     entity: Bob
   node2:
     sender: true
-    uRL: 127.0.0.1:7023
+    uRL: 127.0.0.1:9002
     entity: Carol
   node3:
     sender: true
-    uRL: 127.0.0.1:7024
+    uRL: 127.0.0.1:9003
     entity: Dinesh

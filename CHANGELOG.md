@@ -1,3 +1,6 @@
+# Version 1.3.0.0
+* API compatability with Pact-Web
+
 # Version 1.2.1.0
 * Upgrade to Pact version 3.2.1
 

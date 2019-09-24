@@ -164,7 +164,7 @@ applyCmd ent pub logger dbv exMode moduleCache _ (ProcSucc cmd) = do
       logLog logger "ERROR" $ "tx failure for requestKey: " ++ show (cmdToRequestKey cmd)
                             ++ ": " ++ show e
       return $ T2 (resultFailure Nothing (cmdToRequestKey cmd) e) moduleCache
-      -- ^ Not updating moduleCache in case of failure
+      -- Not updating moduleCache in case of failure
 
 catchesPactError
   :: (MonadCatch m)

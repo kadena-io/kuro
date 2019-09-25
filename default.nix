@@ -1,1 +1,1 @@
-(import ./project.nix {}).shells.ghc
+(import ./project.nix {}).ghc.kadena

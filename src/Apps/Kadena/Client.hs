@@ -320,7 +320,7 @@ sendCmd :: Mode -> String -> String -> Repl ()
 sendCmd m cmd replCmd = do
   j <- use cmdData
   c <- mkExec cmd j (Pact.PrivateMeta Nothing)
-  -- ^ Note: this is mkExec in this  module, not in Pact.ApiReq
+  -- Note: this is mkExec in this  module, not in Pact.ApiReq
   env <- view rcClientEnv
   case m of
     Transactional -> do

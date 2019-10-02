@@ -1,0 +1,19 @@
+publicKey: fa92687d4b0dca3b1659d0cfcc876a82c80d57c448073c960e1e592147ca1133
+secretKey: 031e68491813fbd80bfc2d2dcc8e20795f5d5bfd9d5cffbda4aed3be81ece777
+endpoints:
+  node0:
+    sender: true
+    uRL: 54.166.153.21:9000
+    entity: Alice
+  node1:
+    sender: true
+    uRL: 54.146.43.204:9001
+    entity: Bob
+  node2:
+    sender: true
+    uRL: 34.204.71.247:9002
+    entity: Carol
+  node3:
+    sender: true
+    uRL: 54.164.36.85:9003
+    entity: Dinesh

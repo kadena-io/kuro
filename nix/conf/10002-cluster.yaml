@@ -1,0 +1,81 @@
+pactPersist:
+  writeBehind: false
+  backend:
+    config:
+      _pragmas:
+      - synchronous = OFF
+      - journal_mode = MEMORY
+      - locking_mode = EXCLUSIVE
+      - temp_store = MEMORY
+      _dbFile: /var/lib/kadena/run/log/node2-pact.sqlite
+    type: SQLITE
+enableDiagnostics: null
+publicKeys:
+  node0: 54ea50ec9f2ec61d60ee194ca99ad2300eb8d7d94848957b67d0d74be8e08ae7
+  node1: 66e1b556db54a451d6923dd83de9fe46a3329528f1615fe0ee715ebd78c17d23
+  node2: 851d5bc11689055348e0ff0a1370c249c9d7bc627c43c394eaca649feaa7b4dc
+  node3: 542f27a3f87d132f9dfa213150634096370c072a058f3a5b4e840da0703a23ad
+aeBatchSize: 20000
+heartbeatTimeout: 2000000
+logDir: /var/lib/kadena/run/log
+apiPort: 9002
+logRules:
+  PactService:
+    include: null
+    enable: null
+    exclude:
+    - DEBUG
+clusterMembers:
+  changeToNodes: []
+  otherNodes:
+  - alias: node0
+    fullAddr: tcp://54.166.153.21:10000
+    host: 54.166.153.21
+    port: 10000
+  - alias: node1
+    fullAddr: tcp://54.146.43.204:10001
+    host: 54.146.43.204
+    port: 10001
+  - alias: node3
+    fullAddr: tcp://54.164.36.85:10003
+    host: 54.164.36.85
+    port: 10003
+preProcThreadCount: 10
+hostStaticDir: true
+electionTimeoutRange:
+- 10000000
+- 18000000
+inMemTxCache: 200000
+myPublicKey: 851d5bc11689055348e0ff0a1370c249c9d7bc627c43c394eaca649feaa7b4dc
+nodeId:
+  alias: node2
+  fullAddr: tcp://34.204.71.247:10002
+  host: 34.204.71.247
+  port: 10002
+enableDebug: true
+entity:
+  signer:
+    secret: d1b7ec0659cff0a356c0e7a6213b404bc24f77d05e601dfd34a7cb559cae629a
+    public: e26e210d5412d0e6bf8a73eed8c6d0f6d5e8f5b221e7055b95bdc7fa4339614f
+  local:
+    ephemeral:
+      secret: b8b65d52d83f632094ffc243d0343f3a975fa98a3c3286146530fd242d3af1b6
+      public: d8803575238b99842d532a0c84c1854dabee8a37abee4a84d38d272fa79a7425
+    static:
+      secret: 1dcf532eaf5151d64bad439ac7caacf925c99c86aa7eb8eca5fc69840f2568fb
+      public: ad0dcb8002fe64544dc147758d07a5cc9f98f70c60c9595f502c240dba79eb4b
+    name: Carol
+  sending: true
+  remotes:
+  - static: b85d5be9c694244a5288b9c02e8c15673762ab99debef5b81da6055fa4730000
+    name: Alice
+  - static: 723ced973b7ce171e35866ef26ba9fbefbe032444d5c8b1ef797af46defe3701
+    name: Bob
+  - static: 3ca9b8d3822052a5d32fed41f4245ae62ddb2a0e7e7849f234b49a87f3d20f51
+    name: Dinesh
+adminKeys:
+  admin0: e2b13b2dad4c843b071cc6bf04be671fc082f499f18c4381d57eacba8b47c2d4
+nodeClass: active
+enablePersistence: true
+myPrivateKey: d2e66c3f8860121f9896996cb5202a8673b9803a98d2e7759ecddf19a1ec5b34
+preProcUsePar: true

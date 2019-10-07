@@ -159,7 +159,7 @@ library
                      , lens-aeson
                      , lifted-base
                      , lz4
-                     , megaparsec
+                     , megaparsec >= 7
                      , memory >= 0.13
                      , monad-control
                      , monad-loops
@@ -168,7 +168,7 @@ library
                      , mtl-compat
                      , mysql >= 0.1 && < 0.2
                      , network
-                     , pact == 3.2.*
+                     , pact == 3.3.*
                      , pact-persist == 1.0.*
                      , parallel
                      , parsers
@@ -230,6 +230,7 @@ executable genconfs
                      , filepath
                      , kadena
                      , network
+                     , text
                      , thyme
                      , yaml
                      , pact

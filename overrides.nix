@@ -17,10 +17,9 @@ in
 
   pact-persist = self.callCabal2nix "pact-persist" (builtins.fetchGit {
     url = "ssh://git@github.com/kadena-io/pact-persist.git";
-    rev = "b6b958d761971f0017fd930c5f81913fc9aec443";
-    ref = "doug/pact-3.2-nix";
+    rev = "4c7fa73589cb2da1feb3c541275af0e615e4a6c7";
+    ref = "master";
   }) {};
 
   zeromq4-haskell = dontCheck (self.callHackage "zeromq4-haskell" "0.8.0" {});
 }
-

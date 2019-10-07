@@ -203,9 +203,9 @@ applyExec cmd (ExecMsg parsedCode edata) ks = do
   let sigs = userSigsToPactKeySet ks
   let gasEnv = (GasEnv _peGasLimit gasPrice (constGasModel (fromIntegral gasRate)))
       evalEnv = setupEvalEnv _peDbEnv (Just (_elName $ _ecLocal $ _peEntity)) _peMode
-                (MsgData sigs edata Nothing (toUntypedHash $ _cmdHash _peCommand))
+                (MsgData edata Nothing (toUntypedHash $ _cmdHash _peCommand))
                 initRefStore gasEnv permissiveNamespacePolicy noSPVSupport def
-  EvalResult{..} <- liftIO $ evalExec (mkNewEvalState _peModuleCache) evalEnv parsedCode
+  EvalResult{..} <- liftIO $ evalExec ks (mkNewEvalState _peModuleCache) evalEnv parsedCode
   mapM_ (handlePactExec sigs edata) _erExec
   return $ T2
     (resultSuccess _erTxId (cmdToRequestKey cmd) _erGas (last _erOutput) _erExec _erLogs)
@@ -236,14 +236,13 @@ applyContinuation
   -> PactM p (Pact.CommandResult Hash)
 applyContinuation cmd cm@ContMsg{..} ks = do
   pe@PactEnv{..} <- ask
-  let sigs = userSigsToPactKeySet ks
   let gasEnv = (GasEnv (fromIntegral _peGasLimit) gasPrice (constGasModel (fromIntegral gasRate)))
   let evalEnv = setupEvalEnv _peDbEnv (Just (_elName $ _ecLocal $ _peEntity)) _peMode
-                (MsgData sigs Null
+                (MsgData Null
                   (Just $ PactStep _cmStep _cmRollback _cmPactId Nothing)
                   (toUntypedHash $ _cmdHash _peCommand))
                 initRefStore gasEnv permissiveNamespacePolicy noSPVSupport def
-  ei <- tryAny (liftIO $ evalContinuation (mkNewEvalState _peModuleCache) evalEnv cm)
+  ei <- tryAny (liftIO $ evalContinuation ks (mkNewEvalState _peModuleCache) evalEnv cm)
   either (handleContFailure pe cm)
          (handleContSuccess (cmdToRequestKey cmd) pe cm)
          ei
@@ -302,7 +301,7 @@ publishCont pactTid step rollback cData = do
         (PCrypto.toScheme ED25519)
         (Just $ PCrypto.PubBS $ Dh.convert (Dh.dhPubToBytes (epPublicKey kpk)))
         (PCrypto.PrivBS $ Dh.convert (Dh.dhSecToBytes (esSecretKey ksk)))
-    cmd <- liftIO $ mkCommand [signer] addy nonce rpc
+    cmd <- liftIO $ mkCommand [(signer, [])] addy nonce Nothing rpc
     debug $ "Sending success continuation for pact: " ++ show rpc
     _rks <- publish _pePublish throwCmdEx $ (buildCmdRpcBS cmd) :| [] -- NonEmpty List
     -- TODO would be good to somehow return all the request keys?

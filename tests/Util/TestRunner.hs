@@ -143,6 +143,7 @@ runClientCommands args testRequests = do
                       (Pact.PrivBS (Ed25519.exportPrivate (_ccSecretKey conf)))
                       (Just (Pact.PubBS (Ed25519.exportPublic (_ccPublicKey conf))))
                       Nothing
+                      Nothing
                       Nothing]
             , _fmt = Table
             , _echo = False }

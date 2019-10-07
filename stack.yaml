@@ -22,11 +22,11 @@ extra-deps:
   - katip-0.6.3.0
   - FloatingHex-0.4
 
-  - git: git@github.com:kadena-io/pact.git
-    commit: 62d36047a4585fd6ac03faa80798ff923f8d1ec5
-
   - git: git@github.com:kadena-io/pact-persist.git
-    commit: 644b274cf247bd2927a8c2ccd57597556930bf05
+    commit: 4c7fa73589cb2da1feb3c541275af0e615e4a6c7
+
+  - git: git@github.com:kadena-io/pact.git
+    commit: 58bb39d891ddfdb0b9cf2f9bb7fb83342be9dfcf
 
   - git: https://github.com/abbradar/hdbc-odbc.git
     commit: 79ffd1f5060d2c8b5cbdfd4eba8ae6414372d6b7
@@ -35,10 +35,6 @@ extra-deps:
   # --- Missing from Stackage --- #
   - ed25519-donna-0.1.1
   - prettyprinter-convert-ansi-wl-pprint-1.1
-
-  # --- Forced Downgrades --- #
-  - megaparsec-6.5.0
-  - neat-interpolation-0.3.2.2  # Due to megaparsec 7
 
   # --- Forced Upgrades --- #
   - sbv-8.2

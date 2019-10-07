@@ -11,6 +11,7 @@ module Kadena.Message
 import qualified Crypto.Ed25519.Pure as Ed25519
 
 import Data.ByteString (ByteString)
+import Data.String.Conv (toS)
 import Data.List.NonEmpty (NonEmpty(..))
 
 import Kadena.Types.Crypto
@@ -45,7 +46,7 @@ rpcToSignedRPC nid pubKey privKey (NEW' v) = toWire nid pubKey privKey v
 {-# INLINE rpcToSignedRPC #-}
 
 directMsg :: [(NodeId, ByteString)] -> OutboundGeneral
-directMsg msgs = OutboundGeneral $! Envelope . (\(n,b) -> (Topic $ unAlias $ _alias n, b)) <$> msgs
+directMsg msgs = OutboundGeneral $! Envelope . (\(n,b) -> (Topic $ toS $ unAlias $ _alias n, b)) <$> msgs
 
 broadcastMsg :: [ByteString] -> OutboundGeneral
 broadcastMsg msgs = OutboundGeneral $! Envelope . (Topic $ "all",) <$> msgs

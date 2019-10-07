@@ -26,7 +26,7 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
-import qualified Data.ByteString.Char8 as BSC
+import qualified Data.Text as T
 import System.Directory
 import System.Exit
 
@@ -54,7 +54,7 @@ mkNodes nodeG keys = (ss,ps) where
 mkNode :: String -> Word64 -> String -> Word64 -> NodeId
 mkNode host msgPortRoot namePrefix n =
     let np = msgPortRoot+n in
-    NodeId host np ("tcp://" ++ host ++ ":" ++ show np) (Alias (BSC.pack $ namePrefix ++ show n))
+    NodeId host np ("tcp://" ++ host ++ ":" ++ show np) (Alias (T.pack $ namePrefix ++ show n))
 
 makeEdKeys :: CryptoRandomGen g => Int -> g -> [(Ed25519.PrivateKey, Ed25519.PublicKey)]
 makeEdKeys 0 _ = []
@@ -63,7 +63,7 @@ makeEdKeys n g = case Ed25519.generateKeyPair g of
   Right (s,p,g') -> (s,p) : makeEdKeys (n-1) g'
 
 awsNodes :: [String] -> [NodeId]
-awsNodes = fmap (\h -> NodeId h 10000 ("tcp://" ++ h ++ ":10000") $ Alias (BSC.pack h))
+awsNodes = fmap (\h -> NodeId h 10000 ("tcp://" ++ h ++ ":10000") $ Alias (T.pack h))
 
 awsKeyMaps :: [NodeId] -> [(Ed25519.PrivateKey, Ed25519.PublicKey)] -> (Map NodeId Ed25519.PrivateKey, Map NodeId Ed25519.PublicKey)
 awsKeyMaps nodes' ls = (M.fromList $ zip nodes' (fst <$> ls), M.fromList $ zip nodes' (snd <$> ls))
@@ -234,7 +234,7 @@ getParams cfgMode = do
 makeAdminKeys :: Int -> IO (Map Alias KeyPair)
 makeAdminKeys cnt = do
   adminKeys' <- fmap (\(sk,pk) -> KeyPair pk sk) . makeEdKeys cnt <$> (newGenIO :: IO SystemRandom)
-  let adminAliases = (\i -> Alias $ BSC.pack $ "admin" ++ show i) <$> [0..cnt-1]
+  let adminAliases = (\i -> Alias $ T.pack $ "admin" ++ show i) <$> [0..cnt-1]
   return $ M.fromList $ zip adminAliases adminKeys'
 
 mainAws :: FilePath -> IO ()
@@ -267,7 +267,7 @@ mkConfs :: FilePath -> [Config] -> Map Alias KeyPair -> Bool -> IO ()
 mkConfs confDir clusterConfs adminKeyPairs useHostForId = do
   let getNodeName nid = if not useHostForId then show (_port $ _nodeId nid) else _host $ _nodeId nid
   mapM_ (\c' -> Y.encodeFile ("conf" </> getNodeName c' ++ "-cluster.yaml") c') clusterConfs
-  mapM_ (\(a,kp) -> Y.encodeFile (confDir </> (BSC.unpack $ unAlias a) ++ "-keypair.yaml") kp) $ M.toList adminKeyPairs
+  mapM_ (\(a,kp) -> Y.encodeFile (confDir </> (T.unpack $ unAlias a) ++ "-keypair.yaml") kp) $ M.toList adminKeyPairs
   [clientKey] <- makeEdKeys 1 <$> (newGenIO :: IO SystemRandom)
   Y.encodeFile (confDir </> "client.yaml") . createClientConfig clusterConfs $ clientKey
 

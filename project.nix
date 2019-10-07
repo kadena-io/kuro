@@ -1,7 +1,6 @@
-{ pactRef ? "26d26d939f578e103097f3370806573f4f41aaeb"
-, pactSha ? "1nkrjw6wlf4gc0v1fa3vl8w1m3gqk31mpx0xlvp7ad3k4rkaqnz7"
+{ pactRef ? "58bb39d891ddfdb0b9cf2f9bb7fb83342be9dfcf"
+, pactSha ? "0qypr17xxx2djyq6ihrya8nywib78am2aikadh9bhhdxsbghn30c"
 }:
-
 let
 
 pactSrc = builtins.fetchTarball {

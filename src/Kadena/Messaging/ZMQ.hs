@@ -18,6 +18,7 @@ import Data.Thyme.Clock
 import Data.Serialize
 import Data.Set (Set)
 import qualified Data.Set as Set
+import Data.String.Conv (toS)
 
 import Kadena.Message
 import Kadena.Types
@@ -91,7 +92,7 @@ runMsgServer dispatch me addrList debug gcm = forever $ do
       subSocket <- socket Sub
       subscribe subSocket "all" -- the topic for broadcast messages
       liftIO $ debug $ zmqSub ++ "subscribed to: \"all\""
-      subscribe subSocket $ unAlias $ _alias me
+      subscribe subSocket $ toS $ unAlias $ _alias me
       liftIO $ debug $ zmqSub ++ "subscribed to: " ++ show (unAlias $ _alias me)
       void $ forM_ addrList $ \addr -> do
           _ <- connect subSocket $ nodeIdToZmqAddr $ addr

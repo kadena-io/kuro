@@ -160,7 +160,7 @@ mkTestCommand pubKey privKey nonce cmdTxt = do
   let privBS = P.PrivBS (Ed25519.exportPrivate privKey)
   case P.importKeyPair someScheme (Just pubBS) (privBS) of
     Left _ -> die "WireFormatSpec.mkTestCommand -- importKeyPair failed"
-    Right someKP -> P.mkCommand [someKP] (Nothing :: Maybe Value) nonce (Exec (ExecMsg cmdTxt Null))
+    Right someKP -> P.mkCommand [(someKP, [])] (Nothing :: Maybe Value) nonce Nothing (Exec (ExecMsg cmdTxt Null))
 
 cmdRPC1, cmdRPC2 :: IO NewCmdRPC
 cmdRPC1 = do

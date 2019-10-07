@@ -245,6 +245,7 @@ mkExec code mdata privMeta = do
       someKps
       privMeta
       (T.pack $ show rid)
+      Nothing
       (Exec (ExecMsg (T.pack code) mdata))
   return $ decodeUtf8 <$> cmd
 
@@ -810,7 +811,7 @@ handleCmd cmd reqStr = case cmd of
     pk <- case fromJSON (String p) of
       A.Error e -> die $ "Bad public key value: " ++ show e
       A.Success k -> return k
-    keys .= [Pact.ApiKeyPair sk pk Nothing Nothing]
+    keys .= [Pact.ApiKeyPair sk pk Nothing Nothing Nothing]
   Keys (Just (kpFile,Nothing)) -> do
     (KeyPairFile kps) <- either (die . show) return =<< liftIO (Y.decodeFileEither (T.unpack kpFile))
     keys .= kps
@@ -870,7 +871,8 @@ main = do
                         { _akpSecret = Pact.PrivBS (Ed25519.exportPrivate (_ccSecretKey conf))
                         , _akpPublic = Just (Pact.PubBS (Ed25519.exportPublic (_ccPublicKey conf)))
                         , _akpAddress = Nothing
-                        , _akpScheme =  Nothing } ]
+                        , _akpScheme =  Nothing
+                        , _akpCaps = Nothing } ]
             , _fmt = Table
             , _echo = False
             }

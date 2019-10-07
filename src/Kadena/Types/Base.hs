@@ -23,10 +23,9 @@ module Kadena.Types.Base
   ) where
 
 import Control.DeepSeq
-import Control.Lens
+import Control.Lens hiding ((.=))
 import Control.Monad (mzero)
 import Data.ByteString (ByteString)
-import qualified Data.ByteString.Char8 as BSC
 import Data.String
 
 import Data.AffineSpace ((.-.))
@@ -35,29 +34,30 @@ import Data.Thyme.Clock
 import Data.Serialize (Serialize)
 import Data.Aeson
 
+import Data.Text (Text)
+import qualified Data.Text as T
 import Data.Word (Word64)
 import GHC.Int (Int64)
-import GHC.Generics hiding (from)
+-- import GHC.Generics hiding (from)
+import GHC.Generics
 
 import Pact.Types.Orphans ()
 import Pact.Types.Util
 import Pact.Types.Command (RequestKey(..))
 import Pact.Types.Hash (hash, Hash(..), initialHash)
 
-
-newtype Alias = Alias { unAlias :: ByteString }
+newtype Alias = Alias { unAlias :: Text }
   deriving (Eq, Ord, Generic, Serialize, ToJSON, ToJSONKey, FromJSON, FromJSONKey)
-instance IsString Alias where fromString s = Alias $ BSC.pack s
+instance IsString Alias where fromString s = Alias $ T.pack s
 instance NFData Alias
 
 instance Show Alias where
-  show (Alias a) = BSC.unpack a
-
+  show (Alias a) = T.unpack a
 
 data NodeId = NodeId { _host :: !String, _port :: !Word64, _fullAddr :: !String, _alias :: !Alias}
   deriving (Eq,Ord,Generic)
 instance Show NodeId where
-  show nid = "NodeId: " ++ BSC.unpack (unAlias $ _alias nid)
+  show nid = "NodeId: " ++ T.unpack (unAlias $ _alias nid)
 instance Serialize NodeId
 instance ToJSON NodeId where
   toJSON = genericToJSON defaultOptions { fieldLabelModifier = drop 1 }

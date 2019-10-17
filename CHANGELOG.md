@@ -1,3 +1,6 @@
+# Version 1.3.1.0
+# Upgrade to new Pact version (commited on 10/16/2019)
+
 # Version 1.3.0.0
 * API compatability with Pact-Web
 

@@ -31,6 +31,7 @@ import Pact.Gas (constGasModel)
 import Pact.Interpreter
 import Pact.Persist (Persister)
 import Pact.Persist.CacheAdapter (initPureCacheWB)
+import qualified Pact.Interpreter as P
 import qualified Pact.Persist.MSSQL as MSSQL
 import qualified Pact.Persist.MySQL as MySQL
 import qualified Pact.Persist.Pure as Pure
@@ -205,14 +206,17 @@ applyExec cmd (ExecMsg parsedCode edata) ks = do
       evalEnv = setupEvalEnv _peDbEnv (Just (_elName $ _ecLocal $ _peEntity)) _peMode
                 (MsgData edata Nothing (toUntypedHash $ _cmdHash _peCommand))
                 initRefStore gasEnv permissiveNamespacePolicy noSPVSupport def
-  EvalResult{..} <- liftIO $ evalExec ks (mkNewEvalState _peModuleCache) evalEnv parsedCode
+  EvalResult{..} <- liftIO $ evalExec ks (mkStateInterpreter _peModuleCache) evalEnv parsedCode
   mapM_ (handlePactExec sigs edata) _erExec
   return $ T2
     (resultSuccess _erTxId (cmdToRequestKey cmd) _erGas (last _erOutput) _erExec _erLogs)
     _erLoadedModules
 
-mkNewEvalState :: ModuleCache -> EvalState
-mkNewEvalState moduleCache = set (evalRefs . rsLoadedModules) moduleCache def
+mkStateInterpreter :: ModuleCache -> Interpreter p
+mkStateInterpreter moduleCache = initStateInterpreter $ set (evalRefs . rsLoadedModules) moduleCache def
+
+initStateInterpreter :: EvalState -> Interpreter p
+initStateInterpreter s = P.defaultInterpreterState (const s)
 
 debug :: String -> PactM p ()
 debug m = reader _peLogger >>= \l -> liftIO $ logLog l "DEBUG" m
@@ -242,7 +246,7 @@ applyContinuation cmd cm@ContMsg{..} ks = do
                   (Just $ PactStep _cmStep _cmRollback _cmPactId Nothing)
                   (toUntypedHash $ _cmdHash _peCommand))
                 initRefStore gasEnv permissiveNamespacePolicy noSPVSupport def
-  ei <- tryAny (liftIO $ evalContinuation ks (mkNewEvalState _peModuleCache) evalEnv cm)
+  ei <- tryAny (liftIO $ evalContinuation ks (mkStateInterpreter _peModuleCache) evalEnv cm)
   either (handleContFailure pe cm)
          (handleContSuccess (cmdToRequestKey cmd) pe cm)
          ei

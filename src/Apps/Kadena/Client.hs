@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -78,8 +79,9 @@ import GHC.Generics (Generic)
 
 import Network.HTTP.Client hiding (responseBody)
 
-import qualified Servant.Client as S
-import qualified Servant.Server as S
+import Servant.Client.Core
+import Servant.Client
+import Servant.Server
 
 import System.Console.GetOpt
 import System.Environment
@@ -109,6 +111,10 @@ import Kadena.Types.Command as K
 import Kadena.Types.Entity (EntityName)
 import qualified Kadena.Types.HTTP as K
 import Kadena.Types.Private (PrivateResult)
+
+#if ! MIN_VERSION_servant_server(0,16,0)
+type ClientError = ServantError
+#endif
 
 data ClientOpts = ClientOpts {
       _oConfig :: FilePath
@@ -148,7 +154,7 @@ instance FromJSON ClientConfig where parseJSON = lensyParseJSON 3
 
 data ReplConfig = ReplConfig
   { _rcClientConfig :: ClientConfig
-  , _rcClientEnv :: S.ClientEnv
+  , _rcClientEnv :: ClientEnv
   }
 makeLenses ''ReplConfig
 
@@ -252,47 +258,47 @@ mkExec code mdata privMeta = do
 handleHttpResp :: (t -> Repl ()) -> t -> Repl ()
 handleHttpResp f r = f r
 
-getClientEnv :: String -> IO S.ClientEnv
+getClientEnv :: String -> IO ClientEnv
 getClientEnv str = do
-  url <- S.parseBaseUrl str
+  url <- parseBaseUrl str
   manager' <- newManager defaultManagerSettings
-  return $ S.mkClientEnv manager' url
+  return $ mkClientEnv manager' url
 
 ----------------------------------------------------------------------------------------------------
 -- Servant client endpoints
 ----------------------------------------------------------------------------------------------------
-configChange :: S.ClientEnv -> SubmitCC -> IO Pact.RequestKeys
+configChange :: ClientEnv -> SubmitCC -> IO Pact.RequestKeys
 configChange env scc = do
-  res <- S.runClientM (configChangeClient scc) env
+  res <- runClientM (configChangeClient scc) env
   either dieBadRequest return res
 
-send :: S.ClientEnv -> Pact.SubmitBatch -> IO Pact.RequestKeys
+send :: ClientEnv -> Pact.SubmitBatch -> IO Pact.RequestKeys
 send env sb = do
-  res <- S.runClientM (sendClient sb) env
+  res <- runClientM (sendClient sb) env
   either dieBadRequest return res
 
-sendLocal :: S.ClientEnv -> Pact.Command Text -> IO (Pact.CommandResult Pact.Hash)
+sendLocal :: ClientEnv -> Pact.Command Text -> IO (Pact.CommandResult Pact.Hash)
 sendLocal env cmd = do
-  res <- S.runClientM (localClient cmd) env
+  res <- runClientM (localClient cmd) env
   either dieBadRequest return res
 
-sendPrivate :: S.ClientEnv -> (Pact.Command Text) -> IO Pact.RequestKeys
+sendPrivate :: ClientEnv -> (Pact.Command Text) -> IO Pact.RequestKeys
 sendPrivate env cmd = do
-  res <- S.runClientM (privateClient cmd) env
+  res <- runClientM (privateClient cmd) env
   either dieBadRequest return res
 
-listenFor :: S.ClientEnv -> Pact.ListenerRequest -> IO K.CommandResult
+listenFor :: ClientEnv -> Pact.ListenerRequest -> IO K.CommandResult
 listenFor env listenReq = do
-  res <- S.runClientM (listenClient listenReq) env
+  res <- runClientM (listenClient listenReq) env
   either dieBadRequest success res
   where
     success = \case
                 Pact.ListenTimeout n -> dieListenTimeout n
                 Pact.ListenResponse cr -> toKCmdResult cr
 
-pollFor :: S.ClientEnv -> Pact.Poll -> IO K.PollResponses
+pollFor :: ClientEnv -> Pact.Poll -> IO K.PollResponses
 pollFor env aPoll = do
-  res <- S.runClientM (pollClient aPoll) env
+  res <- runClientM (pollClient aPoll) env
   either dieBadRequest success res
   where
     success (Pact.PollResponses resMap) = do
@@ -687,12 +693,12 @@ cliCmds =
   , ("batch","TIMES","Repeat command in batch message specified times",
      Batch . fromIntegral <$> integer)
   , ("par-batch","TOTAL_CMD_CNT CMD_PER_SEC SLEEP"
-        ,"Similar to `batch` but the commands are distributed among the nodes:\n\
-      \  * the REPL will create N batch messages and group them into individual batches\n\
-      \  * CMD_PER_SEC refers to the overall command submission rate\n\
-      \  * individual batch sizes are calculated by `ceiling (CMD_PER_SEC * (SLEEP/1000) / clusterSize)`\n\
-      \  * submit them (in parallel) to each available node\n\
-      \  * pause for S milliseconds between submissions to a given server",
+        , "Similar to `batch` but the commands are distributed among the nodes:\n"
+       ++ "  * the REPL will create N batch messages and group them into individual batches\n"
+       ++ "  * CMD_PER_SEC refers to the overall command submission rate\n"
+       ++ "  * individual batch sizes are calculated by `ceiling (CMD_PER_SEC * (SLEEP/1000) / clusterSize)`\n"
+       ++ "  * submit them (in parallel) to each available node\n"
+       ++ "  * pause for S milliseconds between submissions to a given server",
    ParallelBatch <$> (fromIntegral <$> integer)
                  <*> (fromIntegral <$> integer)
                  <*> (fromIntegral <$> integer))
@@ -906,16 +912,17 @@ timeout n io = hush <$> race (threadDelay $ n * 1000000) io
 die :: MonadThrow m => String -> m a
 die = throwM . userError
 
-dieBadRequest :: S.ServantError -> IO a
+
+dieBadRequest :: ClientError -> IO a
 dieBadRequest err = dieBadRequestStr $ show err
 
 dieBadRequestStr :: String -> IO a
 dieBadRequestStr str = do
   putStrLn $ "Error: " ++ str
-  throwM S.err400 { S.errBody = BSL.pack str }
+  throwM err400 { errBody = BSL.pack str }
 
 dieListenTimeout :: Int -> IO a
 dieListenTimeout n = do
   let s = "Error - listen request timeout (" ++ show n ++ ")"
   putStrLn s
-  throwM S.err400 { S.errBody = BSL.pack s }
+  throwM err400 { errBody = BSL.pack s }

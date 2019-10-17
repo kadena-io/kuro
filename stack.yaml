@@ -1,4 +1,4 @@
-resolver: lts-13.24
+resolver: lts-14.8
 
 build:
   copy-bins: true
@@ -23,10 +23,10 @@ extra-deps:
   - FloatingHex-0.4
 
   - git: git@github.com:kadena-io/pact-persist.git
-    commit: 4c7fa73589cb2da1feb3c541275af0e615e4a6c7
+    commit: eac8deafee4bfa88418962200c4782a39c4288b0
 
   - git: git@github.com:kadena-io/pact.git
-    commit: 58bb39d891ddfdb0b9cf2f9bb7fb83342be9dfcf
+    commit: 404013a367bedc724578b79d7919d178e8691ff9
 
   - git: https://github.com/abbradar/hdbc-odbc.git
     commit: 79ffd1f5060d2c8b5cbdfd4eba8ae6414372d6b7
@@ -38,6 +38,7 @@ extra-deps:
 
   # --- Forced Upgrades --- #
   - sbv-8.2
+  - trifecta-2.1
 
   # --- Custom Pins --- #
   - git: https://github.com/kadena-io/thyme.git

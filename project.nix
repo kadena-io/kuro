@@ -1,5 +1,5 @@
-{ pactRef ? "58bb39d891ddfdb0b9cf2f9bb7fb83342be9dfcf"
-, pactSha ? "0qypr17xxx2djyq6ihrya8nywib78am2aikadh9bhhdxsbghn30c"
+{ pactRef ? "404013a367bedc724578b79d7919d178e8691ff9"
+, pactSha ? "0zgqr9v670fjdrljjh6177gqnhg8jcxfcrjr2lxf3l15jrrz3kdh"
 }:
 let
 

@@ -17,7 +17,7 @@ in
 
   pact-persist = self.callCabal2nix "pact-persist" (builtins.fetchGit {
     url = "ssh://git@github.com/kadena-io/pact-persist.git";
-    rev = "4c7fa73589cb2da1feb3c541275af0e615e4a6c7";
+    rev = "eac8deafee4bfa88418962200c4782a39c4288b0";
     ref = "master";
   }) {};
 

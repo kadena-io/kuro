@@ -24,10 +24,22 @@ else
    barf $usage
 fi
 
+# UNLIMITED="true" #if this line is not commented out, kill-switches will be ignored during the build
+
 FLAG="kill-switch"             # beta is the default
 if [[ "$type" = "aws" ]]; then
     FLAG="aws-kill-switch"
 fi
+
+if [ -n "$UNLIMITED" ]; then
+    STACK_FLAG=""
+    DOCKER_FLAG=""
+else
+    STACK_FLAG="--flag Kadena:$FLAG"
+    DOCKER_FLAG="$FLAG"
+fi
+chirp "Building with STACK_FLAG = $STACK_FLAG"
+chirp "Building with DOCKER_FLAG = $DOCKER_FLAG"
 
 target="$2"
 if [ -n "$target" ]; then
@@ -49,7 +61,9 @@ if [ -z "$target" -o "$target" = "osx" ]; then
 
     chirp "Builing and Copying: OSX"
     rm ./kadena-beta/bin/osx/{genconfs,kadenaserver,kadenaclient}
-    safe stack install --flag kadena:$FLAG
+
+    safe stack install $STACK_FLAG
+
     safe cp ./bin/genconfs ./kadena-beta/bin/osx/;
     safe cp ./bin/kadenaserver ./kadena-beta/bin/osx/;
     safe cp ./bin/kadenaclient ./kadena-beta/bin/osx/;
@@ -72,7 +86,7 @@ if [ -z "$target" -o "$target" = "ubuntu" ]; then
     chirp "Builing and Copying: Ubuntu 16.04"
     rm -rf ./kadena-beta/bin/ubuntu-16.04/{genconfs,kadenaserver,kadenaclient}
     safe docker build --cpuset-cpus="0-3" --cpu-shares=1024 --memory=8g -t kadena-base:ubuntu-16.04 -f docker/ubuntu-base.Dockerfile .
-    safe docker build --build-arg flag=$FLAG --cpuset-cpus="0-3" --cpu-shares=1024 --memory=8g -t kadena:ubuntu-16.04 -f docker/ubuntu-build.Dockerfile .
+    safe docker build --build-arg flag=$DOCKER_FLAG --cpuset-cpus="0-3" --cpu-shares=1024 --memory=8g -t kadena:ubuntu-16.04 -f docker/ubuntu-build.Dockerfile .
     safe docker run -i -v ${PWD}:/work_dir kadena:ubuntu-16.04 << COMMANDS
 cp -R /ubuntu-16.04 /work_dir/kadena-beta/bin
 COMMANDS
@@ -85,7 +99,7 @@ if [ -z "$target" -o "$target" = "centos" ]; then
     chirp "Builing and Copying: CENTOS 6.8"
     rm -rf ./kadena-beta/bin/centos-6.8/{genconfs,kadenaserver,kadenaclient}
     safe docker build --cpuset-cpus="0-3" --cpu-shares=1024 --memory=8g -t kadena-base:centos-6.8 -f docker/centos6-base.Dockerfile .
-    safe docker build --build-arg flag=$FLAG --cpuset-cpus="0-3" --cpu-shares=1024 --memory=8g -t kadena:centos-6.8 -f docker/centos6-build.Dockerfile .
+    safe docker build --build-arg flag=$DOCKER_FLAG --cpuset-cpus="0-3" --cpu-shares=1024 --memory=8g -t kadena:centos-6.8 -f docker/centos6-build.Dockerfile .
     safe docker run -i -v ${PWD}:/work_dir kadena:centos-6.8 << COMMANDS
 cp -R /centos-6.8 /work_dir/kadena-beta/bin
 COMMANDS

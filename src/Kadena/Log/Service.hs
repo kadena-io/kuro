@@ -139,7 +139,7 @@ updateEvidenceCache (ULNew _) = updateEvidenceCache'
 updateEvidenceCache (ULReplicate _) = updateEvidenceCache'
 updateEvidenceCache (ULCommitIdx (UpdateCommitIndex _ci ts)) = do
   tellKadenaToApplyLogEntries ts
-#if WITH_KILL_SWITCH
+#if WITH_KILL_SWITCH || WITH_AWS_KILL_SWITCH
   when (_ci >= 200000) $
     error "Thank you for using Kadena, this demo is limited to 200k log entries."
 #endif

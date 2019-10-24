@@ -35,7 +35,7 @@ if [ -n "$UNLIMITED" ]; then
     STACK_FLAG=""
     DOCKER_FLAG=""
 else
-    STACK_FLAG="--flag Kadena:$FLAG"
+    STACK_FLAG="--flag kadena:$FLAG"
     DOCKER_FLAG="$FLAG"
 fi
 chirp "Building with STACK_FLAG = $STACK_FLAG"

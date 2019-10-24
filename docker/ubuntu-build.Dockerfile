@@ -16,12 +16,12 @@ COPY ./src /kadena/src
 COPY ./tests /kadena/tests
 COPY ./LICENSE /kadena/LICENSE
 
-ARG stack_flag
+ARG flag
 
 RUN bash -c "mkdir -p /kadena/log && \
     cd && source ./build-exports && \
     cd /kadena && \
-    stack install $stack_flag"
+    stack install $flag"
 
 RUN mkdir -p /ubuntu-16.04 && \
     cp /kadena/bin/genconfs /ubuntu-16.04 && \

@@ -216,4 +216,4 @@ _killSwitchNodeCheck rconf = do
                       error $ "Community versions of Kadena are limited to 4 consensus nodes."
     (True,  True)  -> when (currNodeCount >= beta_node_limit) $
                       error $ "Community versions of Kadena are limited to 4 consensus nodes."
-                      -- Apply strictess kill-switch limitations (i.e. the Beta kill switch)
+                      -- Apply strictest kill-switch limitations

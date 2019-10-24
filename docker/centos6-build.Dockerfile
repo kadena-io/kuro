@@ -18,12 +18,12 @@ COPY ./src /kadena/src
 COPY ./tests /kadena/tests
 COPY ./LICENSE /kadena/LICENSE
 
-ARG stack_flag
+ARG flag
 
 RUN bash -c "mkdir -p /kadena/log && \
     cd && source /home/build-exports && ldconfig && \
     cd /kadena && \
-    stack install $stack_flag"
+    stack install $flag"
 
 
 RUN mkdir -p /centos-6.8 && \

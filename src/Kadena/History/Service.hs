@@ -21,7 +21,7 @@ import qualified Data.HashSet as HashSet
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
 import Data.Thyme.Clock
-#if WITH_KILL_SWITCH
+#if WITH_KILL_SWITCH || AWS_KILL_SWITCH
 import Data.Thyme.Clock.POSIX
 import Data.Thyme.LocalTime
 import Data.Thyme.Time
@@ -94,12 +94,12 @@ setupPersistence dbg (Just dbPath') = do
   return $ OnDisk { incompleteRequestKeys = HashSet.empty
                   , dbConn = conn }
 
-#if WITH_KILL_SWITCH
+#if WITH_KILL_SWITCH || AWS_KILL_SWITCH
 -- | time based kill switch, deliberately obtuse
 _k'' :: HistoryService ()
 _k'' = do
   t <- liftIO $ getPOSIXTime
-  te :: POSIXTime <- return $ getExpiration compileTime
+  te :: POSIXTime <- return $ getExpiration _compileTime
   when (t >= te) $ do
     error $ "Demo period complete on " ++ show (posixSecondsToUTCTime te)
       ++ ". Please contact us for updated binaries."
@@ -138,7 +138,7 @@ handle oChan = do
         gCfg <- view henvConfig
         conf <- liftIO $ readCurrentConfig gCfg
         liftIO (pprintBeat t conf) >>= debug
-#if WITH_KILL_SWITCH
+#if WITH_KILL_SWITCH || AWS_KILL_SWITCH
         _k''
 #endif
       AddNew{..} ->  addNewKeys hNewKeys

@@ -204,9 +204,9 @@ applyExec cmd (ExecMsg parsedCode edata) ks = do
   let sigs = userSigsToPactKeySet ks
   let gasEnv = (GasEnv _peGasLimit gasPrice (constGasModel (fromIntegral gasRate)))
       evalEnv = setupEvalEnv _peDbEnv (Just (_elName $ _ecLocal $ _peEntity)) _peMode
-                (MsgData edata Nothing (toUntypedHash $ _cmdHash _peCommand))
-                initRefStore gasEnv permissiveNamespacePolicy noSPVSupport def
-  EvalResult{..} <- liftIO $ evalExec ks (mkStateInterpreter _peModuleCache) evalEnv parsedCode
+                (MsgData edata Nothing (toUntypedHash $ _cmdHash _peCommand) ks)
+                initRefStore gasEnv permissiveNamespacePolicy noSPVSupport def def
+  EvalResult{..} <- liftIO $ evalExec (mkStateInterpreter _peModuleCache) evalEnv parsedCode
   mapM_ (handlePactExec sigs edata) _erExec
   return $ T2
     (resultSuccess _erTxId (cmdToRequestKey cmd) _erGas (last _erOutput) _erExec _erLogs)
@@ -244,9 +244,9 @@ applyContinuation cmd cm@ContMsg{..} ks = do
   let evalEnv = setupEvalEnv _peDbEnv (Just (_elName $ _ecLocal $ _peEntity)) _peMode
                 (MsgData Null
                   (Just $ PactStep _cmStep _cmRollback _cmPactId Nothing)
-                  (toUntypedHash $ _cmdHash _peCommand))
-                initRefStore gasEnv permissiveNamespacePolicy noSPVSupport def
-  ei <- tryAny (liftIO $ evalContinuation ks (mkStateInterpreter _peModuleCache) evalEnv cm)
+                  (toUntypedHash $ _cmdHash _peCommand) ks)
+                initRefStore gasEnv permissiveNamespacePolicy noSPVSupport def def
+  ei <- tryAny (liftIO $ evalContinuation (mkStateInterpreter _peModuleCache) evalEnv cm)
   either (handleContFailure pe cm)
          (handleContSuccess (cmdToRequestKey cmd) pe cm)
          ei

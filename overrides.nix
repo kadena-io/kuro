@@ -1,4 +1,4 @@
-pactSrc: pkgs: self: super: with pkgs.haskell.lib;
+pactSrc: hackGet: pkgs: self: super: with pkgs.haskell.lib;
 let # Working on getting this function upstreamed into nixpkgs, but
     # this actually gets things directly from hackage and doesn't
     # depend on the state of nixpkgs.  Should allow us to have fewer
@@ -12,12 +12,12 @@ let # Working on getting this function upstreamed into nixpkgs, but
 
 in
 
-(import "${pactSrc}/overrides.nix" pkgs self super) // {
+(import "${pactSrc}/overrides.nix" pkgs hackGet self super) // {
   pact = dontCheck ( addBuildDepend (self.callCabal2nix "pact" pactSrc {}) pkgs.z3);
 
   pact-persist = self.callCabal2nix "pact-persist" (builtins.fetchGit {
     url = "ssh://git@github.com/kadena-io/pact-persist.git";
-    rev = "eac8deafee4bfa88418962200c4782a39c4288b0";
+    rev = "5d37a2a435dbec1ee14a92f961779fd3274556c0";
     ref = "master";
   }) {};
 

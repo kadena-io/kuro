@@ -201,7 +201,7 @@ data ReplState = ReplState {
     , _batchCmd :: String
     , _requestId :: MVar Int64 -- this needs to be an MVar in case we get an exception mid function... it's our entropy
     , _cmdData :: Value
-    , _keys :: [Pact.ApiKeyPair]
+    , _keys :: Maybe [Pact.ApiKeyPair]
     , _fmt :: Formatter
     , _echo :: Bool
 }
@@ -246,7 +246,7 @@ mkExec :: String -> Value -> Pact.PrivateMeta -> Repl (Pact.Command Text)
 mkExec code mdata privMeta = do
   kps <- use keys
   rid <- use requestId >>= liftIO . (`modifyMVar` (\i -> return $ (succ i, i)))
-  someKps <- liftIO $ Pact.mkKeyPairs kps
+  someKps <- liftIO $ Pact.mkKeyPairs (fromMaybe [] kps)
   cmd <- liftIO $ Pact.mkCommand
       someKps
       privMeta
@@ -817,10 +817,10 @@ handleCmd cmd reqStr = case cmd of
     pk <- case fromJSON (String p) of
       A.Error e -> die $ "Bad public key value: " ++ show e
       A.Success k -> return k
-    keys .= [Pact.ApiKeyPair sk pk Nothing Nothing Nothing]
+    keys .= Just [Pact.ApiKeyPair sk pk Nothing Nothing Nothing]
   Keys (Just (kpFile,Nothing)) -> do
     (KeyPairFile kps) <- either (die . show) return =<< liftIO (Y.decodeFileEither (T.unpack kpFile))
-    keys .= kps
+    keys .= Just kps
   Format Nothing -> use fmt >>= flushStrLn . show
   Format (Just f) -> fmt .= f
   Private to from msg -> sendPrivateCmd (Pact.Address to (S.fromList from)) msg
@@ -873,12 +873,12 @@ main = do
             , _batchCmd = "\"Hello Kadena\""
             , _requestId = i
             , _cmdData = Null
-            , _keys = [ Pact.ApiKeyPair
-                        { _akpSecret = Pact.PrivBS (Ed25519.exportPrivate (_ccSecretKey conf))
-                        , _akpPublic = Just (Pact.PubBS (Ed25519.exportPublic (_ccPublicKey conf)))
-                        , _akpAddress = Nothing
-                        , _akpScheme =  Nothing
-                        , _akpCaps = Nothing } ]
+            , _keys = Just [ Pact.ApiKeyPair
+                             { _akpSecret = Pact.PrivBS (Ed25519.exportPrivate (_ccSecretKey conf))
+                             , _akpPublic = Just (Pact.PubBS (Ed25519.exportPublic (_ccPublicKey conf)))
+                             , _akpAddress = Nothing
+                             , _akpScheme =  Nothing
+                             , _akpCaps = Nothing } ]
             , _fmt = Table
             , _echo = False
             }

@@ -139,12 +139,12 @@ runClientCommands args testRequests = do
             , _batchCmd = "\"Hello Kadena\""
             , _requestId = i
             , _cmdData = Null
-            , _keys = [Pact.ApiKeyPair
-                      (Pact.PrivBS (Ed25519.exportPrivate (_ccSecretKey conf)))
-                      (Just (Pact.PubBS (Ed25519.exportPublic (_ccPublicKey conf))))
-                      Nothing
-                      Nothing
-                      Nothing]
+            , _keys = Just [Pact.ApiKeyPair
+                           (Pact.PrivBS (Ed25519.exportPrivate (_ccSecretKey conf)))
+                           (Just (Pact.PubBS (Ed25519.exportPublic (_ccPublicKey conf))))
+                           Nothing
+                           Nothing
+                           Nothing]
             , _fmt = Table
             , _echo = False }
       let server = getServer conf replState

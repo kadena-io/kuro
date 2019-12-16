@@ -1,5 +1,5 @@
-{ pactRef ? "404013a367bedc724578b79d7919d178e8691ff9"
-, pactSha ? "0zgqr9v670fjdrljjh6177gqnhg8jcxfcrjr2lxf3l15jrrz3kdh"
+{ pactRef ? "da0389173000e3ecac8137534812f12ce2f3b3a9"
+, pactSha ? "0n9sdx44lma893hwvld8s8g224qr62ijwv5hgnc0gnkx7pv90gna"
 }:
 let
 
@@ -7,9 +7,10 @@ pactSrc = builtins.fetchTarball {
   url = "https://github.com/kadena-io/pact/archive/${pactRef}.tar.gz";
   sha256 = pactSha;
 };
+pactProj = "${pactSrc}/project.nix";
 
 in
-  (import pactSrc {}).rp.project ({ pkgs, ... }:
+  (import pactProj {}).rp.project ({ pkgs, hackGet,... }:
 let
 
 gitignore = pkgs.callPackage (pkgs.fetchFromGitHub {
@@ -21,7 +22,7 @@ gitignore = pkgs.callPackage (pkgs.fetchFromGitHub {
 
 in {
     name = "kadena-umbrella";
-    overrides = import ./overrides.nix pactSrc pkgs;
+    overrides = import ./overrides.nix pactSrc hackGet pkgs;
 
     packages = {
       kadena = gitignore.gitignoreSource [".git" ".gitlab-ci.yml" "CHANGELOG.md" "README.md"] ./.;

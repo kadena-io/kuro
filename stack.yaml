@@ -22,12 +22,11 @@ extra-deps:
   - katip-0.6.3.0
   - FloatingHex-0.4
 
-
   - git: git@github.com:kadena-io/pact-persist.git
-    commit: 5d37a2a435dbec1ee14a92f961779fd3274556c0
+    commit: 4414cd0820c2a718b8e97855610b454491fe8b7e
 
   - git: git@github.com:kadena-io/pact.git
-    commit: da0389173000e3ecac8137534812f12ce2f3b3a9
+    commit: 5f19f4b19675d7130fee4c41edd38a7c5938c940
 
   - git: https://github.com/abbradar/hdbc-odbc.git
     commit: 79ffd1f5060d2c8b5cbdfd4eba8ae6414372d6b7

@@ -1,6 +1,15 @@
+# Kuro
 
+Kuro is Kadena's high-performance permissioned blockchain, based upon the ScalableBFT consensus algorithm
+by Will Martino. Kuro also features _counterparty confidentiality_ leveraging the Noise protocol,
+and runs the Pact smart contract language.
 
-# Beta and AWS Build Instructions
+For more information:
+- [Pact](https://github.com/kadena-io/pact)
+- [ScalableBFT whitepaper](https://d31d887a-c1e0-47c2-aa51-c69f9f998b07.filesusr.com/ugd/86a16f_aeb9004965c34efd9c48993c4e63a9bb.pdf)
+- [Confidentiality whitepaper](https://d31d887a-c1e0-47c2-aa51-c69f9f998b07.filesusr.com/ugd/86a16f_29bcbfd45f9e48139e6db4e5a0fbf5f1.pdf)
+
+## Beta and AWS Build Instructions
 
 ### Manual Part
 

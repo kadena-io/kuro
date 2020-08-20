@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE CPP #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Kadena.Types.PactDB
@@ -9,23 +10,31 @@ module Kadena.Types.PactDB
   , PactPersistConfig(..)
   , PPBType(..) ) where
 
+#ifdef DB_ADAPTERS
 import Control.Applicative
-import Database.MySQL.Base (ConnectInfo(..), Option(..), SSLInfo(..), Protocol(..))
 import Data.Text.Encoding (encodeUtf8, decodeUtf8)
+#endif
 import Data.Aeson
 import qualified Data.Aeson as A
 import GHC.Generics
 
+#ifdef DB_ADAPTERS
 import Pact.Persist.MSSQL (MSSQLConfig(..))
+#endif
 import Pact.Types.Util
 import Pact.Types.SQLite (SQLiteConfig)
 
 data PactPersistBackend =
-    PPBInMemory |
-    PPBSQLite { _ppbSqliteConfig :: SQLiteConfig } |
+    PPBInMemory
+    |
+    PPBSQLite { _ppbSqliteConfig :: SQLiteConfig }
+#ifdef DB_ADAPTERS
+    |
     PPBMSSQL { _ppbMssqlConfig :: Maybe MSSQLConfig,
-               _ppbMssqlConnStr :: String } |
+               _ppbMssqlConnStr :: String }
+    |
     PPBMySQL { _ppbMysqlConfig :: ConnectInfo}
+#endif
     deriving (Show,Generic)
 
 data PactPersistConfig = PactPersistConfig {
@@ -35,23 +44,38 @@ data PactPersistConfig = PactPersistConfig {
 instance ToJSON PactPersistConfig where toJSON = lensyToJSON 4
 instance FromJSON PactPersistConfig where parseJSON = lensyParseJSON 4
 
-data PPBType = MYSQL|SQLITE|MSSQL|INMEM deriving (Eq,Show,Read,Generic,FromJSON,ToJSON)
+data PPBType =
+  INMEM
+  |
+  SQLITE
+#ifdef DB_ADAPTERS
+  |
+  MYSQL
+  |
+  MSSQL
+#endif
+  deriving (Eq,Show,Read,Generic,FromJSON,ToJSON)
 
 instance FromJSON PactPersistBackend where
   parseJSON = A.withObject "PactPersistBackend" $ \o -> do
     ty <- o .: "type"
     case ty of
       SQLITE -> PPBSQLite <$> o .: "config"
+      INMEM -> return PPBInMemory
+#ifdef DB_ADAPTERS
       MSSQL -> PPBMSSQL <$> o .:? "config" <*> o .: "connStr"
       MYSQL -> PPBMySQL <$> o .: "config"
-      INMEM -> return PPBInMemory
+#endif
 instance ToJSON PactPersistBackend where
   toJSON p = A.object $ case p of
     PPBInMemory -> [ "type" .= INMEM ]
     PPBSQLite {..} -> [ "type" .= SQLITE, "config" .= _ppbSqliteConfig ]
+#ifdef DB_ADAPTERS
     PPBMSSQL {..} -> [ "type" .= MSSQL, "config" .= _ppbMssqlConfig, "connStr" .= _ppbMssqlConnStr ]
     PPBMySQL {..} -> [ "type" .= MYSQL, "config" .= _ppbMysqlConfig ]
+#endif
 
+#ifdef DB_ADAPTERS
 -- Orphan instances for ConnectInfo
 instance ToJSON ConnectInfo where
   toJSON ConnectInfo{..} = object
@@ -154,3 +178,4 @@ instance ToJSON SSLInfo where
 instance FromJSON SSLInfo where
   parseJSON = A.withObject "SSLInfo" $ \o ->
     SSLInfo <$> o .: "key" <*> o .: "cert" <*> o .: "CA" <*> o .: "CAPath" <*> o .: "ciphers"
+#endif

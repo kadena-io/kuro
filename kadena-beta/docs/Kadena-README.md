@@ -1,9 +1,39 @@
-# Kadena Blockchain Documentation
+# Kuro Blockchain Documentation
 ---
 
-Kadena Version: 1.1.x
+Kuro Version: 1.1.x
 
 # Change Log
+
+* Version 1.4
+  * Rename to Kuro
+  * Write behind inlined into source
+  * O/S prep (readme, changelog)
+  * Remove kill switches
+
+* Version 1.3.2.0
+  * Upgrade Pact to 3.4
+
+* Version 1.3.1.0
+  * Upgrade to new Pact version (commited on 10/16/2019)
+
+* Version 1.3.0.0
+  * API compatability with Pact-Web
+
+* Version 1.2.1.0
+  * Upgrade to Pact version 3.2.1
+
+* Version 1.2.0.0
+  * Upgrade to Pact version 3.2
+  * Includes Ansible playbooks for Azure deployment
+
+* Version 1.1.4.0
+  * Stability improvements
+  * Includes Ansible playbooks for AWS deployment
+  * Bug Fixes
+
+* Version 1.1.3.1
+  * Includes Kadena Grafana dashboard
 
 * Version 1.1.3.0
   * Added MySQL adapter to pact-persist
@@ -36,12 +66,12 @@ Required:
 
 Optional:
 
-* `pact == v2.4`: See <https://github.com/kadena-io/pact#installing-pact-with-binary-distributions>.
+* `pact == v2.4` for `Kudo v1.1.4.0` or `pact == v3.2` for `Kuro v1.2.0.0` or `pact == v3.4` for `Kuro v1.4.0.0`: See <https://github.com/kadena-io/pact#installing-pact-with-binary-distributions>.
 * `rlwrap`: only used in `kadenaclient.sh` to enable Up-Arrow style history. Feel free to remove it from the script if you'd like to avoid installing it.
 * `tmux == v2.0`: only used for the local demo script `<kadena-directory>/bin/<OS-name>/start.sh`.
 A very specific version of tmux is required because features were entirely removed in later version that preclude the script from working.
 
-NB: The docker and script files for installing the Kadena dependencies can be found in `<kadena-directory>/setup`.
+NB: The docker and script files for installing the Kuro dependencies can be found in `<kuro-directory>/setup`.
 
 ### Quick Start
 
@@ -50,19 +80,19 @@ Quickly launch a local instance, see "Sample Usage: `[payments|monitor|todomvc]`
 #### OSX
 
 ```
-<kadena-directory>$ tmux
-<kadena-directory>$ ./bin/osx/start.sh
+<kuro-directory>$ tmux
+<kuro-directory>$ ./bin/osx/start.sh
 ```
 
 #### Ubuntu 16.04
 
 ```
-<kadena-directory>$ tmux
-<kadena-directory>$ ./bin/ubuntu-16.04/start.sh
+<kuro-directory>$ tmux
+<kuro-directory>$ ./bin/ubuntu-16.04/start.sh
 ```
 
 
-# Kadena server and client binaries
+# Kuro server and client binaries
 
 ### `kadenaserver`
 
@@ -119,7 +149,7 @@ In a production setting, we'd expect:
 * To use a separate server to collect inbound transactions from the multitude of clients and lump them into a single batch/pipe them over a websocket to the cluster itself so as to avoid needless CPU utilization.
 * For clients to connect to different nodes (e.g. all Firm A clients connect to Firm A's nodes, B's to B's, etc.), allowing the nodes themselves to batch/forward commands.
 
-The ability to do either of these is a feature of Kadena -- because commands must have a unique hash and are either (a) signed or (b) fully encrypted, they can be redirected without degrading the security model.
+The ability to do either of these is a feature of Kuro -- because commands must have a unique hash and are either (a) signed or (b) fully encrypted, they can be redirected without degrading the security model.
 
 ### Replay From Disk
 
@@ -136,25 +166,7 @@ To avoid this, the demo's `start.sh` script restricts each node to 4 cores via t
 You may use these, or any other flags found in [GHC RTS Options](https://downloads.haskell.org/~ghc/7.10.3/docs/html/users_guide/runtime-control.html#rts-opts-compile-time) to configure a given node should you wish to.
 
 * To set cores to a specific amount, add `+RTS -N[core count] -RTS`.
-* To allow kadena to use all available cores, do not specify core count (remove the `+RTS -N[count] -RTS` section, or just the `-N[cores]` if using other runtime settings.)
-
-### Beta Limitations
-
-Beta License instances of Kadena are limited as follows:
-
-* The maximum cluster size is limited to 16
-* The maximum number of total committed transactions is limited to 200,000
-* The binaries will only run for 90 days
-* Consensus level membership & key rotation changes are not available
-
-For a version without any/all of these restrictions, please contact us at [info@kadena.io](mailto:info@kadena.io).
-
-### AWS Marketplace Limitations
-The AWS Marketplace listing of Kadena is limited as follows:
-
-* The maximum cluster size is limited to 4
-
-For a version without any/all of these restrictions, please contact us at [info@kadena.io](mailto:info@kadena.io).
+* To allow Kuro to use all available cores, do not specify core count (remove the `+RTS -N[count] -RTS` section, or just the `-N[cores]` if using other runtime settings.)
 
 # Configuration
 
@@ -165,7 +177,7 @@ For a version without any/all of these restrictions, please contact us at [info@
 
 It operates in 2 modes:
 
-* `./genconfs` will create a set of config files for a localhost test of kadena.
+* `./genconfs` will create a set of config files for a localhost test of Kuro.
 It will ask you how many cluster and client nodes you'd like.
 * `./genconfs --distributed <cluster-ips file>` will create a set of config files using the IP addresses specified in the files.
 
@@ -199,12 +211,12 @@ For details about what each of these configuration choices do, please refer to t
 
 # Interacting With a Running Cluster
 
-Interaction with the cluster is performed via the Kadena REST API, exposed by each running node.
+Interaction with the cluster is performed via the Kuro REST API, exposed by each running node.
 The endpoints of interest here support the [Pact REST API](http://pact-language.readthedocs.io/en/latest/pact-reference.html#rest-api) for executing transactional and local commands on the cluster.
 
 ### The `kadenaclient` tool
 
-Kadena ships with `kadenaclient`, which is a command-line tool for interacting with the cluster via the REST API.
+Kuro ships with `kadenaclient`, which is a command-line tool for interacting with the cluster via the REST API.
 It is an interactive program or "REPL", similar to the command-line itself. It supports command history,
 such that recently-issued commands are accessible via the up- and down-arrow keys, and the history can be
 searched with Control-R.
@@ -544,14 +556,14 @@ etc.
 
 #### Sample Usage: Viewing the Performance Monitor
 
-Each kadena node, while running, will host a performance monitor at the URL `<nodeId.host>:<nodeId.port>/monitor`.
+Each Kuro node, while running, will host a performance monitor at the URL `<nodeId.host>:<nodeId.port>/monitor`.
 
 #### Sample Usage: Running Pact TodoMVC
 
-This repo also bundles the [Pact TodoMVC](github.com/kadena-io/pact-todomvc). Each Kadena node will host the frontend at `<nodeId.host>:<nodeId.port>/todomvc`. To initialized the `todomvc`:
+This repo also bundles the [Pact TodoMVC](github.com/kadena-io/pact-todomvc). Each Kuro node will host the frontend at `<nodeId.host>:<nodeId.port>/todomvc`. To initialized the `todomvc`:
 
 ```
-$ cd <kadena-directory>
+$ cd <kuro-directory>
 
 # launch the cluster
 
@@ -565,8 +577,8 @@ NB: this demo can be run at the same time as the `payments` demo.
 
 #### Sample Usage: Running a cluster on AWS
 
-The Ansible playbooks and scripts we use for testing Kadena on AWS are now available as well, located in
-`<kadena-directory>/aws`. Refer to `<kadena-directory>/docs/Ansible-README.md` for detailed instructions on
+The Ansible playbooks and scripts we use for testing Kuro on AWS are now available as well, located in
+`<kuro-directory>/aws`. Refer to `<kuro-directory>/docs/Ansible-README.md` for detailed instructions on
 how to use these Ansible playbooks and scripts.
 
 #### Sample Usage: Querying the Cluster for Server Metrics
@@ -643,14 +655,14 @@ publicKeys:
 
 #### Runtime Configuration
 
-Kadena uses SQLite for caching & persisting various by default.
+Kuro uses SQLite for caching & persisting various by default.
 Upon request, Oracle, MS SQL Server, Postgres, and generic ODBC backends are also available.
 
 * `apiPort`: what port to host the REST API identical to the [Pact development server](http://pact-language.readthedocs.io/en/latest/pact-reference.html#rest-api)
-* `logDir`: what directory to use for writing the HTTP logs, the Kadena logs, and the various SQLite databases.
+* `logDir`: what directory to use for writing the HTTP logs, the Kuro logs, and the various SQLite databases.
 * `enableDebug`: should the node write any logs
 
-While this is pretty low level tuning, Kadena nodes can be configured to use different concurrency backends.
+While this is pretty low level tuning, Kuro nodes can be configured to use different concurrency backends.
 We recommend the following defaults but please reach out to us if you have questions about tuning.
 
 ```
@@ -671,7 +683,7 @@ These settings should be identical for each node.
 
 ### Entity Configuration and Confidentiality
 
-The Kadena platform uses the [Noise protocol](http://noiseprotocol.org/) to provide the best possible on-chain encryption, as used by Signal, Whatsapp and Facebook. Messages are thoroughly encrypted with perfect forward secrecy, resulting in opaque blobs on-chain that leak no information about contents, senders or recipients.
+The Kuro platform uses the [Noise protocol](http://noiseprotocol.org/) to provide the best possible on-chain encryption, as used by Signal, Whatsapp and Facebook. Messages are thoroughly encrypted with perfect forward secrecy, resulting in opaque blobs on-chain that leak no information about contents, senders or recipients.
 
 Configuring for confidential execution employs the notion of "entities", which identify sub-clusters of nodes as belonging to a business entity with private data. Entities maintain keys for encrypting as well as signing.
 
@@ -708,4 +720,4 @@ Endpoints:
   node3: 127.0.0.1:8003
 ```
 
-(c) Kadena 2017
+(c) Kuro 2017

@@ -68,7 +68,7 @@ Optional:
 
 * `pact` - See <https://github.com/kadena-io/pact#installing-pact-with-binary-distributions>.
 * `rlwrap`: only used in `kadenaclient.sh` to enable Up-Arrow style history. Feel free to remove it from the script if you'd like to avoid installing it.
-* `tmux == v2.0`: only used for the local demo script `<kadena-directory>/bin/<OS-name>/start.sh`.
+* `tmux`: only used for the local demo script `<kadena-directory>/bin/<OS-name>/start.sh`.
 A very specific version of tmux is required because features were entirely removed in later version that preclude the script from working.
 
 NB: The docker and script files for installing the Kuro dependencies can be found in `<kuro-directory>/setup`.

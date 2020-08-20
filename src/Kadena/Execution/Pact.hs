@@ -2,6 +2,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE CPP #-}
 
 module Kadena.Execution.Pact
   ( PactEnv(..), peMode, peDbEnv, peCommand, peLogger, pePublish ,peEntity, peGasLimit, peModuleCache
@@ -32,8 +33,10 @@ import Pact.Interpreter
 import Pact.Persist (Persister)
 import Pact.Persist.CacheAdapter (initPureCacheWB)
 import qualified Pact.Interpreter as P
+#ifdef DB_ADAPTERS
 import qualified Pact.Persist.MSSQL as MSSQL
 import qualified Pact.Persist.MySQL as MySQL
+#endif
 import qualified Pact.Persist.Pure as Pure
 import qualified Pact.Persist.SQLite as SQLite
 import qualified Pact.Persist.WriteBehind as WB
@@ -103,12 +106,14 @@ initPactService ExecutionEnv{..} pub = do
       when dbExists $ logInit logger "Deleting Existing Pact DB File" >> removeFile _dbFile
       logInit logger "Initializing SQLite"
       initWB SQLite.persister =<< SQLite.initSQLite conf _eenvExecLoggers
+#ifdef DB_ADAPTERS
     PPBMSSQL conf connStr -> do
       logInit logger "Initializing MSSQL"
       initWB MSSQL.persister =<< MSSQL.initMSSQL connStr conf _eenvExecLoggers
     PPBMySQL conf -> do
       logInit logger "Initializing MySQL"
       initWB MySQL.persister =<< MySQL.initMySQL conf _eenvExecLoggers
+#endif
 
 initCommandInterface
   :: EntityConfig

@@ -1,3 +1,12 @@
+# Version 1.4
+- Rename to Kuro
+- Write behind inlined into source
+- O/S prep (readme, changelog)
+- Remove kill switches
+
+# Version 1.3.2.0
+- Upgrade Pact to 3.4
+
 # Version 1.3.1.0
 # Upgrade to new Pact version (commited on 10/16/2019)
 

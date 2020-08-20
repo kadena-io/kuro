@@ -1,7 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE CPP #-}
 
 module Kadena.Spec.Simple
   ( runServer
@@ -23,7 +22,6 @@ import qualified Data.ByteString.Char8 as BSC
 
 import qualified Data.Set as Set
 import qualified Data.Yaml as Y
-import qualified Data.Text.IO as T
 
 import System.Console.GetOpt
 import System.Environment
@@ -154,12 +152,8 @@ _resetAwsEnv awsEnabled = do
 runServer :: IO ()
 runServer = do
   setLineBuffering
-  T.putStrLn $! "Kadena LLC (c) (2016-2018)"
   rconf <- getConfig
   gcm <- initGlobalConfigTMVar rconf
-#if WITH_KILL_SWITCH || WITH_AWS_KILL_SWITCH
-  _killSwitchNodeCheck rconf
-#endif
 
   utcTimeCache' <- utcTimeCache
   fs <- initSysLog utcTimeCache'
@@ -182,38 +176,3 @@ runServer = do
   rstate <- return $ initialConsensusState timerTarget'
   mPubConsensus' <- newMVar $! PublishedConsensus Nothing Follower startTerm Set.empty
   runConsensusService receiverEnv gcm raftSpec rstate getCurrentTime mPubConsensus'
-
-#if WITH_KILL_SWITCH
-_isBetaKillSwitch :: Bool
-_isBetaKillSwitch = True
-#else
-_isBetaKillSwitch :: Bool
-_isBetaKillSwitch = False
-#endif
-
-#if WITH_AWS_KILL_SWITCH
-_isAWSKillSwitch :: Bool
-_isAWSKillSwitch = True
-#else
-_isAWSKillSwitch :: Bool
-_isAWSKillSwitch = False
-#endif
-
-_killSwitchNodeCheck :: Config -> IO ()
-_killSwitchNodeCheck rconf = do
-  let beta_node_limit = 16
-  let aws_node_limit = 4
-  let currNodeCount = (CM.countOthers (_clusterMembers rconf)) -- doesn't include node executing this code
-
-  let betaSwitch = _isBetaKillSwitch
-  let awsSwitch = _isAWSKillSwitch
-
-  case (betaSwitch,awsSwitch) of
-    (False, False) -> return ()
-    (True,  False) -> when (currNodeCount >= beta_node_limit) $
-                      error $ "Beta versions of Kadena are limited to 16 consensus nodes."
-    (False, True)  -> when (currNodeCount >= aws_node_limit) $
-                      error $ "Community versions of Kadena are limited to 4 consensus nodes."
-    (True,  True)  -> when (currNodeCount >= beta_node_limit) $
-                      error $ "Community versions of Kadena are limited to 4 consensus nodes."
-                      -- Apply strictest kill-switch limitations

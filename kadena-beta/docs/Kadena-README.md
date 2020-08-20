@@ -1,8 +1,6 @@
 # Kuro Blockchain Documentation
 ---
 
-Kuro Version: 1.1.x
-
 # Change Log
 
 * Version 1.4
@@ -720,4 +718,4 @@ Endpoints:
   node3: 127.0.0.1:8003
 ```
 
-(c) Kuro 2017
+(c) Kadena 2020

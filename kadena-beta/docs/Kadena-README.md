@@ -66,7 +66,7 @@ Required:
 
 Optional:
 
-* `pact == v2.4` for `Kudo v1.1.4.0` or `pact == v3.2` for `Kuro v1.2.0.0` or `pact == v3.4` for `Kuro v1.4.0.0`: See <https://github.com/kadena-io/pact#installing-pact-with-binary-distributions>.
+* `pact` - See <https://github.com/kadena-io/pact#installing-pact-with-binary-distributions>.
 * `rlwrap`: only used in `kadenaclient.sh` to enable Up-Arrow style history. Feel free to remove it from the script if you'd like to avoid installing it.
 * `tmux == v2.0`: only used for the local demo script `<kadena-directory>/bin/<OS-name>/start.sh`.
 A very specific version of tmux is required because features were entirely removed in later version that preclude the script from working.

@@ -1,50 +1,6 @@
 # Kuro Blockchain Documentation
 ---
 
-# Change Log
-
-* Version 1.4
-  * Rename to Kuro
-  * Write behind inlined into source
-  * O/S prep (readme, changelog)
-  * Remove kill switches
-
-* Version 1.3.2.0
-  * Upgrade Pact to 3.4
-
-* Version 1.3.1.0
-  * Upgrade to new Pact version (commited on 10/16/2019)
-
-* Version 1.3.0.0
-  * API compatability with Pact-Web
-
-* Version 1.2.1.0
-  * Upgrade to Pact version 3.2.1
-
-* Version 1.2.0.0
-  * Upgrade to Pact version 3.2
-  * Includes Ansible playbooks for Azure deployment
-
-* Version 1.1.4.0
-  * Stability improvements
-  * Includes Ansible playbooks for AWS deployment
-  * Bug Fixes
-
-* Version 1.1.3.1
-  * Includes Kadena Grafana dashboard
-
-* Version 1.1.3.0
-  * Added MySQL adapter to pact-persist
-
-* Kadena 1.1.2 (June 12th, 2017)
-  * Integrated privacy mechanism (on-chain Noise protocol based private channels)
-  * Added `par-batch` to REPL
-  * Fixed issues with new command forwarding and batching mechanics
-  * `local` queries now execute immediately, skipping the write behind's queue
-  * Nodes are automatically configured to run on `0.0.0.0`
-  * `genconfs` inputs now are reflected in the configuration files
-  * Fixed `genconfs --distributed`
-
 # Getting Started
 
 ### Dependencies
@@ -73,7 +29,7 @@ NB: The docker and script files for installing the Kuro dependencies can be foun
 
 ### Quick Start
 
-Quickly launch a local instance, see "Sample Usage: `[payments|monitor|todomvc]`" for interactions supported.
+Quickly launch a local instance, see "Sample Usage: `[payments|monitor]`" for interactions supported.
 
 #### OSX
 
@@ -555,23 +511,6 @@ etc.
 #### Sample Usage: Viewing the Performance Monitor
 
 Each Kuro node, while running, will host a performance monitor at the URL `<nodeId.host>:<nodeId.port>/monitor`.
-
-#### Sample Usage: Running Pact TodoMVC
-
-This repo also bundles the [Pact TodoMVC](github.com/kadena-io/pact-todomvc). Each Kuro node will host the frontend at `<nodeId.host>:<nodeId.port>/todomvc`. To initialized the `todomvc`:
-
-```
-$ cd <kuro-directory>
-
-# launch the cluster
-
-$ ./bin/<OS-name>/kadenaclient.sh
-node3> load todomvc/demo.yaml
-
-# go to host:port/todomvc
-```
-
-NB: this demo can be run at the same time as the `payments` demo.
 
 #### Sample Usage: Running a cluster on AWS
 

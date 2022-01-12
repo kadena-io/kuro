@@ -4,5 +4,5 @@
 	ignore = untracked
 [submodule "submodules/snap-cors"]
 	path = submodules/snap-cors
-	url = https://github.com/slpopejoy/snap-cors.git
+	url = https://github.com/sirlensalot/snap-cors.git
 	ignore = untracked

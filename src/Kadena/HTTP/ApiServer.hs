@@ -62,7 +62,7 @@ import Data.Thyme.Clock
 import Data.Version (showVersion)
 
 -- Cabal version info
-import Paths_kadena (version)
+import Paths_kuro (version)
 
 import Network.Wai.Handler.Warp hiding (setPort)
 import Network.Wai.Middleware.Cors

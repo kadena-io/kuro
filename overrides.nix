@@ -21,5 +21,11 @@ in
     ref = "master";
   }) {};
 
+  prettyprinter = dontCheck (callHackageDirect {
+		pkg = "prettyprinter";
+    ver="1.2.1.1";
+    sha256= "0hcp44cncagh0khdnj2pzlbh04iz05j1w25hpfkws8qgplir7dlz";
+	});
+
   zeromq4-haskell = dontCheck (self.callHackage "zeromq4-haskell" "0.8.0" {});
 }

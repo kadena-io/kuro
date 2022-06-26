@@ -21,6 +21,8 @@ in
     ref = "master";
   }) {};
 
+  monoid-subclasses = dontCheck super.monoid-subclasses;
+
   prettyprinter = dontCheck (callHackageDirect {
     pkg = "prettyprinter";
     ver="1.2.1.1";

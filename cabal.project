@@ -1,0 +1,31 @@
+packages: kuro.cabal
+
+
+-- -------------------------------------------------------------------------- --
+-- Kuro Specific Build Settings
+
+package kuro
+    tests: True
+    benchmarks: True
+
+-- -------------------------------------------------------------------------- --
+-- Package Specific Build Settings
+
+package aeson
+    flags: +cffi
+
+package cryptonite
+    flags: +support_pclmuldq
+
+package pact
+    ghc-options: -Wwarn
+    -- avoid conflict with cryptonite during linking
+    flags: +cryptonite-ed25519 -build-tool +no-advice
+
+-- ---------------------------------------------------------------- --
+-- External source repo packages
+
+source-repository-package
+    type: git
+    location: https://github.com/kadena-io/pact.git
+    tag: v4.3

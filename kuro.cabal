@@ -162,7 +162,7 @@ library
                      , mtl
                      , mtl-compat
                      , network
-                     , pact == 3.4.*
+                     , pact == 4.3.*
                      , parallel
                      , parsers
                      , prelude-extras
